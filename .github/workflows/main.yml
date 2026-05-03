@@ -19,9 +19,9 @@ jobs:
       run: g++ --version
 
     - name: Compile RasFocus.exe
-      # এখানে -static-libgcc এবং -static-libstdc++ যুক্ত করা হয়েছে
+      # এখানে -static-libgcc এবং -static-libstdc++ যুক্ত করা হয়েছে
       run: |
-      g++ main.cpp prewindow.cpp tab_dashboard.cpp tab_blocks.cpp tab_schedule_blocks.cpp tab_adult.cpp tab_deep_study.cpp tab_special.cpp tab_statistics.cpp tab_settings.cpp tab_utilities.cpp tab_ai.cpp tab_strict.cpp tab_diary.cpp resources.o -o RasFocus.exe -mwindows -lgdi32 -luser32 -lgdiplus -lcomctl32 -lole32 -loleaut32 -luiautomationcore -luuid -lpsapi -lshlwapi -lwinmm -lshell32 -lurlmon -lwininet -lruntimeobject -L. -lWebView2Loader -lcomdlg32
+        g++ main.cpp prewindow.cpp tab_dashboard.cpp tab_blocks.cpp tab_schedule_blocks.cpp tab_adult.cpp tab_deep_study.cpp tab_special.cpp tab_statistics.cpp tab_settings.cpp tab_utilities.cpp tab_ai.cpp tab_strict.cpp tab_diary.cpp resources.o -o RasFocus.exe -mwindows -static-libgcc -static-libstdc++ -lgdi32 -luser32 -lgdiplus -lcomctl32 -lole32 -loleaut32 -luiautomationcore -luuid -lpsapi -lshlwapi -lwinmm -lshell32 -lurlmon -lwininet -lruntimeobject -L. -lWebView2Loader -lcomdlg32
 
     - name: Upload Artifact (Downloadable EXE)
       uses: actions/upload-artifact@v4
