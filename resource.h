@@ -1,9 +1,0 @@
-#ifndef RESOURCE_H
-#define RESOURCE_H
-
-#define IDI_APP_ICON 101
-#define IDB_WALLPAPER1 102
-#define IDB_WALLPAPER2 103
-#define IDR_ADULT_SITES 104
-
-#endif
