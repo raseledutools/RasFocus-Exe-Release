@@ -2,10 +2,10 @@ name: Build RasFocus
 
 on:
   push:
-    branches: [ "main" ] # তোমার মেইন ব্রাঞ্চের নাম যদি 'master' হয়, তবে এখানে 'master' লিখবে
+    branches: [ "main", "master" ] # main বা master যেকোনো ব্রাঞ্চেই কাজ করবে
   pull_request:
-    branches: [ "main" ]
-  workflow_dispatch: # এই অপশনের কারণে তুমি চাইলে ম্যানুয়ালিও বিল্ড রান করতে পারবে
+    branches: [ "main", "master" ]
+  workflow_dispatch: # ম্যানুয়াল বিল্ড রান করার জন্য
 
 jobs:
   build:
@@ -19,8 +19,10 @@ jobs:
       run: g++ --version
 
     - name: Compile RasFocus.exe
+      # এখানে -I. এবং -L. দিয়ে গিটহাবকে বোঝানো হয়েছে যে লাইব্রেরি ফাইলগুলো ফোল্ডারেই আছে
+      # এবং একদম শেষে -lWebView2Loader যুক্ত করা হয়েছে
       run: |
-        g++ main.cpp prewindow.cpp tab_dashboard.cpp tab_blocks.cpp tab_schedule_blocks.cpp tab_adult.cpp tab_deep_study.cpp tab_special.cpp tab_statistics.cpp tab_settings.cpp tab_utilities.cpp tab_ai.cpp tab_strict.cpp tab_diary.cpp app.o -o RasFocus.exe -mwindows -lgdi32 -luser32 -lgdiplus -lcomctl32 -lole32 -loleaut32 -luiautomationcore -luuid -lpsapi -lshlwapi -lwinmm -lshell32 -lurlmon -lwininet
+        g++ main.cpp prewindow.cpp tab_dashboard.cpp tab_blocks.cpp tab_schedule_blocks.cpp tab_adult.cpp tab_deep_study.cpp tab_special.cpp tab_statistics.cpp tab_settings.cpp tab_utilities.cpp tab_ai.cpp tab_strict.cpp tab_diary.cpp app.o -o RasFocus.exe -mwindows -I. -L. -lgdi32 -luser32 -lgdiplus -lcomctl32 -lole32 -loleaut32 -luiautomationcore -luuid -lpsapi -lshlwapi -lwinmm -lshell32 -lurlmon -lwininet -lWebView2Loader
 
     - name: Upload Artifact (Downloadable EXE)
       uses: actions/upload-artifact@v4
