@@ -1,0 +1,12 @@
+#include "resource.h"
+
+// ১. আপনার আগের আইকন এবং অবজারভার
+101 ICON   "icon.ico"
+102 RCDATA "RasObserve.exe"
+
+// ২. ওয়ালপেপারগুলো
+103 RCDATA "wallpapers\\1.jpg"
+104 RCDATA "wallpapers\\2.jpg"
+
+// ৩. আপনার নতুন অ্যাডাল্ট সাইট লিস্ট
+105 RCDATA "assets\\adultsites.txt"

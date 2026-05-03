@@ -1,0 +1,2 @@
+#define IDB_WALLPAPER1 101
+#define IDB_WALLPAPER2 102
