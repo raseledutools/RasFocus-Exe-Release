@@ -1,0 +1,29 @@
+name: Build RasFocus
+
+on:
+  push:
+    branches: [ "main" ] # তোমার মেইন ব্রাঞ্চের নাম যদি 'master' হয়, তবে এখানে 'master' লিখবে
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch: # এই অপশনের কারণে তুমি চাইলে ম্যানুয়ালিও বিল্ড রান করতে পারবে
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Check g++ compiler
+      run: g++ --version
+
+    - name: Compile RasFocus.exe
+      run: |
+        g++ main.cpp prewindow.cpp tab_dashboard.cpp tab_blocks.cpp tab_schedule_blocks.cpp tab_adult.cpp tab_deep_study.cpp tab_special.cpp tab_statistics.cpp tab_settings.cpp tab_utilities.cpp tab_ai.cpp tab_strict.cpp tab_diary.cpp app.o -o RasFocus.exe -mwindows -lgdi32 -luser32 -lgdiplus -lcomctl32 -lole32 -loleaut32 -luiautomationcore -luuid -lpsapi -lshlwapi -lwinmm -lshell32 -lurlmon -lwininet
+
+    - name: Upload Artifact (Downloadable EXE)
+      uses: actions/upload-artifact@v4
+      with:
+        name: RasFocus-App
+        path: RasFocus.exe
