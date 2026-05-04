@@ -11,6 +11,7 @@
 #include <urlmon.h>
 #include <process.h>
 #include <shlwapi.h>
+#include <algorithm> // For string transformation
 
 // --- WebView2 Headers ---
 #include "WebView2.h"
@@ -33,6 +34,7 @@ static bool hoverBackBtn = false;
 static bool hoverForwardBtn = false;
 static bool hoverRefreshBtn = false;
 static bool hoverHomeBtn = false; 
+static bool hoverAddBtn = false; // New Tab Button
 static bool hoverPopOutBtn = false;
 static bool hoverReturnBtn = false;
 
@@ -64,26 +66,26 @@ static GraphicsPath* GetGeminiRoundRect(RectF rect, int radius) {
 }
 
 // =========================================================================
-// Pop-Out Window Procedure (With Navigation, Home & + New Tab Button)
+// Full Screen Pop-Out Window Procedure
 // =========================================================================
 LRESULT CALLBACK PopOutWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
     switch (message) {
         case WM_CREATE: {
-            HFONT hFont = CreateFont(16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, ANSI_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH | FF_SWISS, "Segoe UI");
+            HFONT hFont = CreateFont(16, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, ANSI_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH | FF_SWISS, "Segoe UI");
             
-            // উইন্ডোজের বাটনগুলো
-            HWND hBack = CreateWindow("BUTTON", "< Back", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 10, 5, 80, 30, hWnd, (HMENU)1001, GetModuleHandle(NULL), NULL);
-            HWND hFwd = CreateWindow("BUTTON", "Forward >", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 100, 5, 80, 30, hWnd, (HMENU)1002, GetModuleHandle(NULL), NULL);
-            HWND hRef = CreateWindow("BUTTON", "Refresh", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 190, 5, 80, 30, hWnd, (HMENU)1003, GetModuleHandle(NULL), NULL);
-            HWND hHome = CreateWindow("BUTTON", "Home", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 280, 5, 80, 30, hWnd, (HMENU)1006, GetModuleHandle(NULL), NULL);
-            HWND hPlus = CreateWindow("BUTTON", "+ New Tab", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 370, 5, 90, 30, hWnd, (HMENU)1005, GetModuleHandle(NULL), NULL);
-            HWND hRet = CreateWindow("BUTTON", "Return to App", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 470, 5, 120, 30, hWnd, (HMENU)1004, GetModuleHandle(NULL), NULL);
+            int sw = GetSystemMetrics(SM_CXSCREEN); // Get Monitor Width
+
+            // Full Screen Windows Buttons
+            HWND hBack = CreateWindow("BUTTON", "<", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 5, 5, 30, 25, hWnd, (HMENU)1001, GetModuleHandle(NULL), NULL);
+            HWND hFwd = CreateWindow("BUTTON", ">", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 40, 5, 30, 25, hWnd, (HMENU)1002, GetModuleHandle(NULL), NULL);
+            HWND hRef = CreateWindow("BUTTON", "R", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 75, 5, 30, 25, hWnd, (HMENU)1003, GetModuleHandle(NULL), NULL);
+            HWND hHome = CreateWindow("BUTTON", "Home", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 110, 5, 60, 25, hWnd, (HMENU)1006, GetModuleHandle(NULL), NULL);
             
-            SendMessage(hBack, WM_SETFONT, (WPARAM)hFont, TRUE);
-            SendMessage(hFwd, WM_SETFONT, (WPARAM)hFont, TRUE);
-            SendMessage(hRef, WM_SETFONT, (WPARAM)hFont, TRUE);
-            SendMessage(hHome, WM_SETFONT, (WPARAM)hFont, TRUE);
-            SendMessage(hPlus, WM_SETFONT, (WPARAM)hFont, TRUE);
+            // Exit Full Screen Button (Placed at the right edge)
+            HWND hRet = CreateWindow("BUTTON", "Exit Full Screen", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, sw - 150, 5, 140, 25, hWnd, (HMENU)1004, GetModuleHandle(NULL), NULL);
+            
+            SendMessage(hBack, WM_SETFONT, (WPARAM)hFont, TRUE); SendMessage(hFwd, WM_SETFONT, (WPARAM)hFont, TRUE);
+            SendMessage(hRef, WM_SETFONT, (WPARAM)hFont, TRUE); SendMessage(hHome, WM_SETFONT, (WPARAM)hFont, TRUE);
             SendMessage(hRet, WM_SETFONT, (WPARAM)hFont, TRUE);
             return 0;
         }
@@ -91,26 +93,17 @@ LRESULT CALLBACK PopOutWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lP
             if (LOWORD(wParam) == 1001 && webView) webView->GoBack();
             if (LOWORD(wParam) == 1002 && webView) webView->GoForward();
             if (LOWORD(wParam) == 1003 && webView) webView->Reload();
-            
-            // Home বাটনে ক্লিক করলে ওয়েবসাইটে ফিরে আসবে
             if (LOWORD(wParam) == 1006 && webView) {
-                webView->Navigate(L"https://raseledutools.github.io/");
+                webView->Navigate(L"https://www.google.com/"); // Go to Google on Home
             }
-            
-            // + New Tab বাটনে ক্লিক করলে ওয়েবসাইটটি নতুন ব্রাউজার উইন্ডোতে খুলবে
-            if (LOWORD(wParam) == 1005 && webView) {
-                wstring script = L"window.open('https://raseledutools.github.io/', '_blank');";
-                webView->ExecuteScript(script.c_str(), nullptr);
-            }
-            
-            if (LOWORD(wParam) == 1004) SendMessage(hWnd, WM_CLOSE, 0, 0);
+            if (LOWORD(wParam) == 1004) SendMessage(hWnd, WM_CLOSE, 0, 0); // Exit Full Screen
             break;
         }
         case WM_SIZE:
             if (webViewController != nullptr && isPoppedOut) {
                 RECT bounds;
                 GetClientRect(hWnd, &bounds);
-                bounds.top += 40; 
+                bounds.top += 35; // Leave space for the top controls
                 webViewController->put_Bounds(bounds);
             }
             break;
@@ -119,10 +112,10 @@ LRESULT CALLBACK PopOutWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lP
             if (webViewController != nullptr) {
                 webViewController->put_ParentWindow(hParentWnd); 
                 
-                // মূল অ্যাপে ফেরত আসার সময় পজিশন ফিক্স
+                // Return to normal App view size
                 RECT bounds;
                 bounds.left = (LONG)(s_contentX * g_scaleFactor);
-                bounds.top = (LONG)((s_contentY + 40) * g_scaleFactor);
+                bounds.top = (LONG)((s_contentY + 30) * g_scaleFactor); 
                 bounds.right = (LONG)((s_contentX + s_contentW) * g_scaleFactor);
                 bounds.bottom = (LONG)((s_contentY + s_contentH) * g_scaleFactor);
                 webViewController->put_Bounds(bounds);
@@ -146,6 +139,75 @@ static const IID IID_ICoreWebView2DownloadStartingEventHandler_Local = { 0xefed3
 static const IID IID_ICoreWebView2StateChangedEventHandler_Local = { 0x81336594, 0x7ede, 0x4ba9, { 0x87, 0x1d, 0x6e, 0xb2, 0x2a, 0x45, 0xd4, 0xa8 } };
 static const IID IID_ICoreWebView2_4_Local = { 0x20d02d59, 0x6df2, 0x42dc, { 0xbd, 0x06, 0xf9, 0x8a, 0x69, 0x4b, 0x13, 0x02 } };
 
+// Custom IIDs for Navigation and New Window Events
+static const IID IID_ICoreWebView2NewWindowRequestedEventHandler_Local = { 0xd4ce85af, 0x1563, 0x4377, { 0xa5, 0x0f, 0x5c, 0x72, 0xaf, 0xb2, 0x43, 0xb7 } };
+static const IID IID_ICoreWebView2NavigationStartingEventHandler_Local = { 0x9adbe429, 0xf36d, 0x432b, { 0x9d, 0xdc, 0xf8, 0x88, 0x1f, 0xbd, 0x76, 0xe3 } };
+
+// --- Adult Blocker Event Handler ---
+class NavigationStartingHandler : public ICoreWebView2NavigationStartingEventHandler {
+    ULONG m_refCount = 1;
+public:
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override {
+        if (!ppv) return E_POINTER;
+        if (riid == IID_IUnknown_Local || riid == IID_ICoreWebView2NavigationStartingEventHandler_Local) { *ppv = this; AddRef(); return S_OK; }
+        *ppv = nullptr; return E_NOINTERFACE;
+    }
+    ULONG STDMETHODCALLTYPE AddRef() override { return InterlockedIncrement(&m_refCount); }
+    ULONG STDMETHODCALLTYPE Release() override { ULONG r = InterlockedDecrement(&m_refCount); if (r == 0) delete this; return r; }
+    
+    HRESULT STDMETHODCALLTYPE Invoke(ICoreWebView2* sender, ICoreWebView2NavigationStartingEventArgs* args) override {
+        LPWSTR uri = nullptr;
+        args->get_Uri(&uri);
+        if (uri) {
+            std::wstring url(uri);
+            CoTaskMemFree(uri);
+            
+            // Convert to lowercase for checking
+            std::transform(url.begin(), url.end(), url.begin(), ::towlower);
+            
+            // Adult keywords list
+            std::vector<std::wstring> badWords = { L"porn", L"sex", L"xvideos", L"xnxx", L"redtube", L"brazzers", L"adult" };
+            
+            bool adultBlockIsActive = true; // TODO: আপনি চাইলে আপনার অ্যাপের গ্লোবাল adult block ভ্যারিয়েবল এখানে বসাতে পারেন।
+            
+            if (adultBlockIsActive) {
+                for (const auto& word : badWords) {
+                    if (url.find(word) != std::wstring::npos) {
+                        args->put_Cancel(TRUE); // Block the navigation
+                        MessageBoxA(hParentWnd, "Adult content is strictly blocked by RasFocus!", "Blocked", MB_ICONWARNING | MB_OK);
+                        return S_OK;
+                    }
+                }
+            }
+        }
+        return S_OK;
+    }
+};
+
+// --- Chrome-like New Tab Override (Force Same Window) ---
+class NewWindowRequestedHandler : public ICoreWebView2NewWindowRequestedEventHandler {
+    ULONG m_refCount = 1;
+public:
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override {
+        if (!ppv) return E_POINTER;
+        if (riid == IID_IUnknown_Local || riid == IID_ICoreWebView2NewWindowRequestedEventHandler_Local) { *ppv = this; AddRef(); return S_OK; }
+        *ppv = nullptr; return E_NOINTERFACE;
+    }
+    ULONG STDMETHODCALLTYPE AddRef() override { return InterlockedIncrement(&m_refCount); }
+    ULONG STDMETHODCALLTYPE Release() override { ULONG r = InterlockedDecrement(&m_refCount); if (r == 0) delete this; return r; }
+    
+    HRESULT STDMETHODCALLTYPE Invoke(ICoreWebView2* sender, ICoreWebView2NewWindowRequestedEventArgs* args) override {
+        args->put_Handled(TRUE); // Stop default pop-up behavior
+        LPWSTR uri;
+        if (SUCCEEDED(args->get_Uri(&uri)) && uri) {
+            sender->Navigate(uri); // Open link in the SAME window
+            CoTaskMemFree(uri);
+        }
+        return S_OK;
+    }
+};
+
+// --- Downloader Handlers ---
 class DownloadStateChangedHandler : public ICoreWebView2StateChangedEventHandler {
     ULONG m_refCount = 1;
 public:
@@ -232,8 +294,22 @@ public:
                 webView4->add_DownloadStarting(new DownloadStartingHandler(), &token);
             }
             
-            // ওয়েবসাইট লোড করা হচ্ছে
-            webView->Navigate(L"https://raseledutools.github.io/");
+            // Adult Filter Event
+            EventRegistrationToken navToken;
+            webView->add_NavigationStarting(new NavigationStartingHandler(), &navToken);
+
+            // Chrome-like Same Window Tab Event
+            EventRegistrationToken windowToken;
+            webView->add_NewWindowRequested(new NewWindowRequestedHandler(), &windowToken);
+
+            // Gemini Permissions
+            webView->add_PermissionRequested(Callback<ICoreWebView2PermissionRequestedEventHandler>(
+                [](ICoreWebView2* sender, ICoreWebView2PermissionRequestedEventArgs* args) {
+                    args->put_State(COREWEBVIEW2_PERMISSION_STATE_ALLOW);
+                    return S_OK;
+                }).Get(), nullptr);
+
+            webView->Navigate(L"https://gemini.google.com/?authuser=0");
 
         } else {
             MessageBoxA(NULL, "Failed to load WebView2 engine.", "Error", MB_ICONERROR | MB_OK);
@@ -276,7 +352,7 @@ void ResizeGeminiControls(int cx, int cy, int cw, int ch) {
     if (webViewController != nullptr && isGeminiRunning && !isPoppedOut) {
         RECT bounds;
         bounds.left = (LONG)(cx * g_scaleFactor);
-        bounds.top = (LONG)((cy + 40) * g_scaleFactor);
+        bounds.top = (LONG)((cy + 30) * g_scaleFactor); 
         bounds.right = (LONG)((cx + cw) * g_scaleFactor);
         bounds.bottom = (LONG)((cy + ch) * g_scaleFactor);
         webViewController->put_Bounds(bounds);
@@ -289,15 +365,18 @@ void DrawGeminiTab(Graphics& g, float cx, float cy, float cw, float ch) {
     if (webViewController != nullptr && isGeminiRunning && !isPoppedOut) {
         RECT bounds;
         bounds.left = (LONG)(cx * g_scaleFactor);
-        bounds.top = (LONG)((cy + 40) * g_scaleFactor);
+        bounds.top = (LONG)((cy + 30) * g_scaleFactor); 
         bounds.right = (LONG)((cx + cw) * g_scaleFactor);
         bounds.bottom = (LONG)((cy + ch) * g_scaleFactor);
         webViewController->put_Bounds(bounds);
     }
 
     FontFamily ff(L"Segoe UI"); 
-    Font fH1(&ff, 28, FontStyleBold, UnitPixel); Font fBold(&ff, 14, FontStyleBold, UnitPixel);
+    FontFamily ffIcon(L"Segoe MDL2 Assets"); 
+    Font fH1(&ff, 28, FontStyleBold, UnitPixel); 
+    Font fBold(&ff, 14, FontStyleBold, UnitPixel);
     Font fNormal(&ff, 14, FontStyleRegular, UnitPixel); 
+    Font fIcons(&ffIcon, 14, FontStyleRegular, UnitPixel); 
     
     SolidBrush bBg(GClrWhite); 
     SolidBrush bText(GClrTextDark); 
@@ -309,7 +388,7 @@ void DrawGeminiTab(Graphics& g, float cx, float cy, float cw, float ch) {
 
     if (!isGeminiRunning) {
         g.DrawString(L"Rasel Edu Tools Interface", -1, &fH1, RectF(cx, cy + (ch/2) - 100, cw, 40), &fC, &bText);
-        g.DrawString(L"Access your custom tools and web apps instantly.", -1, &fNormal, RectF(cx, cy + (ch/2) - 60, cw, 30), &fC, &bText);
+        g.DrawString(L"Access Gemini AI and Web Apps Instantly.", -1, &fNormal, RectF(cx, cy + (ch/2) - 60, cw, 30), &fC, &bText);
 
         float btnW = 260.0f; float btnH = 50.0f;
         float btnX = cx + (cw - btnW) / 2.0f; float btnY = cy + (ch / 2.0f);
@@ -318,45 +397,42 @@ void DrawGeminiTab(Graphics& g, float cx, float cy, float cw, float ch) {
         GraphicsPath* bp = GetGeminiRoundRect(btnRect, 25);
         SolidBrush btnBrush(hoverLaunchBtn ? GClrTealHover : GClrAppTeal);
         g.FillPath(&btnBrush, bp); delete bp;
-        g.DrawString(L"Open Web Tools", -1, &fBold, btnRect, &fC, &bWhite);
+        g.DrawString(L"Open Web Browser", -1, &fBold, btnRect, &fC, &bWhite);
     } 
     else if (isPoppedOut) {
-        g.DrawString(L"Web Tool is running in a Pop-out window.", -1, &fBold, RectF(cx, cy + (ch/2) - 50, cw, 40), &fC, &bText);
-        
-        RectF retRect(cx + (cw - 200)/2, cy + (ch/2), 200, 40);
-        GraphicsPath* bp = GetGeminiRoundRect(retRect, 20);
-        SolidBrush retBrush(hoverReturnBtn ? GClrTealHover : GClrAppTeal);
-        g.FillPath(&retBrush, bp); delete bp;
-        g.DrawString(L"Return to Tab", -1, &fNormal, retRect, &fC, &bWhite);
+        g.DrawString(L"Browser is running in Full Screen Mode.", -1, &fBold, RectF(cx, cy + (ch/2) - 50, cw, 40), &fC, &bText);
     }
     else {
         SolidBrush bNavBg(GClrAppTeal);
-        g.FillRectangle(&bNavBg, cx, cy, cw, 40.0f); 
+        g.FillRectangle(&bNavBg, cx, cy, cw, 30.0f); 
 
-        float startX = cx + 10; 
+        float startX = cx + 5; 
         
-        RectF backRect(startX, cy + 5, 80, 30); SolidBrush bBack(hoverBackBtn ? GClrTealHover : GClrAppTeal);
-        g.FillRectangle(&bBack, backRect); g.DrawString(L"< Back", -1, &fBold, backRect, &fC, &bWhite);
+        RectF backRect(startX, cy + 2, 30, 26); SolidBrush bBack(hoverBackBtn ? GClrTealHover : GClrAppTeal);
+        g.FillRectangle(&bBack, backRect); g.DrawString(L"\xE72B", -1, &fIcons, backRect, &fC, &bWhite); 
 
-        startX += 90; RectF fwdRect(startX, cy + 5, 90, 30); SolidBrush bFwd(hoverForwardBtn ? GClrTealHover : GClrAppTeal);
-        g.FillRectangle(&bFwd, fwdRect); g.DrawString(L"Forward >", -1, &fBold, fwdRect, &fC, &bWhite);
+        startX += 32; RectF fwdRect(startX, cy + 2, 30, 26); SolidBrush bFwd(hoverForwardBtn ? GClrTealHover : GClrAppTeal);
+        g.FillRectangle(&bFwd, fwdRect); g.DrawString(L"\xE72A", -1, &fIcons, fwdRect, &fC, &bWhite); 
 
-        startX += 100; RectF refRect(startX, cy + 5, 80, 30); SolidBrush bRef(hoverRefreshBtn ? GClrTealHover : GClrAppTeal);
-        g.FillRectangle(&bRef, refRect); g.DrawString(L"Refresh", -1, &fBold, refRect, &fC, &bWhite);
+        startX += 32; RectF refRect(startX, cy + 2, 30, 26); SolidBrush bRef(hoverRefreshBtn ? GClrTealHover : GClrAppTeal);
+        g.FillRectangle(&bRef, refRect); g.DrawString(L"\xE72C", -1, &fIcons, refRect, &fC, &bWhite); 
 
-        startX += 90; RectF homeRect(startX, cy + 5, 80, 30); SolidBrush bHome(hoverHomeBtn ? GClrTealHover : GClrAppTeal);
-        g.FillRectangle(&bHome, homeRect); g.DrawString(L"Home", -1, &fBold, homeRect, &fC, &bWhite);
+        startX += 32; RectF homeRect(startX, cy + 2, 30, 26); SolidBrush bHome(hoverHomeBtn ? GClrTealHover : GClrAppTeal);
+        g.FillRectangle(&bHome, homeRect); g.DrawString(L"\xE80F", -1, &fIcons, homeRect, &fC, &bWhite); 
 
-        startX += 90; RectF popRect(startX, cy + 5, 100, 30); SolidBrush bPop(hoverPopOutBtn ? GClrTealHover : GClrAppTeal);
-        g.FillRectangle(&bPop, popRect); g.DrawString(L"Full Screen", -1, &fBold, popRect, &fC, &bWhite); 
+        startX += 35; RectF addRect(startX, cy + 2, 30, 26); SolidBrush bAdd(hoverAddBtn ? GClrTealHover : GClrAppTeal);
+        g.FillRectangle(&bAdd, addRect); g.DrawString(L"\xE710", -1, &fIcons, addRect, &fC, &bWhite); 
 
         if (isDownloading) {
-            startX += 110; SolidBrush bWarn(GClrWarning);
-            g.DrawString(L"Downloading...", -1, &fNormal, RectF(startX, cy + 5, 120, 30), &fC, &bWarn);
+            startX += 40; SolidBrush bWarn(GClrWarning);
+            g.DrawString(L"Downloading...", -1, &fNormal, RectF(startX, cy + 2, 120, 26), &fC, &bWarn);
         }
 
-        RectF closeRect(cx + cw - 120, cy + 5, 110, 30); SolidBrush bClose(hoverCloseBtn ? GClrDanger : Color(255, 180, 40, 40));
-        g.FillRectangle(&bClose, closeRect); g.DrawString(L"Close Session", -1, &fNormal, closeRect, &fC, &bWhite);
+        RectF closeRect(cx + cw - 35, cy + 2, 30, 26); SolidBrush bClose(hoverCloseBtn ? GClrDanger : Color(255, 180, 40, 40));
+        g.FillRectangle(&bClose, closeRect); g.DrawString(L"\xE8BB", -1, &fIcons, closeRect, &fC, &bWhite); 
+
+        RectF popRect(cx + cw - 70, cy + 2, 30, 26); SolidBrush bPop(hoverPopOutBtn ? GClrTealHover : GClrAppTeal);
+        g.FillRectangle(&bPop, popRect); g.DrawString(L"\xE740", -1, &fIcons, popRect, &fC, &bWhite); // Full Screen Icon
     }
 }
 
@@ -367,24 +443,22 @@ void ProcessGeminiMouseMove(float x, float y) {
         bool wasHovering = hoverLaunchBtn; hoverLaunchBtn = RectF(btnX, btnY, btnW, btnH).Contains(x, y);
         if (wasHovering != hoverLaunchBtn && hParentWnd != NULL) { InvalidateRect(hParentWnd, NULL, TRUE); }
     } 
-    else if (isPoppedOut) {
-        bool wasHovering = hoverReturnBtn; hoverReturnBtn = RectF(s_contentX + (s_contentW - 200)/2, s_contentY + (s_contentH/2), 200, 40).Contains(x, y);
-        if (wasHovering != hoverReturnBtn && hParentWnd != NULL) { InvalidateRect(hParentWnd, NULL, TRUE); }
-    }
-    else {
-        float startX = s_contentX + 10; float cy = s_contentY;
+    else if (!isPoppedOut) {
+        float startX = s_contentX + 5; float cy = s_contentY;
         bool prevBack = hoverBackBtn; bool prevFwd = hoverForwardBtn; bool prevRef = hoverRefreshBtn;
-        bool prevHome = hoverHomeBtn; bool prevPop = hoverPopOutBtn; bool prevClose = hoverCloseBtn;
+        bool prevHome = hoverHomeBtn; bool prevAdd = hoverAddBtn; bool prevPop = hoverPopOutBtn; bool prevClose = hoverCloseBtn;
 
-        hoverBackBtn = RectF(startX, cy + 5, 80, 30).Contains(x, y);
-        hoverForwardBtn = RectF(startX + 90, cy + 5, 90, 30).Contains(x, y);
-        hoverRefreshBtn = RectF(startX + 190, cy + 5, 80, 30).Contains(x, y);
-        hoverHomeBtn = RectF(startX + 280, cy + 5, 80, 30).Contains(x, y);
-        hoverPopOutBtn = RectF(startX + 370, cy + 5, 100, 30).Contains(x, y);
-        hoverCloseBtn = RectF(s_contentX + s_contentW - 120, cy + 5, 110, 30).Contains(x, y);
+        hoverBackBtn = RectF(startX, cy + 2, 30, 26).Contains(x, y);
+        hoverForwardBtn = RectF(startX + 32, cy + 2, 30, 26).Contains(x, y);
+        hoverRefreshBtn = RectF(startX + 64, cy + 2, 30, 26).Contains(x, y);
+        hoverHomeBtn = RectF(startX + 96, cy + 2, 30, 26).Contains(x, y);
+        hoverAddBtn = RectF(startX + 131, cy + 2, 30, 26).Contains(x, y); 
+        
+        hoverPopOutBtn = RectF(s_contentX + s_contentW - 70, cy + 2, 30, 26).Contains(x, y);
+        hoverCloseBtn = RectF(s_contentX + s_contentW - 35, cy + 2, 30, 26).Contains(x, y);
 
         if (prevBack != hoverBackBtn || prevFwd != hoverForwardBtn || prevRef != hoverRefreshBtn || 
-            prevHome != hoverHomeBtn || prevPop != hoverPopOutBtn || prevClose != hoverCloseBtn) {
+            prevHome != hoverHomeBtn || prevAdd != hoverAddBtn || prevPop != hoverPopOutBtn || prevClose != hoverCloseBtn) {
             if (hParentWnd != NULL) InvalidateRect(hParentWnd, NULL, TRUE);
         }
     }
@@ -396,44 +470,55 @@ void ProcessGeminiMouseClick(float x, float y) {
 
         if (RectF(btnX, btnY, btnW, btnH).Contains(x, y)) {
             CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
-            CreateCoreWebView2EnvironmentWithOptions(nullptr, L"RasFocus_AppData", nullptr, new EnvCompletedHandler());
+            
+            std::wstring userDataFolder = L"C:\\Users\\" + std::wstring(_wgetenv(L"USERNAME")) + L"\\AppData\\Local\\RasFocus\\User_Data";
+            auto options = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
+            options->put_AdditionalBrowserArguments(L"--disable-features=BlockInsecurePrivateNetworkRequests --allow-running-insecure-content --no-sandbox");
+
+            CreateCoreWebView2EnvironmentWithOptions(nullptr, userDataFolder.c_str(), options.Get(), new EnvCompletedHandler());
+            
             isGeminiRunning = true;
             if (hParentWnd != NULL) InvalidateRect(hParentWnd, NULL, TRUE);
         }
     } 
-    else if (isPoppedOut) {
-        if (RectF(s_contentX + (s_contentW - 200)/2, s_contentY + (s_contentH/2), 200, 40).Contains(x, y)) {
-            if (hPopOutWnd != NULL) { SendMessage(hPopOutWnd, WM_CLOSE, 0, 0); }
-        }
-    }
-    else {
-        float startX = s_contentX + 10; float cy = s_contentY;
+    else if (!isPoppedOut) {
+        float startX = s_contentX + 5; float cy = s_contentY;
 
         if (webView != nullptr) {
-            if (RectF(startX, cy + 5, 80, 30).Contains(x, y)) { webView->GoBack(); }
-            else if (RectF(startX + 90, cy + 5, 90, 30).Contains(x, y)) { webView->GoForward(); }
-            else if (RectF(startX + 190, cy + 5, 80, 30).Contains(x, y)) { webView->Reload(); }
-            else if (RectF(startX + 280, cy + 5, 80, 30).Contains(x, y)) { 
-                // Home বাটনে ক্লিক করলে ওয়েবসাইট রিলোড হবে
-                webView->Navigate(L"https://raseledutools.github.io/");
+            if (RectF(startX, cy + 2, 30, 26).Contains(x, y)) { webView->GoBack(); }
+            else if (RectF(startX + 32, cy + 2, 30, 26).Contains(x, y)) { webView->GoForward(); }
+            else if (RectF(startX + 64, cy + 2, 30, 26).Contains(x, y)) { webView->Reload(); }
+            else if (RectF(startX + 96, cy + 2, 30, 26).Contains(x, y)) { 
+                webView->Navigate(L"https://gemini.google.com/?authuser=0");
             }
-            else if (RectF(startX + 370, cy + 5, 100, 30).Contains(x, y)) {
+            // 4. Chrome-like Same Window Tab (+)
+            else if (RectF(startX + 131, cy + 2, 30, 26).Contains(x, y)) {
+                // Clicking '+' navigates the current window to Google
+                webView->Navigate(L"https://www.google.com");
+            }
+            // 5. TRUE FULL SCREEN Button
+            else if (RectF(s_contentX + s_contentW - 70, cy + 2, 30, 26).Contains(x, y)) {
                 if (!hPopOutWnd) {
                     WNDCLASSEX wcex = { sizeof(WNDCLASSEX), CS_HREDRAW | CS_VREDRAW, PopOutWndProc, 0, 0, GetModuleHandle(NULL), NULL, LoadCursor(NULL, IDC_ARROW), CreateSolidBrush(RGB(240,240,240)), NULL, "RasFocusPopOut", NULL };
                     RegisterClassEx(&wcex); 
                     
-                    hPopOutWnd = CreateWindowEx(WS_EX_TOPMOST, "RasFocusPopOut", "Rasel Edu Tools - Web View", 
-                                                WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT, 1024, 768, 
+                    int sw = GetSystemMetrics(SM_CXSCREEN);
+                    int sh = GetSystemMetrics(SM_CYSCREEN);
+                    
+                    // WS_POPUP makes it a borderless full screen window covering the whole monitor
+                    hPopOutWnd = CreateWindowEx(WS_EX_TOPMOST, "RasFocusPopOut", "", 
+                                                WS_POPUP | WS_CLIPCHILDREN, 0, 0, sw, sh, 
                                                 NULL, NULL, GetModuleHandle(NULL), NULL);
                 }
                 isPoppedOut = true;
                 webViewController->put_ParentWindow(hPopOutWnd); 
-                ShowWindow(hPopOutWnd, SW_SHOW); UpdateWindow(hPopOutWnd);
+                ShowWindow(hPopOutWnd, SW_SHOWMAXIMIZED); 
+                UpdateWindow(hPopOutWnd);
                 if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
             }
         }
 
-        if (RectF(s_contentX + s_contentW - 120, cy + 5, 110, 30).Contains(x, y)) {
+        if (RectF(s_contentX + s_contentW - 35, cy + 2, 30, 26).Contains(x, y)) {
             if (webViewController != nullptr) { webViewController->Close(); webViewController = nullptr; webView = nullptr; }
             isGeminiRunning = false;
             if (hParentWnd != NULL) InvalidateRect(hParentWnd, NULL, TRUE);
