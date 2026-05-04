@@ -15,13 +15,17 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v4
 
+    - name: Install WebView2 SDK via NuGet
+      # গিটহাব নিজে থেকেই WebView2 এর ফাইলগুলো ডাউনলোড করে packages ফোল্ডারে রাখবে
+      run: nuget install Microsoft.Web.WebView2 -Version 1.0.2420.47 -OutputDirectory packages
+
     - name: Check g++ compiler
       run: g++ --version
 
     - name: Compile RasFocus.exe
-      # এখানে -static-libgcc এবং -static-libstdc++ যুক্ত করা হয়েছে
+      # এখানে -I এবং -L দিয়ে NuGet এর ফোল্ডার চিনিয়ে দেওয়া হয়েছে এবং -l:WebView2LoaderStatic.lib ব্যবহার করা হয়েছে
       run: |
-        g++ main.cpp prewindow.cpp tab_dashboard.cpp tab_blocks.cpp tab_schedule_blocks.cpp tab_adult.cpp tab_deep_study.cpp tab_special.cpp tab_statistics.cpp tab_settings.cpp tab_utilities.cpp tab_ai.cpp tab_strict.cpp tab_diary.cpp resources.o -o RasFocus.exe -mwindows -static-libgcc -static-libstdc++ -lgdi32 -luser32 -lgdiplus -lcomctl32 -lole32 -loleaut32 -luiautomationcore -luuid -lpsapi -lshlwapi -lwinmm -lshell32 -lurlmon -lwininet -lruntimeobject -L. -lWebView2Loader -lcomdlg32
+        g++ main.cpp prewindow.cpp tab_dashboard.cpp tab_blocks.cpp tab_schedule_blocks.cpp tab_adult.cpp tab_deep_study.cpp tab_special.cpp tab_statistics.cpp tab_settings.cpp tab_utilities.cpp tab_ai.cpp tab_strict.cpp tab_diary.cpp resources.o -o RasFocus.exe -m64 -mwindows -I"./packages/Microsoft.Web.WebView2.1.0.2420.47/build/native/include" -L"./packages/Microsoft.Web.WebView2.1.0.2420.47/build/native/x64" -static -static-libgcc -static-libstdc++ -lgdi32 -luser32 -lgdiplus -lcomctl32 -lole32 -loleaut32 -luiautomationcore -luuid -lpsapi -lshlwapi -lwinmm -lshell32 -lurlmon -lwininet -lruntimeobject -l:WebView2LoaderStatic.lib -lcomdlg32
 
     - name: Upload Artifact (Downloadable EXE)
       uses: actions/upload-artifact@v4
