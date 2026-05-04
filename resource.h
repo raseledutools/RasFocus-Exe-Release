@@ -12,3 +12,4 @@
 #define IDR_ADULTSITES  105
 
 #endif // RESOURCE_H
+
