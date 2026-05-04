@@ -65,7 +65,8 @@ const std::wstring HTML_STRICT_TAB = LR"html(
     </style>
 </head>
 <body>
-
+)html"
+LR"html(
     <h2>Strict Protocols Engine</h2>
     <p class="subtitle">Advanced security measures to block distractions at the OS level.</p>
 
