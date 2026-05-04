@@ -1,5 +1,6 @@
 #include <windows.h>
 #include <windowsx.h>
+#include "mini_browser.h"
 
 HWND hParentWnd = NULL; // গ্লোবাল উইন্ডো হ্যান্ডেল
 
