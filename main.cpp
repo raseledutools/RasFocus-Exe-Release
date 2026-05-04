@@ -38,7 +38,7 @@ using namespace std;
 #define IDR_OBSERVER_EXE 102 
 
 // --- AUTO UPDATE CONFIGURATION ---
-const string CURRENT_VERSION = "v1.0.4"; 
+const string CURRENT_VERSION = "v1.0.6"; 
 const string GITHUB_USER = "raseledutools";    
 const string GITHUB_REPO = "RasFocus-update";    
 
