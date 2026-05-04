@@ -79,8 +79,10 @@ void InitDashboardData() {
     sec3.btns.push_back({ L"PDF Split", L"\xE8B6", RectF(), false });
     sec3.btns.push_back({ L"Image to PDF", L"\xE8B5", RectF(), false });
     sec3.btns.push_back({ L"PDF to Image", L"\xEB9F", RectF(), false });
+    sec3.btns.push_back({ L"Compress PDF", L"\xE7B8", RectF(), false }); // নতুন যোগ করা হয়েছে
     sec3.btns.push_back({ L"Job Photo", L"\xE7C5", RectF(), false });
     sec3.btns.push_back({ L"Job Signature", L"\xE73A", RectF(), false });
+    sec3.btns.push_back({ L"Age Calculator", L"\xE787", RectF(), false }); // নতুন যোগ করা হয়েছে
     sec3.btns.push_back({ L"Graphic Calc", L"\xE1D0", RectF(), false });
     sec3.btns.push_back({ L"Scientific Calc", L"\xE1D0", RectF(), false });
     s_sections.push_back(sec3);
@@ -156,7 +158,7 @@ void DrawDashboardTab(Graphics& g, float cx, float cy, float cw, float ch) {
     int columns = 5; 
     float gap = 15.0f;
     float btnW = (usableWidth - (gap * (columns - 1))) / columns;
-    float btnH = 45.0f; // একটু বড় করা হয়েছে আইকনের জন্য
+    float btnH = 45.0f;
 
     for (auto& sec : s_sections) {
         g.DrawString(sec.title.c_str(), -1, &fSec, RectF(marginX, currentY, usableWidth, 25.0f), &fmtL, &bGray);
@@ -177,7 +179,7 @@ void DrawDashboardTab(Graphics& g, float cx, float cy, float cw, float ch) {
             // Hover Theme Logic
             SolidBrush btnBg(btn.isHovered ? Color(255, 12, 168, 176) : Color(255, 255, 255, 255));
             SolidBrush btnTxt(btn.isHovered ? Color(255, 255, 255, 255) : Color(255, 60, 70, 80));
-            SolidBrush btnIc(btn.isHovered ? Color(255, 255, 255, 255) : Color(255, 12, 168, 176)); // Icon is Teal when normal
+            SolidBrush btnIc(btn.isHovered ? Color(255, 255, 255, 255) : Color(255, 12, 168, 176)); 
             
             // Draw Button
             DrawCardShadow(g, btn.bounds.X, btn.bounds.Y, btn.bounds.Width, btn.bounds.Height, 8.0f);
@@ -364,8 +366,10 @@ void ProcessDashboardMouseClick(float x, float y, int& selectedTab) {
                 else if (btn.title == L"PDF Split") LaunchMiniBrowser(L"LOCAL_PDF_SPLIT", L"PDF Split Tool");
                 else if (btn.title == L"Image to PDF") LaunchMiniBrowser(L"LOCAL_IMG_TO_PDF", L"Image to PDF Converter");
                 else if (btn.title == L"PDF to Image") LaunchMiniBrowser(L"LOCAL_PDF_TO_IMG", L"PDF to Image Converter");
+                else if (btn.title == L"Compress PDF") LaunchMiniBrowser(L"LOCAL_COMPRESS_PDF", L"RasBrowse Compress PDF");
                 else if (btn.title == L"Job Photo") LaunchMiniBrowser(L"LOCAL_JOB_PHOTO", L"Job Photo Maker (300x300)");
                 else if (btn.title == L"Job Signature") LaunchMiniBrowser(L"LOCAL_JOB_SIGN", L"Job Signature Maker");
+                else if (btn.title == L"Age Calculator") LaunchMiniBrowser(L"LOCAL_AGE_CALC", L"RasBrowse Age Calculator");
                 else if (btn.title == L"Graphic Calc") LaunchMiniBrowser(L"https://www.desmos.com/calculator", L"Graphic Calculator");
                 else if (btn.title == L"Scientific Calc") LaunchMiniBrowser(L"https://web2.0calc.com", L"Scientific Calculator");
 
