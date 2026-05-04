@@ -66,11 +66,12 @@ int hoveredTab = -1;
 bool hoverMinimize = false, hoverMaximize = false, hoverClose = false;
 bool hoverUpgrade = false;
 
+// Accounts ট্যাব যুক্ত করা হলো
 vector<wstring> sidebarTabs = {
-    L"Dashboard", L"Blocks", L"Adult Block", L"Deep Study", L"Special Feature", L"Statistics", L"Settings"
+    L"Dashboard", L"Blocks", L"Adult Block", L"Deep Study", L"Special Feature", L"Statistics", L"Settings", L"Accounts"
 };
 vector<wstring> sidebarIcons = {
-    L"\xE80F", L"\xEA18", L"\xE72E", L"\xE7B3", L"\xE734", L"\xE9D2", L"\xE713"
+    L"\xE80F", L"\xEA18", L"\xE72E", L"\xE7B3", L"\xE734", L"\xE9D2", L"\xE713", L"\xE77B"
 };
 
 // Colors
@@ -109,7 +110,7 @@ string GetExePath() {
 }
 
 // ==========================================
-// 100% SILENT BACKGROUND UPDATER (NATIVE C++ - NO CMD)
+// 100% SILENT BACKGROUND UPDATER
 // ==========================================
 void __cdecl SilentUpdateThread(void* p) {
     if (isCheckingUpdate || isUpdateReady) {
@@ -121,13 +122,9 @@ void __cdecl SilentUpdateThread(void* p) {
     string secretDir = GetSecretDir(); 
     string apiFile = secretDir + "api_response.json";
     
-    // গিটহাব API ইউআরএল
     string apiUrl = "https://api.github.com/repos/" + GITHUB_USER + "/" + GITHUB_REPO + "/releases/latest";
-    
-    // ক্যাশ ক্লিয়ার করা যাতে সবসময় ফ্রেশ আপডেট পায়
     DeleteUrlCacheEntryA(apiUrl.c_str()); 
 
-    // সিএমডি ছাড়া সরাসরি উইন্ডোজের মাধ্যমে সাইলেন্ট ডাউনলোড
     HRESULT hrApi = URLDownloadToFileA(NULL, apiUrl.c_str(), apiFile.c_str(), 0, NULL);
     
     if (hrApi == S_OK) {
@@ -136,7 +133,6 @@ void __cdecl SilentUpdateThread(void* p) {
         vf.close();
         remove(apiFile.c_str()); 
 
-        // JSON থেকে ম্যানুয়ালি ভার্সন (tag_name) বের করা
         string searchKey = "\"tag_name\":";
         size_t tagPos = jsonContent.find(searchKey);
         
@@ -191,7 +187,6 @@ void ApplySilentUpdate() {
             << "del \"%~f0\"\n";                            
     batFile.close();
 
-    // --- FIX: CMD উইন্ডো ব্লিংক বন্ধ করা হলো ---
     string cmdExec = "cmd.exe /c \"" + batPath + "\"";
     STARTUPINFOA siBat = { sizeof(STARTUPINFOA) };
     siBat.dwFlags = STARTF_USESHOWWINDOW;
@@ -245,14 +240,12 @@ void CreateDesktopShortcut() {
     }
 }
 
-// --- UPDATED: High Privilege AutoStart (No UAC, No CMD Blink, No Battery Restriction) ---
 void SetupAutoRun() {
     wchar_t szPath[MAX_PATH];
     GetModuleFileNameW(NULL, szPath, MAX_PATH);
     wstring pathStr = szPath;
     
     if (IsRunAsAdmin()) {
-        // ১. টাস্ক তৈরি করা (লগ-অন করার সময় হাই প্রিভিলেজে রান হবে)
         wstring schCommand = L"schtasks.exe /create /tn \"RasFocusPro_AutoStart\" /tr \"\\\"" + pathStr + L"\\\" -silent\" /sc onlogon /rl highest /f";
         
         STARTUPINFOW si = { sizeof(STARTUPINFOW) };
@@ -266,7 +259,6 @@ void SetupAutoRun() {
             CloseHandle(pi.hThread);
         }
         
-        // ২. ব্যাটারি রেস্ট্রিকশন সরানো (যাতে ব্যাটারিতে থাকলেও অ্যাপ চালু হয়)
         wstring psCommand = L"powershell.exe -WindowStyle Hidden -Command \"Set-ScheduledTask -TaskName 'RasFocusPro_AutoStart' -Settings (New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries)\"";
         
         STARTUPINFOW siPs = { sizeof(STARTUPINFOW) };
@@ -281,7 +273,6 @@ void SetupAutoRun() {
         }
     } 
     
-    // রেগুলার রেজিস্ট্রি ফলব্যাক (Fallback)
     HKEY hKey;
     if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, KEY_SET_VALUE, &hKey) == ERROR_SUCCESS) {
         wstring regCmd = L"\"" + pathStr + L"\" -silent";
@@ -291,7 +282,6 @@ void SetupAutoRun() {
 }
 
 void ExtractAndRunObserver() {
-    // --- FIX: সাইলেন্ট এক্সট্র্যাক্ট (system() কল বাদ দেওয়া হলো) ---
     WinExec("taskkill /F /IM RasObserve.exe", SW_HIDE);
     Sleep(50);
 
@@ -312,7 +302,6 @@ void ExtractAndRunObserver() {
         CloseHandle(hFile);
     }
 
-    // Working Directory এবং Path ফিক্স
     wchar_t currentAppPath[MAX_PATH];
     GetModuleFileNameW(NULL, currentAppPath, MAX_PATH);
     wstring wAppPath(currentAppPath);
@@ -323,7 +312,6 @@ void ExtractAndRunObserver() {
     wchar_t cmdBuffer[MAX_PATH * 2];
     wcscpy_s(cmdBuffer, cmdArgs.c_str());
 
-    // --- FIX: সাইলেন্ট রান (CREATE_NO_WINDOW) ---
     STARTUPINFOW si = { sizeof(STARTUPINFOW) };
     si.dwFlags = STARTF_USESHOWWINDOW;
     si.wShowWindow = SW_HIDE; 
@@ -434,24 +422,23 @@ void DrawSidebar(Graphics& g, int h) {
     StringFormat fmtL; fmtL.SetAlignment(StringAlignmentNear); fmtL.SetLineAlignment(StringAlignmentCenter);
     StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
 
-    // --- FIX: লোগো পজিশন এবং সাইজ আপডেট ---
-    float logoY = (float)TITLEBAR_HEIGHT + 35.0f; // ওয়াই-অক্ষ আরও নিচে নামানো হলো
+    // লোগো পজিশন নিচে নামানো হলো
+    float logoY = (float)TITLEBAR_HEIGHT + 45.0f; 
 
-    HICON hIcon = (HICON)LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APP_ICON), IMAGE_ICON, 48, 48, LR_SHARED); // সাইজ 48x48 করা হলো
+    HICON hIcon = (HICON)LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APP_ICON), IMAGE_ICON, 48, 48, LR_SHARED);
     if (hIcon) {
         HDC hdcG = g.GetHDC();
-        DrawIconEx(hdcG, 10, (int)logoY - 5, hIcon, 48, 48, 0, NULL, DI_NORMAL); // X এবং Y পজিশন অ্যাডজাস্ট করা হলো
+        DrawIconEx(hdcG, 10, (int)logoY - 5, hIcon, 48, 48, 0, NULL, DI_NORMAL);
         g.ReleaseHDC(hdcG);
     }
     
-    // --- FIX: টেক্সট পজিশন এবং স্পেসিং আপডেট ---
-    // 's' যেন কেটে না যায় সেজন্য width বাড়ানো হয়েছে
-    g.DrawString(L"RasFocus", -1, &fLogo, RectF(65.0f, logoY, 130.0f, 35.0f), &fmtL, &textWhite); 
-    g.DrawString(L"Adult & apps", -1, &fSubText, RectF(65.0f, logoY + 32.0f, 110.0f, 20.0f), &fmtL, &textLight);
-    g.DrawString(L"blocker", -1, &fSubText, RectF(65.0f, logoY + 48.0f, 110.0f, 20.0f), &fmtL, &textLight);
+    // টেক্সট পজিশন বামে সরানো (55.0f) ও বানান ঠিক করা (RasFocus)
+    g.DrawString(L"RasFocus", -1, &fLogo, RectF(55.0f, logoY, 130.0f, 35.0f), &fmtL, &textWhite); 
+    g.DrawString(L"Adult & apps", -1, &fSubText, RectF(55.0f, logoY + 32.0f, 110.0f, 20.0f), &fmtL, &textLight);
+    g.DrawString(L"blocker", -1, &fSubText, RectF(55.0f, logoY + 48.0f, 110.0f, 20.0f), &fmtL, &textLight);
 
-    // ট্যাবগুলোর পজিশন আপডেট
-    float tabY = logoY + 95.0f; 
+    // ট্যাবগুলো উপরে তোলা হলো
+    float tabY = logoY + 70.0f; // 45 + 70 = 115
     float tabH = 45.0f; 
 
     for (size_t i = 0; i < sidebarTabs.size(); ++i) {
@@ -498,15 +485,20 @@ void DrawMainArea(Graphics& g, int w, int h) {
     float contentW = (float)(w - SIDEBAR_WIDTH);
     float contentH = (float)(h - TITLEBAR_HEIGHT);
 
-    if (selectedTab == 0) { 
-        DrawDashboardTab(g, contentX, contentY, contentW, contentH);
-    }
+    if (selectedTab == 0) { DrawDashboardTab(g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 1) { DrawBlocksTab(g, contentX, contentY, contentW, contentH); } 
     else if (selectedTab == 2) { DrawAdultBlockTab(g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 3) { DrawDeepStudyTab(g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 4) { DrawSpecialFeatureTab(g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 5) { DrawStatisticsTab(g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 6) { DrawSettingsTab(g, contentX, contentY, contentW, contentH); }
+    else if (selectedTab == 7) { 
+        // Accounts Tab Placeholder (Content)
+        SolidBrush textBrush(ColTextDark);
+        FontFamily ff(L"Segoe UI");
+        Font f(&ff, 24, FontStyleBold, UnitPixel);
+        g.DrawString(L"Accounts settings will be available here.", -1, &f, PointF(contentX + 30.0f, contentY + 30.0f), &textBrush);
+    }
 }
 
 void OnPaint(HWND hWnd, HDC hdc) {
@@ -543,18 +535,20 @@ void OnPaint(HWND hWnd, HDC hdc) {
 LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
     case WM_TIMER: {
-        if (wp == 1005) { // Update Check Timer
-            StartSilentUpdateCheck();
-        }
+        if (wp == 1005) { StartSilentUpdateCheck(); }
         break;
     }
-    case WM_NCCALCSIZE: { if (wp == TRUE) return 0; break; }
+    case WM_NCCALCSIZE: { 
+        if (wp == TRUE) return 0; // উইন্ডোজের ডিফল্ট বর্ডার মুছে দেয়
+        break; 
+    }
     case WM_NCHITTEST: {
         POINT pt = { GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
         ScreenToClient(hWnd, &pt);
         int border = 8;
         RECT r; GetClientRect(hWnd, &r);
 
+        // ড্র্যাগ এবং রিসাইজের লজিক
         if (pt.y < border && pt.x < border) return HTTOPLEFT;
         if (pt.y < border && pt.x >= r.right - border) return HTTOPRIGHT;
         if (pt.y >= r.bottom - border && pt.x < border) return HTBOTTOMLEFT;
@@ -578,7 +572,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
                 if (x >= upgX && x <= upgX + upgW) return HTCLIENT;
             }
             
-            return HTCAPTION;
+            return HTCAPTION; // এটি উইন্ডো ড্র্যাগ করতে সাহায্য করবে
         }
         return HTCLIENT;
     }
@@ -641,7 +635,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         int oldTab = hoveredTab;
         hoveredTab = -1;
         if (x >= 0.0f && x <= SIDEBAR_WIDTH) {
-            float tabY = TITLEBAR_HEIGHT + 125.0f; // Adjusted for new logo position
+            float tabY = TITLEBAR_HEIGHT + 115.0f; // ড্রয়িংয়ের সাথে ম্যাচ করে উপরে তোলা হয়েছে
             for (size_t i = 0; i < sidebarTabs.size(); ++i) {
                 if (y >= tabY && y <= tabY + 45.0f) { hoveredTab = i; break; }
                 tabY += 45.0f;
@@ -703,10 +697,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             MessageBox(hWnd, "Upgrade to Pro dialog will open here.", "Activate Pro", MB_OK | MB_ICONINFORMATION);
         }
 
-        if (selectedTab == 0) { 
-            ProcessDashboardMouseClick(x, y, selectedTab); 
-            InvalidateRect(hWnd, NULL, FALSE); 
-        }
+        if (selectedTab == 0) { ProcessDashboardMouseClick(x, y, selectedTab); InvalidateRect(hWnd, NULL, FALSE); }
         if (selectedTab == 1) { ProcessBlocksMouseClick(x, y); InvalidateRect(hWnd, NULL, FALSE); }
         if (selectedTab == 2) { ProcessAdultMouseClick(x, y); InvalidateRect(hWnd, NULL, FALSE); }
         if (selectedTab == 3) { ProcessDeepStudyMouseClick(x, y); InvalidateRect(hWnd, NULL, FALSE); } 
@@ -825,8 +816,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
         return 0; 
     }
     
-    // --- Pre-window Fix: শুধু প্রথমবার রান করার চেক ---
-    extern void CheckFirstRun(); // এই লাইনটি নতুন যোগ করুন
+    extern void CheckFirstRun();
     CheckFirstRun();
 
     CheckDailyMessage();
@@ -865,15 +855,14 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
     int startX = workArea.left + ((workArea.right - workArea.left) - sw) / 2;
     int startY = workArea.top; 
 
-    // ====== FIX 1: WS_CLIPCHILDREN যুক্ত করা হলো ======
+    // উইন্ডো স্টাইলে WS_OVERLAPPEDWINDOW ব্যবহার করা হয়েছে যেন ড্র্যাগ/রিসাইজ/টাস্কবার ভালোভাবে কাজ করে
     HWND hWnd = CreateWindowEx(
         WS_EX_APPWINDOW, "RasFocusCore", "RasFocus Pro",
-        WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU | WS_CAPTION | WS_CLIPCHILDREN,
-        startX, startY, sw, sh, NULL, NULL, hInst, NULL
+        WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
+        CW_USEDEFAULT, CW_USEDEFAULT, sw, sh, NULL, NULL, hInst, NULL
     );
 
-    // ====== FIX 2: গ্লোবাল ভেরিয়েবলে হ্যান্ডেল সেভ করা হলো ======
-    hParentWnd = hWnd; // এটি না দিলে জেমিনি ট্যাবের WebView2 তৈরি হতে পারবে না!
+    hParentWnd = hWnd; 
 
     HICON hAppIcon = LoadIcon(hInst, MAKEINTRESOURCE(IDI_APP_ICON));
     if (hAppIcon) {
@@ -885,17 +874,16 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
 
     string cmdLine(lpCmdLine);
     if (cmdLine.find("-silent") != string::npos) {
-        ShowWindow(hWnd, SW_HIDE); // সাইলেন্ট মোড
+        ShowWindow(hWnd, SW_HIDE); 
         
-        // শুধু পপ-আপ আসবে
         int response = MessageBoxA(NULL, "Start your day with high productivity", "RasFocus Pro", MB_YESNO | MB_ICONINFORMATION | MB_TOPMOST | MB_SETFOREGROUND);
         
         if (response == IDYES) {
-            ShowWindow(hWnd, SW_SHOWNORMAL);
+            ShowWindow(hWnd, SW_SHOWMAXIMIZED); // অ্যাপ ফুল স্ক্রিনে চালু হবে
             SetForegroundWindow(hWnd);
         }
     } else {
-        ShowWindow(hWnd, nCmdShow);
+        ShowWindow(hWnd, SW_SHOWMAXIMIZED); // অ্যাপ প্রথমবার ওপেন হলেই ফুল স্ক্রিনে চালু হবে
     }
     
     UpdateWindow(hWnd);
