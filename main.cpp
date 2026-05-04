@@ -1,6 +1,8 @@
+// main.cpp
+
+#define _CRT_SECURE_NO_WARNINGS
 #include <windows.h>
 #include <windowsx.h>
-#include "mini_browser.h"
 
 HWND hParentWnd = NULL; // গ্লোবাল উইন্ডো হ্যান্ডেল
 
@@ -10,14 +12,12 @@ HWND hParentWnd = NULL; // গ্লোবাল উইন্ডো হ্যা
 #include <vector>
 #include <string>
 #include <iostream>
-#include <shobjidl.h> 
-#include <shlguid.h>
-#include <objbase.h>
 #include <fstream>
-#include <securitybaseapi.h>
-#include <urlmon.h>
 #include <process.h> 
 #include <wininet.h>
+
+// --- Custom Includes ---
+#include "mini_browser.h" 
 
 #include "tab_blocks.h"
 #include "tab_adult.h" 
@@ -54,6 +54,9 @@ int windowWidth = 1024;
 int windowHeight = 600;  
 bool isMaximized = false;
 
+// 🟢 FIX: এই ভ্যারিয়েবলটি মিসিং থাকার কারণে LNK2001 এরর আসছিল 
+bool g_isPureViewerMode = false; 
+
 NOTIFYICONDATA nid = {}; 
 
 // --- Layout Dimensions ---
@@ -67,7 +70,6 @@ int hoveredTab = -1;
 bool hoverMinimize = false, hoverMaximize = false, hoverClose = false;
 bool hoverUpgrade = false;
 
-// Accounts ট্যাব যুক্ত করা হলো
 vector<wstring> sidebarTabs = {
     L"Dashboard", L"Blocks", L"Adult Block", L"Deep Study", L"Special Feature", L"Statistics", L"Settings", L"Accounts"
 };
@@ -85,8 +87,24 @@ const Color ColTextGray(255, 120, 120, 120);
 const Color ColUpgradeBtn(255, 243, 156, 18);
 const Color ColUpgradeHover(255, 211, 84, 0);
 
-// --- মিনি ব্রাউজার লঞ্চ করার ফাংশন ---
-extern void LaunchMiniBrowser(std::wstring url, std::wstring title);
+// ==========================================
+// 🔴 MAGIC FIX: TAB CHANGE LOGIC FOR WEBVIEW2
+// ==========================================
+// ট্যাব পরিবর্তন করার সময় এই ফাংশনটি অটোমেটিক্যালি সব WebView2 (ডায়েরি, এআই ইত্যাদি) হাইড করে দেবে।
+void HideAllWebViews() {
+    if (!hParentWnd) return;
+    EnumChildWindows(hParentWnd, [](HWND hwnd, LPARAM lParam) -> BOOL {
+        char className[256];
+        GetClassNameA(hwnd, className, sizeof(className));
+        // WebView2 এর চাইল্ড উইন্ডোগুলোকে খুঁজে হাইড করা হচ্ছে
+        if (strstr(className, "Chrome_WidgetWin_") != nullptr) {
+            ShowWindow(hwnd, SW_HIDE);
+            SetWindowPos(hwnd, NULL, -10000, -10000, 0, 0, SWP_NOZORDER | SWP_NOSIZE); // স্ক্রিনের বাইরে পাঠিয়ে দেওয়া
+        }
+        return TRUE;
+    }, 0);
+}
+
 
 // ==========================================
 // UTILITY FUNCTIONS
@@ -363,7 +381,7 @@ void DrawTitleBar(Graphics& g, int w) {
     SolidBrush textWhite(ColWhite); 
     StringFormat fmt; fmt.SetAlignment(StringAlignmentNear); fmt.SetLineAlignment(StringAlignmentCenter);
     
-    g.DrawString(L"RasFocus Pro (full feature upcoming soon with android apps also)", -1, &fTitle, RectF(55.0f, 0.0f, 800.0f, (float)TITLEBAR_HEIGHT), &fmt, &textWhite);
+    g.DrawString(L"RasFocus Pro", -1, &fTitle, RectF(55.0f, 0.0f, 800.0f, (float)TITLEBAR_HEIGHT), &fmt, &textWhite);
 
     float btnW = 50.0f;
     float btnH = (float)TITLEBAR_HEIGHT;
@@ -696,8 +714,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
         if (hoverClose) { ShowWindow(hWnd, SW_HIDE); } 
 
+        // 🟢 FIX: ট্যাব পরিবর্তনের সময় WebView2 গুলো হাইড করা হচ্ছে
         if (hoveredTab != -1) {
-            selectedTab = hoveredTab;
+            if (selectedTab != hoveredTab) {
+                selectedTab = hoveredTab;
+                HideAllWebViews(); // সব WebView হাইড করে দাও
+            }
             InvalidateRect(hWnd, NULL, FALSE);
         }
         
@@ -705,13 +727,21 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             MessageBox(hWnd, "Upgrade to Pro dialog will open here.", "Activate Pro", MB_OK | MB_ICONINFORMATION);
         }
 
-        if (selectedTab == 0) { ProcessDashboardMouseClick(x, y, selectedTab); InvalidateRect(hWnd, NULL, FALSE); }
-        if (selectedTab == 1) { ProcessBlocksMouseClick(x, y); InvalidateRect(hWnd, NULL, FALSE); }
-        if (selectedTab == 2) { ProcessAdultMouseClick(x, y); InvalidateRect(hWnd, NULL, FALSE); }
-        if (selectedTab == 3) { ProcessDeepStudyMouseClick(x, y); InvalidateRect(hWnd, NULL, FALSE); } 
-        if (selectedTab == 4) { ProcessSpecialFeatureMouseClick(x, y); InvalidateRect(hWnd, NULL, FALSE); } 
-        if (selectedTab == 5) { ProcessStatisticsMouseClick(x, y); InvalidateRect(hWnd, NULL, FALSE); } 
-        if (selectedTab == 6) { ProcessSettingsMouseClick(x, y); InvalidateRect(hWnd, NULL, FALSE); }
+        int prevTab = selectedTab;
+
+        if (selectedTab == 0) { ProcessDashboardMouseClick(x, y, selectedTab); }
+        else if (selectedTab == 1) { ProcessBlocksMouseClick(x, y); }
+        else if (selectedTab == 2) { ProcessAdultMouseClick(x, y); }
+        else if (selectedTab == 3) { ProcessDeepStudyMouseClick(x, y); } 
+        else if (selectedTab == 4) { ProcessSpecialFeatureMouseClick(x, y); } 
+        else if (selectedTab == 5) { ProcessStatisticsMouseClick(x, y); } 
+        else if (selectedTab == 6) { ProcessSettingsMouseClick(x, y); }
+
+        // 🟢 FIX: ড্যাশবোর্ড থেকে ক্লিক করে অন্য ট্যাবে গেলেও WebView2 হাইড হবে
+        if (prevTab != selectedTab) {
+            HideAllWebViews();
+        }
+        InvalidateRect(hWnd, NULL, FALSE);
 
         break;
     }
@@ -817,7 +847,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
     // =======================================================
     int argc;
     LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
-    bool isViewerMode = false;
+    g_isPureViewerMode = false;
     std::wstring viewerUrl = L"";
     std::wstring viewerTitle = L"";
 
@@ -828,11 +858,11 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
             for (size_t k = 0; k < argLower.length(); ++k) argLower[k] = towlower(argLower[k]);
 
             if (argLower.length() > 4 && argLower.substr(argLower.length() - 4) == L".pdf") {
-                isViewerMode = true; viewerUrl = arg; viewerTitle = L"RasBrowse PDF Viewer"; break;
+                g_isPureViewerMode = true; viewerUrl = arg; viewerTitle = L"RasBrowse PDF Viewer"; break;
             } else if (argLower.length() > 4 && (argLower.substr(argLower.length() - 4) == L".jpg" || argLower.substr(argLower.length() - 4) == L".png" || argLower.substr(argLower.length() - 5) == L".jpeg")) {
-                isViewerMode = true; viewerUrl = arg; viewerTitle = L"RasBrowse Photo Viewer"; break;
+                g_isPureViewerMode = true; viewerUrl = arg; viewerTitle = L"RasBrowse Photo Viewer"; break;
             } else if (argLower.find(L"http://") == 0 || argLower.find(L"https://") == 0) {
-                isViewerMode = true; viewerUrl = arg; viewerTitle = L"RasBrowse Web Viewer"; break;
+                g_isPureViewerMode = true; viewerUrl = arg; viewerTitle = L"RasBrowse Web Viewer"; break;
             }
         }
     }
@@ -842,7 +872,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
     // 🚀 MUTEX BYPASS FOR MULTIPLE VIEWER INSTANCES
     // =======================================================
     HANDLE hMutex = NULL;
-    if (!isViewerMode) {
+    if (!g_isPureViewerMode) {
         hMutex = CreateMutexA(NULL, FALSE, "RasFocusPro_SingleInstance_Mutex");
         if (GetLastError() == ERROR_ALREADY_EXISTS) {
             HWND hExistingWnd = FindWindowA("RasFocusCore", "RasFocus Pro");
@@ -916,7 +946,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
     // =======================================================
     // 🌐 LAUNCH LOGIC (VIEWER vs DASHBOARD vs SILENT)
     // =======================================================
-    if (isViewerMode) {
+    if (g_isPureViewerMode) {
         ShowWindow(hWnd, SW_HIDE); // ড্যাশবোর্ড হাইড রাখা হলো
         LaunchMiniBrowser(viewerUrl, viewerTitle);
     } 
