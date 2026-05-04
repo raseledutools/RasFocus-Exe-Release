@@ -5,7 +5,6 @@
 #include <shellapi.h>
 #include <gdiplus.h>
 #include <string>
-#include "WebView2EnvironmentOptions.h"  // <--- শুধু এই নতুন লাইনটি যোগ করুন
 #include <vector>
 #include <cstdint>
 #include <commdlg.h> 
@@ -16,6 +15,7 @@
 
 // --- WebView2 Headers ---
 #include "WebView2.h"
+#include "WebView2EnvironmentOptions.h"  // <--- শুধু এই নতুন লাইনটি যোগ করুন
 #include <wrl.h>
 #include <objbase.h>
 
