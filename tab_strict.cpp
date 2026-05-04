@@ -238,4 +238,115 @@ public:
             if (msg == L"REQUEST_STATE") { SendStateToHtml(); }
             else if (msg.find(L"TOGGLE:") == 0) {
                 wstring toggle = msg.substr(7);
-                if (toggle == L"cbSilent_1") cb
+                if (toggle == L"cbSilent_1") cbSilentUrl = true; else if (toggle == L"cbSilent_0") cbSilentUrl = false;
+                else if (toggle == L"cbDns_1") { cbDnsFilter = true; SetFamilyDNS(true); EnforceStrictProtocols(); } else if (toggle == L"cbDns_0") { cbDnsFilter = false; SetFamilyDNS(false); EnforceStrictProtocols(); }
+                else if (toggle == L"cbSafe_1") { cbSafeSearch = true; EnforceStrictProtocols(); } else if (toggle == L"cbSafe_0") { cbSafeSearch = false; EnforceStrictProtocols(); }
+                else if (toggle == L"cbIncog_1") cbIncognito = true; else if (toggle == L"cbIncog_0") cbIncognito = false;
+                else if (toggle == L"cbStrict_1") cbStrictMode = true; else if (toggle == L"cbStrict_0") cbStrictMode = false;
+                SaveStrictSettings(); SendStateToHtml();
+            }
+            else if (msg.find(L"SET_MODE:") == 0) { strictControlMode = stoi(msg.substr(9)); SaveStrictSettings(); }
+            else if (msg.find(L"SET_REL:") == 0) { strictReligion = stoi(msg.substr(8)); SaveStrictSettings(); }
+            else if (msg.find(L"SET_LANG:") == 0) { strictLanguage = stoi(msg.substr(9)); SaveStrictSettings(); }
+            else if (msg.find(L"START_FOCUS:") == 0) {
+                int mins = stoi(msg.substr(12));
+                isStrictFocusActive = true;
+                if (strictControlMode == 0) strictFocusEndTime = GetTickCount64() + ((ULONGLONG)mins * 60000);
+                SaveStrictSettings(); SendStateToHtml();
+            }
+            else if (msg.find(L"STOP_FOCUS:") == 0) {
+                isStrictFocusActive = false;
+                SaveStrictSettings(); SendStateToHtml();
+            }
+            else if (msg.find(L"START_PANIC:") == 0) {
+                isPanicActive = true; panicStartTime = GetTickCount();
+                SendStateToHtml();
+            }
+        }
+        return S_OK;
+    }
+};
+
+class StrictControllerCompletedHandler : public ICoreWebView2CreateCoreWebView2ControllerCompletedHandler {
+    ULONG m_refCount = 1;
+public:
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override {
+        if (!ppv) return E_POINTER;
+        if (riid == IID_IUnknown_Local || riid == IID_ICoreWebView2CreateCoreWebView2ControllerCompletedHandler_Local) { *ppv = this; AddRef(); return S_OK; }
+        *ppv = nullptr; return E_NOINTERFACE;
+    }
+    ULONG STDMETHODCALLTYPE AddRef() override { return InterlockedIncrement(&m_refCount); }
+    ULONG STDMETHODCALLTYPE Release() override { ULONG r = InterlockedDecrement(&m_refCount); if (r == 0) delete this; return r; }
+    
+    HRESULT STDMETHODCALLTYPE Invoke(HRESULT result, ICoreWebView2Controller* controller) override {
+        if (controller != nullptr) {
+            strictWebViewController = controller;
+            strictWebViewController->get_CoreWebView2(&strictWebView);
+            strictWebViewController->put_IsVisible(TRUE);
+
+            EventRegistrationToken token;
+            strictWebView->add_WebMessageReceived(new StrictMessageReceivedHandler(), &token);
+
+            // --- ম্যাজিক: NavigateToString এর মাধ্যমে tab_strict.h থেকে HTML লোড হচ্ছে ---
+            strictWebView->NavigateToString(HTML_STRICT_TAB.c_str());
+        }
+        return S_OK;
+    }
+};
+
+class StrictEnvCompletedHandler : public ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler {
+    ULONG m_refCount = 1;
+public:
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override {
+        if (!ppv) return E_POINTER;
+        if (riid == IID_IUnknown_Local || riid == IID_ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler_Local) { *ppv = this; AddRef(); return S_OK; }
+        *ppv = nullptr; return E_NOINTERFACE;
+    }
+    ULONG STDMETHODCALLTYPE AddRef() override { return InterlockedIncrement(&m_refCount); }
+    ULONG STDMETHODCALLTYPE Release() override { ULONG r = InterlockedDecrement(&m_refCount); if (r == 0) delete this; return r; }
+    HRESULT STDMETHODCALLTYPE Invoke(HRESULT result, ICoreWebView2Environment* env) override {
+        if (env != nullptr) {
+            env->CreateCoreWebView2Controller(hParentWnd, new StrictControllerCompletedHandler());
+        }
+        return S_OK;
+    }
+};
+
+// ==========================================
+// --- MAIN DRAWING FUNCTION ---
+// ==========================================
+void DrawStrictProtocolsTab(Gdiplus::Graphics& g, float cx, float cy, float cw, float ch) {
+    if (!strictSettingsLoaded) {
+        LoadStrictSettings();
+        thread t(StrictBackgroundThread); t.detach();
+        strictSettingsLoaded = true;
+    }
+
+    if (!isStrictWebViewRunning && hParentWnd != NULL) {
+        CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+        CreateCoreWebView2EnvironmentWithOptions(nullptr, L"RasFocus_AppData", nullptr, new StrictEnvCompletedHandler());
+        isStrictWebViewRunning = true;
+    }
+
+    if (strictWebViewController != nullptr) {
+        RECT bounds;
+        bounds.left = (LONG)(cx * g_scaleFactor);
+        bounds.top = (LONG)(cy * g_scaleFactor);
+        bounds.right = (LONG)((cx + cw) * g_scaleFactor);
+        bounds.bottom = (LONG)((cy + ch) * g_scaleFactor);
+        strictWebViewController->put_Bounds(bounds);
+        strictWebViewController->put_IsVisible(TRUE); 
+    }
+
+    Gdiplus::SolidBrush bBg(Gdiplus::Color(255, 255, 255, 255));
+    g.FillRectangle(&bBg, cx, cy, cw, ch);
+}
+
+void HideStrictProtocolsTab() {
+    if (strictWebViewController != nullptr) {
+        strictWebViewController->put_IsVisible(FALSE);
+    }
+}
+
+void ProcessStrictProtocolsMouseMove(float x, float y) {}
+void ProcessStrictProtocolsMouseClick(float x, float y) {}
