@@ -84,6 +84,9 @@ const Color ColTextGray(255, 120, 120, 120);
 const Color ColUpgradeBtn(255, 243, 156, 18);
 const Color ColUpgradeHover(255, 211, 84, 0);
 
+// --- মিনি ব্রাউজার লঞ্চ করার ফাংশন ---
+extern void LaunchMiniBrowser(std::wstring url, std::wstring title);
+
 // ==========================================
 // UTILITY FUNCTIONS
 // ==========================================
@@ -422,23 +425,19 @@ void DrawSidebar(Graphics& g, int h) {
     StringFormat fmtL; fmtL.SetAlignment(StringAlignmentNear); fmtL.SetLineAlignment(StringAlignmentCenter);
     StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
 
-    // --- FIX: লোগো ও টেক্সট পাশাপাশি পজিশন করা হলো ---
     float logoY = (float)TITLEBAR_HEIGHT + 15.0f; 
 
     HICON hIcon = (HICON)LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APP_ICON), IMAGE_ICON, 48, 48, LR_SHARED);
     if (hIcon) {
         HDC hdcG = g.GetHDC();
-        // লোগো বামে রাখা হলো (X = 15)
         DrawIconEx(hdcG, 15, (int)logoY, hIcon, 48, 48, 0, NULL, DI_NORMAL);
         g.ReleaseHDC(hdcG);
     }
     
-    // টেক্সটগুলো লোগোর ঠিক ডান পাশে (X = 70) এবং সমান্তরালে বসানো হলো
     g.DrawString(L"RasFocus", -1, &fLogo, RectF(70.0f, logoY, 130.0f, 30.0f), &fmtL, &textWhite); 
     g.DrawString(L"Adult & apps", -1, &fSubText, RectF(70.0f, logoY + 28.0f, 110.0f, 15.0f), &fmtL, &textLight);
     g.DrawString(L"blocker", -1, &fSubText, RectF(70.0f, logoY + 42.0f, 110.0f, 15.0f), &fmtL, &textLight);
 
-    // ট্যাবগুলো লোগো এবং টেক্সটের নিচ থেকে শুরু হবে
     float tabY = (float)TITLEBAR_HEIGHT + 100.0f;
     float tabH = 45.0f; 
 
@@ -494,7 +493,6 @@ void DrawMainArea(Graphics& g, int w, int h) {
     else if (selectedTab == 5) { DrawStatisticsTab(g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 6) { DrawSettingsTab(g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 7) { 
-        // Accounts Tab Placeholder (Content)
         SolidBrush textBrush(ColTextDark);
         FontFamily ff(L"Segoe UI");
         Font f(&ff, 24, FontStyleBold, UnitPixel);
@@ -540,7 +538,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         break;
     }
     case WM_NCCALCSIZE: { 
-        if (wp == TRUE) return 0; // উইন্ডোজের ডিফল্ট বর্ডার মুছে দেয়
+        if (wp == TRUE) return 0; 
         break; 
     }
     case WM_NCHITTEST: {
@@ -549,7 +547,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         int border = 8;
         RECT r; GetClientRect(hWnd, &r);
 
-        // ড্র্যাগ এবং রিসাইজের লজিক
         if (pt.y < border && pt.x < border) return HTTOPLEFT;
         if (pt.y < border && pt.x >= r.right - border) return HTTOPRIGHT;
         if (pt.y >= r.bottom - border && pt.x < border) return HTBOTTOMLEFT;
@@ -573,7 +570,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
                 if (x >= upgX && x <= upgX + upgW) return HTCLIENT;
             }
             
-            return HTCAPTION; // এটি উইন্ডো ড্র্যাগ করতে সাহায্য করবে
+            return HTCAPTION; 
         }
         return HTCLIENT;
     }
@@ -582,11 +579,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         lpMMI->ptMinTrackSize.x = (LONG)(1024 * g_scaleFactor); 
         lpMMI->ptMinTrackSize.y = (LONG)(600 * g_scaleFactor);  
         
-        // --- FIX: ফুলস্ক্রিনে টাস্কবার ঢাকা পড়া বন্ধ করতে ---
         HMONITOR hMonitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
         MONITORINFO mi = { sizeof(mi) };
         if (GetMonitorInfo(hMonitor, &mi)) {
-            // টাস্কবারের সাইজটুকু বাদ দিয়ে ম্যাক্সিমাইজ পজিশন সেট করা হলো
             lpMMI->ptMaxPosition.x = mi.rcWork.left - mi.rcMonitor.left;
             lpMMI->ptMaxPosition.y = mi.rcWork.top - mi.rcMonitor.top;
             lpMMI->ptMaxSize.x = mi.rcWork.right - mi.rcWork.left;
@@ -608,7 +603,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_CLOSE: { ShowWindow(hWnd, SW_HIDE); return 0; }
     case WM_SYSCOMMAND: {
         if ((wp & 0xFFF0) == SC_CLOSE) { ShowWindow(hWnd, SW_HIDE); return 0; }
-        // --- FIX: উইন্ডো মুভ এবং টাস্কবার টগল করার জন্য DefWindowProc কল করতে হবে ---
         return DefWindowProc(hWnd, msg, wp, lp);
     }
 
@@ -648,7 +642,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         int oldTab = hoveredTab;
         hoveredTab = -1;
         if (x >= 0.0f && x <= SIDEBAR_WIDTH) {
-            // ড্রয়িংয়ের সাথে ম্যাচ করে আপডেট করা হলো
             float tabY = (float)TITLEBAR_HEIGHT + 100.0f; 
             for (size_t i = 0; i < sidebarTabs.size(); ++i) {
                 if (y >= tabY && y <= tabY + 45.0f) { hoveredTab = i; break; }
@@ -818,16 +811,48 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
         return 0; 
     }
 
-    HANDLE hMutex = CreateMutexA(NULL, FALSE, "RasFocusPro_SingleInstance_Mutex");
-    if (GetLastError() == ERROR_ALREADY_EXISTS) {
-        HWND hExistingWnd = FindWindowA("RasFocusCore", "RasFocus Pro");
-        if (hExistingWnd) {
-            ShowWindow(hExistingWnd, SW_RESTORE); 
-            ShowWindow(hExistingWnd, SW_SHOW);    
-            SetForegroundWindow(hExistingWnd);    
+    // =======================================================
+    // 🔍 ARGUMENT PARSING (File & Link Detection)
+    // =======================================================
+    int argc;
+    LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    bool isViewerMode = false;
+    std::wstring viewerUrl = L"";
+    std::wstring viewerTitle = L"";
+
+    if (argv && argc > 1) {
+        for (int i = 1; i < argc; ++i) {
+            std::wstring arg = argv[i];
+            std::wstring argLower = arg;
+            for (size_t k = 0; k < argLower.length(); ++k) argLower[k] = towlower(argLower[k]);
+
+            if (argLower.length() > 4 && argLower.substr(argLower.length() - 4) == L".pdf") {
+                isViewerMode = true; viewerUrl = arg; viewerTitle = L"RasBrowse PDF Viewer"; break;
+            } else if (argLower.length() > 4 && (argLower.substr(argLower.length() - 4) == L".jpg" || argLower.substr(argLower.length() - 4) == L".png" || argLower.substr(argLower.length() - 5) == L".jpeg")) {
+                isViewerMode = true; viewerUrl = arg; viewerTitle = L"RasBrowse Photo Viewer"; break;
+            } else if (argLower.find(L"http://") == 0 || argLower.find(L"https://") == 0) {
+                isViewerMode = true; viewerUrl = arg; viewerTitle = L"RasBrowse Web Viewer"; break;
+            }
         }
-        CloseHandle(hMutex);
-        return 0; 
+    }
+    if (argv) LocalFree(argv);
+
+    // =======================================================
+    // 🚀 MUTEX BYPASS FOR MULTIPLE VIEWER INSTANCES
+    // =======================================================
+    HANDLE hMutex = NULL;
+    if (!isViewerMode) {
+        hMutex = CreateMutexA(NULL, FALSE, "RasFocusPro_SingleInstance_Mutex");
+        if (GetLastError() == ERROR_ALREADY_EXISTS) {
+            HWND hExistingWnd = FindWindowA("RasFocusCore", "RasFocus Pro");
+            if (hExistingWnd) {
+                ShowWindow(hExistingWnd, SW_RESTORE); 
+                ShowWindow(hExistingWnd, SW_SHOW);    
+                SetForegroundWindow(hExistingWnd);    
+            }
+            CloseHandle(hMutex);
+            return 0; 
+        }
     }
     
     extern void CheckFirstRun();
@@ -886,16 +911,23 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
     AddTrayIcon(hWnd);
 
     string cmdLine(lpCmdLine);
-    if (cmdLine.find("-silent") != string::npos) {
+    
+    // =======================================================
+    // 🌐 LAUNCH LOGIC (VIEWER vs DASHBOARD vs SILENT)
+    // =======================================================
+    if (isViewerMode) {
+        ShowWindow(hWnd, SW_HIDE); // ড্যাশবোর্ড হাইড রাখা হলো
+        LaunchMiniBrowser(viewerUrl, viewerTitle);
+    } 
+    else if (cmdLine.find("-silent") != string::npos) {
         ShowWindow(hWnd, SW_HIDE); 
-        
         int response = MessageBoxA(NULL, "Start your day with high productivity", "RasFocus Pro", MB_YESNO | MB_ICONINFORMATION | MB_TOPMOST | MB_SETFOREGROUND);
-        
         if (response == IDYES) {
             ShowWindow(hWnd, SW_SHOWMAXIMIZED); 
             SetForegroundWindow(hWnd);
         }
-    } else {
+    } 
+    else {
         ShowWindow(hWnd, SW_SHOWMAXIMIZED); 
     }
     
@@ -911,7 +943,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
     }
 
     GdiplusShutdown(gdiplusToken);
-    CloseHandle(hMutex); 
+    if (hMutex) CloseHandle(hMutex); 
     
     return 0;
 }
