@@ -422,23 +422,24 @@ void DrawSidebar(Graphics& g, int h) {
     StringFormat fmtL; fmtL.SetAlignment(StringAlignmentNear); fmtL.SetLineAlignment(StringAlignmentCenter);
     StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
 
-    // লোগো পজিশন নিচে নামানো হলো
-    float logoY = (float)TITLEBAR_HEIGHT + 45.0f; 
+    // --- FIX: লোগো ও টেক্সট পাশাপাশি পজিশন করা হলো ---
+    float logoY = (float)TITLEBAR_HEIGHT + 15.0f; 
 
     HICON hIcon = (HICON)LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APP_ICON), IMAGE_ICON, 48, 48, LR_SHARED);
     if (hIcon) {
         HDC hdcG = g.GetHDC();
-        DrawIconEx(hdcG, 10, (int)logoY - 5, hIcon, 48, 48, 0, NULL, DI_NORMAL);
+        // লোগো বামে রাখা হলো (X = 15)
+        DrawIconEx(hdcG, 15, (int)logoY, hIcon, 48, 48, 0, NULL, DI_NORMAL);
         g.ReleaseHDC(hdcG);
     }
     
-    // টেক্সট পজিশন বামে সরানো (55.0f) ও বানান ঠিক করা (RasFocus)
-    g.DrawString(L"RasFocus", -1, &fLogo, RectF(55.0f, logoY, 130.0f, 35.0f), &fmtL, &textWhite); 
-    g.DrawString(L"Adult & apps", -1, &fSubText, RectF(55.0f, logoY + 32.0f, 110.0f, 20.0f), &fmtL, &textLight);
-    g.DrawString(L"blocker", -1, &fSubText, RectF(55.0f, logoY + 48.0f, 110.0f, 20.0f), &fmtL, &textLight);
+    // টেক্সটগুলো লোগোর ঠিক ডান পাশে (X = 70) এবং সমান্তরালে বসানো হলো
+    g.DrawString(L"RasFocus", -1, &fLogo, RectF(70.0f, logoY, 130.0f, 30.0f), &fmtL, &textWhite); 
+    g.DrawString(L"Adult & apps", -1, &fSubText, RectF(70.0f, logoY + 28.0f, 110.0f, 15.0f), &fmtL, &textLight);
+    g.DrawString(L"blocker", -1, &fSubText, RectF(70.0f, logoY + 42.0f, 110.0f, 15.0f), &fmtL, &textLight);
 
-    // ট্যাবগুলো উপরে তোলা হলো
-    float tabY = logoY + 70.0f; // 45 + 70 = 115
+    // ট্যাবগুলো লোগো এবং টেক্সটের নিচ থেকে শুরু হবে
+    float tabY = (float)TITLEBAR_HEIGHT + 100.0f;
     float tabH = 45.0f; 
 
     for (size_t i = 0; i < sidebarTabs.size(); ++i) {
@@ -539,7 +540,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         break;
     }
     case WM_NCCALCSIZE: { 
-        if (wp == TRUE) return 0; // উইন্ডোজের ডিফল্ট বর্ডার মুছে দেয়
+        if (wp == TRUE) return 0; // উইন্ডোজের ডিফল্ট বর্ডার মুছে দেয়
         break; 
     }
     case WM_NCHITTEST: {
@@ -580,6 +581,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         LPMINMAXINFO lpMMI = (LPMINMAXINFO)lp;
         lpMMI->ptMinTrackSize.x = (LONG)(1024 * g_scaleFactor); 
         lpMMI->ptMinTrackSize.y = (LONG)(600 * g_scaleFactor);  
+        
+        // --- FIX: ফুলস্ক্রিনে টাস্কবার ঢাকা পড়া বন্ধ করতে ---
+        HMONITOR hMonitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
+        MONITORINFO mi = { sizeof(mi) };
+        if (GetMonitorInfo(hMonitor, &mi)) {
+            // টাস্কবারের সাইজটুকু বাদ দিয়ে ম্যাক্সিমাইজ পজিশন সেট করা হলো
+            lpMMI->ptMaxPosition.x = mi.rcWork.left - mi.rcMonitor.left;
+            lpMMI->ptMaxPosition.y = mi.rcWork.top - mi.rcMonitor.top;
+            lpMMI->ptMaxSize.x = mi.rcWork.right - mi.rcWork.left;
+            lpMMI->ptMaxSize.y = mi.rcWork.bottom - mi.rcWork.top;
+        }
         return 0;
     }
     case WM_SIZE: {
@@ -596,7 +608,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_CLOSE: { ShowWindow(hWnd, SW_HIDE); return 0; }
     case WM_SYSCOMMAND: {
         if ((wp & 0xFFF0) == SC_CLOSE) { ShowWindow(hWnd, SW_HIDE); return 0; }
-        break;
+        // --- FIX: উইন্ডো মুভ এবং টাস্কবার টগল করার জন্য DefWindowProc কল করতে হবে ---
+        return DefWindowProc(hWnd, msg, wp, lp);
     }
 
     case WM_MOUSEMOVE: {
@@ -635,7 +648,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         int oldTab = hoveredTab;
         hoveredTab = -1;
         if (x >= 0.0f && x <= SIDEBAR_WIDTH) {
-            float tabY = TITLEBAR_HEIGHT + 115.0f; // ড্রয়িংয়ের সাথে ম্যাচ করে উপরে তোলা হয়েছে
+            // ড্রয়িংয়ের সাথে ম্যাচ করে আপডেট করা হলো
+            float tabY = (float)TITLEBAR_HEIGHT + 100.0f; 
             for (size_t i = 0; i < sidebarTabs.size(); ++i) {
                 if (y >= tabY && y <= tabY + 45.0f) { hoveredTab = i; break; }
                 tabY += 45.0f;
@@ -855,7 +869,6 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
     int startX = workArea.left + ((workArea.right - workArea.left) - sw) / 2;
     int startY = workArea.top; 
 
-    // উইন্ডো স্টাইলে WS_OVERLAPPEDWINDOW ব্যবহার করা হয়েছে যেন ড্র্যাগ/রিসাইজ/টাস্কবার ভালোভাবে কাজ করে
     HWND hWnd = CreateWindowEx(
         WS_EX_APPWINDOW, "RasFocusCore", "RasFocus Pro",
         WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
@@ -879,11 +892,11 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
         int response = MessageBoxA(NULL, "Start your day with high productivity", "RasFocus Pro", MB_YESNO | MB_ICONINFORMATION | MB_TOPMOST | MB_SETFOREGROUND);
         
         if (response == IDYES) {
-            ShowWindow(hWnd, SW_SHOWMAXIMIZED); // অ্যাপ ফুল স্ক্রিনে চালু হবে
+            ShowWindow(hWnd, SW_SHOWMAXIMIZED); 
             SetForegroundWindow(hWnd);
         }
     } else {
-        ShowWindow(hWnd, SW_SHOWMAXIMIZED); // অ্যাপ প্রথমবার ওপেন হলেই ফুল স্ক্রিনে চালু হবে
+        ShowWindow(hWnd, SW_SHOWMAXIMIZED); 
     }
     
     UpdateWindow(hWnd);
