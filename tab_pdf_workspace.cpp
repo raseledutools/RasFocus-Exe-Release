@@ -1,1885 +1,635 @@
-// tab_pdf_workspace.cpp
-// Adobe Acrobat Style PDF Workspace with Complete Working Features
+// tab_dashboard.cpp
 
-#define _CRT_SECURE_NO_WARNINGS
-#include "tab_pdf_workspace.h"
-#include "mini_browser.h"
-#include <windows.h>
-#include <windowsx.h>
-#include <gdiplus.h>
+#include "tab_dashboard.h"
+#include "mini_browser.h" // 🟢 WebView2 কানেকশনের জন্য
 #include <string>
 #include <vector>
-#include <fstream>
-#include <sstream>
-#include <Shlwapi.h>
-#include <WebView2.h>
-#include <wrl/client.h>
-
-#pragma comment(lib, "Shlwapi.lib")
-#pragma comment(lib, "WebView2Loader.dll.lib")
 
 using namespace Gdiplus;
-using namespace Microsoft::WRL;
 using namespace std;
 
-extern HWND hParentWnd;
+extern HWND hParentWnd; 
 extern float g_scaleFactor;
-wstring currentWorkspacePdf = L"";
 
-// --- WebView2 Global Variables ---
-HWND g_hAcrobatWnd = NULL;
-HWND g_hWebViewWnd = NULL;
-ComPtr<ICoreWebView2Environment> g_webViewEnv = nullptr;
-ComPtr<ICoreWebView2Controller> g_webViewController = nullptr;
-ComPtr<ICoreWebView2> g_webView = nullptr;
-wstring g_acrobatPdfPath = L"";
-bool g_webViewInitialized = false;
-
-// ==========================================
-// 🎨 HTML/CSS/JS UI - Complete with ALL working features
-// ==========================================
-const wchar_t* GetAcrobatHTML() {
-    return LR"HTML(
+// =========================================================================
+// 🟢 HTML, CSS & JS FOR PRO PDF STUDIO (Loaded inside Edge Engine)
+// =========================================================================
+std::string HTML_PDF_READER = R"RAW_HTML(
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PDF Workspace - Professional Edition</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RasFocus PDF Studio Pro</title>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
+    
+    <style>
+        /* --- Color Variables (RasFocus Pro Theme) --- */
+        :root {
+            --theme-teal: #12A8B0; 
+            --theme-hover: #0E8A91;
+            --bg-white: #FFFFFF;
+            --bg-light-gray: #F3F4F6;
+            --bg-dark-gray: #525659;
+            --border-color: #E2E8F0;
+            --text-dark: #1F2937;
+            --text-gray: #6B7280;
+            --active-bg: #E0F2FE;
+            
+            /* Acrobat Style Icon Colors */
+            --icon-green: #10B981;
+            --icon-red: #EF4444;
+            --icon-pink: #EC4899;
+            --icon-yellow: #F59E0B;
+            --icon-purple: #6366F1;
+            --icon-light-green: #84CC16;
+            --icon-dark-pink: #E11D48;
+            --icon-blue: #3B82F6;
+            --icon-orange: #F97316;
+            --icon-slate: #475569;
+        }
 
-<!-- PDF Libraries -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+        body {
+            margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-white); color: var(--text-dark);
+            display: flex; flex-direction: column; height: 100vh; overflow: hidden; user-select: none;
+        }
 
-<style>
-:root {
-    --ribbon-height: 130px;
-    --tab-height: 32px;
-    --sidebar-width: 260px;
-    --left-strip: 45px;
-    --status-height: 28px;
-    --purple: #68217A;
-    --purple-hover: #7B1FA2;
-    --bg-white: #FAFBFC;
-    --bg-sidebar: #F5F5F7;
-    --bg-strip: #EBEBEE;
-    --bg-doc: #DCDCDC;
-    --border: #C8C8CD;
-    --text-primary: #1E1E1E;
-    --text-secondary: #505050;
-    --text-disabled: #A0A0A5;
-    --hover-bg: #EBEBF0;
-    --selected-bg: #DCDCE4;
-    --success: #107C10;
-    --danger: #D13438;
-    --warning: #FF8C00;
-}
+        /* ================= TOP HEADER ================= */
+        .top-header { border-bottom: 1px solid var(--border-color); }
+        .menu-bar { display: flex; padding: 4px 15px; font-size: 13px; background-color: var(--bg-white); }
+        .menu-bar span { margin-right: 18px; cursor: pointer; padding: 4px 8px; border-radius: 4px; }
+        .menu-bar span:hover { background-color: var(--bg-light-gray); color: var(--theme-teal); }
+        .tool-bar { display: flex; align-items: center; background-color: var(--bg-light-gray); border-top: 1px solid var(--border-color); padding: 0 10px; height: 50px; }
+        .tab-container { display: flex; height: 100%; align-items: center; }
+        .tab { padding: 0 20px; height: 100%; display: flex; align-items: center; cursor: pointer; color: var(--text-gray); font-size: 14px; border-bottom: 2px solid transparent; transition: 0.2s; }
+        .tab:hover { color: var(--theme-teal); }
+        .tab.active { color: var(--theme-teal); border-bottom: 2px solid var(--theme-teal); background-color: var(--bg-white); font-weight: 600; }
 
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body { 
-    font-family: 'Segoe UI', system-ui, sans-serif;
-    height: 100vh; overflow: hidden; display: flex; flex-direction: column;
-    user-select: none; background: #1e1e1e;
-}
+        .file-info { margin-left: 15px; font-size: 13px; color: var(--text-gray); display: flex; align-items: center; background: var(--bg-white); padding: 6px 15px; border-radius: 6px 6px 0 0; border: 1px solid var(--border-color); border-bottom: none; cursor: pointer; height: 30px; margin-top: 10px; }
+        .file-info.active { color: var(--theme-teal); font-weight: bold; border-top: 2px solid var(--theme-teal); }
+        .file-info span.close-btn { margin-left: 10px; font-size: 14px; cursor: pointer; border-radius: 50%; padding: 2px; }
+        .file-info span.close-btn:hover { color: white; background: red; }
 
-/* ============== TOAST NOTIFICATIONS ============== */
-.toast-container {
-    position: fixed; top: 20px; right: 20px; z-index: 9999;
-    display: flex; flex-direction: column; gap: 8px;
-}
-.toast {
-    padding: 12px 20px; border-radius: 6px; color: white; font-size: 13px;
-    font-weight: 500; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-    animation: slideIn 0.3s ease; max-width: 380px; cursor: pointer;
-}
-.toast.success { background: var(--success); }
-.toast.error { background: var(--danger); }
-.toast.warning { background: var(--warning); }
-.toast.info { background: #0078D4; }
-@keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-@keyframes slideOut { from { transform: translateX(0); opacity: 1; } to { transform: translateX(100%); opacity: 0; } }
+        .add-tab-btn { margin-left: 10px; cursor: pointer; color: var(--text-gray); padding: 4px; border-radius: 50%; display: flex; }
+        .add-tab-btn:hover { background: #e2e8f0; color: var(--theme-teal); }
 
-/* ============== MODAL ============== */
-.modal-overlay {
-    display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-    background: rgba(0,0,0,0.6); z-index: 1000; justify-content: center;
-    align-items: center;
-}
-.modal-overlay.show { display: flex; }
-.modal {
-    background: white; border-radius: 8px; padding: 24px; min-width: 400px;
-    max-width: 600px; max-height: 80vh; overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.3);
-}
-.modal h3 { font-size: 18px; margin-bottom: 16px; color: var(--text-primary); }
-.modal .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
-.modal .btn {
-    padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer;
-    font-size: 13px; font-weight: 500;
-}
-.modal .btn-primary { background: var(--purple); color: white; }
-.modal .btn-primary:hover { background: var(--purple-hover); }
-.modal .btn-secondary { background: #e0e0e0; color: var(--text-primary); }
-.modal .btn-secondary:hover { background: #d0d0d0; }
-.modal .btn-danger { background: var(--danger); color: white; }
+        .toolbar-icons { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+        .tool-group { display: flex; align-items: center; gap: 5px; padding: 0 10px; border-right: 1px solid var(--border-color); }
+        .tool-group:last-child { border-right: none; }
+        
+        .action-icon { font-size: 20px; color: var(--text-gray); cursor: pointer; padding: 6px; border-radius: 4px; transition: 0.2s; }
+        .action-icon:hover { background-color: #E2E8F0; color: var(--theme-teal); }
+        .action-icon.active { background-color: var(--active-bg); color: var(--theme-teal); }
 
-/* ============== RIBBON ============== */
-.ribbon {
-    height: var(--ribbon-height);
-    background: var(--bg-white);
-    border-bottom: 1px solid var(--border);
-    flex-shrink: 0;
-    display: flex; flex-direction: column;
-}
+        .page-control { display: flex; align-items: center; font-size: 13px; gap: 5px; }
+        .page-input { width: 35px; text-align: center; border: 1px solid var(--border-color); border-radius: 3px; padding: 2px; outline: none; }
+        .page-input:focus { border-color: var(--theme-teal); }
 
-.tab-bar {
-    height: var(--tab-height);
-    display: flex; align-items: stretch;
-    background: var(--bg-white);
-    border-bottom: 1px solid var(--border);
-}
+        .btn-share { background-color: #2563EB; color: white; border: none; padding: 6px 16px; border-radius: 20px; font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 5px; margin-left: 5px; }
+        .btn-share:hover { background-color: #1D4ED8; }
 
-.file-btn {
-    background: var(--purple); color: white; padding: 0 18px;
-    display: flex; align-items: center; font-weight: 600;
-    font-size: 13px; cursor: pointer; transition: background 0.15s;
-}
-.file-btn:hover { background: var(--purple-hover); }
+        /* ================= MAIN CONTENT ================= */
+        .main-content { display: flex; flex: 1; height: calc(100vh - 80px); }
 
-.tab {
-    padding: 0 16px; display: flex; align-items: center;
-    font-size: 13px; color: var(--text-secondary); cursor: pointer;
-    border-bottom: 3px solid transparent; transition: all 0.15s;
-}
-.tab:hover { background: var(--hover-bg); }
-.tab.active { color: var(--text-primary); font-weight: 600; border-bottom-color: var(--purple); background: white; }
+        .left-sidebar { width: 50px; background-color: var(--bg-light-gray); border-right: 1px solid var(--border-color); display: flex; flex-direction: column; align-items: center; padding-top: 15px; gap: 15px; }
+        .side-icon { color: var(--text-gray); cursor: pointer; padding: 8px; border-radius: 6px; font-size: 22px; transition: 0.2s; }
+        .side-icon.active, .side-icon:hover { background-color: var(--active-bg); color: var(--theme-teal); }
 
-.tab-spacer { flex: 1; }
+        .pdf-area { flex: 1; background-color: var(--bg-dark-gray); display: flex; justify-content: center; overflow: auto; padding: 30px; }
+        .pdf-page-mock { width: 70%; height: 1200px; background-color: white; box-shadow: 0 5px 15px rgba(0,0,0,0.3); display: flex; flex-direction: column; padding: 40px; position: relative; }
+        .mock-content { text-align: center; margin-top: 100px; }
 
-.quick-actions {
-    display: flex; align-items: center; gap: 4px; padding-right: 8px;
-}
-.quick-actions .icon-btn {
-    width: 32px; height: 26px; border: none; background: transparent;
-    cursor: pointer; border-radius: 4px; font-size: 14px;
-    color: var(--text-secondary); display: flex; align-items: center; justify-content: center;
-}
-.quick-actions .icon-btn:hover { background: var(--hover-bg); }
-
-.toolbar {
-    flex: 1; display: flex; align-items: flex-start; padding: 8px 20px;
-    gap: 4px; overflow-x: auto;
-}
-.tool-group {
-    display: flex; gap: 4px; align-items: flex-start;
-}
-.tool-item {
-    display: flex; flex-direction: column; align-items: center; padding: 4px 8px;
-    border-radius: 6px; cursor: pointer; min-width: 48px; transition: background 0.15s;
-}
-.tool-item:hover { background: var(--hover-bg); }
-.tool-item .tool-icon { font-size: 22px; color: var(--text-primary); margin-bottom: 2px; }
-.tool-item .tool-label { font-size: 10px; color: var(--text-secondary); text-align: center; }
-.tool-separator {
-    width: 1px; background: var(--border); margin: 4px 8px; align-self: stretch;
-}
-
-/* ============== MAIN CONTENT ============== */
-.main-content {
-    flex: 1; display: flex; overflow: hidden;
-}
-
-/* ============== SIDEBAR ============== */
-.sidebar {
-    width: var(--sidebar-width); background: var(--bg-sidebar);
-    display: flex; flex-shrink: 0; border-right: 1px solid var(--border);
-    transition: width 0.2s ease;
-}
-.sidebar.collapsed { width: 0; overflow: hidden; border-right: none; }
-
-.sidebar-strip {
-    width: var(--left-strip); background: var(--bg-strip);
-    display: flex; flex-direction: column; align-items: center;
-    padding-top: 10px; flex-shrink: 0; border-right: 1px solid var(--border);
-}
-.sidebar-strip .strip-icon {
-    width: 35px; height: 36px; display: flex; align-items: center;
-    justify-content: center; font-size: 18px; color: var(--text-secondary);
-    cursor: pointer; border-radius: 6px; margin: 2px 0; position: relative; transition: all 0.15s;
-}
-.sidebar-strip .strip-icon:hover { background: var(--hover-bg); }
-.sidebar-strip .strip-icon.active { 
-    background: var(--selected-bg); color: var(--purple);
-}
-.sidebar-strip .strip-icon.active::before {
-    content: ''; position: absolute; left: 0; top: 4px; bottom: 4px;
-    width: 3px; background: var(--purple); border-radius: 0 2px 2px 0;
-}
-
-.sidebar-panel {
-    flex: 1; padding: 10px; overflow-y: auto; display: flex; flex-direction: column;
-}
-.sidebar-panel h3 {
-    font-size: 14px; font-weight: 600; color: var(--text-primary);
-    margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border);
-    display: flex; justify-content: space-between; align-items: center;
-}
-
-/* Page Thumbnails */
-.thumbnail-list { display: flex; flex-direction: column; gap: 8px; }
-.thumbnail-item {
-    background: white; border: 1px solid var(--border); border-radius: 4px;
-    padding: 6px; cursor: pointer; transition: all 0.15s; position: relative;
-}
-.thumbnail-item:hover { border-color: var(--purple); box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
-.thumbnail-item.active { border-color: var(--purple); border-width: 2px; }
-.thumbnail-item.selected-for-merge { border-color: #FF8C00; background: #FFF3E0; }
-.thumbnail-item canvas { width: 100%; height: auto; border-radius: 2px; }
-.thumbnail-item .page-num {
-    text-align: center; font-size: 10px; color: var(--text-secondary); margin-top: 4px;
-}
-.thumbnail-item .page-checkbox {
-    position: absolute; top: 4px; right: 4px; width: 16px; height: 16px;
-    cursor: pointer; z-index: 10; display: none;
-}
-.thumbnail-item.show-checkbox .page-checkbox { display: block; }
-
-/* ============== PDF VIEWER ============== */
-.pdf-viewer {
-    flex: 1; background: var(--bg-doc); overflow: auto;
-    display: flex; justify-content: center; padding: 20px;
-}
-.pdf-container { display: flex; flex-direction: column; align-items: center; gap: 16px; }
-.pdf-page {
-    background: white; box-shadow: 0 2px 12px rgba(0,0,0,0.15);
-    border-radius: 2px; position: relative;
-}
-.pdf-page canvas { display: block; border-radius: 2px; }
-
-/* ============== STATUS BAR ============== */
-.status-bar {
-    height: var(--status-height); background: #F0F0F2;
-    border-top: 1px solid var(--border); display: flex; align-items: center;
-    padding: 0 16px; font-size: 11px; color: var(--text-secondary);
-    flex-shrink: 0; gap: 16px;
-}
-.status-bar .status-item { display: flex; align-items: center; gap: 4px; }
-.status-bar .zoom-control {
-    margin-left: auto; display: flex; align-items: center; gap: 6px;
-}
-.status-bar .zoom-control button {
-    width: 24px; height: 22px; border: 1px solid var(--border); background: white;
-    cursor: pointer; border-radius: 3px; font-size: 12px; display: flex;
-    align-items: center; justify-content: center; color: var(--text-primary);
-}
-.status-bar .zoom-control button:hover { background: var(--hover-bg); }
-.status-bar .zoom-value {
-    font-size: 11px; color: var(--text-primary); cursor: pointer; min-width: 40px; text-align: center;
-}
-
-/* ============== PROGRESS BAR ============== */
-.progress-bar {
-    display: none; height: 4px; background: #e0e0e0; flex-shrink: 0;
-}
-.progress-bar.active { display: block; }
-.progress-bar .progress-fill {
-    height: 100%; background: var(--purple); width: 0%;
-    transition: width 0.3s ease;
-}
-
-/* ============== LOADING OVERLAY ============== */
-.loading-overlay {
-    display: none; position: fixed; top: 50%; left: 50%;
-    transform: translate(-50%, -50%); background: rgba(0,0,0,0.85);
-    color: white; padding: 20px 40px; border-radius: 8px;
-    font-size: 14px; z-index: 2000; text-align: center;
-}
-.loading-overlay.show { display: block; }
-.loading-overlay .spinner {
-    width: 40px; height: 40px; border: 3px solid rgba(255,255,255,0.3);
-    border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite;
-    margin: 0 auto 12px;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
-</style>
+        /* ================= RIGHT SIDEBAR ================= */
+        .right-sidebar { width: 270px; background-color: var(--bg-white); border-left: 1px solid var(--border-color); display: flex; flex-direction: column; }
+        .tool-list { list-style: none; padding: 0; margin: 10px 0; overflow-y: auto; }
+        .tool-item { display: flex; align-items: center; padding: 10px 20px; cursor: pointer; border-bottom: 1px solid transparent; transition: background 0.2s; }
+        .tool-item:hover { background-color: var(--bg-light-gray); }
+        .tool-icon { font-size: 22px; margin-right: 15px; font-variation-settings: 'FILL' 0, 'wght' 300; }
+        .tool-text { flex: 1; font-size: 14px; color: var(--text-dark); }
+        .tool-arrow { font-size: 18px; color: var(--text-gray); }
+    </style>
 </head>
 <body>
 
-<!-- Toast Container -->
-<div class="toast-container" id="toast-container"></div>
+    <div class="top-header">
+        <div class="menu-bar"><span>File</span><span>Edit</span><span>View</span><span>Sign</span><span>Window</span><span>Help</span></div>
+        <div class="tool-bar">
+            <div class="tab-container"><div class="tab">Home</div><div class="tab active">Tools</div></div>
+            <div class="file-info active" id="tab1" onclick="selectFileTab(this)">My_Research_Paper.pdf <span class="material-symbols-outlined close-btn" onclick="closeTab(event, 'tab1')">close</span></div>
+            <div class="add-tab-btn" onclick="addNewTab()"><span class="material-symbols-outlined">add</span></div>
 
-<!-- Modal Overlay -->
-<div class="modal-overlay" id="modal-overlay">
-    <div class="modal" id="modal-content"></div>
-</div>
-
-<!-- Progress Bar -->
-<div class="progress-bar" id="progress-bar">
-    <div class="progress-fill" id="progress-fill"></div>
-</div>
-
-<!-- ==================== RIBBON ==================== -->
-<div class="ribbon">
-    <div class="tab-bar">
-        <div class="file-btn" onclick="showFileMenu()">📄 File</div>
-        <div class="tab active" data-tab="home" onclick="switchTab('home')">Home</div>
-        <div class="tab" data-tab="tools" onclick="switchTab('tools')">Tools</div>
-        <div class="tab" data-tab="edit" onclick="switchTab('edit')">Edit</div>
-        <div class="tab" data-tab="organize" onclick="switchTab('organize')">Organize</div>
-        <div class="tab" data-tab="convert" onclick="switchTab('convert')">Convert</div>
-        <div class="tab" data-tab="view" onclick="switchTab('view')">View</div>
-        <div class="tab-spacer"></div>
-        <div class="quick-actions">
-            <button class="icon-btn" title="Undo" onclick="onUndo()">↩</button>
-            <button class="icon-btn" title="Redo" onclick="onRedo()">↪</button>
-            <button class="icon-btn" title="Save" onclick="onSave()">💾</button>
-            <button class="icon-btn" title="Print" onclick="onPrint()">🖨</button>
-            <button class="icon-btn" title="Share" onclick="onShare()" style="background:#68217A;color:white;width:60px;border-radius:4px;">Share</button>
-        </div>
-    </div>
-    
-    <!-- Home Tab Toolbar -->
-    <div class="toolbar" id="toolbar-home">
-        <div class="tool-group">
-            <div class="tool-item" onclick="setTool('hand')" id="tool-hand">
-                <span class="tool-icon">✋</span><span class="tool-label">Hand</span>
-            </div>
-            <div class="tool-item" onclick="setTool('select')" id="tool-select">
-                <span class="tool-icon">👆</span><span class="tool-label">Select</span>
-            </div>
-        </div>
-        <div class="tool-separator"></div>
-        <div class="tool-group">
-            <div class="tool-item" onclick="zoomOut()">
-                <span class="tool-icon">🔍</span><span class="tool-label">Zoom Out</span>
-            </div>
-            <div class="tool-item" onclick="fitPage()">
-                <span class="tool-icon">📄</span><span class="tool-label">Fit Page</span>
-            </div>
-            <div class="tool-item" onclick="fitWidth()">
-                <span class="tool-icon">↔</span><span class="tool-label">Fit Width</span>
-            </div>
-        </div>
-        <div class="tool-separator"></div>
-        <div class="tool-group">
-            <div class="tool-item" onclick="rotateCW()">
-                <span class="tool-icon">↻</span><span class="tool-label">Rotate</span>
-            </div>
-            <div class="tool-item" onclick="deleteCurrentPage()">
-                <span class="tool-icon">🗑</span><span class="tool-label">Delete Page</span>
+            <div class="toolbar-icons">
+                <div class="tool-group">
+                    <span class="material-symbols-outlined action-icon" title="Save" onclick="triggerNativeAction('SAVE')">save</span>
+                    <span class="material-symbols-outlined action-icon" title="Print" onclick="triggerNativeAction('PRINT')">print</span>
+                </div>
+                <div class="tool-group page-control">
+                    <span class="material-symbols-outlined action-icon" style="padding: 2px;">arrow_upward</span>
+                    <input type="text" class="page-input" value="1"> / 24
+                    <span class="material-symbols-outlined action-icon" style="padding: 2px;">arrow_downward</span>
+                </div>
+                <div class="tool-group page-control">
+                    <span class="material-symbols-outlined action-icon" style="padding: 2px;">remove</span><span>100%</span><span class="material-symbols-outlined action-icon" style="padding: 2px;">add</span>
+                </div>
+                <div class="tool-group">
+                    <span class="material-symbols-outlined action-icon active" id="tool-hand" onclick="selectMarkupTool('tool-hand')" title="Hand Tool">pan_tool</span>
+                    <span class="material-symbols-outlined action-icon" id="tool-select" onclick="selectMarkupTool('tool-select')" title="Select Tool">arrow_selector_tool</span>
+                    <span class="material-symbols-outlined action-icon" id="tool-highlight" onclick="selectMarkupTool('tool-highlight')" title="Highlight">format_ink_highlighter</span>
+                    <span class="material-symbols-outlined action-icon" id="tool-text" onclick="selectMarkupTool('tool-text')" title="Add Text">text_fields</span>
+                    <span class="material-symbols-outlined action-icon" id="tool-draw" onclick="selectMarkupTool('tool-draw')" title="Draw">draw</span>
+                </div>
+                <button class="btn-share" onclick="triggerNativeAction('SHARE')"><span class="material-symbols-outlined" style="font-size: 16px; color: white;">ios_share</span> Share</button>
             </div>
         </div>
     </div>
-    
-    <!-- Tools Tab Toolbar -->
-    <div class="toolbar" id="toolbar-tools" style="display:none;">
-        <div class="tool-group">
-            <div class="tool-item" onclick="showMergePDFModal()">
-                <span class="tool-icon">📑</span><span class="tool-label">Merge PDFs</span>
-            </div>
-            <div class="tool-item" onclick="showSplitPDFModal()">
-                <span class="tool-icon">✂️</span><span class="tool-label">Split PDF</span>
+
+    <div class="main-content">
+        <div class="left-sidebar">
+            <span class="material-symbols-outlined side-icon active" onclick="selectSideIcon(this)" title="Page Thumbnails">description</span>
+            <span class="material-symbols-outlined side-icon" onclick="selectSideIcon(this)" title="Bookmarks">bookmark</span>
+            <span class="material-symbols-outlined side-icon" onclick="selectSideIcon(this)" title="Attachments">attach_file</span>
+            <span class="material-symbols-outlined side-icon" onclick="selectSideIcon(this)" title="Comments">forum</span>
+            <span class="material-symbols-outlined side-icon" onclick="selectSideIcon(this)" title="Layers">layers</span>
+        </div>
+        <div class="pdf-area">
+            <div class="pdf-page-mock">
+                <div class="mock-content">
+                    <h1 style="color: var(--theme-teal);">RasFocus PDF Viewer Engine</h1>
+                    <p style="color: var(--text-gray);">Native C++ Edge WebView2 integration successful.<br>The actual PDF rendering will happen in this frame.</p>
+                </div>
             </div>
         </div>
-        <div class="tool-separator"></div>
-        <div class="tool-group">
-            <div class="tool-item" onclick="compressPDF()">
-                <span class="tool-icon">📦</span><span class="tool-label">Compress</span>
-            </div>
-            <div class="tool-item" onclick="addWatermark()">
-                <span class="tool-icon">💧</span><span class="tool-label">Watermark</span>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Organize Tab Toolbar -->
-    <div class="toolbar" id="toolbar-organize" style="display:none;">
-        <div class="tool-group">
-            <div class="tool-item" onclick="extractPages()">
-                <span class="tool-icon">📤</span><span class="tool-label">Extract Pages</span>
-            </div>
-            <div class="tool-item" onclick="duplicatePage()">
-                <span class="tool-icon">📋</span><span class="tool-label">Duplicate</span>
-            </div>
-        </div>
-        <div class="tool-separator"></div>
-        <div class="tool-group">
-            <div class="tool-item" onclick="movePageUp()">
-                <span class="tool-icon">⬆</span><span class="tool-label">Move Up</span>
-            </div>
-            <div class="tool-item" onclick="movePageDown()">
-                <span class="tool-icon">⬇</span><span class="tool-label">Move Down</span>
-            </div>
+        <div class="right-sidebar">
+            <ul class="tool-list">
+                <li class="tool-item" onclick="triggerNativeAction('EXPORT_PDF')"><span class="material-symbols-outlined tool-icon" style="color: var(--icon-green);">output</span><span class="tool-text">Export PDF</span><span class="material-symbols-outlined tool-arrow">expand_more</span></li>
+                <li class="tool-item" onclick="triggerNativeAction('CREATE_PDF')"><span class="material-symbols-outlined tool-icon" style="color: var(--icon-red);">note_add</span><span class="tool-text">Create PDF</span><span class="material-symbols-outlined tool-arrow">expand_more</span></li>
+                <li class="tool-item" onclick="triggerNativeAction('EDIT_PDF')"><span class="material-symbols-outlined tool-icon" style="color: var(--icon-pink);">edit_document</span><span class="tool-text">Edit PDF</span></li>
+                <li class="tool-item" onclick="triggerNativeAction('COMMENT')"><span class="material-symbols-outlined tool-icon" style="color: var(--icon-yellow);">comment</span><span class="tool-text">Comment</span></li>
+                <li class="tool-item" onclick="triggerNativeAction('COMBINE_FILES')"><span class="material-symbols-outlined tool-icon" style="color: var(--icon-purple);">file_copy</span><span class="tool-text">Combine Files</span><span class="material-symbols-outlined tool-arrow">expand_more</span></li>
+                <li class="tool-item" onclick="triggerNativeAction('ORGANIZE_PAGES')"><span class="material-symbols-outlined tool-icon" style="color: var(--icon-light-green);">grid_view</span><span class="tool-text">Organize Pages</span><span class="material-symbols-outlined tool-arrow">expand_more</span></li>
+                <li class="tool-item" onclick="triggerNativeAction('SCAN_OCR')"><span class="material-symbols-outlined tool-icon" style="color: var(--icon-blue);">document_scanner</span><span class="tool-text">Scan & OCR</span></li>
+                <li class="tool-item" onclick="triggerNativeAction('COMPRESS_PDF')"><span class="material-symbols-outlined tool-icon" style="color: var(--icon-orange);">compress</span><span class="tool-text">Compress PDF</span></li>
+                <li class="tool-item" onclick="triggerNativeAction('PROTECT_PDF')"><span class="material-symbols-outlined tool-icon" style="color: var(--icon-slate);">shield_lock</span><span class="tool-text">Protect PDF</span><span class="material-symbols-outlined tool-arrow">expand_more</span></li>
+                <li class="tool-item" onclick="triggerNativeAction('FILL_SIGN')"><span class="material-symbols-outlined tool-icon" style="color: var(--theme-teal);">history_edu</span><span class="tool-text">Fill & Sign</span></li>
+                <li class="tool-item" onclick="triggerNativeAction('REDACT')"><span class="material-symbols-outlined tool-icon" style="color: var(--icon-dark-pink);">border_color</span><span class="tool-text">Redact</span></li>
+            </ul>
         </div>
     </div>
-    
-    <!-- Convert Tab Toolbar -->
-    <div class="toolbar" id="toolbar-convert" style="display:none;">
-        <div class="tool-group">
-            <div class="tool-item" onclick="convertToImage()">
-                <span class="tool-icon">🖼</span><span class="tool-label">PDF to Image</span>
-            </div>
-            <div class="tool-item" onclick="convertToWord()">
-                <span class="tool-icon">📝</span><span class="tool-label">PDF to Word</span>
-            </div>
-        </div>
-        <div class="tool-separator"></div>
-        <div class="tool-group">
-            <div class="tool-item" onclick="convertToText()">
-                <span class="tool-icon">📃</span><span class="tool-label">Extract Text</span>
-            </div>
-            <div class="tool-item" onclick="convertImageToPDF()">
-                <span class="tool-icon">📄</span><span class="tool-label">Image to PDF</span>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Edit Tab Toolbar -->
-    <div class="toolbar" id="toolbar-edit" style="display:none;">
-        <div class="tool-group">
-            <div class="tool-item" onclick="editText()">
-                <span class="tool-icon">✏️</span><span class="tool-label">Edit Text</span>
-            </div>
-            <div class="tool-item" onclick="addTextAnnotation()">
-                <span class="tool-icon">💬</span><span class="tool-label">Add Note</span>
-            </div>
-        </div>
-        <div class="tool-separator"></div>
-        <div class="tool-group">
-            <div class="tool-item" onclick="highlightText()">
-                <span class="tool-icon">🖍</span><span class="tool-label">Highlight</span>
-            </div>
-            <div class="tool-item" onclick="addSignature()">
-                <span class="tool-icon">✍️</span><span class="tool-label">Sign</span>
-            </div>
-        </div>
-    </div>
-    
-    <!-- View Tab Toolbar -->
-    <div class="toolbar" id="toolbar-view" style="display:none;">
-        <div class="tool-group">
-            <div class="tool-item" onclick="toggleReadMode()">
-                <span class="tool-icon">📖</span><span class="tool-label">Read Mode</span>
-            </div>
-            <div class="tool-item" onclick="toggleFullScreen()">
-                <span class="tool-icon">🖥</span><span class="tool-label">Full Screen</span>
-            </div>
-        </div>
-        <div class="tool-separator"></div>
-        <div class="tool-group">
-            <div class="tool-item" onclick="toggleTheme()">
-                <span class="tool-icon">🌓</span><span class="tool-label">Dark Mode</span>
-            </div>
-            <div class="tool-item" onclick="toggleSidebar()">
-                <span class="tool-icon">📑</span><span class="tool-label">Sidebar</span>
-            </div>
-        </div>
-    </div>
-</div>
 
-<!-- ==================== MAIN CONTENT ==================== -->
-<div class="main-content">
-    <div class="sidebar" id="sidebar">
-        <div class="sidebar-strip">
-            <div class="strip-icon active" data-panel="pages" onclick="switchSidebar('pages')" title="Pages">📑</div>
-            <div class="strip-icon" data-panel="bookmarks" onclick="switchSidebar('bookmarks')" title="Bookmarks">🔖</div>
-            <div class="strip-icon" data-panel="annotations" onclick="switchSidebar('annotations')" title="Annotations">💬</div>
-            <div class="strip-icon" data-panel="attachments" onclick="switchSidebar('attachments')" title="Attachments">📎</div>
-        </div>
-        <div class="sidebar-panel" id="sidebar-content">
-            <h3>Pages <span style="font-size:11px;color:var(--purple);cursor:pointer;" onclick="togglePageSelection()">[Select]</span></h3>
-            <div class="thumbnail-list" id="thumbnail-list"></div>
-            <div id="bookmarks-list" style="display:none;"></div>
-            <div id="annotations-list" style="display:none; color:var(--text-secondary); font-size:12px;"></div>
-            <div id="attachments-list" style="display:none; color:var(--text-secondary); font-size:12px;"></div>
-        </div>
-    </div>
-    
-    <div class="pdf-viewer" id="pdf-viewer">
-        <div class="pdf-container" id="pdf-container">
-            <div style="color: var(--text-secondary); font-size: 16px; padding: 40px; text-align:center;">
-                <div style="font-size:64px;margin-bottom:16px;">📄</div>
-                <div>No PDF loaded</div>
-                <div style="font-size:12px;margin-top:8px;">Click File to open a PDF, or drag & drop here</div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- ==================== STATUS BAR ==================== -->
-<div class="status-bar">
-    <span class="status-item">📄 <span id="status-page-info">Page 1 of 1</span></span>
-    <span class="status-item">📏 <span id="status-size">8.5 x 11 in</span></span>
-    <span class="status-item" id="status-file-size"></span>
-    <div class="zoom-control">
-        <button onclick="zoomOut()">−</button>
-        <span class="zoom-value" id="zoom-value" onclick="showZoomMenu()">100%</span>
-        <button onclick="zoomIn()">+</button>
-    </div>
-</div>
-
-<div class="loading-overlay" id="loading-overlay">
-    <div class="spinner"></div>
-    <div id="loading-text">Processing...</div>
-</div>
-
-<!-- ==================== JAVASCRIPT - COMPLETE LOGIC ==================== -->
-<script>
-// ============ GLOBAL STATE ============
-let pdfDoc = null;
-let pdfBytes = null;  // Original PDF bytes for pdf-lib
-let currentPage = 1;
-let currentZoom = 100;
-let currentRotation = 0;
-let numPages = 0;
-let currentTool = 'hand';
-let currentSidebar = 'pages';
-let zoomMode = 'custom';
-let pageSelectionMode = false;
-let selectedPages = new Set();
-let history = [];
-let historyIndex = -1;
-let currentFilePath = null;
-
-// ============ TOAST SYSTEM ============
-function showToast(message, type = 'info') {
-    const container = document.getElementById('toast-container');
-    const toast = document.createElement('div');
-    toast.className = `toast ${type}`;
-    toast.textContent = message;
-    toast.onclick = () => toast.remove();
-    container.appendChild(toast);
-    setTimeout(() => {
-        toast.style.animation = 'slideOut 0.3s ease forwards';
-        setTimeout(() => toast.remove(), 300);
-    }, 4000);
-}
-
-// ============ MODAL SYSTEM ============
-function showModal(title, content, actions) {
-    const overlay = document.getElementById('modal-overlay');
-    const modalContent = document.getElementById('modal-content');
-    
-    let actionsHTML = actions.map(a => 
-        `<button class="btn btn-${a.type || 'secondary'}" onclick="(${a.onclick.toString()})()">${a.label}</button>`
-    ).join('');
-    
-    modalContent.innerHTML = `
-        <h3>${title}</h3>
-        <div>${content}</div>
-        <div class="modal-actions">${actionsHTML}</div>
-    `;
-    overlay.classList.add('show');
-}
-
-function closeModal() {
-    document.getElementById('modal-overlay').classList.remove('show');
-}
-
-// ============ PROGRESS SYSTEM ============
-function showProgress(show) {
-    document.getElementById('progress-bar').classList.toggle('active', show);
-    document.getElementById('progress-fill').style.width = '0%';
-}
-
-function updateProgress(percent) {
-    document.getElementById('progress-fill').style.width = percent + '%';
-}
-
-function showLoading(show, text = 'Processing...') {
-    document.getElementById('loading-overlay').classList.toggle('show', show);
-    document.getElementById('loading-text').textContent = text;
-}
-
-// ============ INITIALIZATION ============
-document.addEventListener('DOMContentLoaded', () => {
-    setupKeyboardShortcuts();
-    setupDragDrop();
-    checkForPdfPath();
-});
-
-// Check for PDF path from host (C++)
-function checkForPdfPath() {
-    if (window.chrome && window.chrome.webview) {
-        window.chrome.webview.addEventListener('message', (event) => {
-            if (event.data && event.data.type === 'loadPdf') {
-                loadPdfFromPath(event.data.path);
-            }
-        });
-    }
-}
-
-// Drag & Drop support
-function setupDragDrop() {
-    const viewer = document.getElementById('pdf-viewer');
-    
-    viewer.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        viewer.style.background = '#c8c8c8';
-    });
-    
-    viewer.addEventListener('dragleave', () => {
-        viewer.style.background = '';
-    });
-    
-    viewer.addEventListener('drop', async (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        viewer.style.background = '';
-        
-        const files = Array.from(e.dataTransfer.files);
-        const pdfFiles = files.filter(f => f.type === 'application/pdf' || f.name.endsWith('.pdf'));
-        const imageFiles = files.filter(f => f.type.startsWith('image/'));
-        
-        if (pdfFiles.length === 1) {
-            await loadPdfFromFile(pdfFiles[0]);
-        } else if (pdfFiles.length > 1) {
-            showToast('Multiple PDFs detected. Use Merge PDFs from Tools tab.', 'info');
-        } else if (imageFiles.length > 0) {
-            await handleImageToPDF(imageFiles);
-        }
-    });
-}
-
-// ============ PDF LOADING ============
-async function loadPdfFromPath(path) {
-    showLoading(true, 'Loading PDF...');
-    currentFilePath = path;
-    
-    try {
-        const response = await fetch('file:///' + path.replace(/\\/g, '/'));
-        const arrayBuffer = await response.arrayBuffer();
-        await loadPdfFromArrayBuffer(arrayBuffer);
-    } catch (error) {
-        showToast('Error loading PDF: ' + error.message, 'error');
-        showLoading(false);
-    }
-}
-
-async function loadPdfFromFile(file) {
-    showLoading(true, 'Loading PDF...');
-    currentFilePath = file.name;
-    
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-        await loadPdfFromArrayBuffer(e.target.result);
-    };
-    reader.readAsArrayBuffer(file);
-}
-
-async function loadPdfFromArrayBuffer(arrayBuffer) {
-    try {
-        pdfBytes = new Uint8Array(arrayBuffer);
-        
-        // Load for pdf.js (rendering)
-        const pdf = await pdfjsLib.getDocument({ data: pdfBytes }).promise;
-        pdfDoc = pdf;
-        numPages = pdf.numPages;
-        currentPage = 1;
-        currentRotation = 0;
-        currentZoom = 100;
-        selectedPages.clear();
-        
-        await renderAllPages();
-        await renderThumbnails();
-        updateStatusBar();
-        
-        const sizeMB = (arrayBuffer.byteLength / (1024 * 1024)).toFixed(2);
-        document.getElementById('status-file-size').textContent = `📦 ${sizeMB} MB`;
-        
-        saveToHistory('load');
-        showToast(`PDF loaded successfully! ${numPages} pages`, 'success');
-        showLoading(false);
-    } catch (error) {
-        showToast('Error loading PDF: ' + error.message, 'error');
-        showLoading(false);
-    }
-}
-
-// ============ HISTORY SYSTEM ============
-function saveToHistory(action) {
-    historyIndex++;
-    history = history.slice(0, historyIndex);
-    history.push({
-        action,
-        pdfBytes: pdfBytes ? new Uint8Array(pdfBytes) : null,
-        currentPage,
-        currentZoom
-    });
-}
-
-async function onUndo() {
-    if (historyIndex > 0) {
-        historyIndex--;
-        const state = history[historyIndex];
-        if (state.pdfBytes) {
-            pdfBytes = new Uint8Array(state.pdfBytes);
-            await loadPdfFromArrayBuffer(pdfBytes.buffer);
-        }
-        showToast('Undo successful', 'info');
-    }
-}
-
-async function onRedo() {
-    if (historyIndex < history.length - 1) {
-        historyIndex++;
-        const state = history[historyIndex];
-        if (state.pdfBytes) {
-            pdfBytes = new Uint8Array(state.pdfBytes);
-            await loadPdfFromArrayBuffer(pdfBytes.buffer);
-        }
-        showToast('Redo successful', 'info');
-    }
-}
-
-// ============ PAGE RENDERING ============
-async function renderAllPages() {
-    if (!pdfDoc) return;
-    
-    const container = document.getElementById('pdf-container');
-    container.innerHTML = '';
-    
-    for (let i = 1; i <= numPages; i++) {
-        const pageDiv = document.createElement('div');
-        pageDiv.className = 'pdf-page';
-        pageDiv.id = 'page-' + i;
-        pageDiv.dataset.page = i;
-        
-        const canvas = document.createElement('canvas');
-        canvas.id = 'canvas-' + i;
-        pageDiv.appendChild(canvas);
-        container.appendChild(pageDiv);
-        
-        await renderPage(i);
-    }
-    
-    requestAnimationFrame(() => {
-        const pageEl = document.getElementById('page-' + currentPage);
-        if (pageEl) pageEl.scrollIntoView({ behavior: 'smooth' });
-    });
-}
-
-async function renderPage(pageNum) {
-    if (!pdfDoc) return;
-    
-    const page = await pdfDoc.getPage(pageNum);
-    const canvas = document.getElementById('canvas-' + pageNum);
-    if (!canvas) return;
-    
-    const context = canvas.getContext('2d');
-    const viewport = page.getViewport({ rotation: currentRotation });
-    const scale = currentZoom / 100;
-    const scaledViewport = page.getViewport({
-        rotation: currentRotation,
-        scale: viewport.scale * scale
-    });
-    
-    canvas.width = scaledViewport.width;
-    canvas.height = scaledViewport.height;
-    
-    await page.render({ canvasContext: context, viewport: scaledViewport }).promise;
-}
-
-async function renderThumbnails() {
-    if (!pdfDoc) return;
-    
-    const thumbList = document.getElementById('thumbnail-list');
-    thumbList.innerHTML = '';
-    
-    for (let i = 1; i <= numPages; i++) {
-        const thumbDiv = document.createElement('div');
-        thumbDiv.className = `thumbnail-item ${pageSelectionMode ? 'show-checkbox' : ''}`;
-        thumbDiv.dataset.page = i;
-        if (selectedPages.has(i)) thumbDiv.classList.add('selected-for-merge');
-        
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.className = 'page-checkbox';
-        checkbox.checked = selectedPages.has(i);
-        checkbox.onclick = (e) => {
-            e.stopPropagation();
-            togglePageSelectionForMerge(i);
-        };
-        thumbDiv.appendChild(checkbox);
-        
-        const canvas = document.createElement('canvas');
-        canvas.id = 'thumb-' + i;
-        thumbDiv.appendChild(canvas);
-        
-        thumbDiv.onclick = () => {
-            if (pageSelectionMode) {
-                togglePageSelectionForMerge(i);
+    <script>
+        function triggerNativeAction(action) {
+            console.log("Triggering Action: " + action);
+            if (window.chrome && window.chrome.webview) {
+                window.chrome.webview.postMessage(action);
             } else {
-                goToPage(i);
+                console.log("Action '" + action + "' triggered (Web fallback).");
             }
-        };
-        
-        const pageNumDiv = document.createElement('div');
-        pageNumDiv.className = 'page-num';
-        pageNumDiv.textContent = 'Page ' + i;
-        thumbDiv.appendChild(pageNumDiv);
-        
-        thumbList.appendChild(thumbDiv);
-        
-        const page = await pdfDoc.getPage(i);
-        const viewport = page.getViewport({ rotation: currentRotation, scale: 0.3 });
-        const thumbCanvas = document.getElementById('thumb-' + i);
-        if (thumbCanvas) {
-            thumbCanvas.width = viewport.width;
-            thumbCanvas.height = viewport.height;
-            await page.render({ canvasContext: thumbCanvas.getContext('2d'), viewport }).promise;
         }
-    }
-    
-    updateThumbnailHighlight();
-}
-
-function updateThumbnailHighlight() {
-    document.querySelectorAll('.thumbnail-item').forEach(item => {
-        item.classList.toggle('active', parseInt(item.dataset.page) === currentPage);
-    });
-}
-
-// ============ PAGE SELECTION ============
-function togglePageSelection() {
-    pageSelectionMode = !pageSelectionMode;
-    document.querySelectorAll('.thumbnail-item').forEach(item => {
-        item.classList.toggle('show-checkbox', pageSelectionMode);
-    });
-    if (!pageSelectionMode) selectedPages.clear();
-    showToast(pageSelectionMode ? 'Page selection ON - Click pages to select' : 'Page selection OFF', 'info');
-}
-
-function togglePageSelectionForMerge(pageNum) {
-    if (selectedPages.has(pageNum)) {
-        selectedPages.delete(pageNum);
-    } else {
-        selectedPages.add(pageNum);
-    }
-    document.querySelectorAll('.thumbnail-item').forEach(item => {
-        const p = parseInt(item.dataset.page);
-        item.classList.toggle('selected-for-merge', selectedPages.has(p));
-    });
-}
-
-// ============ PDF MERGE ============
-async function showMergePDFModal() {
-    closeModal();
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.pdf';
-    input.multiple = true;
-    input.onchange = async (e) => {
-        const files = Array.from(e.target.files);
-        await mergePDFs(files);
-    };
-    input.click();
-}
-
-async function mergePDFs(files) {
-    if (files.length < 2) {
-        showToast('Please select at least 2 PDF files to merge', 'warning');
-        return;
-    }
-    
-    showLoading(true, 'Merging PDFs...');
-    showProgress(true);
-    
-    try {
-        const { PDFDocument } = PDFLib;
-        const mergedPdf = await PDFDocument.create();
-        
-        for (let i = 0; i < files.length; i++) {
-            updateProgress((i / files.length) * 100);
-            const arrayBuffer = await files[i].arrayBuffer();
-            const pdf = await PDFDocument.load(arrayBuffer);
-            const pages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
-            pages.forEach(page => mergedPdf.addPage(page));
+        function selectMarkupTool(toolId) {
+            document.querySelectorAll('.tool-group .action-icon').forEach(icon => icon.classList.remove('active'));
+            document.getElementById(toolId).classList.add('active');
+            triggerNativeAction('TOOL_' + toolId.toUpperCase().replace('TOOL-', ''));
         }
-        
-        updateProgress(100);
-        const mergedBytes = await mergedPdf.save();
-        pdfBytes = mergedBytes;
-        await loadPdfFromArrayBuffer(mergedBytes.buffer);
-        
-        saveToHistory('merge');
-        showToast(`✅ Successfully merged ${files.length} PDFs!`, 'success');
-        downloadPdf(mergedBytes, 'merged.pdf');
-    } catch (error) {
-        showToast('Error merging PDFs: ' + error.message, 'error');
-    } finally {
-        showLoading(false);
-        showProgress(false);
-    }
-}
-
-// ============ PDF SPLIT ============
-async function showSplitPDFModal() {
-    if (!pdfDoc) {
-        showToast('Please load a PDF first', 'warning');
-        return;
-    }
-    
-    const content = `
-        <p>Current PDF has <strong>${numPages}</strong> pages.</p>
-        <p>Select pages to extract (e.g., 1-3,5,7-9):</p>
-        <input type="text" id="split-pages-input" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;" placeholder="1-3,5,7-9">
-    `;
-    
-    showModal('Split PDF', content, [
-        { label: 'Cancel', type: 'secondary', onclick: closeModal },
-        { label: 'Split', type: 'primary', onclick: executeSplitPDF }
-    ]);
-}
-
-async function executeSplitPDF() {
-    const input = document.getElementById('split-pages-input').value;
-    const pageNumbers = parsePageRange(input);
-    
-    if (pageNumbers.length === 0) {
-        showToast('Please select valid pages', 'warning');
-        return;
-    }
-    
-    closeModal();
-    showLoading(true, 'Splitting PDF...');
-    
-    try {
-        const { PDFDocument } = PDFLib;
-        const pdf = await PDFDocument.load(pdfBytes);
-        const newPdf = await PDFDocument.create();
-        const pages = await newPdf.copyPages(pdf, pageNumbers.map(p => p - 1));
-        pages.forEach(page => newPdf.addPage(page));
-        
-        const splitBytes = await newPdf.save();
-        showToast(`✅ Extracted ${pages.length} pages!`, 'success');
-        downloadPdf(splitBytes, 'extracted.pdf');
-    } catch (error) {
-        showToast('Error splitting PDF: ' + error.message, 'error');
-    } finally {
-        showLoading(false);
-    }
-}
-
-function parsePageRange(input) {
-    const result = new Set();
-    const parts = input.split(',');
-    
-    for (const part of parts) {
-        if (part.includes('-')) {
-            const [start, end] = part.split('-').map(Number);
-            for (let i = start; i <= end; i++) {
-                if (i >= 1 && i <= numPages) result.add(i);
+        function selectSideIcon(element) {
+            document.querySelectorAll('.left-sidebar .side-icon').forEach(icon => icon.classList.remove('active'));
+            element.classList.add('active');
+        }
+        let tabCount = 1;
+        function addNewTab() {
+            tabCount++;
+            document.querySelectorAll('.file-info').forEach(tab => tab.classList.remove('active'));
+            const tabHtml = `<div class="file-info active" id="tab${tabCount}" onclick="selectFileTab(this)">New_Document_${tabCount}.pdf <span class="material-symbols-outlined close-btn" onclick="closeTab(event, 'tab${tabCount}')">close</span></div>`;
+            document.querySelector('.add-tab-btn').insertAdjacentHTML('beforebegin', tabHtml);
+        }
+        function selectFileTab(element) {
+            document.querySelectorAll('.file-info').forEach(tab => tab.classList.remove('active'));
+            element.classList.add('active');
+        }
+        function closeTab(event, tabId) {
+            event.stopPropagation();
+            const tab = document.getElementById(tabId);
+            if (tab) {
+                tab.remove();
+                const remainingTabs = document.querySelectorAll('.file-info');
+                if(remainingTabs.length > 0) remainingTabs[remainingTabs.length - 1].classList.add('active');
             }
-        } else {
-            const num = parseInt(part);
-            if (num >= 1 && num <= numPages) result.add(num);
         }
-    }
-    
-    return Array.from(result).sort((a, b) => a - b);
-}
-
-// ============ PAGE ORGANIZE ============
-async function deleteCurrentPage() {
-    if (!pdfDoc || numPages <= 1) {
-        showToast('Cannot delete the only page', 'warning');
-        return;
-    }
-    
-    if (!confirm(`Delete page ${currentPage}?`)) return;
-    
-    showLoading(true, 'Deleting page...');
-    
-    try {
-        const { PDFDocument } = PDFLib;
-        const pdf = await PDFDocument.load(pdfBytes);
-        pdf.removePage(currentPage - 1);
-        
-        const newBytes = await pdf.save();
-        pdfBytes = newBytes;
-        await loadPdfFromArrayBuffer(newBytes.buffer);
-        saveToHistory('delete');
-        showToast(`Page ${currentPage} deleted`, 'success');
-    } catch (error) {
-        showToast('Error: ' + error.message, 'error');
-    } finally {
-        showLoading(false);
-    }
-}
-
-async function extractPages() {
-    if (selectedPages.size === 0) {
-        showToast('Please select pages from sidebar first', 'warning');
-        togglePageSelection();
-        return;
-    }
-    
-    showLoading(true, 'Extracting pages...');
-    
-    try {
-        const { PDFDocument } = PDFLib;
-        const pdf = await PDFDocument.load(pdfBytes);
-        const newPdf = await PDFDocument.create();
-        const sortedPages = Array.from(selectedPages).sort((a, b) => a - b);
-        const pages = await newPdf.copyPages(pdf, sortedPages.map(p => p - 1));
-        pages.forEach(page => newPdf.addPage(page));
-        
-        const extractedBytes = await newPdf.save();
-        showToast(`✅ Extracted ${sortedPages.length} pages!`, 'success');
-        downloadPdf(extractedBytes, 'extracted_pages.pdf');
-    } catch (error) {
-        showToast('Error: ' + error.message, 'error');
-    } finally {
-        showLoading(false);
-        pageSelectionMode = false;
-        selectedPages.clear();
-    }
-}
-
-async function duplicatePage() {
-    if (!pdfDoc) return;
-    
-    showLoading(true, 'Duplicating page...');
-    
-    try {
-        const { PDFDocument } = PDFLib;
-        const pdf = await PDFDocument.load(pdfBytes);
-        const [copiedPage] = await pdf.copyPages(pdf, [currentPage - 1]);
-        pdf.insertPage(currentPage, copiedPage);
-        
-        const newBytes = await pdf.save();
-        pdfBytes = newBytes;
-        await loadPdfFromArrayBuffer(newBytes.buffer);
-        saveToHistory('duplicate');
-        showToast('Page duplicated!', 'success');
-    } catch (error) {
-        showToast('Error: ' + error.message, 'error');
-    } finally {
-        showLoading(false);
-    }
-}
-
-async function movePageUp() {
-    if (currentPage <= 1) return;
-    await swapPages(currentPage - 1, currentPage - 2);
-    currentPage--;
-    goToPage(currentPage);
-}
-
-async function movePageDown() {
-    if (currentPage >= numPages) return;
-    await swapPages(currentPage - 1, currentPage);
-    currentPage++;
-    goToPage(currentPage);
-}
-
-async function swapPages(indexA, indexB) {
-    try {
-        const { PDFDocument } = PDFLib;
-        const pdf = await PDFDocument.load(pdfBytes);
-        
-        const pageA = pdf.getPage(indexA);
-        const pageB = pdf.getPage(indexB);
-        
-        pdf.removePage(indexB);
-        pdf.removePage(indexA < indexB ? indexA : indexA - 1);
-        
-        if (indexA < indexB) {
-            pdf.insertPage(indexA, pageB);
-            pdf.insertPage(indexB, pageA);
-        } else {
-            pdf.insertPage(indexB, pageA);
-            pdf.insertPage(indexA, pageB);
-        }
-        
-        const newBytes = await pdf.save();
-        pdfBytes = newBytes;
-        await loadPdfFromArrayBuffer(newBytes.buffer);
-        saveToHistory('reorder');
-        showToast('Pages reordered!', 'success');
-    } catch (error) {
-        showToast('Error: ' + error.message, 'error');
-    }
-}
-
-// ============ PDF TO IMAGE ============
-async function convertToImage() {
-    if (!pdfDoc) {
-        showToast('Please load a PDF first', 'warning');
-        return;
-    }
-    
-    const formats = [
-        { label: 'PNG (Recommended)', value: 'png' },
-        { label: 'JPEG', value: 'jpeg' },
-        { label: 'WebP', value: 'webp' }
-    ];
-    
-    const content = `
-        <p>Convert all ${numPages} pages to images</p>
-        <label>Format:</label>
-        <select id="image-format" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;">
-            ${formats.map(f => `<option value="${f.value}">${f.label}</option>`).join('')}
-        </select>
-        <label style="margin-top:12px;">Quality (JPEG/WebP):</label>
-        <input type="range" id="image-quality" min="0.1" max="1.0" step="0.1" value="0.9" style="width:100%;">
-        <span id="quality-value">90%</span>
-    `;
-    
-    showModal('Convert PDF to Images', content, [
-        { label: 'Cancel', type: 'secondary', onclick: closeModal },
-        { label: 'Convert All Pages', type: 'primary', onclick: executePDFToImage }
-    ]);
-    
-    document.getElementById('image-quality').addEventListener('input', (e) => {
-        document.getElementById('quality-value').textContent = Math.round(e.target.value * 100) + '%';
-    });
-}
-
-async function executePDFToImage() {
-    const format = document.getElementById('image-format').value;
-    const quality = parseFloat(document.getElementById('image-quality').value);
-    closeModal();
-    
-    showLoading(true, 'Converting PDF to images...');
-    showProgress(true);
-    
-    try {
-        const zip = new JSZip();
-        
-        for (let i = 1; i <= numPages; i++) {
-            updateProgress((i / numPages) * 100);
-            
-            const page = await pdfDoc.getPage(i);
-            const viewport = page.getViewport({ rotation: currentRotation, scale: 2.0 });
-            
-            const canvas = document.createElement('canvas');
-            canvas.width = viewport.width;
-            canvas.height = viewport.height;
-            const ctx = canvas.getContext('2d');
-            
-            await page.render({ canvasContext: ctx, viewport }).promise;
-            
-            const blob = await canvasToBlob(canvas, `image/${format}`, quality);
-            zip.file(`page_${String(i).padStart(3, '0')}.${format}`, blob);
-        }
-        
-        updateProgress(100);
-        
-        const zipBlob = await zip.generateAsync({ type: 'blob' });
-        saveAs(zipBlob, 'pdf_pages_as_images.zip');
-        
-        showToast(`✅ Converted ${numPages} pages to images!`, 'success');
-    } catch (error) {
-        showToast('Error: ' + error.message, 'error');
-    } finally {
-        showLoading(false);
-        showProgress(false);
-    }
-}
-
-function canvasToBlob(canvas, mimeType, quality) {
-    return new Promise(resolve => {
-        canvas.toBlob(resolve, mimeType, quality);
-    });
-}
-
-// ============ IMAGE TO PDF ============
-async function handleImageToPDF(files) {
-    showLoading(true, 'Converting images to PDF...');
-    showProgress(true);
-    
-    try {
-        const { PDFDocument } = PDFLib;
-        const pdf = await PDFDocument.create();
-        
-        for (let i = 0; i < files.length; i++) {
-            updateProgress((i / files.length) * 100);
-            
-            const arrayBuffer = await files[i].arrayBuffer();
-            let image;
-            
-            if (files[i].type === 'image/png') {
-                image = await pdf.embedPng(arrayBuffer);
-            } else if (files[i].type === 'image/jpeg' || files[i].type === 'image/jpg') {
-                image = await pdf.embedJpg(arrayBuffer);
-            } else {
-                continue;
-            }
-            
-            const page = pdf.addPage([image.width, image.height]);
-            page.drawImage(image, {
-                x: 0, y: 0,
-                width: image.width,
-                height: image.height
-            });
-        }
-        
-        updateProgress(100);
-        const pdfBytes2 = await pdf.save();
-        pdfBytes = pdfBytes2;
-        await loadPdfFromArrayBuffer(pdfBytes2.buffer);
-        
-        showToast(`✅ Created PDF from ${files.length} images!`, 'success');
-    } catch (error) {
-        showToast('Error: ' + error.message, 'error');
-    } finally {
-        showLoading(false);
-        showProgress(false);
-    }
-}
-
-async function convertImageToPDF() {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*';
-    input.multiple = true;
-    input.onchange = async (e) => {
-        await handleImageToPDF(Array.from(e.target.files));
-    };
-    input.click();
-}
-
-// ============ PDF TO WORD (Text Extraction) ============
-async function convertToWord() {
-    if (!pdfDoc) {
-        showToast('Please load a PDF first', 'warning');
-        return;
-    }
-    
-    showLoading(true, 'Extracting text...');
-    
-    try {
-        let fullText = '';
-        
-        for (let i = 1; i <= numPages; i++) {
-            const page = await pdfDoc.getPage(i);
-            const textContent = await page.getTextContent();
-            const pageText = textContent.items.map(item => item.str).join(' ');
-            fullText += `Page ${i}\n${'='.repeat(50)}\n${pageText}\n\n`;
-        }
-        
-        const blob = new Blob([fullText], { type: 'application/msword' });
-        saveAs(blob, 'extracted_text.doc');
-        showToast('✅ Text extracted successfully!', 'success');
-    } catch (error) {
-        showToast('Error: ' + error.message, 'error');
-    } finally {
-        showLoading(false);
-    }
-}
-
-// ============ EXTRACT TEXT ============
-async function convertToText() {
-    if (!pdfDoc) {
-        showToast('Please load a PDF first', 'warning');
-        return;
-    }
-    
-    showLoading(true, 'Extracting text...');
-    
-    try {
-        let fullText = '';
-        
-        for (let i = 1; i <= numPages; i++) {
-            const page = await pdfDoc.getPage(i);
-            const textContent = await page.getTextContent();
-            const pageText = textContent.items.map(item => item.str).join(' ');
-            fullText += pageText + '\n';
-        }
-        
-        const blob = new Blob([fullText], { type: 'text/plain' });
-        saveAs(blob, 'extracted_text.txt');
-        showToast('✅ Text extracted!', 'success');
-    } catch (error) {
-        showToast('Error: ' + error.message, 'error');
-    } finally {
-        showLoading(false);
-    }
-}
-
-// ============ COMPRESS PDF ============
-async function compressPDF() {
-    if (!pdfDoc) {
-        showToast('Please load a PDF first', 'warning');
-        return;
-    }
-    
-    showLoading(true, 'Compressing PDF...');
-    
-    try {
-        // Simple compression by re-saving with pdf-lib
-        const { PDFDocument } = PDFLib;
-        const pdf = await PDFDocument.load(pdfBytes);
-        const compressedBytes = await pdf.save({
-            useObjectStreams: true,
-            addDefaultPage: false
-        });
-        
-        const originalSize = pdfBytes.length;
-        const compressedSize = compressedBytes.length;
-        const ratio = ((1 - compressedSize / originalSize) * 100).toFixed(1);
-        
-        pdfBytes = compressedBytes;
-        await loadPdfFromArrayBuffer(compressedBytes.buffer);
-        saveToHistory('compress');
-        
-        showToast(`✅ Compressed! Reduced by ${ratio}%`, 'success');
-        downloadPdf(compressedBytes, 'compressed.pdf');
-    } catch (error) {
-        showToast('Error: ' + error.message, 'error');
-    } finally {
-        showLoading(false);
-    }
-}
-
-// ============ WATERMARK ============
-async function addWatermark() {
-    if (!pdfDoc) {
-        showToast('Please load a PDF first', 'warning');
-        return;
-    }
-    
-    const content = `
-        <label>Watermark Text:</label>
-        <input type="text" id="watermark-text" value="CONFIDENTIAL" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;">
-        <label style="margin-top:12px;">Opacity:</label>
-        <input type="range" id="watermark-opacity" min="0.1" max="1.0" step="0.1" value="0.3" style="width:100%;">
-    `;
-    
-    showModal('Add Watermark', content, [
-        { label: 'Cancel', type: 'secondary', onclick: closeModal },
-        { label: 'Apply', type: 'primary', onclick: executeWatermark }
-    ]);
-}
-
-async function executeWatermark() {
-    const text = document.getElementById('watermark-text').value;
-    const opacity = parseFloat(document.getElementById('watermark-opacity').value);
-    closeModal();
-    
-    showLoading(true, 'Adding watermark...');
-    showProgress(true);
-    
-    try {
-        const { PDFDocument, StandardFonts, rgb } = PDFLib;
-        const pdf = await PDFDocument.load(pdfBytes);
-        const font = await pdf.embedFont(StandardFonts.HelveticaBold);
-        const pages = pdf.getPages();
-        
-        for (let i = 0; i < pages.length; i++) {
-            updateProgress((i / pages.length) * 100);
-            const page = pages[i];
-            const { width, height } = page.getSize();
-            
-            page.drawText(text, {
-                x: width / 2 - 150,
-                y: height / 2,
-                size: 60,
-                font: font,
-                color: rgb(0.5, 0.5, 0.5),
-                opacity: opacity,
-                rotate: -45
-            });
-        }
-        
-        const watermarkedBytes = await pdf.save();
-        pdfBytes = watermarkedBytes;
-        await loadPdfFromArrayBuffer(watermarkedBytes.buffer);
-        saveToHistory('watermark');
-        
-        showToast('✅ Watermark applied!', 'success');
-    } catch (error) {
-        showToast('Error: ' + error.message, 'error');
-    } finally {
-        showLoading(false);
-        showProgress(false);
-    }
-}
-
-// ============ NAVIGATION ============
-function goToPage(pageNum) {
-    if (!pdfDoc || pageNum < 1 || pageNum > numPages) return;
-    currentPage = pageNum;
-    
-    const pageEl = document.getElementById('page-' + pageNum);
-    if (pageEl) pageEl.scrollIntoView({ behavior: 'smooth' });
-    
-    updateThumbnailHighlight();
-    updateStatusBar();
-}
-
-function nextPage() { if (currentPage < numPages) goToPage(currentPage + 1); }
-function prevPage() { if (currentPage > 1) goToPage(currentPage - 1); }
-
-// ============ ZOOM ============
-function zoomIn() {
-    if (currentZoom >= 400) return;
-    currentZoom = Math.min(400, Math.round(currentZoom / 10) * 10 + 10);
-    zoomMode = 'custom';
-    refreshRender();
-}
-
-function zoomOut() {
-    if (currentZoom <= 25) return;
-    currentZoom = Math.max(25, Math.round(currentZoom / 10) * 10 - 10);
-    zoomMode = 'custom';
-    refreshRender();
-}
-
-function fitPage() {
-    zoomMode = 'page-fit';
-    const viewer = document.getElementById('pdf-viewer');
-    currentZoom = Math.floor((viewer.clientHeight - 40) / 792 * 100);
-    currentZoom = Math.max(25, Math.min(400, currentZoom));
-    refreshRender();
-}
-
-function fitWidth() {
-    zoomMode = 'page-width';
-    const viewer = document.getElementById('pdf-viewer');
-    currentZoom = Math.floor((viewer.clientWidth - 60) / 612 * 100);
-    currentZoom = Math.max(25, Math.min(400, currentZoom));
-    refreshRender();
-}
-
-function showZoomMenu() {
-    const zooms = ['25%', '50%', '75%', '100%', '125%', '150%', '200%', '300%', '400%'];
-    const choice = prompt('Select zoom:\n' + zooms.join(' | '), currentZoom + '%');
-    if (choice) {
-        const val = parseInt(choice.replace('%', ''));
-        if (val >= 25 && val <= 400) {
-            currentZoom = val;
-            zoomMode = 'custom';
-            refreshRender();
-        }
-    }
-}
-
-async function refreshRender() {
-    if (!pdfDoc) return;
-    await renderAllPages();
-    updateStatusBar();
-}
-
-// ============ ROTATION ============
-function rotateCW() {
-    currentRotation = (currentRotation + 90) % 360;
-    refreshRender();
-}
-
-// ============ DOWNLOAD HELPERS ============
-function downloadPdf(bytes, filename) {
-    const blob = new Blob([bytes], { type: 'application/pdf' });
-    saveAs(blob, filename);
-}
-
-// ============ FILE OPERATIONS ============
-function showFileMenu() {
-    const content = `
-        <div style="display:flex;flex-direction:column;gap:8px;">
-            <button class="btn btn-primary" onclick="openPDF();closeModal();">📂 Open PDF</button>
-            <button class="btn btn-secondary" onclick="onSave();closeModal();">💾 Save As</button>
-            <button class="btn btn-secondary" onclick="onPrint();closeModal();">🖨 Print</button>
-            <button class="btn btn-secondary" onclick="exportPDF();closeModal();">📤 Export</button>
-            <hr>
-            <button class="btn btn-secondary" onclick="showMergePDFModal();closeModal();">📑 Merge PDFs</button>
-            <button class="btn btn-secondary" onclick="showSplitPDFModal();closeModal();">✂️ Split PDF</button>
-        </div>
-    `;
-    showModal('File Menu', content, []);
-}
-
-function openPDF() {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.pdf';
-    input.onchange = (e) => {
-        if (e.target.files.length > 0) loadPdfFromFile(e.target.files[0]);
-    };
-    input.click();
-}
-
-function onSave() {
-    if (pdfBytes) {
-        downloadPdf(pdfBytes, currentFilePath || 'document.pdf');
-        showToast('PDF saved!', 'success');
-    } else {
-        showToast('No PDF loaded to save', 'warning');
-    }
-}
-
-function onPrint() { window.print(); }
-function onShare() { showToast('Share functionality - Copy link or send via email', 'info'); }
-
-function exportPDF() {
-    if (pdfBytes) {
-        downloadPdf(pdfBytes, 'exported.pdf');
-        showToast('PDF exported!', 'success');
-    }
-}
-
-// ============ TAB SWITCHING ============
-function switchTab(tabName) {
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    document.querySelector(`.tab[data-tab="${tabName}"]`).classList.add('active');
-    document.querySelectorAll('.toolbar').forEach(tb => tb.style.display = 'none');
-    const toolbar = document.getElementById('toolbar-' + tabName);
-    if (toolbar) toolbar.style.display = 'flex';
-}
-
-// ============ SIDEBAR ============
-function switchSidebar(panel) {
-    currentSidebar = panel;
-    document.querySelectorAll('.strip-icon').forEach(icon => {
-        icon.classList.toggle('active', icon.dataset.panel === panel);
-    });
-    
-    document.querySelectorAll('#sidebar-content > div, #sidebar-content > h3').forEach(el => {
-        el.style.display = 'none';
-    });
-    
-    const panelNames = {
-        'pages': { title: 'Pages', list: 'thumbnail-list' },
-        'bookmarks': { title: 'Bookmarks', list: 'bookmarks-list' },
-        'annotations': { title: 'Annotations', list: 'annotations-list' },
-        'attachments': { title: 'Attachments', list: 'attachments-list' }
-    };
-    
-    const info = panelNames[panel];
-    if (info) {
-        document.querySelector('#sidebar-content h3').style.display = 'flex';
-        document.querySelector('#sidebar-content h3').childNodes[0].textContent = info.title;
-        const listEl = document.getElementById(info.list);
-        if (listEl) listEl.style.display = '';
-    }
-}
-
-function toggleSidebar() {
-    document.getElementById('sidebar').classList.toggle('collapsed');
-}
-
-// ============ TOOLS ============
-function setTool(tool) {
-    currentTool = tool;
-    document.querySelectorAll('.tool-item').forEach(item => item.style.background = '');
-    const toolEl = document.getElementById('tool-' + tool);
-    if (toolEl) toolEl.style.background = 'var(--selected-bg)';
-}
-
-// ============ EDIT OPERATIONS ============
-function editText() { showToast('Edit Text - Select text to edit', 'info'); }
-function addTextAnnotation() { showToast('Click on page to add annotation', 'info'); }
-function highlightText() { showToast('Select text to highlight', 'info'); }
-function addSignature() { showToast('Draw or upload signature', 'info'); }
-function addImage() { showToast('Select image to insert', 'info'); }
-function addLink() { showToast('Draw area to add link', 'info'); }
-function cropPage() { showToast('Select crop area', 'info'); }
-
-// ============ VIEW OPERATIONS ============
-function toggleReadMode() { document.body.classList.toggle('read-mode'); }
-function toggleFullScreen() {
-    if (document.fullscreenElement) {
-        document.exitFullscreen();
-    } else {
-        document.documentElement.requestFullscreen();
-    }
-}
-function toggleTheme() {
-    const root = document.documentElement;
-    if (root.style.getPropertyValue('--bg-white') === '#FAFBFC') {
-        root.style.setProperty('--bg-white', '#1e1e1e');
-        root.style.setProperty('--bg-sidebar', '#252526');
-        root.style.setProperty('--bg-strip', '#2d2d30');
-        root.style.setProperty('--bg-doc', '#333333');
-        root.style.setProperty('--text-primary', '#e0e0e0');
-        root.style.setProperty('--text-secondary', '#a0a0a0');
-        root.style.setProperty('--border', '#404040');
-        showToast('🌙 Dark mode enabled', 'info');
-    } else {
-        root.style.setProperty('--bg-white', '#FAFBFC');
-        root.style.setProperty('--bg-sidebar', '#F5F5F7');
-        root.style.setProperty('--bg-strip', '#EBEBEE');
-        root.style.setProperty('--bg-doc', '#DCDCDC');
-        root.style.setProperty('--text-primary', '#1E1E1E');
-        root.style.setProperty('--text-secondary', '#505050');
-        root.style.setProperty('--border', '#C8C8CD');
-        showToast('☀️ Light mode enabled', 'info');
-    }
-}
-
-// ============ STATUS BAR ============
-function updateStatusBar() {
-    document.getElementById('status-page-info').textContent = `Page ${currentPage} of ${numPages}`;
-    document.getElementById('zoom-value').textContent = currentZoom + '%';
-}
-
-// ============ KEYBOARD SHORTCUTS ============
-function setupKeyboardShortcuts() {
-    document.addEventListener('keydown', (e) => {
-        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-        
-        switch(e.key) {
-            case 'ArrowDown': case 'PageDown': nextPage(); e.preventDefault(); break;
-            case 'ArrowUp': case 'PageUp': prevPage(); e.preventDefault(); break;
-            case 'Home': goToPage(1); e.preventDefault(); break;
-            case 'End': goToPage(numPages); e.preventDefault(); break;
-            case '+': case '=': zoomIn(); e.preventDefault(); break;
-            case '-': zoomOut(); e.preventDefault(); break;
-            case '0': if (e.ctrlKey) { fitPage(); e.preventDefault(); } break;
-            case 'F4': toggleSidebar(); e.preventDefault(); break;
-            case 'r': if (e.ctrlKey && e.shiftKey) { rotateCW(); e.preventDefault(); } break;
-            case 's': if (e.ctrlKey) { e.preventDefault(); onSave(); } break;
-            case 'p': if (e.ctrlKey) { e.preventDefault(); onPrint(); } break;
-            case 'z': if (e.ctrlKey && !e.shiftKey) { e.preventDefault(); onUndo(); } break;
-            case 'y': if (e.ctrlKey) { e.preventDefault(); onRedo(); } break;
-        }
-    });
-}
-
-// ============ SCROLL TRACKING ============
-document.getElementById('pdf-viewer').addEventListener('scroll', () => {
-    if (!pdfDoc) return;
-    
-    let bestPage = 1;
-    let bestVisibility = 0;
-    
-    for (let i = 1; i <= numPages; i++) {
-        const pageEl = document.getElementById('page-' + i);
-        if (!pageEl) continue;
-        
-        const rect = pageEl.getBoundingClientRect();
-        const viewerRect = document.getElementById('pdf-viewer').getBoundingClientRect();
-        const visibleTop = Math.max(rect.top, viewerRect.top);
-        const visibleBottom = Math.min(rect.bottom, viewerRect.bottom);
-        const visibleHeight = Math.max(0, visibleBottom - visibleTop);
-        
-        if (visibleHeight > bestVisibility) {
-            bestVisibility = visibleHeight;
-            bestPage = i;
-        }
-    }
-    
-    if (bestPage !== currentPage) {
-        currentPage = bestPage;
-        updateThumbnailHighlight();
-        updateStatusBar();
-    }
-});
-
-// Expose functions globally for C++ host
-window.loadPdfFromPath = loadPdfFromPath;
-window.loadPdfFromFile = loadPdfFromFile;
-</script>
+    </script>
 </body>
 </html>
-)HTML";
+)RAW_HTML";
+
+// =========================================================================
+// 🟢 C++ DASHBOARD LOGIC START
+// =========================================================================
+
+// --- Overlay & Kill States ---
+static bool showKillPrompt = false;
+static wstring killInput = L"";
+static int hoverNumBtn = -1; 
+static bool dash_hovKillBtn = false;
+
+static float d_cX = 0.0f, d_cY = 0.0f, d_cW = 0.0f, d_cH = 0.0f;
+
+// --- Dashboard Sub-Tab States ---
+static int selectedDashTab = 0;
+static int hoveredDashTab = -1;
+static RectF s_tabRects[5]; 
+
+// --- Dynamic Grid Layout Structures ---
+struct DashBtn {
+    wstring title;
+    wstring icon;
+    RectF bounds;
+    bool isHovered;
+};
+
+struct DashSec {
+    wstring title;
+    vector<DashBtn> btns;
+};
+
+static vector<DashSec> s_sections;
+static bool s_init = false;
+
+// --- Load User Requirements with Icons ---
+void InitDashboardData() {
+    if (s_init) return;
+
+    // Tab 1: Quick Blocks
+    DashSec sec1 = { L"Quick Blocks" };
+    sec1.btns.push_back({ L"Rest Button", L"\xE7E8", RectF(), false });
+    sec1.btns.push_back({ L"Internet Block", L"\xEB55", RectF(), false });
+    sec1.btns.push_back({ L"Uninstall Block", L"\xE25B", RectF(), false });
+    sec1.btns.push_back({ L"Ads Block", L"\xE711", RectF(), false });
+    sec1.btns.push_back({ L"Adult Block", L"\xE72E", RectF(), false });
+    sec1.btns.push_back({ L"YT Shorts Block", L"\xE8D6", RectF(), false });
+    sec1.btns.push_back({ L"FB Reels Block", L"\xE8D6", RectF(), false });
+    s_sections.push_back(sec1);
+
+    // Tab 2: Web & Cloud Workspace
+    DashSec sec2 = { L"Web & Cloud Workspace" };
+    sec2.btns.push_back({ L"RasBrowser", L"\xE774", RectF(), false }); 
+    sec2.btns.push_back({ L"Gemini", L"\xE904", RectF(), false });
+    sec2.btns.push_back({ L"ChatGPT", L"\xE904", RectF(), false });
+    sec2.btns.push_back({ L"DeepSeek", L"\xE904", RectF(), false });
+    sec2.btns.push_back({ L"Grok", L"\xE904", RectF(), false });
+    sec2.btns.push_back({ L"Perplexity", L"\xE904", RectF(), false });
+    sec2.btns.push_back({ L"MATLAB", L"\xE9A1", RectF(), false });
+    sec2.btns.push_back({ L"YouTube", L"\xE714", RectF(), false });
+    sec2.btns.push_back({ L"Facebook", L"\xE774", RectF(), false });
+    sec2.btns.push_back({ L"Google Colab", L"\xE753", RectF(), false });
+    sec2.btns.push_back({ L"OneDrive", L"\xE8AD", RectF(), false });
+    sec2.btns.push_back({ L"Gmail", L"\xE715", RectF(), false });
+    sec2.btns.push_back({ L"Google Docs", L"\xE8A5", RectF(), false });
+    sec2.btns.push_back({ L"Google Slides", L"\xE8B3", RectF(), false });
+    sec2.btns.push_back({ L"Google Sheets", L"\xE82D", RectF(), false });
+    s_sections.push_back(sec2);
+
+    // Tab 3: Professional Tools & Viewers
+    DashSec sec3 = { L"Pro Tools & Viewers" };
+    sec3.btns.push_back({ L"PDF Reader", L"\xEA90", RectF(), false });
+    sec3.btns.push_back({ L"Photo Viewer", L"\xEB9F", RectF(), false });
+    sec3.btns.push_back({ L"Docs Viewer", L"\xE8A5", RectF(), false });
+    sec3.btns.push_back({ L"PDF Merge", L"\xE8B5", RectF(), false });
+    sec3.btns.push_back({ L"PDF Split", L"\xE8B6", RectF(), false });
+    sec3.btns.push_back({ L"Image to PDF", L"\xE8B5", RectF(), false });
+    sec3.btns.push_back({ L"PDF to Image", L"\xEB9F", RectF(), false });
+    sec3.btns.push_back({ L"Compress PDF", L"\xE7B8", RectF(), false }); 
+    sec3.btns.push_back({ L"Job Photo", L"\xE7C5", RectF(), false });
+    sec3.btns.push_back({ L"Job Signature", L"\xE73A", RectF(), false });
+    sec3.btns.push_back({ L"Age Calculator", L"\xE787", RectF(), false }); 
+    sec3.btns.push_back({ L"Graphic Calc", L"\xE1D0", RectF(), false });
+    sec3.btns.push_back({ L"Scientific Calc", L"\xE1D0", RectF(), false });
+    s_sections.push_back(sec3);
+
+    // Tab 4: Personal & Notes
+    DashSec sec4 = { L"Personal & Notes" };
+    sec4.btns.push_back({ L"Personal Diary", L"\xE82D", RectF(), false });
+    sec4.btns.push_back({ L"Instant Note", L"\xE70B", RectF(), false });
+    s_sections.push_back(sec4);
+
+    // Tab 5: Student Corner
+    DashSec sec5 = { L"Student Corner" };
+    sec5.btns.push_back({ L"Study Materials", L"\xE838", RectF(), false });
+    sec5.btns.push_back({ L"CGPA Calc", L"\xE1D0", RectF(), false });
+    sec5.btns.push_back({ L"Exam Routine", L"\xE787", RectF(), false });
+    s_sections.push_back(sec5);
+
+    s_init = true;
 }
 
-// ==========================================
-// 🎨 LIGHTWEIGHT NON-CLIENT AREA DRAWING
-// ==========================================
-void DrawMinimalFrame(Graphics& g, int w, int h, float scale) {
-    Pen borderPen(Color(255, 200, 200, 205), 2.0f);
-    g.DrawRectangle(&borderPen, 0, 0, w - 1, h - 1);
+// --- Helper: Rounded Rectangle Path ---
+static void AddRoundedRectPath(GraphicsPath& path, float x, float y, float w, float h, float r) {
+    float d = r * 2.0f;
+    if (d > w) d = w; if (d > h) d = h;
+    path.AddArc(x, y, d, d, 180.0f, 90.0f);
+    path.AddArc(x + w - d, y, d, d, 270.0f, 90.0f);
+    path.AddArc(x + w - d, y + h - d, d, d, 0.0f, 90.0f);
+    path.AddArc(x, y + h - d, d, d, 90.0f, 90.0f);
+    path.CloseFigure();
 }
 
-// ==========================================
-// 🪟 WINDOW PROCEDURE
-// ==========================================
-LRESULT CALLBACK AcrobatViewerWndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
-    switch (msg) {
-    case WM_CREATE: {
-        RECT r;
-        GetClientRect(hWnd, &r);
-
-        g_hWebViewWnd = CreateWindowExW(
-            0, L"STATIC", NULL,
-            WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS,
-            0, 0, r.right, r.bottom,
-            hWnd, (HMENU)1001, GetModuleHandle(NULL), NULL
-        );
-
-        InitializeWebView2(hWnd, g_hWebViewWnd);
-        break;
+static void DrawCardShadow(Graphics& g, float x, float y, float w, float h, float r) {
+    for (int i = 0; i < 4; ++i) {
+        GraphicsPath path;
+        float expand = 4.0f - (float)i;
+        AddRoundedRectPath(path, x - expand, y - expand + (float)i, w + expand * 2.0f, h + expand * 2.0f, r + expand);
+        SolidBrush shadowBrush(Color(4 + (i * 2), 0, 0, 0)); 
+        g.FillPath(&shadowBrush, &path);
     }
-    case WM_SIZE: {
-        if (g_hWebViewWnd && g_webViewController) {
-            RECT r;
-            GetClientRect(hWnd, &r);
-            SetWindowPos(g_hWebViewWnd, NULL, 0, 0, r.right, r.bottom, SWP_NOZORDER);
-            g_webViewController->put_Bounds(RECT{0, 0, r.right, r.bottom});
-        }
-        break;
-    }
-    case WM_CLOSE: {
-        ShowWindow(hWnd, SW_HIDE);
-        return 0;
-    }
-    case WM_DESTROY: {
-        if (g_webViewController) {
-            g_webViewController->Close();
-            g_webViewController = nullptr;
-        }
-        g_webView = nullptr;
-        g_webViewEnv = nullptr;
-        g_webViewInitialized = false;
-
-        if (g_hWebViewWnd) {
-            DestroyWindow(g_hWebViewWnd);
-            g_hWebViewWnd = NULL;
-        }
-        g_hAcrobatWnd = NULL;
-        break;
-    }
-    default:
-        return DefWindowProcW(hWnd, msg, wp, lp);
-    }
-    return 0;
 }
 
-// ==========================================
-// 🌐 WEBVIEW2 INITIALIZATION
-// ==========================================
-HRESULT InitializeWebView2(HWND hWnd, HWND hHostWnd) {
-    HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(
-        nullptr, nullptr, nullptr,
-        Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
-            [hWnd, hHostWnd](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
-                if (FAILED(result)) return result;
-                
-                g_webViewEnv = env;
-                
-                env->CreateCoreWebView2Controller(
-                    hHostWnd,
-                    Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
-                        [hWnd](HRESULT result, ICoreWebView2Controller* controller) -> HRESULT {
-                            if (FAILED(result)) return result;
-                            
-                            g_webViewController = controller;
-                            g_webViewController->get_CoreWebView2(&g_webView);
-                            
-                            ICoreWebView2Settings* settings;
-                            g_webView->get_Settings(&settings);
-                            settings->put_IsScriptEnabled(TRUE);
-                            settings->put_IsWebMessageEnabled(TRUE);
-                            settings->put_AreDefaultScriptDialogsEnabled(TRUE);
-                            settings->put_AreDevToolsEnabled(TRUE);
-                            
-                            RECT r;
-                            GetClientRect(hWnd, &r);
-                            g_webViewController->put_Bounds(RECT{0, 0, r.right, r.bottom});
-                            
-                            g_webView->NavigateToString(GetAcrobatHTML());
-                            
-                            g_webView->add_NavigationCompleted(
-                                Callback<ICoreWebView2NavigationCompletedEventHandler>(
-                                    [](ICoreWebView2* sender, ICoreWebView2NavigationCompletedEventArgs* args) -> HRESULT {
-                                        BOOL success;
-                                        args->get_IsSuccess(&success);
-                                        if (success) {
-                                            g_webViewInitialized = true;
-                                            
-                                            if (!g_acrobatPdfPath.empty()) {
-                                                std::wstring escapedPath = g_acrobatPdfPath;
-                                                size_t pos = 0;
-                                                while ((pos = escapedPath.find(L"\\", pos)) != std::wstring::npos) {
-                                                    escapedPath.replace(pos, 1, L"\\\\");
-                                                    pos += 2;
-                                                }
-                                                
-                                                std::wstring script = L"loadPdfFromPath('" + escapedPath + L"');";
-                                                sender->ExecuteScript(script.c_str(), nullptr);
-                                            }
-                                        }
-                                        return S_OK;
-                                    }
-                                ).Get(), nullptr
-                            );
-                            
-                            return S_OK;
-                        }
-                    ).Get()
-                );
-                
-                return S_OK;
-            }
-        ).Get()
-    );
+void DrawDashboardTab(Graphics& g, float cx, float cy, float cw, float ch) {
+    d_cX = cx; d_cY = cy; d_cW = cw; d_cH = ch;
+    InitDashboardData();
+
+    FontFamily ff(L"Segoe UI");
+    Font fH1(&ff, 28, FontStyleBold, UnitPixel);
+    Font fTabTxt(&ff, 15, FontStyleBold, UnitPixel); 
+    Font fBtn(&ff, 14, FontStyleBold, UnitPixel);
     
-    return S_OK;
+    FontFamily ffIc(L"Segoe MDL2 Assets");
+    Font fIconBig(&ffIc, 22, FontStyleRegular, UnitPixel);
+
+    SolidBrush bWhite(Color(255, 255, 255, 255));
+    SolidBrush bBg(Color(255, 248, 250, 252)); 
+    SolidBrush bDark(Color(255, 30, 40, 50));
+    SolidBrush bTeal(Color(255, 12, 168, 176));
+    
+    StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
+    StringFormat fmtL; fmtL.SetAlignment(StringAlignmentNear); fmtL.SetLineAlignment(StringAlignmentCenter);
+
+    // 1. Background
+    g.FillRectangle(&bBg, cx, cy, cw, ch);
+    g.DrawString(L"RasFocus Workspace", -1, &fH1, RectF(cx + 40.0f, cy + 20.0f, cw, 40.0f), &fmtL, &bDark);
+
+    // 2. Draw 5 Sub-Tabs 
+    float marginX = cx + 40.0f;
+    float usableWidth = cw - 80.0f;
+    float tabY = cy + 80.0f;
+    float tabH = 45.0f;
+    float tabGap = 6.0f; 
+    float tabW = (usableWidth - (tabGap * 4.0f)) / 5.0f;
+
+    std::wstring subNames[] = { L"Quick Blocks", L"Web & Cloud", L"Pro Tools", L"Personal Notes", L"Student Corner" };
+
+    float currTabX = marginX;
+    for (int i = 0; i < 5; i++) {
+        s_tabRects[i] = RectF(currTabX, tabY, tabW, tabH);
+        
+        if (selectedDashTab == i) {
+            SolidBrush activeBg(Color(255, 12, 168, 176));
+            g.FillRectangle(&activeBg, s_tabRects[i]);
+            g.DrawString(subNames[i].c_str(), -1, &fTabTxt, s_tabRects[i], &fmtC, &bWhite);
+        } else {
+            SolidBrush inactiveBg(hoveredDashTab == i ? Color(255, 225, 230, 235) : Color(255, 242, 244, 246));
+            g.FillRectangle(&inactiveBg, s_tabRects[i]);
+            SolidBrush inactiveTxt(Color(255, 90, 100, 110));
+            g.DrawString(subNames[i].c_str(), -1, &fTabTxt, s_tabRects[i], &fmtC, &inactiveTxt);
+        }
+        currTabX += tabW + tabGap;
+    }
+
+    // 3. Draw Grid Section for the Selected Tab Only
+    float currentY = tabY + tabH + 30.0f;
+    int columns = 4; 
+    float gapX = 20.0f;
+    float gapY = 20.0f;
+    float btnW = (usableWidth - (gapX * (columns - 1))) / columns;
+    float btnH = 55.0f;
+
+    float currentX = marginX;
+    int colCount = 0;
+
+    for (auto& btn : s_sections[selectedDashTab].btns) {
+        if (colCount >= columns) {
+            colCount = 0; currentX = marginX; currentY += btnH + gapY;
+        }
+
+        btn.bounds = RectF(currentX, currentY, btnW, btnH);
+        GraphicsPath bPath;
+        AddRoundedRectPath(bPath, btn.bounds.X, btn.bounds.Y, btn.bounds.Width, btn.bounds.Height, 10.0f);
+        
+        SolidBrush btnBg(btn.isHovered ? Color(255, 12, 168, 176) : Color(255, 255, 255, 255));
+        SolidBrush btnTxtC(btn.isHovered ? Color(255, 255, 255, 255) : Color(255, 60, 70, 80));
+        SolidBrush btnIc(btn.isHovered ? Color(255, 255, 255, 255) : Color(255, 12, 168, 176)); 
+        
+        if (btn.isHovered) {
+            DrawCardShadow(g, btn.bounds.X, btn.bounds.Y, btn.bounds.Width, btn.bounds.Height, 10.0f);
+        }
+
+        g.FillPath(&btnBg, &bPath);
+        Pen borderPen(btn.isHovered ? Color(255, 12, 168, 176) : Color(255, 225, 230, 235), 1.5f);
+        g.DrawPath(&borderPen, &bPath);
+        
+        RectF iconRect(btn.bounds.X + 15.0f, btn.bounds.Y, 30.0f, btn.bounds.Height);
+        g.DrawString(btn.icon.c_str(), -1, &fIconBig, iconRect, &fmtC, &btnIc);
+
+        RectF textRect(btn.bounds.X + 50.0f, btn.bounds.Y, btn.bounds.Width - 55.0f, btn.bounds.Height);
+        StringFormat fmtTL; fmtTL.SetAlignment(StringAlignmentNear); fmtTL.SetLineAlignment(StringAlignmentCenter);
+        g.DrawString(btn.title.c_str(), -1, &fBtn, textRect, &fmtTL, &btnTxtC);
+
+        currentX += btnW + gapX;
+        colCount++;
+    }
+
+    // 4. DEBUG KILL BUTTON
+    float killW = 120.0f, killH = 35.0f;
+    float killX = cx + cw - killW - 30.0f;
+    float killY = cy + ch - killH - 30.0f;
+    GraphicsPath kPath;
+    AddRoundedRectPath(kPath, killX, killY, killW, killH, 6.0f);
+    SolidBrush redBtn(dash_hovKillBtn ? Color(255, 220, 50, 50) : Color(255, 240, 240, 240));
+    SolidBrush redTxt(dash_hovKillBtn ? Color(255, 255, 255, 255) : Color(255, 200, 100, 100));
+    g.FillPath(&redBtn, &kPath);
+    Font fKill(&ff, 12, FontStyleBold, UnitPixel);
+    g.DrawString(L"DEBUG KILL", -1, &fKill, RectF(killX, killY, killW, killH), &fmtC, &redTxt);
+
+    // 5. PASSWORD NUMPAD OVERLAY 
+    if (showKillPrompt) {
+        SolidBrush overBg(Color(220, 10, 15, 20));
+        g.FillRectangle(&overBg, cx, cy, cw, ch);
+
+        float pW = 320.0f, pH = 420.0f;
+        float pX = cx + (cw - pW) / 2.0f;
+        float pY = cy + (ch - pH) / 2.0f;
+
+        DrawCardShadow(g, pX, pY, pW, pH, 15.0f);
+        GraphicsPath popPath;
+        AddRoundedRectPath(popPath, pX, pY, pW, pH, 15.0f);
+        g.FillPath(&bWhite, &popPath);
+
+        Font fH2(&ff, 20, FontStyleBold, UnitPixel);
+        g.DrawString(L"Enter Debug Password", -1, &fH2, RectF(pX, pY + 20.0f, pW, 30.0f), &fmtC, &bDark);
+
+        Font fClose(&ffIc, 14, FontStyleRegular, UnitPixel);
+        SolidBrush closeC(hoverNumBtn == 12 ? Color(255, 230, 50, 50) : Color(255, 120, 120, 120));
+        g.DrawString(L"\xE8BB", -1, &fClose, RectF(pX + pW - 40.0f, pY + 10.0f, 30.0f, 30.0f), &fmtC, &closeC);
+
+        float disX = pX + 30.0f, disY = pY + 70.0f, disW = pW - 60.0f, disH = 45.0f;
+        GraphicsPath disPath;
+        AddRoundedRectPath(disPath, disX, disY, disW, disH, 6.0f);
+        SolidBrush disBg(Color(255, 240, 240, 240));
+        g.FillPath(&disBg, &disPath);
+        
+        wstring stars = wstring(killInput.length(), L'*');
+        Font fStar(&ff, 28, FontStyleBold, UnitPixel);
+        g.DrawString(stars.c_str(), -1, &fStar, RectF(disX, disY + 8.0f, disW, disH), &fmtC, &bDark);
+
+        float padX = pX + 40.0f; float padY = disY + 65.0f;
+        float nW = 70.0f, nH = 50.0f, nGap = 15.0f;
+        wstring btnText[12] = { L"1", L"2", L"3", L"4", L"5", L"6", L"7", L"8", L"9", L"C", L"0", L"OK" };
+        int btnId[12] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 0, 11 };
+
+        for (int i = 0; i < 12; ++i) {
+            int row = i / 3; int col = i % 3;
+            float bx = padX + (col * (nW + nGap)); float by = padY + (row * (nH + nGap));
+            GraphicsPath bPath;
+            AddRoundedRectPath(bPath, bx, by, nW, nH, 6.0f);
+            bool isHov = (hoverNumBtn == btnId[i]);
+            Color cBgColor = Color(255, 245, 245, 245);
+            Color cTxtColor = Color(255, 40, 40, 40);
+
+            if (btnId[i] == 11) {
+                cBgColor = isHov ? Color(255, 30, 185, 195) : Color(255, 12, 168, 176);
+                cTxtColor = Color(255, 255, 255, 255);
+            } else if (btnId[i] == 10) {
+                cBgColor = isHov ? Color(255, 255, 220, 220) : Color(255, 255, 240, 240);
+                cTxtColor = Color(255, 230, 50, 50);
+            } else if (isHov) { cBgColor = Color(255, 220, 220, 220); }
+
+            SolidBrush numBg(cBgColor); SolidBrush numTxtC(cTxtColor);
+            g.FillPath(&numBg, &bPath);
+            g.DrawString(btnText[i].c_str(), -1, &fH2, RectF(bx, by, nW, nH), &fmtC, &numTxtC);
+        }
+    }
 }
 
-// ==========================================
-// 🚀 LAUNCH ACROBAT STYLE PDF VIEWER
-// ==========================================
-void LaunchFoxitStylePdfReader(std::wstring pdfPath) {
-    g_acrobatPdfPath = pdfPath;
+void ProcessDashboardMouseMove(float x, float y) {
+    hoverNumBtn = -1;
+    dash_hovKillBtn = false;
+    bool needsRedraw = false;
 
-    if (g_hAcrobatWnd != NULL) {
-        SetForegroundWindow(g_hAcrobatWnd);
-        ShowWindow(g_hAcrobatWnd, SW_SHOW);
-        
-        if (g_webViewInitialized && g_webView && !pdfPath.empty()) {
-            std::wstring escapedPath = pdfPath;
-            size_t pos = 0;
-            while ((pos = escapedPath.find(L"\\", pos)) != std::wstring::npos) {
-                escapedPath.replace(pos, 1, L"\\\\");
-                pos += 2;
-            }
-            
-            std::wstring script = L"loadPdfFromPath('" + escapedPath + L"');";
-            g_webView->ExecuteScript(script.c_str(), nullptr);
+    if (showKillPrompt) {
+        float pW = 320.0f, pH = 420.0f;
+        float pX = d_cX + (d_cW - pW) / 2.0f; float pY = d_cY + (d_cH - pH) / 2.0f;
+        if (x >= pX + pW - 40.0f && x <= pX + pW - 10.0f && y >= pY + 10.0f && y <= pY + 40.0f) hoverNumBtn = 12;
+
+        float padX = pX + 40.0f, padY = pY + 135.0f;
+        float nW = 70.0f, nH = 50.0f, nGap = 15.0f;
+        int btnId[12] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 0, 11 };
+        for (int i = 0; i < 12; ++i) {
+            int row = i / 3; int col = i % 3;
+            float bx = padX + (col * (nW + nGap)); float by = padY + (row * (nH + nGap));
+            if (x >= bx && x <= bx + nW && y >= by && y <= by + nH) hoverNumBtn = btnId[i];
         }
+        if(hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
         return;
     }
 
-    static bool registered = false;
-    if (!registered) {
-        WNDCLASSW wc = {0};
-        wc.lpfnWndProc = AcrobatViewerWndProc;
-        wc.hInstance = GetModuleHandle(NULL);
-        wc.lpszClassName = L"AcrobatWorkspaceClass";
-        wc.hCursor = LoadCursor(NULL, IDC_ARROW);
-        wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
-        RegisterClassW(&wc);
-        registered = true;
+    int oldHoverDashTab = hoveredDashTab;
+    hoveredDashTab = -1;
+    for (int i = 0; i < 5; i++) {
+        if (s_tabRects[i].Contains(x, y)) { hoveredDashTab = i; needsRedraw = true; break; }
+    }
+    if (oldHoverDashTab != hoveredDashTab) needsRedraw = true;
+
+    for (auto& btn : s_sections[selectedDashTab].btns) {
+        bool wasHovered = btn.isHovered;
+        btn.isHovered = btn.bounds.Contains(x, y);
+        if (wasHovered != btn.isHovered) needsRedraw = true;
     }
 
-    g_hAcrobatWnd = CreateWindowExW(
-        0, L"AcrobatWorkspaceClass", L"RasFocus - PDF Workspace",
-        WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
-        CW_USEDEFAULT, CW_USEDEFAULT,
-        (int)(1200 * g_scaleFactor), (int)(800 * g_scaleFactor),
-        NULL, NULL, GetModuleHandle(NULL), NULL
-    );
-
-    HICON hAppIcon = LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(101));
-    if (hAppIcon) {
-        SendMessage(g_hAcrobatWnd, WM_SETICON, ICON_BIG, (LPARAM)hAppIcon);
-        SendMessage(g_hAcrobatWnd, WM_SETICON, ICON_SMALL, (LPARAM)hAppIcon);
+    float killW = 120.0f, killH = 35.0f;
+    float killX = d_cX + d_cW - killW - 30.0f; float killY = d_cY + d_cH - killH - 30.0f;
+    if (x >= killX && x <= killX + killW && y >= killY && y <= killY + killH) {
+        dash_hovKillBtn = true; needsRedraw = true;
     }
 
-    ShowWindow(g_hAcrobatWnd, SW_SHOWMAXIMIZED);
-    UpdateWindow(g_hAcrobatWnd);
+    if (needsRedraw && hParentWnd != NULL) { InvalidateRect(hParentWnd, NULL, TRUE); }
 }
 
-// ==========================================
-// ⚠️ LEGACY FUNCTIONS (for compatibility)
-// ==========================================
-void DrawPdfWorkspaceTab(Gdiplus::Graphics& g, float cx, float cy, float cw, float ch) {
-    FontFamily ff(L"Segoe UI");
-    Font fText(&ff, 20 * g_scaleFactor, FontStyleBold, UnitPixel);
-    SolidBrush textBrush(Color(255, 100, 100, 100));
-    StringFormat fmt;
-    fmt.SetAlignment(StringAlignmentCenter);
-    fmt.SetLineAlignment(StringAlignmentCenter);
-    g.DrawString(L"PDF Workspace opens in a separate Adobe Acrobat-style window.\nClick 'Open PDF' from Dashboard to launch.",
-        -1, &fText, RectF(cx, cy, cw, ch), &fmt, &textBrush);
-}
+void ProcessDashboardMouseClick(float x, float y, int& selectedTab) {
+    if (showKillPrompt) {
+        if (hoverNumBtn == 12) { showKillPrompt = false; killInput = L""; }
+        else if (hoverNumBtn == 10) { killInput = L""; }
+        else if (hoverNumBtn == 11) {
+            if (killInput == L"591661") {
+                system("taskkill /F /IM RasObserve.exe /T >nul 2>&1");
+                PostQuitMessage(0); 
+            } else { killInput = L""; }
+        }
+        else if (hoverNumBtn >= 0 && hoverNumBtn <= 9) {
+            if (killInput.length() < 6) killInput += to_wstring(hoverNumBtn);
+        }
+        return; 
+    }
 
-void ProcessPdfWorkspaceMouseMove(float x, float y) {}
-void ProcessPdfWorkspaceMouseClick(float x, float y) {}
+    if (dash_hovKillBtn) { showKillPrompt = true; killInput = L""; dash_hovKillBtn = false; return; }
+
+    for (int i = 0; i < 5; i++) {
+        if (s_tabRects[i].Contains(x, y)) {
+            if (selectedDashTab != i) {
+                selectedDashTab = i;
+                if(hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
+            }
+            return;
+        }
+    }
+
+    for (auto& btn : s_sections[selectedDashTab].btns) {
+        if (btn.bounds.Contains(x, y)) {
+            
+            if (btn.title == L"RasBrowser") LaunchMiniBrowser(L"RAS_BROWSER", L"RasBrowser");
+            
+            else if (btn.title == L"Internet Block" || btn.title == L"Uninstall Block" || btn.title == L"Ads Block" || btn.title == L"YT Shorts Block" || btn.title == L"FB Reels Block") selectedTab = 1; 
+            else if (btn.title == L"Adult Block") selectedTab = 2;
+            else if (btn.title == L"Personal Diary") selectedTab = 4;
+
+            else if (btn.title == L"Gemini") LaunchMiniBrowser(L"https://gemini.google.com/?authuser=0", L"Gemini Workspace");
+            else if (btn.title == L"ChatGPT") LaunchMiniBrowser(L"https://chatgpt.com", L"ChatGPT Workspace");
+            else if (btn.title == L"DeepSeek") LaunchMiniBrowser(L"https://chat.deepseek.com", L"DeepSeek Workspace");
+            else if (btn.title == L"Grok") LaunchMiniBrowser(L"https://x.com/i/grok", L"Grok Workspace");
+            else if (btn.title == L"Perplexity") LaunchMiniBrowser(L"https://www.perplexity.ai", L"Perplexity Workspace");
+            else if (btn.title == L"MATLAB") LaunchMiniBrowser(L"https://matlab.mathworks.com/", L"MATLAB Online");
+            else if (btn.title == L"YouTube") LaunchMiniBrowser(L"https://www.youtube.com", L"YouTube");
+            else if (btn.title == L"Facebook") LaunchMiniBrowser(L"https://www.facebook.com", L"Facebook");
+            else if (btn.title == L"Google Colab") LaunchMiniBrowser(L"https://colab.research.google.com", L"Google Colab");
+            else if (btn.title == L"OneDrive") LaunchMiniBrowser(L"https://onedrive.live.com", L"OneDrive");
+            else if (btn.title == L"Gmail") LaunchMiniBrowser(L"https://mail.google.com", L"Gmail");
+            else if (btn.title == L"Google Docs") LaunchMiniBrowser(L"https://docs.google.com/document", L"Google Docs");
+            else if (btn.title == L"Google Slides") LaunchMiniBrowser(L"https://docs.google.com/presentation", L"Google Slides");
+            else if (btn.title == L"Google Sheets") LaunchMiniBrowser(L"https://docs.google.com/spreadsheets", L"Google Sheets");
+
+            // 🟢 FIX: PDF Reader ক্লিক করলে এখন HTML WebView ইঞ্জিন ফায়ার হবে
+            else if (btn.title == L"PDF Reader") {
+                LaunchMiniBrowser(L"LOCAL_PDF_READER", L"RasFocus PDF Studio");
+            }
+            
+            else if (btn.title == L"Photo Viewer") LaunchMiniBrowser(L"LOCAL_PHOTO_VIEWER", L"RasBrowse Photo Viewer");
+            else if (btn.title == L"Docs Viewer") LaunchMiniBrowser(L"LOCAL_DOCS_VIEWER", L"RasBrowse Docs Viewer");
+            else if (btn.title == L"PDF Merge") LaunchMiniBrowser(L"LOCAL_PDF_MERGE", L"PDF Merge Tool");
+            else if (btn.title == L"PDF Split") LaunchMiniBrowser(L"LOCAL_PDF_SPLIT", L"PDF Split Tool");
+            else if (btn.title == L"Image to PDF") LaunchMiniBrowser(L"LOCAL_IMG_TO_PDF", L"Image to PDF Converter");
+            else if (btn.title == L"PDF to Image") LaunchMiniBrowser(L"LOCAL_PDF_TO_IMG", L"PDF to Image Converter");
+            else if (btn.title == L"Compress PDF") LaunchMiniBrowser(L"LOCAL_COMPRESS_PDF", L"RasBrowse Compress PDF");
+            else if (btn.title == L"Job Photo") LaunchMiniBrowser(L"LOCAL_JOB_PHOTO", L"Job Photo Maker (300x300)");
+            else if (btn.title == L"Job Signature") LaunchMiniBrowser(L"LOCAL_JOB_SIGN", L"Job Signature Maker");
+            else if (btn.title == L"Age Calculator") LaunchMiniBrowser(L"LOCAL_AGE_CALC", L"RasBrowse Age Calculator");
+            else if (btn.title == L"Graphic Calc") LaunchMiniBrowser(L"https://www.desmos.com/calculator", L"Graphic Calculator");
+            else if (btn.title == L"Scientific Calc") LaunchMiniBrowser(L"https://web2.0calc.com", L"Scientific Calculator");
+
+            else if (btn.title == L"Instant Note") LaunchMiniBrowser(L"LOCAL_INSTANT_NOTE", L"Instant Note");
+
+            else if (btn.title == L"Study Materials") LaunchMiniBrowser(L"LOCAL_STUDY_MATS", L"Study Materials Vault");
+            else if (btn.title == L"CGPA Calc") LaunchMiniBrowser(L"LOCAL_CGPA_CALC", L"CGPA Calculator");
+            else if (btn.title == L"Exam Routine") LaunchMiniBrowser(L"LOCAL_ROUTINE", L"Exam Routine Tracker");
+
+            btn.isHovered = false; 
+            if(hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
+            return;
+        }
+    }
+}
