@@ -1,7 +1,7 @@
 // tab_pdf_workspace.cpp
 
 #include "tab_pdf_workspace.h"
-#include "mini_browser.h" // 🟢 WebView2 কানেকশনের জন্য হেডার
+#include "mini_browser.h" // 🟢 WebView2 কানেকশনের জন্য হেডার 인ক্লুড
 #include <shobjidl.h>
 #include <iostream>
 
@@ -11,7 +11,7 @@ using namespace std;
 extern HWND hParentWnd;
 extern float g_scaleFactor;
 
-// 🟢 main.cpp থেকে আসা ফাইলের গ্লোবাল পাথ
+// 🟢 main.cpp থেকে আসা ডাবল-ক্লিক করা ফাইলের গ্লোবাল পাথ
 extern wstring currentWorkspacePdf;
 
 // --- Button Bounds ---
@@ -73,23 +73,23 @@ RECT GetPdfWebViewArea(float cx, float cy, float cw, float ch) {
 void DrawPdfWorkspaceTab(Graphics& g, float cx, float cy, float cw, float ch) {
     float sidebarW = 280.0f * g_scaleFactor;
 
-    // ১. Right Side Background 
+    // ১. Right Side Background (যদি কোনো পিডিএফ লোড না থাকে)
     SolidBrush bgRight(Color(255, 240, 243, 248));
     g.FillRectangle(&bgRight, cx + sidebarW, cy, cw - sidebarW, ch);
 
-    FontFamily ff(L"Segoe UI");
-    Font fEmpty(&ff, 20.0f * g_scaleFactor, FontStyleBold, UnitPixel);
-    SolidBrush txtEmpty(Color(255, 160, 170, 180));
-    StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
-    
-    // 🟢 মেসেজ আপডেট করা হয়েছে
-    g.DrawString(L"PDF Workspace is Ready\nClick 'Open Document' on the left to launch your PDF in a new window.", -1, &fEmpty, RectF(cx + sidebarW, cy, cw - sidebarW, ch), &fmtC, &txtEmpty);
-
-    // 🟢 FIX: ফোল্ডার থেকে ডাবল-ক্লিক করে ওপেন করার লজিক (শুধুমাত্র একবার কাজ করবে)
-    static wstring lastLoadedPdf = L"";
-    if (!currentWorkspacePdf.empty() && currentWorkspacePdf != lastLoadedPdf) {
-        lastLoadedPdf = currentWorkspacePdf;
-        LaunchMiniBrowser(currentWorkspacePdf, L"Ultimate PDF Studio");
+    if (currentWorkspacePdf.empty()) {
+        FontFamily ff(L"Segoe UI");
+        Font fEmpty(&ff, 20.0f * g_scaleFactor, FontStyleBold, UnitPixel);
+        SolidBrush txtEmpty(Color(255, 160, 170, 180));
+        StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
+        g.DrawString(L"No PDF Selected\nUse the left panel to open a document.", -1, &fEmpty, RectF(cx + sidebarW, cy, cw - sidebarW, ch), &fmtC, &txtEmpty);
+    } else {
+        // 🟢 ফোল্ডার বা বাটন থেকে পাথ আসলে সরাসরি কাস্টম মিনি ব্রাউজার ইঞ্জিন কল হয়ে ওপেন হবে!
+        static wstring lastLoadedPdf = L"";
+        if (currentWorkspacePdf != lastLoadedPdf) {
+            lastLoadedPdf = currentWorkspacePdf;
+            LaunchMiniBrowser(currentWorkspacePdf, L"PDF Workspace Viewer");
+        }
     }
 
     // ২. Left Sidebar (Ultimate Pro Toolbar)
@@ -198,7 +198,6 @@ void ProcessPdfWorkspaceMouseMove(float x, float y) {
 
 void ProcessPdfWorkspaceMouseClick(float x, float y) {
     if (pdfWorkspaceHover == 1) {
-        // --- Open PDF ---
         IFileOpenDialog *pFileOpen;
         if (SUCCEEDED(CoCreateInstance(CLSID_FileOpenDialog, NULL, CLSCTX_ALL, IID_IFileOpenDialog, reinterpret_cast<void**>(&pFileOpen)))) {
             COMDLG_FILTERSPEC rgSpec[] = { { L"PDF Files", L"*.pdf" } };
@@ -209,11 +208,8 @@ void ProcessPdfWorkspaceMouseClick(float x, float y) {
                 if (SUCCEEDED(pFileOpen->GetResult(&pItem))) {
                     PWSTR pszFilePath;
                     if (SUCCEEDED(pItem->GetDisplayName(SIGDN_URL, &pszFilePath))) {
+                        // 🟢 গ্লোবাল ভ্যারিয়েবলে পাথ সেট করা হচ্ছে, যা ড্র ফাংশনে ক্যাচ হয়ে ইনস্ট্যান্ট ওপেন হবে
                         currentWorkspacePdf = pszFilePath;
-                        
-                        // 🟢 FIX: ফাইল সিলেক্ট করার সাথে সাথেই আলাদা পপ-আপ উইন্ডোতে ইঞ্জিন ফায়ার করবে
-                        LaunchMiniBrowser(currentWorkspacePdf, L"Ultimate PDF Studio");
-                        
                         CoTaskMemFree(pszFilePath);
                     }
                     pItem->Release();
@@ -223,14 +219,15 @@ void ProcessPdfWorkspaceMouseClick(float x, float y) {
         }
         if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
     }
-    else if (pdfWorkspaceHover == 2) MessageBox(hParentWnd, L"Edit PDF Text, Images, and Links here.", L"Edit Mode", MB_OK);
-    else if (pdfWorkspaceHover == 3) MessageBox(hParentWnd, L"Drag and drop pages to rearrange, delete, or rotate them.", L"Organize Pages", MB_OK);
-    else if (pdfWorkspaceHover == 4) MessageBox(hParentWnd, L"Select multiple files to merge into a single PDF.", L"Merge PDF", MB_OK);
-    else if (pdfWorkspaceHover == 5) MessageBox(hParentWnd, L"Split PDF by page ranges or extract specific images.", L"Split / Extract", MB_OK);
-    else if (pdfWorkspaceHover == 6) MessageBox(hParentWnd, L"Compress PDF to reduce file size for sharing.", L"Compress PDF", MB_OK);
-    else if (pdfWorkspaceHover == 7) MessageBox(hParentWnd, L"Add Password, Watermark, or Digital Signature.", L"Protect & Sign", MB_OK);
-    else if (pdfWorkspaceHover == 8) MessageBox(hParentWnd, L"Convert PDF to Word, Excel, or PowerPoint format.", L"Export PDF", MB_OK);
-    else if (pdfWorkspaceHover == 9) MessageBox(hParentWnd, L"Extract text from scanned PDFs or images using OCR.", L"OCR Tool", MB_OK);
-    else if (pdfWorkspaceHover == 10) MessageBox(hParentWnd, L"Ask questions, summarize, or translate PDF content using AI.", L"AI Assistant", MB_OK);
-    else if (pdfWorkspaceHover == 11) MessageBox(hParentWnd, L"Apply passwords or watermarks to multiple PDFs at once.", L"Batch Processing", MB_OK);
+    // 🟢 FIX: MessageBoxW ব্যবহার করা হয়েছে Wide String এর জন্য
+    else if (pdfWorkspaceHover == 2) MessageBoxW(hParentWnd, L"Edit PDF Text, Images, and Links here.", L"Edit Mode", MB_OK);
+    else if (pdfWorkspaceHover == 3) MessageBoxW(hParentWnd, L"Drag and drop pages to rearrange, delete, or rotate them.", L"Organize Pages", MB_OK);
+    else if (pdfWorkspaceHover == 4) MessageBoxW(hParentWnd, L"Select multiple files to merge into a single PDF.", L"Merge PDF", MB_OK);
+    else if (pdfWorkspaceHover == 5) MessageBoxW(hParentWnd, L"Split PDF by page ranges or extract specific images.", L"Split / Extract", MB_OK);
+    else if (pdfWorkspaceHover == 6) MessageBoxW(hParentWnd, L"Compress PDF to reduce file size for sharing.", L"Compress PDF", MB_OK);
+    else if (pdfWorkspaceHover == 7) MessageBoxW(hParentWnd, L"Add Password, Watermark, or Digital Signature.", L"Protect & Sign", MB_OK);
+    else if (pdfWorkspaceHover == 8) MessageBoxW(hParentWnd, L"Convert PDF to Word, Excel, or PowerPoint format.", L"Export PDF", MB_OK);
+    else if (pdfWorkspaceHover == 9) MessageBoxW(hParentWnd, L"Extract text from scanned PDFs or images using OCR.", L"OCR Tool", MB_OK);
+    else if (pdfWorkspaceHover == 10) MessageBoxW(hParentWnd, L"Ask questions, summarize, or translate PDF content using AI.", L"AI Assistant", MB_OK);
+    else if (pdfWorkspaceHover == 11) MessageBoxW(hParentWnd, L"Apply passwords or watermarks to multiple PDFs at once.", L"Batch Processing", MB_OK);
 }
