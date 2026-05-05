@@ -8,7 +8,7 @@ using namespace std;
 extern HWND hParentWnd;
 extern float g_scaleFactor;
 
-// 🟢 FIX: main.cpp এর গ্লোবাল ভ্যারিয়েবলটি লিংকার এরর ছাড়াই কানেক্ট করা হলো
+// 🟢 FIX: main.cpp এর গ্লোবাল ভ্যারিয়েবলটি লিংকার এরর ছাড়াই কানেক্ট করা হলো
 extern wstring currentWorkspacePdf;
 
 // --- Button Bounds ---
@@ -209,14 +209,14 @@ void ProcessPdfWorkspaceMouseClick(float x, float y) {
         }
         if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
     }
-    else if (pdfWorkspaceHover == 2) MessageBox(hParentWnd, L"Edit PDF Text, Images, and Links here.", L"Edit Mode", MB_OK);
-    else if (pdfWorkspaceHover == 3) MessageBox(hParentWnd, L"Drag and drop pages to rearrange, delete, or rotate them.", L"Organize Pages", MB_OK);
-    else if (pdfWorkspaceHover == 4) MessageBox(hParentWnd, L"Select multiple files to merge into a single PDF.", L"Merge PDF", MB_OK);
-    else if (pdfWorkspaceHover == 5) MessageBox(hParentWnd, L"Split PDF by page ranges or extract specific images.", L"Split / Extract", MB_OK);
-    else if (pdfWorkspaceHover == 6) MessageBox(hParentWnd, L"Compress PDF to reduce file size for sharing.", L"Compress PDF", MB_OK);
-    else if (pdfWorkspaceHover == 7) MessageBox(hParentWnd, L"Add Password, Watermark, or Digital Signature.", L"Protect & Sign", MB_OK);
-    else if (pdfWorkspaceHover == 8) MessageBox(hParentWnd, L"Convert PDF to Word, Excel, or PowerPoint format.", L"Export PDF", MB_OK);
-    else if (pdfWorkspaceHover == 9) MessageBox(hParentWnd, L"Extract text from scanned PDFs or images using OCR.", L"OCR Tool", MB_OK);
-    else if (pdfWorkspaceHover == 10) MessageBox(hParentWnd, L"Ask questions, summarize, or translate PDF content using AI.", L"AI Assistant", MB_OK);
-    else if (pdfWorkspaceHover == 11) MessageBox(hParentWnd, L"Apply passwords or watermarks to multiple PDFs at once.", L"Batch Processing", MB_OK);
+    else if (pdfWorkspaceHover == 2) MessageBoxW(hParentWnd, L"Edit PDF Text, Images, and Links here.", L"Edit Mode", MB_OK);
+    else if (pdfWorkspaceHover == 3) MessageBoxW(hParentWnd, L"Drag and drop pages to rearrange, delete, or rotate them.", L"Organize Pages", MB_OK);
+    else if (pdfWorkspaceHover == 4) MessageBoxW(hParentWnd, L"Select multiple files to merge into a single PDF.", L"Merge PDF", MB_OK);
+    else if (pdfWorkspaceHover == 5) MessageBoxW(hParentWnd, L"Split PDF by page ranges or extract specific images.", L"Split / Extract", MB_OK);
+    else if (pdfWorkspaceHover == 6) MessageBoxW(hParentWnd, L"Compress PDF to reduce file size for sharing.", L"Compress PDF", MB_OK);
+    else if (pdfWorkspaceHover == 7) MessageBoxW(hParentWnd, L"Add Password, Watermark, or Digital Signature.", L"Protect & Sign", MB_OK);
+    else if (pdfWorkspaceHover == 8) MessageBoxW(hParentWnd, L"Convert PDF to Word, Excel, or PowerPoint format.", L"Export PDF", MB_OK);
+    else if (pdfWorkspaceHover == 9) MessageBoxW(hParentWnd, L"Extract text from scanned PDFs or images using OCR.", L"OCR Tool", MB_OK);
+    else if (pdfWorkspaceHover == 10) MessageBoxW(hParentWnd, L"Ask questions, summarize, or translate PDF content using AI.", L"AI Assistant", MB_OK);
+    else if (pdfWorkspaceHover == 11) MessageBoxW(hParentWnd, L"Apply passwords or watermarks to multiple PDFs at once.", L"Batch Processing", MB_OK);
 }
