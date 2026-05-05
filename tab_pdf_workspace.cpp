@@ -2,25 +2,84 @@
 #include <shobjidl.h>
 #include <iostream>
 #include <thread>
+#include <wrl.h>
+#include <wil/com.h>
+#include <WebView2.h>
 
 using namespace Gdiplus;
 using namespace std;
+using namespace Microsoft::WRL;
 
 extern HWND hParentWnd;
 extern float g_scaleFactor;
 
-// 🟢 FIX: main.cpp এর গ্লোবাল ভ্যারিয়েবলটি লিংকার এরর ছাড়াই কানেক্ট করা হলো
+// 🟢 Global variables
 extern wstring currentWorkspacePdf;
 
-// --- WebView2 Engine Handle ---
-extern HWND hPdfWebView; // PDF viewer window
-// 🟢 FIX: isPdfLoaded define করছি (linker error fix)
+// --- WebView2 Engine ---
+extern HWND hPdfWebView;
+static wil::com_ptr<ICoreWebView2Environment> g_webViewEnv;
+static wil::com_ptr<ICoreWebView2Controller> g_webViewController;
+static wil::com_ptr<ICoreWebView2> g_webView;
 bool isPdfLoaded = false;
+bool isWebViewReady = false;
 
 // --- Button Bounds ---
 static RectF btnOpen, btnEdit, btnOrganize, btnMerge, btnSplit, btnCompress, btnProtect, btnExport, btnOCR, btnAIChat, btnBatch;
-static int pdfWorkspaceHover = 0; 
-// 1=Open, 2=Edit, 3=Organize, 4=Merge, 5=Split, 6=Compress, 7=Protect, 8=Export, 9=OCR, 10=AIChat, 11=Batch
+static int pdfWorkspaceHover = 0;
+
+// ==========================================
+// WEBVIEW2 INITIALIZATION
+// ==========================================
+void InitializeWebView2(HWND hwnd) {
+    if (g_webViewEnv) return; // Already initialized
+
+    CreateCoreWebView2EnvironmentWithOptions(
+        nullptr, nullptr, nullptr,
+        Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
+            [hwnd](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
+                if (FAILED(result)) {
+                    MessageBoxW(hwnd, L"Failed to create WebView2 environment", L"Error", MB_OK);
+                    return result;
+                }
+
+                g_webViewEnv = env;
+                
+                env->CreateCoreWebView2Controller(
+                    hwnd,
+                    Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
+                        [hwnd](HRESULT result, ICoreWebView2Controller* controller) -> HRESULT {
+                            if (FAILED(result)) {
+                                MessageBoxW(hwnd, L"Failed to create WebView2 controller", L"Error", MB_OK);
+                                return result;
+                            }
+
+                            g_webViewController = controller;
+                            g_webViewController->get_CoreWebView2(&g_webView);
+                            
+                            // Configure WebView2
+                            wil::com_ptr<ICoreWebView2Settings> settings;
+                            g_webView->get_Settings(&settings);
+                            if (settings) {
+                                settings->put_IsScriptEnabled(TRUE);
+                                settings->put_AreDefaultScriptDialogsEnabled(FALSE);
+                                settings->put_IsWebMessageEnabled(TRUE);
+                            }
+                            
+                            isWebViewReady = true;
+                            
+                            // If PDF is already loaded, display it
+                            if (!currentWorkspacePdf.empty()) {
+                                wstring pdfUrl = L"file:///" + currentWorkspacePdf;
+                                g_webView->Navigate(pdfUrl.c_str());
+                            }
+                            
+                            return S_OK;
+                        }).Get());
+                
+                return S_OK;
+            }).Get());
+}
 
 // --- Helper: Draw Sidebar Button ---
 static void DrawSidebarButton(Graphics& g, RectF bounds, wstring text, wstring icon, int hoverCode, int currentHover, bool isDisabled = false) {
@@ -76,21 +135,24 @@ RECT GetPdfWebViewArea(float cx, float cy, float cw, float ch) {
 void LoadPdfFast(const wstring& filePath) {
     if (filePath.empty()) return;
     
-    // Thread-safe PDF loading
-    thread pdfThread([filePath]() {
-        try {
-            currentWorkspacePdf = filePath;
-            isPdfLoaded = true;
-            
-            // Refresh UI
-            if (hParentWnd) {
-                InvalidateRect(hParentWnd, NULL, FALSE);
-            }
-        } catch (...) {
-            isPdfLoaded = false;
+    currentWorkspacePdf = filePath;
+    isPdfLoaded = true;
+    
+    // If WebView2 is ready, navigate to PDF
+    if (isWebViewReady && g_webView) {
+        // Convert file path to URI format
+        wstring pdfUrl = L"file:///" + filePath;
+        // Replace backslashes with forward slashes
+        for (size_t i = 0; i < pdfUrl.length(); i++) {
+            if (pdfUrl[i] == L'\\') pdfUrl[i] = L'/';
         }
-    });
-    pdfThread.detach();
+        g_webView->Navigate(pdfUrl.c_str());
+    }
+    
+    // Refresh UI
+    if (hParentWnd) {
+        InvalidateRect(hParentWnd, NULL, TRUE);
+    }
 }
 
 // ==========================================
@@ -99,34 +161,56 @@ void LoadPdfFast(const wstring& filePath) {
 void DrawPdfWorkspaceTab(Graphics& g, float cx, float cy, float cw, float ch) {
     float sidebarW = 280.0f * g_scaleFactor;
 
-    // ১. Right Side Background
-    SolidBrush bgRight(Color(255, 240, 243, 248));
-    g.FillRectangle(&bgRight, cx + sidebarW, cy, cw - sidebarW, ch);
-
-    if (currentWorkspacePdf.empty()) {
-        FontFamily ff(L"Segoe UI");
-        Font fEmpty(&ff, 20.0f * g_scaleFactor, FontStyleBold, UnitPixel);
-        SolidBrush txtEmpty(Color(255, 160, 170, 180));
-        StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
-        g.DrawString(L"No PDF Selected\nUse the left panel to open a document.", -1, &fEmpty, RectF(cx + sidebarW, cy, cw - sidebarW, ch), &fmtC, &txtEmpty);
-    } else {
-        // ✅ PDF হল - WebView2 রেন্ডার এরিয়া দেখান
-        SolidBrush pdfBg(Color(255, 255, 255, 255));
-        g.FillRectangle(&pdfBg, cx + sidebarW, cy, cw - sidebarW, ch);
+    // Right Side - PDF Viewer Area
+    RECT webViewRect = GetPdfWebViewArea(cx, cy, cw, ch);
+    
+    // Initialize WebView2 with correct parent window
+    static bool initialized = false;
+    if (!initialized) {
+        // Create a child window for WebView2
+        hPdfWebView = CreateWindowExW(
+            0, L"STATIC", L"",
+            WS_CHILD | WS_VISIBLE,
+            webViewRect.left, webViewRect.top,
+            webViewRect.right - webViewRect.left,
+            webViewRect.bottom - webViewRect.top,
+            hParentWnd, NULL, GetModuleHandle(NULL), NULL
+        );
         
-        FontFamily ff(L"Segoe UI");
-        Font fLoading(&ff, 16.0f * g_scaleFactor, FontStyleBold, UnitPixel);
-        SolidBrush txtLoading(Color(255, 100, 100, 100));
-        StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
+        if (hPdfWebView) {
+            InitializeWebView2(hPdfWebView);
+            initialized = true;
+        }
+    } else if (hPdfWebView) {
+        // Update WebView2 position if window resized
+        SetWindowPos(hPdfWebView, NULL,
+            webViewRect.left, webViewRect.top,
+            webViewRect.right - webViewRect.left,
+            webViewRect.bottom - webViewRect.top,
+            SWP_NOZORDER);
         
-        if (isPdfLoaded) {
-            g.DrawString(L"📄 PDF Loading... [WebView2 Engine Active]", -1, &fLoading, RectF(cx + sidebarW, cy, cw - sidebarW, ch), &fmtC, &txtLoading);
-        } else {
-            g.DrawString(L"⏳ Initializing PDF Engine...", -1, &fLoading, RectF(cx + sidebarW, cy, cw - sidebarW, ch), &fmtC, &txtLoading);
+        // Update WebView2 controller bounds
+        if (g_webViewController) {
+            RECT bounds;
+            GetClientRect(hPdfWebView, &bounds);
+            g_webViewController->put_Bounds(bounds);
         }
     }
 
-    // २. Left Sidebar
+    // If no PDF loaded, show placeholder
+    if (currentWorkspacePdf.empty()) {
+        SolidBrush bgRight(Color(255, 240, 243, 248));
+        g.FillRectangle(&bgRight, cx + sidebarW, cy, cw - sidebarW, ch);
+        
+        FontFamily ff(L"Segoe UI");
+        Font fEmpty(&ff, 16.0f * g_scaleFactor, FontStyleBold, UnitPixel);
+        SolidBrush txtEmpty(Color(255, 160, 170, 180));
+        StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
+        g.DrawString(L"No PDF Selected\nClick 'Open Document' to start viewing PDFs", -1, &fEmpty, 
+                     RectF(cx + sidebarW, cy, cw - sidebarW, ch), &fmtC, &txtEmpty);
+    }
+
+    // Left Sidebar
     SolidBrush bgSidebar(Color(255, 20, 25, 35)); 
     g.FillRectangle(&bgSidebar, cx, cy, sidebarW, ch);
 
@@ -135,9 +219,11 @@ void DrawPdfWorkspaceTab(Graphics& g, float cx, float cy, float cw, float ch) {
     Font fTitle(&ffTitle, 22.0f * g_scaleFactor, FontStyleBold, UnitPixel);
     SolidBrush txtTitle(Color(255, 255, 255, 255));
     StringFormat fmt; fmt.SetAlignment(StringAlignmentNear); fmt.SetLineAlignment(StringAlignmentCenter);
-    g.DrawString(L"Ultimate PDF Studio", -1, &fTitle, RectF(cx + 15.0f * g_scaleFactor, cy + 15.0f * g_scaleFactor, sidebarW, 40.0f * g_scaleFactor), &fmt, &txtTitle);
+    g.DrawString(L"Ultimate PDF Studio", -1, &fTitle, 
+                 RectF(cx + 15.0f * g_scaleFactor, cy + 15.0f * g_scaleFactor, sidebarW, 40.0f * g_scaleFactor), 
+                 &fmt, &txtTitle);
 
-    // ३. Sidebar Buttons
+    // Sidebar Buttons
     float btnY = cy + 65.0f * g_scaleFactor;
     float btnH = 36.0f * g_scaleFactor; 
     float btnGap = 4.0f * g_scaleFactor;
