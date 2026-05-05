@@ -15,16 +15,18 @@ extern wstring currentWorkspacePdf;
 static RectF btnOpen, btnEdit, btnOrganize, btnMerge, btnSplit, btnCompress, btnProtect, btnExport, btnOCR, btnAIChat, btnBatch;
 static int pdfWorkspaceHover = 0; 
 // 1=Open, 2=Edit, 3=Organize, 4=Merge, 5=Split, 6=Compress, 7=Protect, 8=Export, 9=OCR, 10=AIChat, 11=Batch
+// এই রকম করুন:
+else if (pdfWorkspaceHover == 2) MessageBoxW(hParentWnd, L"Edit PDF Text, Images, and Links here.", L"Edit Mode", MB_OK);
+else if (pdfWorkspaceHover == 3) MessageBoxW(hParentWnd, L"Drag and drop pages to rearrange, delete, or rotate them.", L"Organize Pages", MB_OK);
+else if (pdfWorkspaceHover == 4) MessageBoxW(hParentWnd, L"Select multiple files to merge into a single PDF.", L"Merge PDF", MB_OK);
+else if (pdfWorkspaceHover == 5) MessageBoxW(hParentWnd, L"Split PDF by page ranges or extract specific images.", L"Split / Extract", MB_OK);
+else if (pdfWorkspaceHover == 6) MessageBoxW(hParentWnd, L"Compress PDF to reduce file size for sharing.", L"Compress PDF", MB_OK);
+else if (pdfWorkspaceHover == 7) MessageBoxW(hParentWnd, L"Add Password, Watermark, or Digital Signature.", L"Protect & Sign", MB_OK);
+else if (pdfWorkspaceHover == 8) MessageBoxW(hParentWnd, L"Convert PDF to Word, Excel, or PowerPoint format.", L"Export PDF", MB_OK);
+else if (pdfWorkspaceHover == 9) MessageBoxW(hParentWnd, L"Extract text from scanned PDFs or images using OCR.", L"OCR Tool", MB_OK);
+else if (pdfWorkspaceHover == 10) MessageBoxW(hParentWnd, L"Ask questions, summarize, or translate PDF content using AI.", L"AI Assistant", MB_OK);
+else if (pdfWorkspaceHover == 11) MessageBoxW(hParentWnd, L"Apply passwords or watermarks to multiple PDFs at once.", L"Batch Processing", MB_OK);
 
-// --- Helper: Draw Sidebar Button ---
-static void DrawSidebarButton(Graphics& g, RectF bounds, wstring text, wstring icon, int hoverCode, int currentHover) {
-    SolidBrush bgBrush(currentHover == hoverCode ? Color(255, 12, 168, 176) : Color(255, 30, 40, 55));
-    g.FillRectangle(&bgBrush, bounds);
-
-    FontFamily ff(L"Segoe UI");
-    Font fText(&ff, 13.0f * g_scaleFactor, FontStyleBold, UnitPixel); // একটু ছোট করা হয়েছে যাতে সব ধরে
-    
-    FontFamily ffIcon(L"Segoe MDL2 Assets");
     Font fIcon(&ffIcon, 15.0f * g_scaleFactor, FontStyleRegular, UnitPixel);
     
     StringFormat fmt; 
