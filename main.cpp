@@ -55,8 +55,9 @@ int windowWidth = 1024;
 int windowHeight = 600;  
 bool isMaximized = false;
 
-// 🟢 FIX: এই ভ্যারিয়েবলটি মিসিং থাকার কারণে LNK2001 এরর আসছিল 
+// 🟢 FIX: Viewer Mode Variables
 bool g_isPureViewerMode = false; 
+wstring currentWorkspacePdf = L""; // 🟢 গ্লোবাল ভ্যারিয়েবল: ফোল্ডার থেকে ডাবল-ক্লিক করা পিডিএফ রিসিভ করার জন্য
 
 NOTIFYICONDATA nid = {}; 
 
@@ -91,21 +92,18 @@ const Color ColUpgradeHover(255, 211, 84, 0);
 // ==========================================
 // 🔴 MAGIC FIX: TAB CHANGE LOGIC FOR WEBVIEW2
 // ==========================================
-// ট্যাব পরিবর্তন করার সময় এই ফাংশনটি অটোমেটিক্যালি সব WebView2 (ডায়েরি, এআই ইত্যাদি) হাইড করে দেবে।
 void HideAllWebViews() {
     if (!hParentWnd) return;
     EnumChildWindows(hParentWnd, [](HWND hwnd, LPARAM lParam) -> BOOL {
         char className[256];
         GetClassNameA(hwnd, className, sizeof(className));
-        // WebView2 এর চাইল্ড উইন্ডোগুলোকে খুঁজে হাইড করা হচ্ছে
         if (strstr(className, "Chrome_WidgetWin_") != nullptr) {
             ShowWindow(hwnd, SW_HIDE);
-            SetWindowPos(hwnd, NULL, -10000, -10000, 0, 0, SWP_NOZORDER | SWP_NOSIZE); // স্ক্রিনের বাইরে পাঠিয়ে দেওয়া
+            SetWindowPos(hwnd, NULL, -10000, -10000, 0, 0, SWP_NOZORDER | SWP_NOSIZE); 
         }
         return TRUE;
     }, 0);
 }
-
 
 // ==========================================
 // UTILITY FUNCTIONS
@@ -122,7 +120,7 @@ string GetSecretDir() {
         secretPath = string(currentDir) + "\\rasfocus_data\\";
     }
     CreateDirectoryA(secretPath.c_str(), NULL);
-    SetFileAttributesA(secretPath.c_str(), FILE_ATTRIBUTE_HIDDEN);
+    SetFileAttributesA(secretPath.c_str(), FILE_ATTRIBUTE_HIDDEN); // ফোল্ডার হিডেন করে দেওয়া হলো
     return secretPath;
 }
 
@@ -130,6 +128,48 @@ string GetExePath() {
     char path[MAX_PATH];
     GetModuleFileNameA(NULL, path, MAX_PATH);
     return string(path);
+}
+
+// ==========================================
+// 🟢 DEFAULT VIEWER REGISTRY SETUP (NEW)
+// ==========================================
+void RegisterFileAssociation(const string& ext, const string& progId, const string& desc) {
+    string exePath = GetExePath();
+    string command = "\"" + exePath + "\" \"%1\"";
+    
+    HKEY hKey;
+    string extPath = "Software\\Classes\\" + ext;
+    if (RegCreateKeyExA(HKEY_CURRENT_USER, extPath.c_str(), 0, NULL, REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
+        RegSetValueExA(hKey, "", 0, REG_SZ, (const BYTE*)progId.c_str(), progId.length() + 1);
+        RegCloseKey(hKey);
+    }
+    
+    string progIdPath = "Software\\Classes\\" + progId;
+    if (RegCreateKeyExA(HKEY_CURRENT_USER, progIdPath.c_str(), 0, NULL, REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
+        RegSetValueExA(hKey, "", 0, REG_SZ, (const BYTE*)desc.c_str(), desc.length() + 1);
+        RegCloseKey(hKey);
+    }
+    
+    string iconPath = progIdPath + "\\DefaultIcon";
+    if (RegCreateKeyExA(HKEY_CURRENT_USER, iconPath.c_str(), 0, NULL, REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
+        RegSetValueExA(hKey, "", 0, REG_SZ, (const BYTE*)exePath.c_str(), exePath.length() + 1);
+        RegCloseKey(hKey);
+    }
+    
+    string cmdPath = progIdPath + "\\shell\\open\\command";
+    if (RegCreateKeyExA(HKEY_CURRENT_USER, cmdPath.c_str(), 0, NULL, REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
+        RegSetValueExA(hKey, "", 0, REG_SZ, (const BYTE*)command.c_str(), command.length() + 1);
+        RegCloseKey(hKey);
+    }
+}
+
+void SetupDefaultViewer() {
+    // পিসির ডিফল্ট পিডিএফ ও ইমেজ ভিউয়ার হিসেবে রেজিস্ট্রি এন্ট্রি করা হচ্ছে
+    RegisterFileAssociation(".pdf", "RasFocus.PDF", "RasFocus PDF Document");
+    RegisterFileAssociation(".jpg", "RasFocus.Image", "RasFocus Image File");
+    RegisterFileAssociation(".png", "RasFocus.Image", "RasFocus Image File");
+    RegisterFileAssociation(".jpeg", "RasFocus.Image", "RasFocus Image File");
+    SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, NULL, NULL); 
 }
 
 // ==========================================
@@ -518,6 +558,10 @@ void DrawMainArea(Graphics& g, int w, int h) {
         Font f(&ff, 24, FontStyleBold, UnitPixel);
         g.DrawString(L"Accounts settings will be available here.", -1, &f, PointF(contentX + 30.0f, contentY + 30.0f), &textBrush);
     }
+    // 🟢 FIX: PDF Workspace Tab যুক্ত করা হলো (Tab 8)
+    else if (selectedTab == 8) {
+        DrawPdfWorkspaceTab(g, contentX, contentY, contentW, contentH);
+    }
 }
 
 void OnPaint(HWND hWnd, HDC hdc) {
@@ -675,12 +719,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (oldUpg != hoverUpgrade) redraw = true;
 
         if (selectedTab == 0) { ProcessDashboardMouseMove(x, y); redraw = true; }
-        if (selectedTab == 1) { ProcessBlocksMouseMove(x, y); redraw = true; }
-        if (selectedTab == 2) { ProcessAdultMouseMove(x, y); redraw = true; }
-        if (selectedTab == 3) { ProcessDeepStudyMouseMove(x, y); redraw = true; } 
-        if (selectedTab == 4) { ProcessSpecialFeatureMouseMove(x, y); redraw = true; } 
-        if (selectedTab == 5) { ProcessStatisticsMouseMove(x, y); redraw = true; } 
-        if (selectedTab == 6) { ProcessSettingsMouseMove(x, y); redraw = true; }
+        else if (selectedTab == 1) { ProcessBlocksMouseMove(x, y); redraw = true; }
+        else if (selectedTab == 2) { ProcessAdultMouseMove(x, y); redraw = true; }
+        else if (selectedTab == 3) { ProcessDeepStudyMouseMove(x, y); redraw = true; } 
+        else if (selectedTab == 4) { ProcessSpecialFeatureMouseMove(x, y); redraw = true; } 
+        else if (selectedTab == 5) { ProcessStatisticsMouseMove(x, y); redraw = true; } 
+        else if (selectedTab == 6) { ProcessSettingsMouseMove(x, y); redraw = true; }
+        // 🟢 FIX: PDF Workspace Mouse Movement (Tab 8)
+        else if (selectedTab == 8) { ProcessPdfWorkspaceMouseMove(x, y); redraw = true; }
 
         if (redraw) InvalidateRect(hWnd, NULL, FALSE);
         break;
@@ -715,7 +761,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
         if (hoverClose) { ShowWindow(hWnd, SW_HIDE); } 
 
-        // 🟢 FIX: ট্যাব পরিবর্তনের সময় WebView2 গুলো হাইড করা হচ্ছে
         if (hoveredTab != -1) {
             if (selectedTab != hoveredTab) {
                 selectedTab = hoveredTab;
@@ -737,8 +782,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         else if (selectedTab == 4) { ProcessSpecialFeatureMouseClick(x, y); } 
         else if (selectedTab == 5) { ProcessStatisticsMouseClick(x, y); } 
         else if (selectedTab == 6) { ProcessSettingsMouseClick(x, y); }
+        // 🟢 FIX: PDF Workspace Mouse Click (Tab 8)
+        else if (selectedTab == 8) { ProcessPdfWorkspaceMouseClick(x, y); }
 
-        // 🟢 FIX: ড্যাশবোর্ড থেকে ক্লিক করে অন্য ট্যাবে গেলেও WebView2 হাইড হবে
         if (prevTab != selectedTab) {
             HideAllWebViews();
         }
@@ -859,11 +905,11 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
             for (size_t k = 0; k < argLower.length(); ++k) argLower[k] = towlower(argLower[k]);
 
             if (argLower.length() > 4 && argLower.substr(argLower.length() - 4) == L".pdf") {
-                g_isPureViewerMode = true; viewerUrl = arg; viewerTitle = L"RasBrowse PDF Viewer"; break;
+                g_isPureViewerMode = true; viewerUrl = arg; viewerTitle = L"RasFocus PDF Viewer"; break;
             } else if (argLower.length() > 4 && (argLower.substr(argLower.length() - 4) == L".jpg" || argLower.substr(argLower.length() - 4) == L".png" || argLower.substr(argLower.length() - 5) == L".jpeg")) {
-                g_isPureViewerMode = true; viewerUrl = arg; viewerTitle = L"RasBrowse Photo Viewer"; break;
+                g_isPureViewerMode = true; viewerUrl = arg; viewerTitle = L"RasFocus Photo Viewer"; break;
             } else if (argLower.find(L"http://") == 0 || argLower.find(L"https://") == 0) {
-                g_isPureViewerMode = true; viewerUrl = arg; viewerTitle = L"RasBrowse Web Viewer"; break;
+                g_isPureViewerMode = true; viewerUrl = arg; viewerTitle = L"RasFocus Web Viewer"; break;
             }
         }
     }
@@ -879,8 +925,8 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
             HWND hExistingWnd = FindWindowA("RasFocusCore", "RasFocus Pro");
             if (hExistingWnd) {
                 ShowWindow(hExistingWnd, SW_RESTORE); 
-                ShowWindow(hExistingWnd, SW_SHOW);    
-                SetForegroundWindow(hExistingWnd);    
+                ShowWindow(hExistingWnd, SW_SHOW);  
+                SetForegroundWindow(hExistingWnd);  
             }
             CloseHandle(hMutex);
             return 0; 
@@ -892,6 +938,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
 
     CheckDailyMessage();
     SetupAutoRun();
+    SetupDefaultViewer(); // 🟢 FIX: উইন্ডোজের ডিফল্ট অ্যাপ হিসেবে সেট করা হলো
     CreateDesktopShortcut();
     ExtractAndRunObserver(); 
 
@@ -945,11 +992,20 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
     string cmdLine(lpCmdLine);
     
     // =======================================================
-    // 🌐 LAUNCH LOGIC (VIEWER vs DASHBOARD vs SILENT)
+    // 🌐 LAUNCH LOGIC (FOLDER CLICK Auto-Open PDF Workspace)
     // =======================================================
     if (g_isPureViewerMode) {
-        ShowWindow(hWnd, SW_HIDE); // ড্যাশবোর্ড হাইড রাখা হলো
-        LaunchMiniBrowser(viewerUrl, viewerTitle);
+        if (viewerUrl.find(L".pdf") != std::wstring::npos) {
+            // 🟢 ফোল্ডার থেকে ডাবল-ক্লিক করলে সরাসরি PDF Workspace (Tab 8) ওপেন হবে
+            selectedTab = 8;
+            currentWorkspacePdf = viewerUrl; // পাথটি সেট করে দেওয়া হলো
+            ShowWindow(hWnd, SW_SHOWMAXIMIZED);
+            SetForegroundWindow(hWnd);
+        } else {
+            // ছবি হলে মিনি ব্রাউজার (Photo Viewer) ওপেন হবে
+            ShowWindow(hWnd, SW_HIDE); 
+            LaunchMiniBrowser(viewerUrl, viewerTitle);
+        }
     } 
     else if (cmdLine.find("-silent") != string::npos) {
         ShowWindow(hWnd, SW_HIDE); 
