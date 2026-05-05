@@ -1,6 +1,7 @@
 // tab_dashboard.cpp
 
 #include "tab_dashboard.h"
+#include "mini_browser.h" // 🟢 FIX: লিংকার এরর এড়াতে এটি অবশ্যই থাকতে হবে
 #include <string>
 #include <vector>
 
@@ -9,9 +10,6 @@ using namespace std;
 
 extern HWND hParentWnd; 
 extern float g_scaleFactor;
-
-// --- মিনি ব্রাউজার ওপেন করার গ্লোবাল ফাংশন ---
-extern void LaunchMiniBrowser(std::wstring url, std::wstring title);
 
 // --- Overlay & Kill States ---
 static bool showKillPrompt = false;
@@ -136,7 +134,7 @@ void DrawDashboardTab(Graphics& g, float cx, float cy, float cw, float ch) {
 
     FontFamily ff(L"Segoe UI");
     Font fH1(&ff, 28, FontStyleBold, UnitPixel);
-    Font fTabTxt(&ff, 15, FontStyleBold, UnitPixel); // ফন্ট সাইজ একটু বড় করা হয়েছে ইমেজের মতো
+    Font fTabTxt(&ff, 15, FontStyleBold, UnitPixel); 
     Font fBtn(&ff, 14, FontStyleBold, UnitPixel);
     
     FontFamily ffIc(L"Segoe MDL2 Assets");
@@ -154,12 +152,12 @@ void DrawDashboardTab(Graphics& g, float cx, float cy, float cw, float ch) {
     g.FillRectangle(&bBg, cx, cy, cw, ch);
     g.DrawString(L"RasFocus Workspace", -1, &fH1, RectF(cx + 40.0f, cy + 20.0f, cw, 40.0f), &fmtL, &bDark);
 
-    // 2. Draw 5 Sub-Tabs (🟢 NEW: FLAT PREMIUM STYLE MATCHING IMAGE)
+    // 2. Draw 5 Sub-Tabs 
     float marginX = cx + 40.0f;
     float usableWidth = cw - 80.0f;
     float tabY = cy + 80.0f;
     float tabH = 45.0f;
-    float tabGap = 6.0f; // ইমেজের মতো হালকা গ্যাপ
+    float tabGap = 6.0f; 
     float tabW = (usableWidth - (tabGap * 4.0f)) / 5.0f;
 
     std::wstring subNames[] = { L"Quick Blocks", L"Web & Cloud", L"Pro Tools", L"Personal Notes", L"Student Corner" };
@@ -169,12 +167,10 @@ void DrawDashboardTab(Graphics& g, float cx, float cy, float cw, float ch) {
         s_tabRects[i] = RectF(currTabX, tabY, tabW, tabH);
         
         if (selectedDashTab == i) {
-            // Active Tab (Teal Background, White Text - Flat)
             SolidBrush activeBg(Color(255, 12, 168, 176));
             g.FillRectangle(&activeBg, s_tabRects[i]);
             g.DrawString(subNames[i].c_str(), -1, &fTabTxt, s_tabRects[i], &fmtC, &bWhite);
         } else {
-            // Inactive Tab (Light Gray Background, Dark Gray Text - Flat)
             SolidBrush inactiveBg(hoveredDashTab == i ? Color(255, 225, 230, 235) : Color(255, 242, 244, 246));
             g.FillRectangle(&inactiveBg, s_tabRects[i]);
             SolidBrush inactiveTxt(Color(255, 90, 100, 110));
@@ -226,7 +222,7 @@ void DrawDashboardTab(Graphics& g, float cx, float cy, float cw, float ch) {
         colCount++;
     }
 
-    // 4. DEBUG KILL BUTTON (Bottom Right - discreet)
+    // 4. DEBUG KILL BUTTON
     float killW = 120.0f, killH = 35.0f;
     float killX = cx + cw - killW - 30.0f;
     float killY = cy + ch - killH - 30.0f;
@@ -238,9 +234,7 @@ void DrawDashboardTab(Graphics& g, float cx, float cy, float cw, float ch) {
     Font fKill(&ff, 12, FontStyleBold, UnitPixel);
     g.DrawString(L"DEBUG KILL", -1, &fKill, RectF(killX, killY, killW, killH), &fmtC, &redTxt);
 
-    // =======================================================
     // 5. PASSWORD NUMPAD OVERLAY 
-    // =======================================================
     if (showKillPrompt) {
         SolidBrush overBg(Color(220, 10, 15, 20));
         g.FillRectangle(&overBg, cx, cy, cw, ch);
@@ -322,7 +316,6 @@ void ProcessDashboardMouseMove(float x, float y) {
         return;
     }
 
-    // Check Sub-Tabs Hover
     int oldHoverDashTab = hoveredDashTab;
     hoveredDashTab = -1;
     for (int i = 0; i < 5; i++) {
@@ -330,14 +323,12 @@ void ProcessDashboardMouseMove(float x, float y) {
     }
     if (oldHoverDashTab != hoveredDashTab) needsRedraw = true;
 
-    // Check Buttons Hover (Only for the active tab)
     for (auto& btn : s_sections[selectedDashTab].btns) {
         bool wasHovered = btn.isHovered;
         btn.isHovered = btn.bounds.Contains(x, y);
         if (wasHovered != btn.isHovered) needsRedraw = true;
     }
 
-    // Kill Button Hover
     float killW = 120.0f, killH = 35.0f;
     float killX = d_cX + d_cW - killW - 30.0f; float killY = d_cY + d_cH - killH - 30.0f;
     if (x >= killX && x <= killX + killW && y >= killY && y <= killY + killH) {
@@ -365,7 +356,6 @@ void ProcessDashboardMouseClick(float x, float y, int& selectedTab) {
 
     if (dash_hovKillBtn) { showKillPrompt = true; killInput = L""; dash_hovKillBtn = false; return; }
 
-    // --- Sub-Tab Click Logic ---
     for (int i = 0; i < 5; i++) {
         if (s_tabRects[i].Contains(x, y)) {
             if (selectedDashTab != i) {
@@ -376,19 +366,15 @@ void ProcessDashboardMouseClick(float x, float y, int& selectedTab) {
         }
     }
 
-    // --- Button Click Logic (Only Active Tab) ---
     for (auto& btn : s_sections[selectedDashTab].btns) {
         if (btn.bounds.Contains(x, y)) {
             
-            // 🟢 RasBrowser - Chrome-like Custom Window
             if (btn.title == L"RasBrowser") LaunchMiniBrowser(L"RAS_BROWSER", L"RasBrowser");
             
-            // ১. Native C++ Tabs
             else if (btn.title == L"Internet Block" || btn.title == L"Uninstall Block" || btn.title == L"Ads Block" || btn.title == L"YT Shorts Block" || btn.title == L"FB Reels Block") selectedTab = 1; 
             else if (btn.title == L"Adult Block") selectedTab = 2;
             else if (btn.title == L"Personal Diary") selectedTab = 4;
 
-            // ২. AI & Cloud Workspace (Launch Mini Browser)
             else if (btn.title == L"Gemini") LaunchMiniBrowser(L"https://gemini.google.com/?authuser=0", L"Gemini Workspace");
             else if (btn.title == L"ChatGPT") LaunchMiniBrowser(L"https://chatgpt.com", L"ChatGPT Workspace");
             else if (btn.title == L"DeepSeek") LaunchMiniBrowser(L"https://chat.deepseek.com", L"DeepSeek Workspace");
@@ -404,8 +390,6 @@ void ProcessDashboardMouseClick(float x, float y, int& selectedTab) {
             else if (btn.title == L"Google Slides") LaunchMiniBrowser(L"https://docs.google.com/presentation", L"Google Slides");
             else if (btn.title == L"Google Sheets") LaunchMiniBrowser(L"https://docs.google.com/spreadsheets", L"Google Sheets");
 
-            // ৩. Professional Tools
-            // 🟢 FIX: PDF Reader ক্লিক করলে Tab 8 (PDF Workspace) এ চলে যাবে
             else if (btn.title == L"PDF Reader") {
                 selectedTab = 8;
                 if(hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
@@ -423,10 +407,8 @@ void ProcessDashboardMouseClick(float x, float y, int& selectedTab) {
             else if (btn.title == L"Graphic Calc") LaunchMiniBrowser(L"https://www.desmos.com/calculator", L"Graphic Calculator");
             else if (btn.title == L"Scientific Calc") LaunchMiniBrowser(L"https://web2.0calc.com", L"Scientific Calculator");
 
-            // ৪. Personal & Notes
             else if (btn.title == L"Instant Note") LaunchMiniBrowser(L"LOCAL_INSTANT_NOTE", L"Instant Note");
 
-            // ৫. Student Corner
             else if (btn.title == L"Study Materials") LaunchMiniBrowser(L"LOCAL_STUDY_MATS", L"Study Materials Vault");
             else if (btn.title == L"CGPA Calc") LaunchMiniBrowser(L"LOCAL_CGPA_CALC", L"CGPA Calculator");
             else if (btn.title == L"Exam Routine") LaunchMiniBrowser(L"LOCAL_ROUTINE", L"Exam Routine Tracker");
