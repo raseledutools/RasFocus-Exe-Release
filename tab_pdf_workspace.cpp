@@ -14,7 +14,8 @@ extern wstring currentWorkspacePdf;
 
 // --- WebView2 Engine Handle ---
 extern HWND hPdfWebView; // PDF viewer window
-extern bool isPdfLoaded;
+// 🟢 FIX: isPdfLoaded define করছি (linker error fix)
+bool isPdfLoaded = false;
 
 // --- Button Bounds ---
 static RectF btnOpen, btnEdit, btnOrganize, btnMerge, btnSplit, btnCompress, btnProtect, btnExport, btnOCR, btnAIChat, btnBatch;
@@ -259,14 +260,14 @@ void ProcessPdfWorkspaceMouseClick(float x, float y) {
     if (pdfWorkspaceHover == 1) {
         OpenPdfFromFolder();
     }
-    else if (pdfWorkspaceHover == 2) MessageBoxW(hParentWnd, L"✏️ Edit PDF Text, Images, and Links here.\n\nFeatures:\n• Change text and fonts\n• Replace images\n• Edit links\n• Add annotations", L"Edit Mode", MB_OK | MB_ICONINFORMATION);
+    else if (pdfWorkspaceHover == 2) MessageBoxW(hParentWnd, L"✏️ Edit PDF Text, Images, and Links here.\n\nFeatures:\n• Change text and fonts\n• Replace images\n• Edit links\n• Add annotations", L"Edit PDF", MB_OK | MB_ICONINFORMATION);
     else if (pdfWorkspaceHover == 3) MessageBoxW(hParentWnd, L"🔄 Organize Pages\n\nFeatures:\n• Drag and drop pages\n• Delete pages\n• Rotate pages\n• Reorder pages", L"Organize Pages", MB_OK | MB_ICONINFORMATION);
-    else if (pdfWorkspaceHover == 4) MessageBoxW(hParentWnd, L"📎 Merge Multiple PDFs\n\nFeatures:\n• Combine multiple files\n• Custom page order\n• Merge or insert\n• Fast processing", L"Merge PDF", MB_OK | MB_ICONINFORMATION);
+    else if (pdfWorkspaceHover == 4) MessageBoxW(hParentWnd, L"📎 Merge Multiple PDFs\n\nFeatures:\n• Combine multiple files\n• Custom page order\n• Merge or insert\n• Fast processing", L"Merge PDFs", MB_OK | MB_ICONINFORMATION);
     else if (pdfWorkspaceHover == 5) MessageBoxW(hParentWnd, L"✂️ Split or Extract\n\nFeatures:\n• Split by page ranges\n• Extract specific pages\n• Extract images\n• Fast extraction", L"Split / Extract", MB_OK | MB_ICONINFORMATION);
     else if (pdfWorkspaceHover == 6) MessageBoxW(hParentWnd, L"📦 Compress PDF\n\nFeatures:\n• Reduce file size\n• Maintain quality\n• Multiple compression levels\n• Fast compression", L"Compress PDF", MB_OK | MB_ICONINFORMATION);
     else if (pdfWorkspaceHover == 7) MessageBoxW(hParentWnd, L"🔐 Protect & Sign PDF\n\nFeatures:\n• Add passwords\n• Add watermarks\n• Digital signatures\n• Encryption", L"Protect & Sign", MB_OK | MB_ICONINFORMATION);
     else if (pdfWorkspaceHover == 8) MessageBoxW(hParentWnd, L"📤 Export to Other Formats\n\nFormats:\n• Word (.docx)\n• Excel (.xlsx)\n• PowerPoint (.pptx)\n• Images", L"Export PDF", MB_OK | MB_ICONINFORMATION);
-    else if (pdfWorkspaceHover == 9) MessageBoxW(hParentWnd, L"🔤 OCR - Text Recognition\n\nFeatures:\n• Extract text from scans\n• Image to text\n• Multiple languages\n• High accuracy", L"OCR Tool", MB_OK | MB_ICONINFORMATION);
+    else if (pdfWorkspaceHover == 9) MessageBoxW(hParentWnd, L"🔤 OCR - Text Recognition\n\nFeatures:\n• Extract text from scans\n• Image to text\n• Multiple languages\n• High accuracy", L"OCR", MB_OK | MB_ICONINFORMATION);
     else if (pdfWorkspaceHover == 10) MessageBoxW(hParentWnd, L"🤖 AI Assistant for PDF\n\nFeatures:\n• Ask questions\n• Summarize content\n• Translate text\n• Extract key info", L"AI Assistant", MB_OK | MB_ICONINFORMATION);
     else if (pdfWorkspaceHover == 11) MessageBoxW(hParentWnd, L"⚙️ Batch Processing\n\nFeatures:\n• Process multiple PDFs\n• Apply same operation\n• Password protection\n• Watermarking", L"Batch Processing", MB_OK | MB_ICONINFORMATION);
 }
