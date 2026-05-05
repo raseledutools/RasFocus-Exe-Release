@@ -7,6 +7,7 @@
 HWND hParentWnd = NULL; // গ্লোবাল উইন্ডো হ্যান্ডেল
 
 #include <shellapi.h> 
+#include "tab_pdf_workspace.h"
 #include <shlobj.h>
 #include <gdiplus.h>
 #include <vector>
