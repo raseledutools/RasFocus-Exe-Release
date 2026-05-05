@@ -57,9 +57,9 @@ void InitDashboardData() {
     sec1.btns.push_back({ L"FB Reels Block", L"\xE8D6", RectF(), false });
     s_sections.push_back(sec1);
 
-    // Tab 2: Web & Cloud Workspace (RasBrowser Added Here)
+    // Tab 2: Web & Cloud Workspace
     DashSec sec2 = { L"Web & Cloud Workspace" };
-    sec2.btns.push_back({ L"RasBrowser", L"\xE774", RectF(), false }); // 🟢 Chrome-like Browser
+    sec2.btns.push_back({ L"RasBrowser", L"\xE774", RectF(), false }); 
     sec2.btns.push_back({ L"Gemini", L"\xE904", RectF(), false });
     sec2.btns.push_back({ L"ChatGPT", L"\xE904", RectF(), false });
     sec2.btns.push_back({ L"DeepSeek", L"\xE904", RectF(), false });
@@ -136,17 +136,15 @@ void DrawDashboardTab(Graphics& g, float cx, float cy, float cw, float ch) {
 
     FontFamily ff(L"Segoe UI");
     Font fH1(&ff, 28, FontStyleBold, UnitPixel);
-    Font fTabTxt(&ff, 14, FontStyleBold, UnitPixel);
+    Font fTabTxt(&ff, 15, FontStyleBold, UnitPixel); // ফন্ট সাইজ একটু বড় করা হয়েছে ইমেজের মতো
     Font fBtn(&ff, 14, FontStyleBold, UnitPixel);
     
     FontFamily ffIc(L"Segoe MDL2 Assets");
-    Font fTabIc(&ffIc, 16, FontStyleRegular, UnitPixel);
     Font fIconBig(&ffIc, 22, FontStyleRegular, UnitPixel);
 
     SolidBrush bWhite(Color(255, 255, 255, 255));
     SolidBrush bBg(Color(255, 248, 250, 252)); 
     SolidBrush bDark(Color(255, 30, 40, 50));
-    SolidBrush bGray(Color(255, 100, 110, 120));
     SolidBrush bTeal(Color(255, 12, 168, 176));
     
     StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
@@ -156,36 +154,31 @@ void DrawDashboardTab(Graphics& g, float cx, float cy, float cw, float ch) {
     g.FillRectangle(&bBg, cx, cy, cw, ch);
     g.DrawString(L"RasFocus Workspace", -1, &fH1, RectF(cx + 40.0f, cy + 20.0f, cw, 40.0f), &fmtL, &bDark);
 
-    // 2. Draw 5 Sub-Tabs (Premium Style)
+    // 2. Draw 5 Sub-Tabs (🟢 NEW: FLAT PREMIUM STYLE MATCHING IMAGE)
     float marginX = cx + 40.0f;
     float usableWidth = cw - 80.0f;
     float tabY = cy + 80.0f;
     float tabH = 45.0f;
-    float tabGap = 12.0f;
+    float tabGap = 6.0f; // ইমেজের মতো হালকা গ্যাপ
     float tabW = (usableWidth - (tabGap * 4.0f)) / 5.0f;
 
     std::wstring subNames[] = { L"Quick Blocks", L"Web & Cloud", L"Pro Tools", L"Personal Notes", L"Student Corner" };
-    std::wstring subIcons[] = { L"\xE7E8", L"\xE774", L"\xE7C3", L"\xE70B", L"\xE7BD" };
 
     float currTabX = marginX;
     for (int i = 0; i < 5; i++) {
         s_tabRects[i] = RectF(currTabX, tabY, tabW, tabH);
-        GraphicsPath pathTab;
-        AddRoundedRectPath(pathTab, currTabX, tabY, tabW, tabH, 8.0f);
         
         if (selectedDashTab == i) {
+            // Active Tab (Teal Background, White Text - Flat)
             SolidBrush activeBg(Color(255, 12, 168, 176));
-            g.FillPath(&activeBg, &pathTab);
-            g.DrawString(subIcons[i].c_str(), -1, &fTabIc, RectF(currTabX + 10.0f, tabY, 30.0f, tabH), &fmtC, &bWhite);
-            g.DrawString(subNames[i].c_str(), -1, &fTabTxt, RectF(currTabX + 40.0f, tabY, tabW - 45.0f, tabH), &fmtL, &bWhite);
+            g.FillRectangle(&activeBg, s_tabRects[i]);
+            g.DrawString(subNames[i].c_str(), -1, &fTabTxt, s_tabRects[i], &fmtC, &bWhite);
         } else {
-            SolidBrush inactiveBg(hoveredDashTab == i ? Color(255, 235, 240, 245) : Color(255, 255, 255, 255));
-            g.FillPath(&inactiveBg, &pathTab);
-            Pen tabPen(Color(255, 220, 226, 230), 1.0f);
-            g.DrawPath(&tabPen, &pathTab);
-
-            g.DrawString(subIcons[i].c_str(), -1, &fTabIc, RectF(currTabX + 10.0f, tabY, 30.0f, tabH), &fmtC, &bGray);
-            g.DrawString(subNames[i].c_str(), -1, &fTabTxt, RectF(currTabX + 40.0f, tabY, tabW - 45.0f, tabH), &fmtL, &bGray);
+            // Inactive Tab (Light Gray Background, Dark Gray Text - Flat)
+            SolidBrush inactiveBg(hoveredDashTab == i ? Color(255, 225, 230, 235) : Color(255, 242, 244, 246));
+            g.FillRectangle(&inactiveBg, s_tabRects[i]);
+            SolidBrush inactiveTxt(Color(255, 90, 100, 110));
+            g.DrawString(subNames[i].c_str(), -1, &fTabTxt, s_tabRects[i], &fmtC, &inactiveTxt);
         }
         currTabX += tabW + tabGap;
     }
@@ -196,7 +189,7 @@ void DrawDashboardTab(Graphics& g, float cx, float cy, float cw, float ch) {
     float gapX = 20.0f;
     float gapY = 20.0f;
     float btnW = (usableWidth - (gapX * (columns - 1))) / columns;
-    float btnH = 55.0f; // একটু লম্বা ও প্রিমিয়াম বাটন
+    float btnH = 55.0f;
 
     float currentX = marginX;
     int colCount = 0;
@@ -411,8 +404,12 @@ void ProcessDashboardMouseClick(float x, float y, int& selectedTab) {
             else if (btn.title == L"Google Slides") LaunchMiniBrowser(L"https://docs.google.com/presentation", L"Google Slides");
             else if (btn.title == L"Google Sheets") LaunchMiniBrowser(L"https://docs.google.com/spreadsheets", L"Google Sheets");
 
-            // ৩. Professional Tools (Local HTML App)
-            else if (btn.title == L"PDF Reader") LaunchMiniBrowser(L"LOCAL_PDF_READER", L"RasBrowse PDF Reader");
+            // ৩. Professional Tools
+            // 🟢 FIX: PDF Reader ক্লিক করলে Tab 8 (PDF Workspace) এ চলে যাবে
+            else if (btn.title == L"PDF Reader") {
+                selectedTab = 8;
+                if(hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
+            }
             else if (btn.title == L"Photo Viewer") LaunchMiniBrowser(L"LOCAL_PHOTO_VIEWER", L"RasBrowse Photo Viewer");
             else if (btn.title == L"Docs Viewer") LaunchMiniBrowser(L"LOCAL_DOCS_VIEWER", L"RasBrowse Docs Viewer");
             else if (btn.title == L"PDF Merge") LaunchMiniBrowser(L"LOCAL_PDF_MERGE", L"PDF Merge Tool");
