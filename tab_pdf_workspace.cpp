@@ -8,25 +8,23 @@ using namespace std;
 extern HWND hParentWnd;
 extern float g_scaleFactor;
 
-// --- State Variables ---
+// 🟢 FIX: main.cpp এর গ্লোবাল ভ্যারিয়েবলটি লিংকার এরর ছাড়াই কানেক্ট করা হলো
 extern wstring currentWorkspacePdf;
 
 // --- Button Bounds ---
 static RectF btnOpen, btnEdit, btnOrganize, btnMerge, btnSplit, btnCompress, btnProtect, btnExport, btnOCR, btnAIChat, btnBatch;
 static int pdfWorkspaceHover = 0; 
 // 1=Open, 2=Edit, 3=Organize, 4=Merge, 5=Split, 6=Compress, 7=Protect, 8=Export, 9=OCR, 10=AIChat, 11=Batch
-// এই রকম করুন:
-else if (pdfWorkspaceHover == 2) MessageBoxW(hParentWnd, L"Edit PDF Text, Images, and Links here.", L"Edit Mode", MB_OK);
-else if (pdfWorkspaceHover == 3) MessageBoxW(hParentWnd, L"Drag and drop pages to rearrange, delete, or rotate them.", L"Organize Pages", MB_OK);
-else if (pdfWorkspaceHover == 4) MessageBoxW(hParentWnd, L"Select multiple files to merge into a single PDF.", L"Merge PDF", MB_OK);
-else if (pdfWorkspaceHover == 5) MessageBoxW(hParentWnd, L"Split PDF by page ranges or extract specific images.", L"Split / Extract", MB_OK);
-else if (pdfWorkspaceHover == 6) MessageBoxW(hParentWnd, L"Compress PDF to reduce file size for sharing.", L"Compress PDF", MB_OK);
-else if (pdfWorkspaceHover == 7) MessageBoxW(hParentWnd, L"Add Password, Watermark, or Digital Signature.", L"Protect & Sign", MB_OK);
-else if (pdfWorkspaceHover == 8) MessageBoxW(hParentWnd, L"Convert PDF to Word, Excel, or PowerPoint format.", L"Export PDF", MB_OK);
-else if (pdfWorkspaceHover == 9) MessageBoxW(hParentWnd, L"Extract text from scanned PDFs or images using OCR.", L"OCR Tool", MB_OK);
-else if (pdfWorkspaceHover == 10) MessageBoxW(hParentWnd, L"Ask questions, summarize, or translate PDF content using AI.", L"AI Assistant", MB_OK);
-else if (pdfWorkspaceHover == 11) MessageBoxW(hParentWnd, L"Apply passwords or watermarks to multiple PDFs at once.", L"Batch Processing", MB_OK);
 
+// --- Helper: Draw Sidebar Button ---
+static void DrawSidebarButton(Graphics& g, RectF bounds, wstring text, wstring icon, int hoverCode, int currentHover) {
+    SolidBrush bgBrush(currentHover == hoverCode ? Color(255, 12, 168, 176) : Color(255, 30, 40, 55));
+    g.FillRectangle(&bgBrush, bounds);
+
+    FontFamily ff(L"Segoe UI");
+    Font fText(&ff, 13.0f * g_scaleFactor, FontStyleBold, UnitPixel);
+    
+    FontFamily ffIcon(L"Segoe MDL2 Assets");
     Font fIcon(&ffIcon, 15.0f * g_scaleFactor, FontStyleRegular, UnitPixel);
     
     StringFormat fmt; 
@@ -72,7 +70,7 @@ RECT GetPdfWebViewArea(float cx, float cy, float cw, float ch) {
 void DrawPdfWorkspaceTab(Graphics& g, float cx, float cy, float cw, float ch) {
     float sidebarW = 280.0f * g_scaleFactor;
 
-    // ১. Right Side Background (Edge Engine Area)
+    // ১. Right Side Background
     SolidBrush bgRight(Color(255, 240, 243, 248));
     g.FillRectangle(&bgRight, cx + sidebarW, cy, cw - sidebarW, ch);
 
@@ -84,7 +82,7 @@ void DrawPdfWorkspaceTab(Graphics& g, float cx, float cy, float cw, float ch) {
         g.DrawString(L"No PDF Selected\nUse the left panel to open a document.", -1, &fEmpty, RectF(cx + sidebarW, cy, cw - sidebarW, ch), &fmtC, &txtEmpty);
     }
 
-    // ২. Left Sidebar (Ultimate Pro Toolbar)
+    // ২. Left Sidebar
     SolidBrush bgSidebar(Color(255, 20, 25, 35)); 
     g.FillRectangle(&bgSidebar, cx, cy, sidebarW, ch);
 
@@ -95,9 +93,9 @@ void DrawPdfWorkspaceTab(Graphics& g, float cx, float cy, float cw, float ch) {
     StringFormat fmt; fmt.SetAlignment(StringAlignmentNear); fmt.SetLineAlignment(StringAlignmentCenter);
     g.DrawString(L"Ultimate PDF Studio", -1, &fTitle, RectF(cx + 15.0f * g_scaleFactor, cy + 15.0f * g_scaleFactor, sidebarW, 40.0f * g_scaleFactor), &fmt, &txtTitle);
 
-    // ৩. Sidebar Buttons Calculation
+    // ৩. Sidebar Buttons
     float btnY = cy + 65.0f * g_scaleFactor;
-    float btnH = 36.0f * g_scaleFactor; // স্পেস বাঁচানোর জন্য সাইজ একটু কমানো হয়েছে
+    float btnH = 36.0f * g_scaleFactor; 
     float btnGap = 4.0f * g_scaleFactor;
     float sectionGap = 12.0f * g_scaleFactor;
     float padding = 12.0f * g_scaleFactor;
@@ -115,16 +113,16 @@ void DrawPdfWorkspaceTab(Graphics& g, float cx, float cy, float cw, float ch) {
     DrawSidebarButton(g, btnEdit, L"Edit Text & Images", L"\xE70F", 2, pdfWorkspaceHover);
     btnY += btnH + sectionGap;
 
-    // --- SECTION 2: AI & SMART TOOLS (🟢 নতুন) ---
+    // --- SECTION 2: AI & SMART TOOLS ---
     DrawSectionHeader(g, L"AI & SMART TOOLS", cx + padding, btnY, btnW);
     btnY += 22.0f * g_scaleFactor;
 
     btnAIChat = RectF(cx + padding, btnY, btnW, btnH);
-    DrawSidebarButton(g, btnAIChat, L"Chat with PDF (AI)", L"\xE8BD", 10, pdfWorkspaceHover); // Message icon
+    DrawSidebarButton(g, btnAIChat, L"Chat with PDF (AI)", L"\xE8BD", 10, pdfWorkspaceHover); 
     btnY += btnH + btnGap;
 
     btnOCR = RectF(cx + padding, btnY, btnW, btnH);
-    DrawSidebarButton(g, btnOCR, L"Scan to Text (OCR)", L"\xE8B3", 9, pdfWorkspaceHover); // Scanner icon
+    DrawSidebarButton(g, btnOCR, L"Scan to Text (OCR)", L"\xE8B3", 9, pdfWorkspaceHover); 
     btnY += btnH + sectionGap;
 
     // --- SECTION 3: PAGE ORGANIZE ---
@@ -160,7 +158,7 @@ void DrawPdfWorkspaceTab(Graphics& g, float cx, float cy, float cw, float ch) {
     btnY += btnH + btnGap;
 
     btnBatch = RectF(cx + padding, btnY, btnW, btnH);
-    DrawSidebarButton(g, btnBatch, L"Batch Processing", L"\xE7B3", 11, pdfWorkspaceHover); // Sync icon
+    DrawSidebarButton(g, btnBatch, L"Batch Processing", L"\xE7B3", 11, pdfWorkspaceHover); 
 }
 
 // ==========================================
@@ -183,7 +181,6 @@ void ProcessPdfWorkspaceMouseMove(float x, float y) {
     else if (btnBatch.Contains(x, y)) pdfWorkspaceHover = 11;
 
     if (oldHov != pdfWorkspaceHover && hParentWnd) {
-        // পুরো সাইডবার এরিয়া রিড্র করা
         RECT updateRect = { 0, 0, (LONG)(280.0f * g_scaleFactor), 2000 }; 
         InvalidateRect(hParentWnd, &updateRect, FALSE);
     }
@@ -191,7 +188,6 @@ void ProcessPdfWorkspaceMouseMove(float x, float y) {
 
 void ProcessPdfWorkspaceMouseClick(float x, float y) {
     if (pdfWorkspaceHover == 1) {
-        // --- Open PDF ---
         IFileOpenDialog *pFileOpen;
         if (SUCCEEDED(CoCreateInstance(CLSID_FileOpenDialog, NULL, CLSCTX_ALL, IID_IFileOpenDialog, reinterpret_cast<void**>(&pFileOpen)))) {
             COMDLG_FILTERSPEC rgSpec[] = { { L"PDF Files", L"*.pdf" } };
@@ -203,11 +199,7 @@ void ProcessPdfWorkspaceMouseClick(float x, float y) {
                     PWSTR pszFilePath;
                     if (SUCCEEDED(pItem->GetDisplayName(SIGDN_URL, &pszFilePath))) {
                         currentWorkspacePdf = pszFilePath;
-                        
-                        // 🟢 এখানে আপনার WebView2 কে কল করতে হবে!
-                        // RECT area = GetPdfWebViewArea(...);
-                        // LaunchWebView2_In_Specific_Area(currentWorkspacePdf, area);
-                        
+                        // WebView2 Engine will be injected here next!
                         CoTaskMemFree(pszFilePath);
                     }
                     pItem->Release();
