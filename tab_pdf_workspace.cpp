@@ -13,8 +13,8 @@
 #include <sstream>
 #include <Shlwapi.h>
 #include <WebView2.h>
-#include <wrl.h>         // 🟢 FIX: Added for Callback support
-#include <wrl/event.h>   // 🟢 FIX: Added for Event Handlers
+#include <wrl.h>         
+#include <wrl/event.h>   
 
 #pragma comment(lib, "Shlwapi.lib")
 #pragma comment(lib, "WebView2Loader.dll.lib")
@@ -41,10 +41,10 @@ HRESULT InitializeWebView2(HWND hWnd, HWND hHostWnd);
 LRESULT CALLBACK AcrobatViewerWndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp);
 
 // ==========================================
-// 🎨 HTML/CSS/JS UI - SPLIT TO FIX "STRING TOO BIG" ERROR
+// 🎨 HTML/CSS/JS UI - SPLIT STRINGS
 // ==========================================
-const wchar_t* GetAcrobatHTML() {
-    return LR"HTML(
+wstring GetAcrobatHTML() {
+    wstring htmlPart1 = LR"HTML(
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -132,10 +132,9 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; height: 100vh; overflow: 
 </style>
 </head>
 <body>
-)HTML"
+)HTML";
 
-// 🟢 SPLIT 2: HTML Structure
-LR"HTML(
+    wstring htmlPart2 = LR"HTML(
 <div class="toast-container" id="toast-container"></div>
 <div class="modal-overlay" id="modal-overlay"><div class="modal" id="modal-content"></div></div>
 <div class="progress-bar" id="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
@@ -227,10 +226,9 @@ LR"HTML(
     </div>
 </div>
 <div class="loading-overlay" id="loading-overlay"><div class="spinner"></div><div id="loading-text">Processing...</div></div>
-)HTML"
+)HTML";
 
-// 🟢 SPLIT 3: Javascript Logic
-LR"HTML(
+    wstring htmlPart3 = LR"HTML(
 <script>
 let pdfDoc = null; let pdfBytes = null; let currentPage = 1; let currentZoom = 100; let currentRotation = 0; let numPages = 0;
 let pageSelectionMode = false; let selectedPages = new Set(); let history = []; let historyIndex = -1;
@@ -395,6 +393,8 @@ window.loadPdfFromFile = loadPdfFromFile;
 </body>
 </html>
 )HTML";
+
+    return htmlPart1 + htmlPart2 + htmlPart3;
 }
 
 // ==========================================
@@ -436,61 +436,56 @@ LRESULT CALLBACK AcrobatViewerWndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp)
 // 🌐 WEBVIEW2 INITIALIZATION
 // ==========================================
 HRESULT InitializeWebView2(HWND hWnd, HWND hHostWnd) {
-    return CreateCoreWebView2EnvironmentWithOptions(
-        nullptr, nullptr, nullptr,
-        Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
-            [hWnd, hHostWnd](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
-                if (FAILED(result)) return result;
-                g_webViewEnv = env;
-                
-                env->CreateCoreWebView2Controller(
-                    hHostWnd,
-                    Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
-                        [hWnd](HRESULT result, ICoreWebView2Controller* controller) -> HRESULT {
-                            if (FAILED(result)) return result;
-                            
-                            g_webViewController = controller;
-                            g_webViewController->get_CoreWebView2(&g_webView);
-                            
-                            ICoreWebView2Settings* settings;
-                            g_webView->get_Settings(&settings);
-                            settings->put_IsScriptEnabled(TRUE);
-                            settings->put_IsWebMessageEnabled(TRUE);
-                            
-                            RECT r; GetClientRect(hWnd, &r);
-                            g_webViewController->put_Bounds(RECT{0, 0, r.right, r.bottom});
-                            
-                            g_webView->NavigateToString(GetAcrobatHTML());
-                            
-                            g_webView->add_NavigationCompleted(
-                                Callback<ICoreWebView2NavigationCompletedEventHandler>(
-                                    [](ICoreWebView2* sender, ICoreWebView2NavigationCompletedEventArgs* args) -> HRESULT {
-                                        BOOL success; args->get_IsSuccess(&success);
-                                        if (success) {
-                                            g_webViewInitialized = true;
-                                            if (!g_acrobatPdfPath.empty()) {
-                                                std::wstring escapedPath = g_acrobatPdfPath;
-                                                size_t pos = 0;
-                                                while ((pos = escapedPath.find(L"\\", pos)) != std::wstring::npos) {
-                                                    escapedPath.replace(pos, 1, L"\\\\");
-                                                    pos += 2;
-                                                }
-                                                std::wstring script = L"loadPdfFromPath('" + escapedPath + L"');";
-                                                sender->ExecuteScript(script.c_str(), nullptr);
-                                            }
-                                        }
-                                        return S_OK;
+    auto envCompletedHandler = Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
+        [hWnd, hHostWnd](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
+            if (FAILED(result)) return result;
+            g_webViewEnv = env;
+            
+            auto controllerCompletedHandler = Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
+                [hWnd](HRESULT result, ICoreWebView2Controller* controller) -> HRESULT {
+                    if (FAILED(result)) return result;
+                    
+                    g_webViewController = controller;
+                    g_webViewController->get_CoreWebView2(&g_webView);
+                    
+                    ICoreWebView2Settings* settings;
+                    g_webView->get_Settings(&settings);
+                    settings->put_IsScriptEnabled(TRUE);
+                    settings->put_IsWebMessageEnabled(TRUE);
+                    
+                    RECT r; GetClientRect(hWnd, &r);
+                    g_webViewController->put_Bounds(RECT{0, 0, r.right, r.bottom});
+                    
+                    g_webView->NavigateToString(GetAcrobatHTML().c_str());
+                    
+                    auto navCompletedHandler = Callback<ICoreWebView2NavigationCompletedEventHandler>(
+                        [](ICoreWebView2* sender, ICoreWebView2NavigationCompletedEventArgs* args) -> HRESULT {
+                            BOOL success; args->get_IsSuccess(&success);
+                            if (success) {
+                                g_webViewInitialized = true;
+                                if (!g_acrobatPdfPath.empty()) {
+                                    std::wstring escapedPath = g_acrobatPdfPath;
+                                    size_t pos = 0;
+                                    while ((pos = escapedPath.find(L"\\", pos)) != std::wstring::npos) {
+                                        escapedPath.replace(pos, 1, L"\\\\");
+                                        pos += 2;
                                     }
-                                ).Get(), nullptr
-                            );
+                                    std::wstring script = L"loadPdfFromPath('" + escapedPath + L"');";
+                                    sender->ExecuteScript(script.c_str(), nullptr);
+                                }
+                            }
                             return S_OK;
                         }
-                    ).Get()
-                );
-                return S_OK;
-            }
-        ).Get()
+                    );
+                    g_webView->add_NavigationCompleted(navCompletedHandler.Get(), nullptr);
+                    return S_OK;
+                }
+            );
+            env->CreateCoreWebView2Controller(hHostWnd, controllerCompletedHandler.Get());
+            return S_OK;
+        }
     );
+    return CreateCoreWebView2EnvironmentWithOptions(nullptr, nullptr, nullptr, envCompletedHandler.Get());
 }
 
 // ==========================================
