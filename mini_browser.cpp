@@ -9,7 +9,7 @@
 #include <gdiplus.h>
 #include <string>
 #include <windowsx.h>
-#include <commctrl.h> // অ্যাড্রেস বারের জন্য
+#include <commctrl.h>
 
 #pragma comment(lib, "comctl32.lib")
 
@@ -19,9 +19,9 @@ using namespace Gdiplus;
 #define IDI_APP_ICON 101
 #define IDC_ADDRESS_BAR 1005
 
-extern bool g_isPureViewerMode; // main.cpp থেকে আসবে
+extern bool g_isPureViewerMode;
+extern float g_scaleFactor;
 
-// --- 🚀 Super Fast Loading Environment ---
 static ComPtr<ICoreWebView2Environment> g_miniEnv = nullptr;
 
 // --- Data Structure for Each Mini Browser Window ---
@@ -32,16 +32,17 @@ struct MiniBrowserData {
     bool isFullScreen = false;
     WINDOWPLACEMENT wpPrev = { sizeof(WINDOWPLACEMENT) };
     
-    // Browser Mode Extras
     bool isBrowserMode = false;
     HWND hAddressBar = NULL;
     
-    // Hover states for Navigation Icons
+    // 🟢 Custom Titlebar & Control States
     bool hBack = false, hFwd = false, hRel = false, hFS = false;
+    bool hPin = false, hAdd = false, hMin = false, hMax = false, hClose = false;
+    bool isPinned = false; // Always on Top State
 };
 
 static std::map<HWND, MiniBrowserData> g_mbData;
-static const int NAV_HEIGHT = 45;
+static const int NAV_HEIGHT = 45; // Custom Titlebar Height
 
 // ==========================================
 // FULL SCREEN LOGIC (F11 & ESC)
@@ -54,7 +55,7 @@ void ToggleFullScreen(HWND hWnd) {
     if (!data.isFullScreen) {
         MONITORINFO mi = { sizeof(mi) };
         if (GetWindowPlacement(hWnd, &data.wpPrev) && GetMonitorInfo(MonitorFromWindow(hWnd, MONITOR_DEFAULTTOPRIMARY), &mi)) {
-            SetWindowLong(hWnd, GWL_STYLE, dwStyle & ~WS_OVERLAPPEDWINDOW);
+            SetWindowLong(hWnd, GWL_STYLE, dwStyle & ~(WS_CAPTION | WS_THICKFRAME));
             SetWindowPos(hWnd, HWND_TOP, mi.rcMonitor.left, mi.rcMonitor.top,
                          mi.rcMonitor.right - mi.rcMonitor.left,
                          mi.rcMonitor.bottom - mi.rcMonitor.top,
@@ -63,7 +64,7 @@ void ToggleFullScreen(HWND hWnd) {
             if (data.hAddressBar) ShowWindow(data.hAddressBar, SW_HIDE);
         }
     } else {
-        SetWindowLong(hWnd, GWL_STYLE, dwStyle | WS_OVERLAPPEDWINDOW);
+        SetWindowLong(hWnd, GWL_STYLE, dwStyle | WS_CAPTION | WS_THICKFRAME);
         SetWindowPlacement(hWnd, &data.wpPrev);
         SetWindowPos(hWnd, NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
         data.isFullScreen = false;
@@ -78,7 +79,6 @@ void ToggleFullScreen(HWND hWnd) {
     InvalidateRect(hWnd, NULL, TRUE);
 }
 
-// --- কীবোর্ড থেকে ESC এবং F11 ধরার জন্য Handler ---
 class AcceleratorHandler : public ICoreWebView2AcceleratorKeyPressedEventHandler {
     HWND m_hWnd;
     ULONG m_refCount = 1;
@@ -107,7 +107,6 @@ public:
     }
 };
 
-// --- Address Bar 'Enter' Key Handler ---
 LRESULT CALLBACK AddressBarSubclassProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData) {
     if (msg == WM_KEYDOWN && wParam == VK_RETURN) {
         HWND hParent = GetParent(hWnd);
@@ -121,13 +120,13 @@ LRESULT CALLBACK AddressBarSubclassProc(HWND hWnd, UINT msg, WPARAM wParam, LPAR
             }
             g_mbData[hParent].webview->Navigate(urlStr.c_str());
         }
-        return 0; // Handled
+        return 0;
     }
     return DefSubclassProc(hWnd, msg, wParam, lParam);
 }
 
 // ==========================================
-// CUSTOM NAVIGATION BAR DRAWING
+// 🎨 CUSTOM NAVIGATION & TITLE BAR DRAWING
 // ==========================================
 void AddRoundedRectPath(GraphicsPath& path, float x, float y, float w, float h, float r) {
     float d = r * 2.0f;
@@ -149,50 +148,78 @@ void DrawMiniBrowserNav(HWND hWnd, HDC hdc) {
     g.SetSmoothingMode(SmoothingModeAntiAlias);
     g.SetTextRenderingHint(TextRenderingHintClearTypeGridFit);
 
-    SolidBrush bg(Color(255, 12, 26, 37)); 
+    // 🟢 Custom Borderless Titlebar Background (Teal)
+    SolidBrush bg(Color(255, 12, 168, 176)); 
     g.FillRectangle(&bg, 0, 0, w, NAV_HEIGHT);
 
     FontFamily ff(L"Segoe UI");
     FontFamily ffIcon(L"Segoe MDL2 Assets");
     Font fTitle(&ff, 16, FontStyleBold, UnitPixel);
-    Font fIcon(&ffIcon, 18, FontStyleRegular, UnitPixel);
+    Font fIcon(&ffIcon, 16, FontStyleRegular, UnitPixel);
+    Font fIconSml(&ffIcon, 14, FontStyleRegular, UnitPixel);
     
     StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
     StringFormat fmtL; fmtL.SetAlignment(StringAlignmentNear); fmtL.SetLineAlignment(StringAlignmentCenter);
 
     SolidBrush textWhite(Color(255, 255, 255, 255));
-    SolidBrush textTeal(Color(255, 12, 168, 176));
     SolidBrush hoverBg(Color(50, 255, 255, 255));
+    SolidBrush closeHoverBg(Color(255, 232, 17, 35)); // Red for Close
+    SolidBrush pinActiveColor(Color(255, 255, 215, 0)); // Yellow for Pinned
 
     int btnW = 45;
-    int startX = w - (btnW * 4) - 10;
+    int rightControlsX = w - (btnW * 3);
 
-    // Address Bar Background (If RasBrowser Mode)
+    // --- 1. Right Side Windows Controls (Min, Max, Close) ---
+    if(data.hMin) g.FillRectangle(&hoverBg, rightControlsX, 0, btnW, NAV_HEIGHT);
+    g.DrawString(L"\xE921", -1, &fIcon, RectF((float)rightControlsX, 0.0f, (float)btnW, (float)NAV_HEIGHT), &fmtC, &textWhite);
+    
+    if(data.hMax) g.FillRectangle(&hoverBg, rightControlsX + btnW, 0, btnW, NAV_HEIGHT);
+    const wchar_t* maxIcon = IsZoomed(hWnd) ? L"\xE923" : L"\xE922";
+    g.DrawString(maxIcon, -1, &fIcon, RectF((float)(rightControlsX + btnW), 0.0f, (float)btnW, (float)NAV_HEIGHT), &fmtC, &textWhite);
+    
+    if(data.hClose) g.FillRectangle(&closeHoverBg, rightControlsX + btnW*2, 0, btnW, NAV_HEIGHT);
+    g.DrawString(L"\xE8BB", -1, &fIcon, RectF((float)(rightControlsX + btnW*2), 0.0f, (float)btnW, (float)NAV_HEIGHT), &fmtC, &textWhite);
+
+    // --- 2. Left Side Special Controls (Pin & Add) ---
+    int leftControlsX = rightControlsX - (btnW * 2) - 10;
+    
+    // Add (+) Button for new Tab/Window
+    if(data.hAdd) g.FillRectangle(&hoverBg, leftControlsX, 0, btnW, NAV_HEIGHT);
+    g.DrawString(L"\xE710", -1, &fIconSml, RectF((float)leftControlsX, 0.0f, (float)btnW, (float)NAV_HEIGHT), &fmtC, &textWhite);
+    
+    // Pin Button (Always on top)
+    if(data.hPin) g.FillRectangle(&hoverBg, leftControlsX + btnW, 0, btnW, NAV_HEIGHT);
+    const wchar_t* pinIcon = data.isPinned ? L"\xE840" : L"\xE718";
+    SolidBrush* currentPinColor = data.isPinned ? &pinActiveColor : &textWhite;
+    g.DrawString(pinIcon, -1, &fIconSml, RectF((float)(leftControlsX + btnW), 0.0f, (float)btnW, (float)NAV_HEIGHT), &fmtC, currentPinColor);
+
+    // --- 3. Browser Navigation Controls & Address Bar ---
+    int navStartX = 10;
+    int navBtnW = 35;
+
+    if(data.hBack) g.FillRectangle(&hoverBg, navStartX, 0, navBtnW, NAV_HEIGHT);
+    g.DrawString(L"\xE72B", -1, &fIcon, RectF((float)navStartX, 0.0f, (float)navBtnW, (float)NAV_HEIGHT), &fmtC, &textWhite);
+    
+    if(data.hFwd) g.FillRectangle(&hoverBg, navStartX + navBtnW, 0, navBtnW, NAV_HEIGHT);
+    g.DrawString(L"\xE72A", -1, &fIcon, RectF((float)(navStartX + navBtnW), 0.0f, (float)navBtnW, (float)NAV_HEIGHT), &fmtC, &textWhite);
+
+    if(data.hRel) g.FillRectangle(&hoverBg, navStartX + navBtnW*2, 0, navBtnW, NAV_HEIGHT);
+    g.DrawString(L"\xE72C", -1, &fIcon, RectF((float)(navStartX + navBtnW*2), 0.0f, (float)navBtnW, (float)NAV_HEIGHT), &fmtC, &textWhite);
+
+    // Title or Address Bar
+    int titleX = navStartX + navBtnW*3 + 10;
+    int titleW = leftControlsX - titleX - 10;
+
     if (data.isBrowserMode) {
-        int editX = 15;
         int editY = 8;
-        int editW = startX - editX - 20;
         int editH = 28;
         GraphicsPath editPath;
-        AddRoundedRectPath(editPath, (float)editX, (float)editY, (float)editW, (float)editH, 14.0f);
+        AddRoundedRectPath(editPath, (float)titleX, (float)editY, (float)titleW, (float)editH, 14.0f);
         SolidBrush editBg(Color(255, 255, 255, 255));
         g.FillPath(&editBg, &editPath);
     } else {
-        g.DrawString(data.title.c_str(), -1, &fTitle, RectF(15.0f, 0.0f, (float)w - 200.0f, (float)NAV_HEIGHT), &fmtL, &textTeal);
+        g.DrawString(data.title.c_str(), -1, &fTitle, RectF((float)titleX, 0.0f, (float)titleW, (float)NAV_HEIGHT), &fmtL, &textWhite);
     }
-
-    if(data.hBack) g.FillRectangle(&hoverBg, startX, 0, btnW, NAV_HEIGHT);
-    g.DrawString(L"\xE72B", -1, &fIcon, RectF((float)startX, 0.0f, (float)btnW, (float)NAV_HEIGHT), &fmtC, &textWhite);
-    
-    if(data.hFwd) g.FillRectangle(&hoverBg, startX + btnW, 0, btnW, NAV_HEIGHT);
-    g.DrawString(L"\xE72A", -1, &fIcon, RectF((float)(startX + btnW), 0.0f, (float)btnW, (float)NAV_HEIGHT), &fmtC, &textWhite);
-
-    if(data.hRel) g.FillRectangle(&hoverBg, startX + btnW*2, 0, btnW, NAV_HEIGHT);
-    g.DrawString(L"\xE72C", -1, &fIcon, RectF((float)(startX + btnW*2), 0.0f, (float)btnW, (float)NAV_HEIGHT), &fmtC, &textWhite);
-
-    if(data.hFS) g.FillRectangle(&hoverBg, startX + btnW*3, 0, btnW, NAV_HEIGHT);
-    const wchar_t* fsIcon = data.isFullScreen ? L"\xE73F" : L"\xE740";
-    g.DrawString(fsIcon, -1, &fIcon, RectF((float)(startX + btnW*3), 0.0f, (float)btnW, (float)NAV_HEIGHT), &fmtC, &textWhite);
 }
 
 // ==========================================
@@ -200,6 +227,43 @@ void DrawMiniBrowserNav(HWND hWnd, HDC hdc) {
 // ==========================================
 LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
     switch (message) {
+        // 🟢 FIX: Borderless Dragging & Resizing Logic
+        case WM_NCCALCSIZE: {
+            if (wParam == TRUE) return 0;
+            break;
+        }
+        case WM_NCHITTEST: {
+            POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+            ScreenToClient(hWnd, &pt);
+            int border = 8;
+            RECT r; GetClientRect(hWnd, &r);
+
+            if (pt.y < border && pt.x < border) return HTTOPLEFT;
+            if (pt.y < border && pt.x >= r.right - border) return HTTOPRIGHT;
+            if (pt.y >= r.bottom - border && pt.x < border) return HTBOTTOMLEFT;
+            if (pt.y >= r.bottom - border && pt.x >= r.right - border) return HTBOTTOMRIGHT;
+            if (pt.y < border) return HTTOP;
+            if (pt.y >= r.bottom - border) return HTBOTTOM;
+            if (pt.x < border) return HTLEFT;
+            if (pt.x >= r.right - border) return HTRIGHT;
+
+            // Custom Titlebar Drag Logic
+            if (pt.y < NAV_HEIGHT) {
+                int w = r.right - r.left;
+                int rightControlsX = w - (45 * 3);
+                int leftControlsX = rightControlsX - (45 * 2) - 10;
+                
+                // Allow clicking on buttons
+                if (pt.x >= leftControlsX) return HTCLIENT; 
+                if (pt.x <= 10 + (35 * 3)) return HTCLIENT;
+                if (g_mbData[hWnd].isBrowserMode && pt.y >= 8 && pt.y <= 36) return HTCLIENT; // Address bar
+                
+                // Everywhere else on Titlebar = Drag
+                return HTCAPTION; 
+            }
+            return HTCLIENT;
+        }
+
         case WM_PAINT: {
             PAINTSTRUCT ps; HDC hdc = BeginPaint(hWnd, &ps);
             if (g_mbData.count(hWnd)) DrawMiniBrowserNav(hWnd, hdc);
@@ -223,12 +287,16 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lP
                 int w = b.right - b.left;
                 
                 if (data.isBrowserMode && data.hAddressBar) {
-                    int btnW = 45; int startX = w - (btnW * 4) - 10;
-                    int editX = 25; int editY = 12; int editW = startX - editX - 30; int editH = 20;
+                    int btnW = 45; int navBtnW = 35;
+                    int rightControlsX = w - (btnW * 3);
+                    int leftControlsX = rightControlsX - (btnW * 2) - 10;
+                    int titleX = 10 + navBtnW*3 + 10;
+                    int titleW = leftControlsX - titleX - 10;
+                    
                     if (data.isFullScreen) ShowWindow(data.hAddressBar, SW_HIDE);
                     else {
                         ShowWindow(data.hAddressBar, SW_SHOW);
-                        SetWindowPos(data.hAddressBar, NULL, editX, editY, editW, editH, SWP_NOZORDER);
+                        SetWindowPos(data.hAddressBar, NULL, titleX + 10, 12, titleW - 20, 20, SWP_NOZORDER);
                     }
                 }
                 
@@ -237,6 +305,7 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lP
                     data.controller->put_Bounds(b);
                 }
             }
+            InvalidateRect(hWnd, NULL, FALSE);
             break;
         }
         case WM_MOUSEMOVE: {
@@ -244,16 +313,36 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lP
             auto& data = g_mbData[hWnd];
             int x = GET_X_LPARAM(lParam); int y = GET_Y_LPARAM(lParam);
             RECT r; GetClientRect(hWnd, &r);
-            int w = r.right - r.left; int btnW = 45; int startX = w - (btnW * 4) - 10;
+            int w = r.right - r.left; 
+            
+            int btnW = 45; int navBtnW = 35;
+            int rightControlsX = w - (btnW * 3);
+            int leftControlsX = rightControlsX - (btnW * 2) - 10;
 
-            bool oldB = data.hBack, oldF = data.hFwd, oldR = data.hRel, oldFS = data.hFS;
-            data.hBack = (y <= NAV_HEIGHT && x >= startX && x < startX + btnW);
-            data.hFwd  = (y <= NAV_HEIGHT && x >= startX + btnW && x < startX + btnW*2);
-            data.hRel  = (y <= NAV_HEIGHT && x >= startX + btnW*2 && x < startX + btnW*3);
-            data.hFS   = (y <= NAV_HEIGHT && x >= startX + btnW*3 && x < startX + btnW*4);
+            bool redraw = false;
 
-            if (oldB != data.hBack || oldF != data.hFwd || oldR != data.hRel || oldFS != data.hFS) {
-                RECT navRect = { startX, 0, w, NAV_HEIGHT };
+            // Nav Controls
+            bool ob = data.hBack, of = data.hFwd, orl = data.hRel;
+            data.hBack = (y <= NAV_HEIGHT && x >= 10 && x < 10 + navBtnW);
+            data.hFwd  = (y <= NAV_HEIGHT && x >= 10 + navBtnW && x < 10 + navBtnW*2);
+            data.hRel  = (y <= NAV_HEIGHT && x >= 10 + navBtnW*2 && x < 10 + navBtnW*3);
+            if (ob != data.hBack || of != data.hFwd || orl != data.hRel) redraw = true;
+
+            // Special Controls (Add, Pin)
+            bool oA = data.hAdd, oP = data.hPin;
+            data.hAdd = (y <= NAV_HEIGHT && x >= leftControlsX && x < leftControlsX + btnW);
+            data.hPin = (y <= NAV_HEIGHT && x >= leftControlsX + btnW && x < leftControlsX + btnW*2);
+            if (oA != data.hAdd || oP != data.hPin) redraw = true;
+
+            // Windows Controls (Min, Max, Close)
+            bool oMin = data.hMin, oMax = data.hMax, oClose = data.hClose;
+            data.hMin   = (y <= NAV_HEIGHT && x >= rightControlsX && x < rightControlsX + btnW);
+            data.hMax   = (y <= NAV_HEIGHT && x >= rightControlsX + btnW && x < rightControlsX + btnW*2);
+            data.hClose = (y <= NAV_HEIGHT && x >= rightControlsX + btnW*2 && x < w);
+            if (oMin != data.hMin || oMax != data.hMax || oClose != data.hClose) redraw = true;
+
+            if (redraw) {
+                RECT navRect = { 0, 0, w, NAV_HEIGHT };
                 InvalidateRect(hWnd, &navRect, FALSE);
             }
             break;
@@ -261,10 +350,35 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lP
         case WM_LBUTTONDOWN: {
             if (!g_mbData.count(hWnd) || g_mbData[hWnd].isFullScreen) break;
             auto& data = g_mbData[hWnd];
+            
+            // Nav Clicks
             if (data.hBack && data.webview) data.webview->GoBack();
             if (data.hFwd && data.webview) data.webview->GoForward();
             if (data.hRel && data.webview) data.webview->Reload();
-            if (data.hFS) ToggleFullScreen(hWnd);
+            
+            // 🟢 Action: Add New Window
+            if (data.hAdd) {
+                extern void LaunchMiniBrowser(std::wstring url, std::wstring title);
+                if (data.isBrowserMode) LaunchMiniBrowser(L"RAS_BROWSER", L"RasBrowser");
+                else LaunchMiniBrowser(L"https://www.google.com", L"New Tab");
+            }
+            
+            // 🟢 Action: Pin Window (Always on Top)
+            if (data.hPin) {
+                data.isPinned = !data.isPinned;
+                if (data.isPinned) SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+                else SetWindowPos(hWnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+                InvalidateRect(hWnd, NULL, FALSE);
+            }
+
+            // Window Controls Clicks
+            if (data.hMin) ShowWindow(hWnd, SW_MINIMIZE);
+            if (data.hMax) {
+                if (IsZoomed(hWnd)) ShowWindow(hWnd, SW_RESTORE);
+                else ShowWindow(hWnd, SW_MAXIMIZE);
+            }
+            if (data.hClose) DestroyWindow(hWnd);
+            
             break;
         }
         case WM_GETMINMAXINFO: {
@@ -343,7 +457,7 @@ public:
 };
 
 // ==========================================
-// 🚀 LAUNCH FUNCTION (CALLED FROM MAIN/DASHBOARD)
+// 🚀 LAUNCH FUNCTION 
 // ==========================================
 void LaunchMiniBrowser(std::wstring url, std::wstring title) {
     static bool classRegistered = false;
@@ -359,11 +473,17 @@ void LaunchMiniBrowser(std::wstring url, std::wstring title) {
 
     std::wstring fullTitle = L"RasFocus - " + title;
     
+    // 🟢 FIX: Borderless Window for Custom Titlebar
     HWND hViewerWnd = CreateWindowExW(
         0, L"RasMiniBrowserClass", fullTitle.c_str(),
-        WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 1050, 750,
+        WS_POPUP | WS_THICKFRAME | WS_CAPTION | WS_SYSMENU | WS_MAXIMIZEBOX | WS_MINIMIZEBOX | WS_CLIPCHILDREN, 
+        CW_USEDEFAULT, CW_USEDEFAULT, 1050, 750,
         NULL, NULL, GetModuleHandle(NULL), NULL
     );
+    
+    // Remove Default Windows Titlebar (keep shadow and resizing)
+    DWORD style = GetWindowLong(hViewerWnd, GWL_STYLE);
+    SetWindowLong(hViewerWnd, GWL_STYLE, style & ~WS_CAPTION);
 
     g_mbData[hViewerWnd].title = fullTitle;
 
