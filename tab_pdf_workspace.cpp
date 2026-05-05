@@ -9,7 +9,7 @@ extern HWND hParentWnd;
 extern float g_scaleFactor;
 
 // --- State Variables ---
-static wstring currentWorkspacePdf = L"";
+extern wstring currentWorkspacePdf;
 
 // --- Button Bounds ---
 static RectF btnOpen, btnEdit, btnOrganize, btnMerge, btnSplit, btnCompress, btnProtect, btnExport, btnOCR, btnAIChat, btnBatch;
