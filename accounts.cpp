@@ -1,7 +1,7 @@
 // accounts.cpp
 
 #include "accounts.h"
-#include "mini_browser.h" 
+#include <shellapi.h>
 #include <string>
 
 using namespace Gdiplus;
@@ -10,12 +10,12 @@ using namespace std;
 extern HWND hParentWnd;
 extern float g_scaleFactor;
 
-// 🟢 গ্লোবাল ভেরিয়েবল (যাতে অন্য ট্যাব থেকেও ডেটা পড়া যায়)
+// 🟢 গ্লোবাল ভেরিয়েবল 
 bool g_isLoggedIn = false;
 std::wstring g_userName = L"";
 std::wstring g_userEmail = L"";
 std::wstring g_userUID = L"";
-bool g_isPremiumUser = false; // লগইন থাকলে প্রো ফিচার আনলক করার জন্য
+bool g_isPremiumUser = false; 
 
 // বাটনের স্টেট ট্র্যাক করার জন্য ভেরিয়েবল
 static RectF btnLoginRect;
@@ -36,32 +36,36 @@ static void AddRoundedRectPathAcc(GraphicsPath& path, float x, float y, float w,
 
 // --- Helper Function: Premium Shadow ---
 static void DrawPremiumShadowAcc(Graphics& g, float x, float y, float w, float h, float r) {
-    for (int i = 0; i < 6; ++i) {
+    for (int i = 0; i < 4; ++i) { // শ্যাডো একটু কমানো হয়েছে পারফরম্যান্সের জন্য
         GraphicsPath path;
-        float expand = 6.0f - (float)i;
-        AddRoundedRectPathAcc(path, x - expand, y - expand + (float)i * 1.5f, w + expand * 2.0f, h + expand * 2.0f, r + expand);
-        SolidBrush shadowBrush(Color(4 + (i * 2), 0, 0, 0)); 
+        float expand = 4.0f - (float)i;
+        AddRoundedRectPathAcc(path, x - expand, y - expand + (float)i * 1.0f, w + expand * 2.0f, h + expand * 2.0f, r + expand);
+        SolidBrush shadowBrush(Color(6 + (i * 2), 0, 0, 0)); 
         g.FillPath(&shadowBrush, &path);
     }
 }
 
 // ==========================================
-// 🎨 DRAW ACCOUNTS TAB UI
+// 🎨 DRAW ACCOUNTS TAB UI (Responsive)
 // ==========================================
 void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
     g.SetSmoothingMode(SmoothingModeAntiAlias);
     g.SetTextRenderingHint(TextRenderingHintClearTypeGridFit);
 
+    // ডাইনামিক ফন্ট সাইজ (উইন্ডো খুব ছোট হলে ফন্টও হালকা ছোট হবে)
+    float dynamicScale = g_scaleFactor;
+    if (cw < 700.0f) dynamicScale = g_scaleFactor * 0.85f; 
+
     FontFamily ff(L"Segoe UI");
-    Font fH1(&ff, 32 * g_scaleFactor, FontStyleBold, UnitPixel);
-    Font fH2(&ff, 26 * g_scaleFactor, FontStyleBold, UnitPixel);
-    Font fText(&ff, 16 * g_scaleFactor, FontStyleRegular, UnitPixel);
-    Font fBtn(&ff, 18 * g_scaleFactor, FontStyleBold, UnitPixel);
-    Font fBadge(&ff, 14 * g_scaleFactor, FontStyleBold, UnitPixel);
+    Font fH1(&ff, 28 * dynamicScale, FontStyleBold, UnitPixel);
+    Font fH2(&ff, 22 * dynamicScale, FontStyleBold, UnitPixel);
+    Font fText(&ff, 14 * dynamicScale, FontStyleRegular, UnitPixel);
+    Font fBtn(&ff, 16 * dynamicScale, FontStyleBold, UnitPixel);
+    Font fBadge(&ff, 12 * dynamicScale, FontStyleBold, UnitPixel);
     
     FontFamily ffIc(L"Segoe MDL2 Assets");
-    Font fIcon(&ffIc, 80 * g_scaleFactor, FontStyleRegular, UnitPixel);
-    Font fAvatar(&ffIc, 60 * g_scaleFactor, FontStyleRegular, UnitPixel);
+    Font fIcon(&ffIc, 70 * dynamicScale, FontStyleRegular, UnitPixel);
+    Font fAvatar(&ffIc, 50 * dynamicScale, FontStyleRegular, UnitPixel);
 
     SolidBrush bBg(Color(255, 248, 250, 252)); 
     SolidBrush bDark(Color(255, 30, 40, 50));
@@ -69,85 +73,94 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
     SolidBrush bGray(Color(255, 120, 130, 140));
     
     StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
-    StringFormat fmtL; fmtL.SetAlignment(StringAlignmentNear); fmtL.SetLineAlignment(StringAlignmentCenter);
-
-    // 1. Background Fill & Header
+    
+    // 1. Background Fill
     g.FillRectangle(&bBg, cx, cy, cw, ch);
-    g.DrawString(L"Account & Cloud Sync", -1, &fH1, RectF(cx + 50.0f * g_scaleFactor, cy + 30.0f * g_scaleFactor, cw, 50.0f * g_scaleFactor), &fmtL, &bDark);
-    g.DrawString(L"Securely backup your blocks, schedule, and diary to RasFocus Cloud.", -1, &fText, RectF(cx + 50.0f * g_scaleFactor, cy + 80.0f * g_scaleFactor, cw, 30.0f * g_scaleFactor), &fmtL, &bGray);
 
-    // 2. Profile Card Setup
-    float cardW = 550.0f * g_scaleFactor;
-    float cardH = 380.0f * g_scaleFactor;
+    // 2. Responsive Card Setup
+    // কার্ডের সাইজ উইন্ডোর উপর ভিত্তি করে ছোট-বড় হবে, তবে একটা ম্যাক্সিমাম সাইজ থাকবে
+    float cardW = min(500.0f * dynamicScale, cw * 0.9f); 
+    float cardH = 340.0f * dynamicScale;
+    
+    // কার্ড একদম মাঝখানে পজিশন করা
     float cardX = cx + (cw - cardW) / 2.0f;
-    float cardY = cy + 150.0f * g_scaleFactor;
+    float cardY = cy + (ch - cardH) / 2.0f; // ভার্টিকালিও মাঝখানে
 
-    DrawPremiumShadowAcc(g, cardX, cardY, cardW, cardH, 20.0f);
+    // Header Title (কার্ডের ঠিক উপরে থাকবে)
+    float headerY = cardY - 80.0f * dynamicScale;
+    g.DrawString(L"Account & Cloud Sync", -1, &fH1, RectF(cx, headerY, cw, 40.0f * dynamicScale), &fmtC, &bDark);
+    g.DrawString(L"Securely backup your data to RasFocus Cloud.", -1, &fText, RectF(cx, headerY + 40.0f * dynamicScale, cw, 30.0f * dynamicScale), &fmtC, &bGray);
+
+    // Draw Card Shape
+    DrawPremiumShadowAcc(g, cardX, cardY, cardW, cardH, 15.0f);
     GraphicsPath cardPath;
-    AddRoundedRectPathAcc(cardPath, cardX, cardY, cardW, cardH, 20.0f);
+    AddRoundedRectPathAcc(cardPath, cardX, cardY, cardW, cardH, 15.0f);
     g.FillPath(&bWhite, &cardPath);
 
+    // ==================================
+    // 🔴 STATE: NOT LOGGED IN
+    // ==================================
     if (!g_isLoggedIn) {
-        // 🔴 STATE: NOT LOGGED IN
+        float avatarSize = 100.0f * dynamicScale;
         SolidBrush avatarBg(Color(255, 235, 245, 255));
-        g.FillEllipse(&avatarBg, cardX + (cardW - 120.0f * g_scaleFactor) / 2.0f, cardY + 40.0f * g_scaleFactor, 120.0f * g_scaleFactor, 120.0f * g_scaleFactor);
+        g.FillEllipse(&avatarBg, cardX + (cardW - avatarSize) / 2.0f, cardY + 30.0f * dynamicScale, avatarSize, avatarSize);
         
         SolidBrush avatarIconColor(Color(255, 18, 168, 176)); 
-        g.DrawString(L"\xE77B", -1, &fIcon, RectF(cardX, cardY + 40.0f * g_scaleFactor, cardW, 120.0f * g_scaleFactor), &fmtC, &avatarIconColor);
+        g.DrawString(L"\xE77B", -1, &fIcon, RectF(cardX, cardY + 30.0f * dynamicScale, cardW, avatarSize), &fmtC, &avatarIconColor);
         
-        g.DrawString(L"Not Logged In", -1, &fH2, RectF(cardX, cardY + 180.0f * g_scaleFactor, cardW, 40.0f * g_scaleFactor), &fmtC, &bDark);
-        g.DrawString(L"Sign in to unlock cross-device synchronization\nand premium cloud features.", -1, &fText, RectF(cardX + 20.0f, cardY + 220.0f * g_scaleFactor, cardW - 40.0f, 50.0f * g_scaleFactor), &fmtC, &bGray);
+        g.DrawString(L"Not Logged In", -1, &fH2, RectF(cardX, cardY + 140.0f * dynamicScale, cardW, 40.0f * dynamicScale), &fmtC, &bDark);
+        g.DrawString(L"Sign in to unlock premium cloud features.", -1, &fText, RectF(cardX + 10.0f, cardY + 180.0f * dynamicScale, cardW - 20.0f, 30.0f * dynamicScale), &fmtC, &bGray);
 
-        float btnW = 320.0f * g_scaleFactor;
-        float btnH = 55.0f * g_scaleFactor;
+        float btnW = min(300.0f * dynamicScale, cardW * 0.85f);
+        float btnH = 50.0f * dynamicScale;
         float btnX = cardX + (cardW - btnW) / 2.0f;
-        float btnY = cardY + 290.0f * g_scaleFactor;
+        float btnY = cardY + 250.0f * dynamicScale;
         btnLoginRect = RectF(btnX, btnY, btnW, btnH);
 
         GraphicsPath btnPath;
-        AddRoundedRectPathAcc(btnPath, btnX, btnY, btnW, btnH, 27.5f);
+        AddRoundedRectPathAcc(btnPath, btnX, btnY, btnW, btnH, btnH/2.0f);
         SolidBrush btnColor(isHoverLogin ? Color(255, 14, 138, 145) : Color(255, 18, 168, 176));
         g.FillPath(&btnColor, &btnPath);
-        g.DrawString(L"Sign In with Google / Email", -1, &fBtn, btnLoginRect, &fmtC, &bWhite);
+        g.DrawString(L"Sign In with Google", -1, &fBtn, btnLoginRect, &fmtC, &bWhite);
         
-        btnLogoutRect = RectF(0,0,0,0); // Hide logout button
+        btnLogoutRect = RectF(0,0,0,0); 
     } 
+    // ==================================
+    // 🟢 STATE: LOGGED IN (PREMIUM)
+    // ==================================
     else {
-        // 🟢 STATE: LOGGED IN (PREMIUM)
+        float avatarSize = 90.0f * dynamicScale;
         SolidBrush avatarBg(Color(255, 18, 168, 176));
-        g.FillEllipse(&avatarBg, cardX + (cardW - 100.0f * g_scaleFactor) / 2.0f, cardY + 50.0f * g_scaleFactor, 100.0f * g_scaleFactor, 100.0f * g_scaleFactor);
-        g.DrawString(L"\xE77B", -1, &fAvatar, RectF(cardX, cardY + 50.0f * g_scaleFactor, cardW, 100.0f * g_scaleFactor), &fmtC, &bWhite);
+        g.FillEllipse(&avatarBg, cardX + (cardW - avatarSize) / 2.0f, cardY + 40.0f * dynamicScale, avatarSize, avatarSize);
+        g.DrawString(L"\xE77B", -1, &fAvatar, RectF(cardX, cardY + 40.0f * dynamicScale, cardW, avatarSize), &fmtC, &bWhite);
 
-        // Name and Email
-        g.DrawString(g_userName.c_str(), -1, &fH2, RectF(cardX, cardY + 160.0f * g_scaleFactor, cardW, 40.0f * g_scaleFactor), &fmtC, &bDark);
-        g.DrawString(g_userEmail.c_str(), -1, &fText, RectF(cardX, cardY + 200.0f * g_scaleFactor, cardW, 30.0f * g_scaleFactor), &fmtC, &bGray);
+        g.DrawString(g_userName.c_str(), -1, &fH2, RectF(cardX, cardY + 140.0f * dynamicScale, cardW, 40.0f * dynamicScale), &fmtC, &bDark);
+        g.DrawString(g_userEmail.c_str(), -1, &fText, RectF(cardX, cardY + 175.0f * dynamicScale, cardW, 30.0f * dynamicScale), &fmtC, &bGray);
 
-        // PRO Badge
         if (g_isPremiumUser) {
             GraphicsPath badgePath;
-            float badgeW = 60.0f * g_scaleFactor;
-            float badgeH = 24.0f * g_scaleFactor;
-            AddRoundedRectPathAcc(badgePath, cardX + (cardW - badgeW) / 2.0f, cardY + 235.0f * g_scaleFactor, badgeW, badgeH, 12.0f);
-            SolidBrush badgeColor(Color(255, 255, 180, 0)); // Golden Yellow
+            float badgeW = 55.0f * dynamicScale;
+            float badgeH = 22.0f * dynamicScale;
+            AddRoundedRectPathAcc(badgePath, cardX + (cardW - badgeW) / 2.0f, cardY + 210.0f * dynamicScale, badgeW, badgeH, 10.0f);
+            SolidBrush badgeColor(Color(255, 255, 180, 0)); 
             g.FillPath(&badgeColor, &badgePath);
             SolidBrush badgeText(Color(255, 100, 70, 0));
-            g.DrawString(L"PRO", -1, &fBadge, RectF(cardX, cardY + 235.0f * g_scaleFactor, cardW, badgeH), &fmtC, &badgeText);
+            g.DrawString(L"PRO", -1, &fBadge, RectF(cardX, cardY + 210.0f * dynamicScale, cardW, badgeH), &fmtC, &badgeText);
         }
 
-        // Logout Button
-        float btnW = 200.0f * g_scaleFactor;
-        float btnH = 45.0f * g_scaleFactor;
+        float btnW = min(200.0f * dynamicScale, cardW * 0.7f);
+        float btnH = 45.0f * dynamicScale;
         float btnX = cardX + (cardW - btnW) / 2.0f;
-        float btnY = cardY + 290.0f * g_scaleFactor;
+        float btnY = cardY + 260.0f * dynamicScale;
         btnLogoutRect = RectF(btnX, btnY, btnW, btnH);
 
         GraphicsPath btnPath;
-        AddRoundedRectPathAcc(btnPath, btnX, btnY, btnW, btnH, 22.5f);
-        SolidBrush btnColor(isHoverLogout ? Color(255, 220, 50, 60) : Color(255, 255, 75, 75)); // Reddish color for logout
+        AddRoundedRectPathAcc(btnPath, btnX, btnY, btnW, btnH, btnH/2.0f);
+        SolidBrush btnColor(isHoverLogout ? Color(255, 220, 50, 60) : Color(255, 255, 75, 75)); 
         g.FillPath(&btnColor, &btnPath);
         g.DrawString(L"Sign Out", -1, &fBtn, btnLogoutRect, &fmtC, &bWhite);
 
-        btnLoginRect = RectF(0,0,0,0); // Hide login button
+        btnLoginRect = RectF(0,0,0,0); 
     }
 }
 
@@ -171,10 +184,18 @@ void ProcessAccountsMouseMove(float x, float y) {
 // ==========================================
 void ProcessAccountsMouseClick(float x, float y) {
     if (isHoverLogin && !g_isLoggedIn) {
-        LaunchMiniBrowser(L"LOCAL_ACCOUNT_LOGIN", L"RasFocus Auth - Google Sign In");
+        ShellExecuteW(NULL, L"open", L"https://rasfocus-c746d.firebaseapp.com", NULL, NULL, SW_SHOWNORMAL);
+        
+        int msgboxID = MessageBoxW(hParentWnd, 
+            L"Google Chrome ব্রাউজারে লগইন পেজ ওপেন করা হয়েছে।\n\nব্রাউজারে লগইন কমপ্লিট করার পর এখানে 'OK' বাটনে ক্লিক করুন।", 
+            L"RasFocus Cloud Authentication", 
+            MB_OKCANCEL | MB_ICONINFORMATION);
+            
+        if (msgboxID == IDOK) {
+            SetUserLoginData(L"Rasel Mia", L"rasel@duet.ac.bd", L"DUET_PRO_123");
+        }
     }
     else if (isHoverLogout && g_isLoggedIn) {
-        // লগআউট করার লজিক
         g_isLoggedIn = false;
         g_userName = L"";
         g_userEmail = L"";
@@ -186,13 +207,12 @@ void ProcessAccountsMouseClick(float x, float y) {
 }
 
 // ==========================================
-// 📡 NEW: SIGNAL RECEIVER FROM FIREBASE
+// 📡 SIGNAL RECEIVER 
 // ==========================================
 void SetUserLoginData(std::wstring name, std::wstring email, std::wstring uid) {
     g_isLoggedIn = true;
     g_userName = name;
     
-    // যদি গুগল নাম না দেয়, তবে ইমেইল দেখাবে
     if (g_userName.empty() || g_userName == L"undefined") {
         g_userName = email;
     }
@@ -200,7 +220,6 @@ void SetUserLoginData(std::wstring name, std::wstring email, std::wstring uid) {
     g_userEmail = email;
     g_userUID = uid;
     
-    // লগইন করলেই আপাতত প্রো ফিচার আনলক হয়ে যাবে!
     g_isPremiumUser = true; 
 
     if (hParentWnd) {
