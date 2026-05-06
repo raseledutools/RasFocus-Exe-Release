@@ -142,19 +142,6 @@ static const Color SClrRed(255, 231, 76, 60);
 static const Color SClrOverlay(180, 0, 0, 0); 
 static const Color SClrDisabled(255, 200, 200, 200);
 
-// --- Global / Static Brushes to Avoid Mouse Move/Click Crushes ---
-static SolidBrush brushTeal(SClrTeal); 
-static SolidBrush brushDark(SClrDark); 
-static SolidBrush brushGray(SClrGrayText); 
-static SolidBrush brushWhite(SClrWhite); 
-static SolidBrush brushBg(SClrBg); 
-static SolidBrush brushRed(SClrRed);
-static SolidBrush brushBgHover(SClrBgHover);
-static SolidBrush brushBorder(SClrBorder);
-static SolidBrush brushTealHover(SClrTealHover);
-static Pen penBorder(SClrBorder, 1.5f); 
-static Pen penTeal(SClrTeal, 2.0f);
-
 // ==========================================
 // HISTORY & DATA PERSISTENCE (SAVE / LOAD)
 // ==========================================
@@ -360,14 +347,19 @@ LRESULT CALLBACK BlocksPopupWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM l
         PAINTSTRUCT ps; HDC hdc = BeginPaint(hwnd, &ps);
         Graphics g(hdc); g.SetSmoothingMode(SmoothingModeAntiAlias);
         RECT rect; GetClientRect(hwnd, &rect); RectF bgRect(0, 0, rect.right, rect.bottom);
+        
         SolidBrush bgBrush(Color(255, 20, 80, 40)); 
         g.FillRectangle(&bgBrush, bgRect);
         Pen border(SClrTeal, 4.0f); g.DrawRectangle(&border, 2.0f, 2.0f, rect.right-4.0f, rect.bottom-4.0f);
+        
         FontFamily ff(L"Segoe UI"); Font fQ(&ff, 32, FontStyleBold, UnitPixel);
         StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
         BlocksPopupData* pData = (BlocksPopupData*)GetWindowLongPtr(hwnd, GWLP_USERDATA);
+        
+        SolidBrush whiteBrush(Color(255, 255, 255, 255));
+        
         if (pData) {
-            g.DrawString(pData->quote.c_str(), -1, &fQ, RectF(20.0f, 20.0f, rect.right - 40.0f, rect.bottom - 40.0f), &fmtC, &brushWhite);
+            g.DrawString(pData->quote.c_str(), -1, &fQ, RectF(20.0f, 20.0f, rect.right - 40.0f, rect.bottom - 40.0f), &fmtC, &whiteBrush);
         }
         EndPaint(hwnd, &ps); return 0;
     }
@@ -538,10 +530,26 @@ void RefreshRunningApps() {
     if(systemStoreApps.empty()) systemStoreApps.push_back(L"No active apps found");
 }
 
+static void DrawBlocksOverlaySpinner(Graphics& g, float x, float y, const wstring& valStr, bool hM, bool hP, Font* fIcon, Font* fBold) {
+    SolidBrush brushBtn(SClrBorder); SolidBrush brushBtnHover(SClrGrayText);
+    SolidBrush brushWhite(SClrWhite); SolidBrush brushDark(SClrDark);
+    Pen penBorder(SClrBorder, 1.5f);
+    StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
+
+    RectF mRect(x, y, 32.0f, 36.0f); RectF tRect(x + 32.0f, y, 50.0f, 36.0f); RectF pRect(x + 82.0f, y, 32.0f, 36.0f);
+
+    g.FillRectangle(hM ? &brushBtnHover : &brushBtn, mRect); g.DrawRectangle(&penBorder, mRect.X, mRect.Y, mRect.Width, mRect.Height);
+    g.DrawString(L"\xE738", -1, fIcon, mRect, &fmtC, &brushDark);
+    g.FillRectangle(&brushWhite, tRect); g.DrawRectangle(&penBorder, tRect.X, tRect.Y, tRect.Width, tRect.Height);
+    g.DrawString(valStr.c_str(), -1, fBold, tRect, &fmtC, &brushDark);
+    g.FillRectangle(hP ? &brushBtnHover : &brushBtn, pRect); g.DrawRectangle(&penBorder, pRect.X, pRect.Y, pRect.Width, pRect.Height);
+    g.DrawString(L"\xE710", -1, fIcon, pRect, &fmtC, &brushDark);
+}
+
 // --- Main Drawing Function ---
 void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, float contentH) {
     static bool isBlocksDataLoaded = false;
-    if (!isBlocksDataLoaded) { LoadProfiles(); LoadBlocksData(); isBlocksDataLoaded = true; }
+    if (!isBlocksDataLoaded) { LoadBlocksData(); isBlocksDataLoaded = true; } // FIXED: Removed LoadProfiles()
     StartBlockerThread(); 
     
     cWebScrollY += (tWebScrollY - cWebScrollY) * 0.2f;
@@ -559,6 +567,25 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
     StringFormat fmtL; fmtL.SetAlignment(StringAlignmentNear); fmtL.SetLineAlignment(StringAlignmentCenter);
     StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
     StringFormat fmtTopLeft; fmtTopLeft.SetAlignment(StringAlignmentNear); fmtTopLeft.SetLineAlignment(StringAlignmentNear);
+
+    // FIXED: Declared all missing brushes LOCALLY inside DrawBlocksTab
+    SolidBrush brushTeal(SClrTeal); 
+    SolidBrush brushDark(SClrDark); 
+    SolidBrush brushGray(SClrGrayText); 
+    SolidBrush brushWhite(SClrWhite); 
+    SolidBrush brushBg(SClrBg); 
+    SolidBrush brushRed(SClrRed);
+    SolidBrush brushBgHover(SClrBgHover);
+    SolidBrush brushBorder(SClrBorder);
+    SolidBrush brushTealHover(SClrTealHover);
+    SolidBrush brushGreen(SClrGreen);
+    SolidBrush brushGreenHover(SClrGreenHover);
+    SolidBrush brushDisabled(SClrDisabled);
+    Pen penBorder(SClrBorder, 1.5f); 
+    Pen penTeal(SClrTeal, 2.0f);
+    
+    // FIXED: Declared oldClip ONCE at the top level
+    Region oldClip; 
 
     // Header & Tabs View
     g.FillRectangle(&brushWhite, contentX, contentY, contentW, 60.0f); 
@@ -655,7 +682,7 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
 
         RectF webTable(leftColX, secY + 90.0f, colW, 160.0f);
         g.FillRectangle(&brushBg, webTable); g.DrawRectangle(&penBorder, webTable.X, webTable.Y, webTable.Width, webTable.Height);
-        Region oldClip; g.GetClip(&oldClip); g.SetClip(webTable);
+        g.GetClip(&oldClip); g.SetClip(webTable); // FIXED
         float itemY = webTable.Y + 5.0f - cWebScrollY;
         for (size_t i = 0; i < webList.size(); ++i) {
             if (itemY > webTable.Y - 30.0f && itemY < webTable.Y + webTable.Height) {
@@ -704,7 +731,7 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
 
         RectF appTable(rightColX, secY + 110.0f, colW, 140.0f);
         g.FillRectangle(&brushBg, appTable); g.DrawRectangle(&penBorder, appTable.X, appTable.Y, appTable.Width, appTable.Height);
-        g.GetClip(&oldClip); g.SetClip(appTable);
+        g.GetClip(&oldClip); g.SetClip(appTable); // FIXED
         float aItemY = appTable.Y + 5.0f - cAppScrollY;
         for (size_t i = 0; i < appList.size(); ++i) {
             if (aItemY > appTable.Y - 30.0f && aItemY < appTable.Y + appTable.Height) {
@@ -792,7 +819,7 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
         if (showStoreOverlay) {
             g.DrawString(L"ADD MICROSOFT STORE APPS", -1, &fTitle, RectF(ovX, ovY + 20.0f, ovW, 30.0f), &fmtC, &brushDark);
             g.DrawLine(&penBorder, ovX + 30.0f, ovY + 60.0f, ovX + ovW - 30.0f, ovY + 60.0f);
-            RectF clipRect(ovX + 10.0f, ovY + 65.0f, ovW - 20.0f, ovH - 120.0f); g.GetClip(&oldClip); g.SetClip(clipRect);
+            RectF clipRect(ovX + 10.0f, ovY + 65.0f, ovW - 20.0f, ovH - 120.0f); g.GetClip(&oldClip); g.SetClip(clipRect); // FIXED
             float listY = ovY + 70.0f - cStoreScrollY;
             for (size_t i = 0; i < systemStoreApps.size(); ++i) {
                 if (listY > ovY - 20.0f && listY < ovY + ovH) {
@@ -826,13 +853,13 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
         else if (showTimeOverlay) {
             g.DrawString(L"SET FOCUS DURATION (SELF)", -1, &fTitle, RectF(ovX, ovY + 20.0f, ovW, 30.0f), &fmtC, &brushDark);
             g.DrawString(L"Months:", -1, &fBold, RectF(ovX + 40.0f, ovY + 80.0f, 60.0f, 36.0f), &fmtL, &brushDark);
-            DrawSchOverlaySpinner(g, ovX + 110.0f, ovY + 80.0f, to_wstring(focusMonths), hTimeMoM, hTimeMoP, &fIcon, &fBold);
+            DrawBlocksOverlaySpinner(g, ovX + 110.0f, ovY + 80.0f, to_wstring(focusMonths), hTimeMoM, hTimeMoP, &fIcon, &fBold);
             g.DrawString(L"Days:", -1, &fBold, RectF(ovX + 250.0f, ovY + 80.0f, 50.0f, 36.0f), &fmtL, &brushDark);
-            DrawSchOverlaySpinner(g, ovX + 300.0f, ovY + 80.0f, to_wstring(focusDays), hTimeDM, hTimeDP, &fIcon, &fBold);
+            DrawBlocksOverlaySpinner(g, ovX + 300.0f, ovY + 80.0f, to_wstring(focusDays), hTimeDM, hTimeDP, &fIcon, &fBold);
             g.DrawString(L"Hours:", -1, &fBold, RectF(ovX + 40.0f, ovY + 140.0f, 60.0f, 36.0f), &fmtL, &brushDark);
-            DrawSchOverlaySpinner(g, ovX + 110.0f, ovY + 140.0f, to_wstring(focusHours), hTimeHM, hTimeHP, &fIcon, &fBold);
+            DrawBlocksOverlaySpinner(g, ovX + 110.0f, ovY + 140.0f, to_wstring(focusHours), hTimeHM, hTimeHP, &fIcon, &fBold);
             g.DrawString(L"Mins:", -1, &fBold, RectF(ovX + 250.0f, ovY + 140.0f, 50.0f, 36.0f), &fmtL, &brushDark);
-            DrawSchOverlaySpinner(g, ovX + 300.0f, ovY + 140.0f, to_wstring(focusMins), hTimeMM, hTimeMP, &fIcon, &fBold);
+            DrawBlocksOverlaySpinner(g, ovX + 300.0f, ovY + 140.0f, to_wstring(focusMins), hTimeMM, hTimeMP, &fIcon, &fBold);
 
             RectF cancelRect(ovX + 60.0f, ovY + 210.0f, 140.0f, 40.0f); GraphicsPath* cp = GetBlockRoundRectPath(cancelRect, 4);
             g.FillPath(hTimeCancel ? &brushBgHover : &brushWhite, cp); g.DrawPath(&penBorder, cp); delete cp; g.DrawString(L"Cancel (Esc)", -1, &fBold, cancelRect, &fmtC, &brushDark);
@@ -945,7 +972,9 @@ void ProcessBlocksMouseMove(float x, float y) {
 
     if (currentBlockTab == 0) {
         float bodyY = contentY + 60.0f; float boxX = contentX + 30.0f; float boxW = contentW - 60.0f;
+        float ctrlDropX = boxX + 30.0f; // FIXED
         float ctrlDropY = bodyY + 40.0f; float modeDropX = boxX + 150.0f; float modeDropY = ctrlDropY + 75.0f;
+        float webComboX = boxX + 30.0f + ((boxW - 90.0f) / 2.0f) - 105.0f; // FIXED
         float webComboY = modeDropY + 95.0f; float colW = (boxW - 90.0f) / 2.0f; float rightColX = boxX + 60.0f + colW;
         float secY = modeDropY + 50.0f; float qY = secY; 
 
