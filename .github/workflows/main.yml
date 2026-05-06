@@ -22,15 +22,21 @@ jobs:
     - name: Install WebView2 SDK via NuGet
       run: nuget install Microsoft.Web.WebView2 -Version 1.0.2420.47 -OutputDirectory packages
 
+    # 🟢 NEW STEP: Firebase C++ SDK অটোমেটিক ডাউনলোড এবং সেটআপ
+    - name: Download and Setup Firebase C++ SDK
+      run: |
+        curl -L https://dl.google.com/firebase/sdk/cpp/firebase_cpp_sdk_12.4.0.zip -o firebase.zip
+        powershell Expand-Archive -Path firebase.zip -DestinationPath . -Force
+        del firebase.zip
+
     - name: Compile Resources
       # MSVC তে resources.rc কম্পাইল করতে rc.exe ব্যবহার করা হয়
       run: rc.exe resources.rc
 
     - name: Compile RasFocus.exe (Super Fast Optimized & UTF-8 Supported Build)
-      # cl.exe তে /utf-8 যুক্ত করা হয়েছে যেন বাংলা ফন্ট ঠিকঠাক আসে।
-      # /O2 এবং /GL দিয়ে সর্বোচ্চ স্পিড এবং অপ্টিমাইজেশন নিশ্চিত করা হয়েছে।
+      # 🟢 UPDATED: accounts.cpp এবং Firebase এর লাইব্রেরি ও ইনক্লুড পাথ যোগ করা হয়েছে
       run: |
-        cl.exe /EHsc /MT /O2 /GL /utf-8 /W3 main.cpp prewindow.cpp tab_dashboard.cpp tab_pdf_workspace.cpp mini_browser.cpp tab_blocks.cpp tab_schedule_blocks.cpp tab_adult.cpp tab_deep_study.cpp tab_special.cpp tab_statistics.cpp tab_settings.cpp tab_utilities.cpp tab_ai.cpp tab_strict.cpp tab_diary.cpp resources.res /I"./packages/Microsoft.Web.WebView2.1.0.2420.47/build/native/include" /link /LTCG /OPT:REF /OPT:ICF /SUBSYSTEM:WINDOWS /OUT:RasFocus.exe user32.lib gdi32.lib gdiplus.lib comctl32.lib ole32.lib oleaut32.lib uiautomationcore.lib uuid.lib psapi.lib shlwapi.lib winmm.lib shell32.lib urlmon.lib wininet.lib comdlg32.lib advapi32.lib "./packages/Microsoft.Web.WebView2.1.0.2420.47/build/native/x64/WebView2LoaderStatic.lib"
+        cl.exe /EHsc /MT /O2 /GL /utf-8 /W3 main.cpp prewindow.cpp tab_dashboard.cpp tab_pdf_workspace.cpp mini_browser.cpp tab_blocks.cpp tab_schedule_blocks.cpp tab_adult.cpp tab_deep_study.cpp tab_special.cpp tab_statistics.cpp tab_settings.cpp tab_utilities.cpp tab_ai.cpp tab_strict.cpp tab_diary.cpp accounts.cpp resources.res /I"./packages/Microsoft.Web.WebView2.1.0.2420.47/build/native/include" /I"./firebase_cpp_sdk/include" /link /LTCG /OPT:REF /OPT:ICF /SUBSYSTEM:WINDOWS /OUT:RasFocus.exe user32.lib gdi32.lib gdiplus.lib comctl32.lib ole32.lib oleaut32.lib uiautomationcore.lib uuid.lib psapi.lib shlwapi.lib winmm.lib shell32.lib urlmon.lib wininet.lib comdlg32.lib advapi32.lib crypt32.lib ws2_32.lib rpcrt4.lib secur32.lib bcrypt.lib "./packages/Microsoft.Web.WebView2.1.0.2420.47/build/native/x64/WebView2LoaderStatic.lib" "./firebase_cpp_sdk/libs/windows/VS2015/MT/x64/firebase_app.lib"
 
     - name: Sign RasFocus.exe
       # msvc-dev-cmd আগেই signtool কে PATH-এ যুক্ত করে রেখেছে, তাই সরাসরি কল করলেই হবে
