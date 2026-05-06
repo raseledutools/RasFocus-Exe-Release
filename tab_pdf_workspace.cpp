@@ -1,5 +1,5 @@
 // tab_pdf_workspace.cpp
-// Professional PDF Workspace (Sumatra PDF Style Tabs, Native Save, Advanced Tools)
+// Professional PDF Workspace Architecture
 
 #define _CRT_SECURE_NO_WARNINGS
 #include "tab_pdf_workspace.h"
@@ -40,171 +40,169 @@ HRESULT InitializeWebView2(HWND hWnd, HWND hHostWnd);
 LRESULT CALLBACK AcrobatViewerWndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp);
 
 // ==========================================
-// 🎨 HTML/CSS/JS UI - SPLIT INTO MULTIPLE SMALL PARTS 
+// 🎨 HTML/CSS/JS UI - SPLIT INTO 10 SMALL PARTS 
 // ==========================================
 wstring GetAcrobatHTML() {
     
-    // --- PART 1: HTML Head, Fonts & Libraries ---
+    // --- PART 1: Head & CSS Variables ---
     wstring htmlPart1 = LR"HTML(
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>RasFocus PDF Pro Workspace</title>
+<title>PDF Workspace - Pro Edition</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet" />
-)HTML";
 
-    // --- PART 2: Base CSS & Variables ---
-    wstring htmlPart2 = LR"HTML(
 <style>
 :root {
-    --brand-color: #EB1C24;
-    --brand-hover: #BA1617;
-    --bg-dark: #2B2B2B;
-    --bg-panel: #F8F9FA;
-    --bg-doc: #E9ECEF;
-    --border-color: #DEE2E6;
-    --text-primary: #212529;
-    --text-light: #F8F9FA;
-    --text-muted: #6C757D;
-    --hover-bg: #E2E6EA;
+    --brand-red: #EB1C24;
+    --brand-red-hover: #BA1617;
+    --bg-dark: #222222;
+    --bg-tabs: #2D2D2D;
+    --bg-panel: #F8F8F8;
+    --bg-doc: #D3D3D3;
+    --border-color: #CCCCCC;
+    --text-primary: #1A1A1A;
+    --text-light: #FFFFFF;
+    --text-muted: #555555;
+    --hover-bg: #EAEAEA;
     --selected-bg: #FBECEE;
-    --topbar-height: 40px;
-    --toolbar-height: 44px;
-    --tabs-height: 36px;
-    --right-sidebar-width: 220px; /* Made smaller as requested */
+    --topbar-height: 38px;
+    --tabbar-height: 34px;
+    --toolbar-height: 42px;
+    --right-sidebar-width: 180px; /* 🟢 Reduced Sidebar Width */
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: 'Segoe UI', system-ui, sans-serif; height: 100vh; overflow: hidden; display: flex; flex-direction: column; background: var(--bg-doc); color: var(--text-primary); user-select: none; }
 .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; font-size: 20px; }
-::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #bbb; border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: #888; }
 )HTML";
 
-    // --- PART 3: Topbar & Sumatra Style Tabs CSS ---
-    wstring htmlPart3 = LR"HTML(
-.topbar { height: var(--topbar-height); background: var(--bg-dark); display: flex; align-items: center; padding: 0 16px; color: var(--text-light); z-index: 10; }
-.topbar-menu { display: flex; gap: 20px; font-size: 13px; font-weight: 500; }
-.topbar-item { cursor: pointer; opacity: 0.8; transition: opacity 0.2s; }
-.topbar-item:hover { opacity: 1; }
-.topbar-actions { display: flex; gap: 16px; margin-left: auto; }
-.topbar-icon { cursor: pointer; opacity: 0.8; font-size: 22px; }
-.topbar-icon:hover { opacity: 1; color: #FFCDD2; }
-
-/* Sumatra PDF Style Tabs */
-.tabs-container { height: var(--tabs-height); background: #D4D4D4; display: flex; align-items: flex-end; padding: 0 8px; gap: 4px; border-bottom: 1px solid var(--border-color); overflow-x: auto; }
-.tab { background: #EAEAEA; padding: 6px 14px; border-radius: 6px 6px 0 0; font-size: 13px; display: flex; align-items: center; gap: 8px; cursor: pointer; max-width: 180px; border: 1px solid #CCC; border-bottom: none; box-shadow: inset 0 -2px 5px rgba(0,0,0,0.02); }
-.tab.active { background: white; font-weight: 600; border-color: var(--border-color); box-shadow: 0 -2px 5px rgba(0,0,0,0.05); }
-.tab-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tab-close { font-size: 14px; width: 18px; height: 18px; display: flex; justify-content: center; align-items: center; border-radius: 50%; opacity: 0.6; }
-.tab-close:hover { background: #FFCDD2; color: #D32F2F; opacity: 1; }
-.tab-add { padding: 4px 10px; cursor: pointer; font-size: 20px; font-weight: 400; opacity: 0.7; border-radius: 4px; margin-bottom: 2px; }
-.tab-add:hover { background: #C4C4C4; opacity: 1; }
-)HTML";
-
-    // --- PART 4: Toolbar & Workspace CSS ---
-    wstring htmlPart4 = LR"HTML(
-.toolbar { height: var(--toolbar-height); background: white; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; padding: 0 16px; gap: 12px; font-size: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); z-index: 5; }
-.tool-btn { display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 6px 8px; border-radius: 4px; color: var(--text-primary); transition: 0.2s; }
-.tool-btn:hover { background: var(--hover-bg); }
-.tool-btn.active { background: var(--selected-bg); color: var(--brand-color); border: 1px solid #F8BBD0; }
-.divider { width: 1px; height: 24px; background: var(--border-color); margin: 0 4px; }
-
-.workspace { flex: 1; display: flex; overflow: hidden; position: relative; }
-.right-sidebar { width: var(--right-sidebar-width); background: white; border-left: 1px solid var(--border-color); display: flex; flex-direction: column; overflow-y: auto; box-shadow: -2px 0 5px rgba(0,0,0,0.02); z-index: 4; }
-.sidebar-header { padding: 12px 16px; font-size: 12px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: var(--text-muted); border-bottom: 1px solid var(--border-color); background: #FAFAFA; }
-.tool-pane-btn { display: flex; align-items: center; gap: 10px; padding: 10px 16px; cursor: pointer; border-bottom: 1px solid #F0F0F0; transition: 0.2s; }
-.tool-pane-btn:hover { background: var(--selected-bg); padding-left: 20px; }
-.tool-pane-btn .material-symbols-outlined { color: var(--brand-color); font-size: 20px; }
-.tool-pane-text { font-size: 13px; font-weight: 500; }
-)HTML";
-
-    // --- PART 5: Document Viewer & Modals CSS ---
-    wstring htmlPart5 = LR"HTML(
-.pdf-viewer-area { flex: 1; overflow-y: auto; overflow-x: hidden; display: flex; justify-content: center; padding: 24px 0; background: var(--bg-doc); }
-.pdf-container { display: flex; flex-direction: column; gap: 16px; align-items: center; width: 100%; cursor: default; }
-.pdf-page-wrapper { background: white; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-bottom: 10px; position: relative; }
-.pdf-page-wrapper canvas { display: block; }
-
-.toast-container { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 9999; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
-.toast { padding: 10px 24px; border-radius: 6px; color: white; background: rgba(40,40,40,0.95); font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); animation: fadeInUp 0.3s ease; backdrop-filter: blur(4px); }
+    // --- PART 2: UI Modals & Toasts ---
+    wstring htmlPart2 = LR"HTML(
+.toast-container { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
+.toast { padding: 10px 24px; border-radius: 4px; color: white; background: #323232; font-size: 13px; font-weight: 500; box-shadow: 0 4px 12px rgba(0,0,0,0.3); animation: fadeInUp 0.3s ease; }
 @keyframes fadeInUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
-.loading-overlay, .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 2000; justify-content: center; align-items: center; backdrop-filter: blur(2px); }
-.loading-overlay.show, .modal-overlay.show { display: flex; flex-direction: column; }
-.spinner { border: 4px solid rgba(255,255,255,0.2); border-top: 4px solid white; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin-bottom: 16px; }
-@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-.modal { background: white; border-radius: 8px; padding: 24px; min-width: 350px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
-.modal h3 { font-size: 18px; margin-bottom: 16px; font-weight: 600; color: var(--text-primary); }
-.modal input { width: 100%; padding: 10px; margin-bottom: 16px; border: 1px solid var(--border-color); border-radius: 4px; outline: none; }
-.modal input:focus { border-color: var(--brand-color); }
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 1000; justify-content: center; align-items: center; }
+.modal-overlay.show { display: flex; }
+.modal { background: white; border-radius: 6px; padding: 24px; min-width: 350px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
+.modal h3 { font-size: 16px; margin-bottom: 16px; font-weight: 600; color: #222; }
+.modal input[type="file"], .modal input[type="number"], .modal input[type="text"] { width: 100%; padding: 8px; margin-bottom: 16px; border: 1px solid var(--border-color); border-radius: 4px; outline: none; }
 .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
-.btn { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500; transition: 0.2s; }
-.btn-primary { background: var(--brand-color); color: white; }
-.btn-primary:hover { background: var(--brand-hover); }
-.btn-secondary { background: #E0E0E0; color: var(--text-primary); }
-.btn-secondary:hover { background: #D0D0D0; }
+.btn { padding: 8px 18px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600; transition: 0.2s; }
+.btn-primary { background: var(--brand-red); color: white; }
+.btn-primary:hover { background: var(--brand-red-hover); }
+.btn-secondary { background: transparent; border: 1px solid #aaa; color: var(--text-primary); }
+.btn-secondary:hover { background: #e0e0e0; }
 )HTML";
 
-    // --- PART 6: Night Mode, Read Mode & HTML Body ---
-    wstring htmlPart6 = LR"HTML(
-/* Night & Read Mode Logic */
-body.night-mode .pdf-viewer-area { background: #1E1E1E !important; }
-body.night-mode .toolbar, body.night-mode .tabs-container { background: #2D2D2D !important; border-color: #444 !important; color: #E0E0E0 !important; }
-body.night-mode .tab { background: #3A3A3A; color: #E0E0E0; border-color: #555; }
-body.night-mode .tab.active { background: #1E1E1E; color: white; border-color: #444; }
-body.night-mode .right-sidebar { background: #252525 !important; border-color: #444 !important; }
-body.night-mode .tool-pane-btn { border-color: #333 !important; color: #E0E0E0 !important; }
+    // --- PART 3: Topbars and Tabbars ---
+    wstring htmlPart3 = LR"HTML(
+.topbar { height: var(--topbar-height); background: var(--bg-dark); display: flex; align-items: center; padding: 0 16px; color: var(--text-light); border-bottom: 1px solid #111; }
+.topbar-menu { display: flex; gap: 20px; font-size: 13px; font-weight: 500; }
+.topbar-item { cursor: pointer; opacity: 0.8; transition: 0.2s; padding: 4px 8px; border-radius: 4px; }
+.topbar-item:hover { opacity: 1; background: rgba(255,255,255,0.1); }
+.topbar-actions { display: flex; gap: 12px; margin-left: auto; }
+.topbar-icon { cursor: pointer; opacity: 0.8; transition: 0.2s; padding: 4px; border-radius: 4px; }
+.topbar-icon:hover { opacity: 1; background: rgba(255,255,255,0.1); }
+
+.tabbar { height: var(--tabbar-height); background: var(--bg-tabs); display: flex; align-items: flex-end; padding-left: 8px; overflow-x: auto; border-bottom: 1px solid #111; }
+.pdf-tab { height: 28px; background: #3c3c3c; color: #b5b5b5; padding: 0 10px 0 14px; display: flex; align-items: center; gap: 8px; font-size: 12px; border-radius: 4px 4px 0 0; margin-right: 2px; cursor: pointer; max-width: 200px; transition: 0.15s; }
+.pdf-tab:hover { background: #4a4a4a; color: #fff; }
+.pdf-tab.active { background: white; color: var(--text-primary); font-weight: 600; height: 31px; border-bottom: none; }
+.pdf-tab .close-tab { font-size: 14px; cursor: pointer; border-radius: 50%; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; }
+.pdf-tab .close-tab:hover { background: rgba(255,255,255,0.2); color: #fff; }
+.pdf-tab.active .close-tab:hover { background: rgba(0,0,0,0.1); color: var(--text-primary); }
+.add-tab-btn { color: #fff; opacity: 0.6; cursor: pointer; padding: 0 10px; font-weight: bold; font-size: 18px; line-height: 28px; }
+.add-tab-btn:hover { opacity: 1; }
+)HTML";
+
+    // --- PART 4: Toolbar and Workspace ---
+    wstring htmlPart4 = LR"HTML(
+.toolbar { height: var(--toolbar-height); background: white; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; padding: 0 16px; gap: 12px; font-size: 13px; }
+.tool-btn { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; cursor: pointer; border-radius: 4px; color: var(--text-primary); transition: 0.15s; }
+.tool-btn:hover { background: var(--hover-bg); }
+.tool-btn.active { background: var(--selected-bg); color: var(--brand-red); }
+.divider { width: 1px; height: 20px; background: var(--border-color); margin: 0 4px; }
+
+.workspace { flex: 1; display: flex; overflow: hidden; position: relative; }
+/* 🟢 Left Sidebar Removed */
+
+.right-sidebar { width: var(--right-sidebar-width); background: var(--bg-panel); border-left: 1px solid var(--border-color); display: flex; flex-direction: column; overflow-y: auto; flex-shrink: 0; box-shadow: -2px 0 5px rgba(0,0,0,0.02); }
+.sidebar-header { padding: 12px 14px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: var(--text-muted); border-bottom: 1px solid var(--border-color); }
+.tool-pane-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 16px 10px; cursor: pointer; border-bottom: 1px solid var(--border-color); background: transparent; transition: 0.15s; text-align: center; }
+.tool-pane-btn:hover { background: var(--selected-bg); }
+.tool-pane-btn .material-symbols-outlined { color: var(--brand-red); font-size: 26px; }
+.tool-pane-text { font-size: 12px; font-weight: 500; line-height: 1.2; }
+)HTML";
+
+    // --- PART 5: Viewer, Read Mode & DOM Overlays ---
+    wstring htmlPart5 = LR"HTML(
+.pdf-viewer-area { flex: 1; overflow-y: auto; display: flex; justify-content: center; padding: 24px; background: var(--bg-doc); }
+.pdf-container { display: flex; flex-direction: column; gap: 16px; align-items: center; width: 100%; cursor: default; }
+.pdf-page-wrapper { background: white; box-shadow: 0 4px 12px rgba(0,0,0,0.2); margin-bottom: 10px; position: relative; }
+.pdf-page-wrapper canvas { display: block; }
+
+.loading-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 2000; flex-direction: column; justify-content: center; align-items: center; color: white; font-size: 14px; font-weight: 500; }
+.loading-overlay.show { display: flex; }
+.spinner { border: 3px solid rgba(255,255,255,0.2); border-top: 3px solid white; border-radius: 50%; width: 36px; height: 36px; animation: spin 0.8s linear infinite; margin-bottom: 16px; }
+@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+/* Night Mode */
+body.night-mode .pdf-viewer-area { background: #1a1a1a !important; }
+body.night-mode .toolbar { background: #2b2b2b !important; border-color: #111 !important; color: #ddd !important; }
+body.night-mode .toolbar .tool-btn { color: #ddd !important; }
+body.night-mode .toolbar .tool-btn:hover { background: #444 !important; }
+body.night-mode .right-sidebar { background: #252525 !important; border-color: #111 !important; }
+body.night-mode .sidebar-header { color: #888 !important; border-color: #333 !important; }
+body.night-mode .tool-pane-btn { border-color: #333 !important; color: #ddd !important; }
 body.night-mode .tool-pane-btn:hover { background: #333 !important; }
-body.night-mode .pdf-page-wrapper { box-shadow: 0 4px 15px rgba(0,0,0,0.6); }
 
-/* READ MODE: Hides Tabs, Toolbar, and Sidebar */
-body.read-mode .tabs-container, body.read-mode .toolbar, body.read-mode .right-sidebar { display: none !important; }
+/* 🟢 Read Mode (Clean View) */
+body.read-mode .toolbar { display: none !important; }
+body.read-mode .right-sidebar { display: none !important; }
+body.read-mode .tabbar { display: none !important; }
 
+.dom-annotation { position: absolute; pointer-events: none; z-index: 5; }
 </style>
 </head>
 <body>
 <div class="toast-container" id="toast-container"></div>
-<div class="loading-overlay" id="loading-overlay"><div class="spinner"></div><div id="loading-text" style="color:white; font-size:16px;">Processing...</div></div>
+<div class="loading-overlay" id="loading-overlay"><div class="spinner"></div><div id="loading-text">Processing...</div></div>
 <div class="modal-overlay" id="modal-overlay"><div class="modal" id="modal-content"></div></div>
+)HTML";
 
+    // --- PART 6: HTML Structure ---
+    wstring htmlPart6 = LR"HTML(
 <div class="topbar">
     <div class="topbar-menu">
-        <div class="topbar-item" onclick="document.getElementById('fileInput').click()">File</div>
+        <div class="topbar-item" onclick="document.getElementById('fileInput').click()">Open</div>
         <div class="topbar-item" onclick="downloadCurrentPDF()">Save As...</div>
     </div>
     <div class="topbar-actions">
         <span class="material-symbols-outlined topbar-icon" onclick="toggleNightMode()" title="Night Mode">dark_mode</span>
         <span class="material-symbols-outlined topbar-icon" onclick="toggleReadMode()" title="Read Mode" id="read-mode-icon">menu_book</span>
-        <span class="material-symbols-outlined topbar-icon" onclick="downloadCurrentPDF()" title="Save to Folder">save</span>
+        <span class="material-symbols-outlined topbar-icon" onclick="downloadCurrentPDF()" title="Save">save</span>
     </div>
 </div>
 
-<div class="tabs-container" id="tabs-container">
-    </div>
-)HTML";
+<div class="tabbar" id="tabbar-strip"></div>
 
-    // --- PART 7: Toolbar & Sidebar HTML ---
-    wstring htmlPart7 = LR"HTML(
 <div class="toolbar">
-    <div class="tool-btn active" onclick="setStudyTool('pointer')" id="tool-pointer" title="Select Tool"><span class="material-symbols-outlined">near_me</span></div>
-    <div class="tool-btn" onclick="setStudyTool('hand')" id="tool-hand" title="Pan/Hand Tool"><span class="material-symbols-outlined">pan_tool</span></div>
+    <div class="tool-btn active" onclick="setStudyTool(null)" id="tool-pointer" title="Pointer"><span class="material-symbols-outlined">pan_tool</span></div>
     <div class="divider"></div>
-    <span style="font-weight:600; font-size:11px; color:var(--text-muted); letter-spacing:0.5px;">MARKUP:</span>
     <div class="tool-btn" onclick="setStudyTool('highlight')" id="tool-highlight" title="Highlight"><span class="material-symbols-outlined" style="color: #FBC02D;">format_ink_highlighter</span></div>
     <div class="tool-btn" onclick="setStudyTool('note')" id="tool-note" title="Sticky Note"><span class="material-symbols-outlined" style="color: #4CAF50;">speaker_notes</span></div>
     <div class="tool-btn" onclick="setStudyTool('link')" id="tool-link" title="Insert Link"><span class="material-symbols-outlined" style="color: #1976D2;">link</span></div>
     <div class="divider"></div>
     <div class="tool-btn" onclick="zoomOut()"><span class="material-symbols-outlined">remove</span></div>
-    <span id="zoom-text" style="font-size:13px; width:45px; text-align:center; font-weight:500;">100%</span>
+    <span id="zoom-text" style="font-size:12px;width:35px;text-align:center;font-weight:600;">100%</span>
     <div class="tool-btn" onclick="zoomIn()"><span class="material-symbols-outlined">add</span></div>
     <div class="divider"></div>
     <div class="tool-btn" onclick="rotatePDF()"><span class="material-symbols-outlined">rotate_right</span></div>
@@ -213,40 +211,32 @@ body.read-mode .tabs-container, body.read-mode .toolbar, body.read-mode .right-s
 <div class="workspace">
     <div class="pdf-viewer-area" id="viewer-area">
         <div class="pdf-container" id="pdf-container">
-            <div style="margin-top: 15vh; text-align: center; color: var(--text-muted);">
-                <span class="material-symbols-outlined" style="font-size: 72px; opacity: 0.5;">note_add</span>
-                <p style="margin-top: 16px; font-size: 18px; font-weight:500;">No Document Open</p>
-                <p style="margin-top: 8px; font-size: 14px; opacity: 0.8;">Click + or File > Open to start</p>
+            <div style="margin-top: 150px; text-align: center; color: var(--text-muted);">
+                <span class="material-symbols-outlined" style="font-size: 72px; opacity:0.3;">note_add</span>
+                <p style="margin-top: 16px; font-size: 15px;">Click + or Open to load a PDF</p>
             </div>
         </div>
     </div>
 
     <div class="right-sidebar">
-        <div class="sidebar-header">Advanced Tools</div>
-        <div class="tool-pane-btn" onclick="uiShowMergeModal()"><span class="material-symbols-outlined">library_add</span><span class="tool-pane-text">Combine PDFs</span></div>
-        <div class="tool-pane-btn" onclick="uiShowSplitModal()"><span class="material-symbols-outlined">splitscreen</span><span class="tool-pane-text">Split PDF</span></div>
-        <div class="tool-pane-btn" onclick="uiShowExtractModal()"><span class="material-symbols-outlined">file_upload</span><span class="tool-pane-text">Extract Pages</span></div>
-        <div class="tool-pane-btn" onclick="uiShowDeleteModal()"><span class="material-symbols-outlined">delete</span><span class="tool-pane-text">Delete Pages</span></div>
-        <div class="tool-pane-btn" onclick="actionPDFtoImage()"><span class="material-symbols-outlined">image</span><span class="tool-pane-text">Export as Images</span></div>
-        <div class="tool-pane-btn" onclick="actionPDFtoText()"><span class="material-symbols-outlined">article</span><span class="tool-pane-text">Export Text</span></div>
+        <div class="sidebar-header">Tools</div>
+        <div class="tool-pane-btn" onclick="uiShowMergeModal()"><span class="material-symbols-outlined">library_add</span><span class="tool-pane-text">Combine</span></div>
+        <div class="tool-pane-btn" onclick="uiShowSplitModal()"><span class="material-symbols-outlined">splitscreen</span><span class="tool-pane-text">Split</span></div>
+        <div class="tool-pane-btn" onclick="uiShowExtractModal()"><span class="material-symbols-outlined">file_upload</span><span class="tool-pane-text">Extract</span></div>
+        <div class="tool-pane-btn" onclick="uiShowDeleteModal()"><span class="material-symbols-outlined">delete</span><span class="tool-pane-text">Delete</span></div>
+        <div class="tool-pane-btn" onclick="actionPDFtoImage()"><span class="material-symbols-outlined">image</span><span class="tool-pane-text">To Image</span></div>
+        <div class="tool-pane-btn" onclick="actionPDFtoText()"><span class="material-symbols-outlined">article</span><span class="tool-pane-text">To Text</span></div>
         <div class="tool-pane-btn" onclick="actionPerformOCR()"><span class="material-symbols-outlined">document_scanner</span><span class="tool-pane-text">OCR Scan</span></div>
         <div class="tool-pane-btn" onclick="actionAddWatermark()"><span class="material-symbols-outlined">branding_watermark</span><span class="tool-pane-text">Watermark</span></div>
-        <div class="tool-pane-btn" onclick="actionAddStamp()"><span class="material-symbols-outlined">verified</span><span class="tool-pane-text">Approved Stamp</span></div>
     </div>
 </div>
-<input type="file" id="fileInput" accept=".pdf" multiple style="display:none;" onchange="handleFileOpen(event)">
+<input type="file" id="fileInput" accept=".pdf" style="display:none;" onchange="handleFileOpen(event)">
 )HTML";
 
-    // --- PART 8: JS Core logic, Sumatra Tabs & Touchpad Zoom ---
-    wstring htmlPart8 = LR"HTML(
+    // --- PART 7: JS Tab Management & Native Save Logic ---
+    wstring htmlPart7 = LR"HTML(
 <script>
-let appTabs = [];
-let activeTabId = null;
-let currentPdfBytes = null; 
-let currentPdfjsDoc = null; 
-let currentZoom = 1.0; 
-let currentRotation = 0;
-let currentStudyTool = 'pointer';
+let openedTabs = []; let activeTabId = null;
 
 function showToast(msg) {
     const container = document.getElementById('toast-container');
@@ -264,361 +254,279 @@ function showModal(title, htmlContent) {
 }
 function closeModal() { document.getElementById('modal-overlay').classList.remove('show'); }
 
-// NATIVE FOLDER SAVE DIALOG (Prevents Auto-Download)
-async function saveFileNative(blob, defaultName) {
+// 🟢 Smart Ask Location Save System
+async function saveBytesToFile(blobData, suggestedName, ext="pdf", mime="application/pdf") {
     try {
         if (window.showSaveFilePicker) {
-            const ext = defaultName.split('.').pop();
-            const types = [{ description: ext.toUpperCase() + ' File', accept: { '*/*': ['.'+ext] } }];
-            const handle = await window.showSaveFilePicker({ suggestedName: defaultName, types: types });
+            const handle = await window.showSaveFilePicker({ suggestedName: suggestedName, types: [{ description: 'Document', accept: {[mime]: ['.'+ext]} }] });
             const writable = await handle.createWritable();
-            await writable.write(blob);
+            await writable.write(blobData);
             await writable.close();
-            showToast("Saved to your chosen folder!");
-        } else {
-            saveAs(blob, defaultName); // Fallback if API restricted
-        }
-    } catch (err) {
-        if (err.name !== 'AbortError') showToast("Save cancelled or failed.");
-    }
-}
-async function downloadBytes(bytes, filename) {
-    const blob = new Blob([bytes], { type: "application/pdf" });
-    await saveFileNative(blob, filename);
-}
-function downloadCurrentPDF() { 
-    if (currentPdfBytes && activeTabId) {
-        const tab = appTabs.find(t => t.id === activeTabId);
-        downloadBytes(currentPdfBytes, tab.name); 
-    } else { showToast("Open a PDF to save."); }
+            showToast("Saved successfully!");
+        } else { saveAs(blobData, suggestedName); }
+    } catch (e) { if(e.name !== 'AbortError') showToast("Save failed or cancelled."); }
 }
 
-// SUMATRA PDF STYLE TABS LOGIC
 async function handleFileOpen(event) {
-    const files = event.target.files;
-    if (!files.length) return;
-    for (let file of files) {
-        const arrayBuffer = await file.arrayBuffer();
-        await addTab(file.name, new Uint8Array(arrayBuffer));
-    }
-    event.target.value = ''; // Reset
+    const file = event.target.files[0]; if (!file) return;
+    createNewTab(file.name, new Uint8Array(await file.arrayBuffer()));
 }
-async function loadPdfFromPath(path) { // C++ Native Call
+
+async function loadPdfFromPath(path) {
     try {
         const response = await fetch('file:///' + path.replace(/\\/g, '/'));
         const arrayBuffer = await response.arrayBuffer();
         const pathParts = path.split('\\');
-        await addTab(pathParts[pathParts.length - 1], new Uint8Array(arrayBuffer));
+        createNewTab(pathParts[pathParts.length - 1], new Uint8Array(arrayBuffer));
     } catch (e) { showToast("Failed to load PDF."); }
 }
 
-async function addTab(name, bytes) {
-    showLoading(true, "Loading Document...");
+async function createNewTab(fileName, uint8Array) {
     try {
-        const doc = await pdfjsLib.getDocument({data: bytes}).promise;
-        const tabId = 'tab_' + Date.now() + Math.random().toString(36).substr(2, 5);
-        appTabs.push({ id: tabId, name: name, bytes: bytes, doc: doc, zoom: 1.0, rotation: 0 });
-        switchTab(tabId);
-    } catch(e) { showToast("Error rendering " + name); }
-    showLoading(false);
+        const pdfDoc = await pdfjsLib.getDocument({data: uint8Array}).promise;
+        const tabId = 'tab_' + Date.now();
+        openedTabs.push({ id: tabId, name: fileName, bytes: uint8Array, pdfjsDoc: pdfDoc, zoom: 1.0, rotation: 0, annotations: [] });
+        updateTabStrip(); await switchActiveTab(tabId);
+    } catch(e) { console.error(e); showToast("Invalid PDF file."); }
 }
 
-function renderTabsBar() {
-    const container = document.getElementById('tabs-container');
-    container.innerHTML = '';
-    appTabs.forEach(t => {
-        const div = document.createElement('div');
-        div.className = 'tab' + (t.id === activeTabId ? ' active' : '');
-        div.onclick = () => switchTab(t.id);
-        div.innerHTML = `<span class="tab-title">${t.name}</span> <span class="tab-close" onclick="event.stopPropagation(); closeTab('${t.id}')">✕</span>`;
-        container.appendChild(div);
+function updateTabStrip() {
+    const strip = document.getElementById('tabbar-strip'); strip.innerHTML = '';
+    openedTabs.forEach(tab => {
+        const tabEl = document.createElement('div'); tabEl.className = `pdf-tab ${tab.id === activeTabId ? 'active' : ''}`; tabEl.onclick = () => switchActiveTab(tab.id);
+        const nameEl = document.createElement('span'); nameEl.textContent = tab.name.length > 20 ? tab.name.substring(0, 17) + '...' : tab.name;
+        const closeEl = document.createElement('span'); closeEl.className = 'close-tab'; closeEl.textContent = '×';
+        closeEl.onclick = (e) => { e.stopPropagation(); closeTabInstance(tab.id); };
+        tabEl.appendChild(nameEl); tabEl.appendChild(closeEl); strip.appendChild(tabEl);
     });
-    const addBtn = document.createElement('div');
-    addBtn.className = 'tab-add'; addBtn.textContent = '+';
+    // Add Tab Button
+    const addBtn = document.createElement('div'); addBtn.className = 'add-tab-btn'; addBtn.textContent = '+';
     addBtn.onclick = () => document.getElementById('fileInput').click();
-    container.appendChild(addBtn);
+    strip.appendChild(addBtn);
+}
+)HTML";
+
+    // --- PART 8: JS Rendering & Touchpad Zoom ---
+    wstring htmlPart8 = LR"HTML(
+async function switchActiveTab(tabId) {
+    activeTabId = tabId; updateTabStrip();
+    const tab = openedTabs.find(t => t.id === tabId); if (!tab) return;
+    document.getElementById('zoom-text').textContent = Math.round(tab.zoom * 100) + '%';
+    await renderActiveViewer();
 }
 
-function switchTab(id) {
-    if(activeTabId !== null) { // Save current state before switching
-        let oldTab = appTabs.find(t => t.id === activeTabId);
-        if(oldTab) { oldTab.zoom = currentZoom; oldTab.rotation = currentRotation; }
-    }
-    activeTabId = id; renderTabsBar();
-    const tab = appTabs.find(t => t.id === id);
-    if(tab) {
-        currentPdfBytes = tab.bytes; currentPdfjsDoc = tab.doc;
-        currentZoom = tab.zoom; currentRotation = tab.rotation;
-        renderViewer();
-    } else {
-        currentPdfBytes = null; currentPdfjsDoc = null;
-        document.getElementById('pdf-container').innerHTML = `<div style="margin-top: 15vh; text-align: center; color: var(--text-muted);"><span class="material-symbols-outlined" style="font-size: 72px; opacity: 0.5;">note_add</span><p style="margin-top: 16px; font-size: 18px; font-weight:500;">No Document Open</p></div>`;
-    }
+function closeTabInstance(tabId) {
+    openedTabs = openedTabs.filter(t => t.id !== tabId);
+    if (activeTabId === tabId) activeTabId = openedTabs.length > 0 ? openedTabs[openedTabs.length - 1].id : null;
+    updateTabStrip();
+    if (activeTabId) switchActiveTab(activeTabId);
+    else document.getElementById('pdf-container').innerHTML = `<div style="margin-top:150px;text-align:center;color:var(--text-muted);"><span class="material-symbols-outlined" style="font-size:72px;opacity:0.3;">note_add</span><p style="margin-top:16px;">Click + to load a PDF</p></div>`;
 }
 
-function closeTab(id) {
-    appTabs = appTabs.filter(t => t.id !== id);
-    if (activeTabId === id) {
-        if (appTabs.length > 0) switchTab(appTabs[appTabs.length-1].id);
-        else switchTab(null);
-    } else { renderTabsBar(); }
-}
-
-async function renderViewer() {
-    if (!currentPdfjsDoc) return;
+async function renderActiveViewer() {
+    const tab = openedTabs.find(t => t.id === activeTabId); if (!tab) return;
     const container = document.getElementById('pdf-container'); container.innerHTML = '';
-    document.getElementById('zoom-text').textContent = Math.round(currentZoom * 100) + '%';
-    for (let i = 1; i <= currentPdfjsDoc.numPages; i++) {
-        const page = await currentPdfjsDoc.getPage(i);
-        const viewport = page.getViewport({ scale: currentZoom, rotation: currentRotation });
+    for (let i = 1; i <= tab.pdfjsDoc.numPages; i++) {
+        const page = await tab.pdfjsDoc.getPage(i);
+        const viewport = page.getViewport({ scale: tab.zoom, rotation: tab.rotation });
         const wrapper = document.createElement('div'); wrapper.className = 'pdf-page-wrapper'; wrapper.id = `page-${i}`;
         const canvas = document.createElement('canvas'); const context = canvas.getContext('2d');
         canvas.height = viewport.height; canvas.width = viewport.width;
         wrapper.appendChild(canvas); container.appendChild(wrapper);
         await page.render({ canvasContext: context, viewport: viewport }).promise;
+        redrawActiveAnnotations(i);
     }
 }
 
-// Touchpad Zoom (Ctrl + Wheel)
-document.getElementById('viewer-area').addEventListener('wheel', (e) => {
+function zoomIn() { const t = openedTabs.find(x => x.id === activeTabId); if (t && t.zoom < 3.0) { t.zoom += 0.2; renderActiveViewer(); document.getElementById('zoom-text').textContent = Math.round(t.zoom * 100) + '%'; } }
+function zoomOut() { const t = openedTabs.find(x => x.id === activeTabId); if (t && t.zoom > 0.4) { t.zoom -= 0.2; renderActiveViewer(); document.getElementById('zoom-text').textContent = Math.round(t.zoom * 100) + '%'; } }
+function rotatePDF() { const t = openedTabs.find(x => x.id === activeTabId); if (t) { t.rotation = (t.rotation + 90) % 360; renderActiveViewer(); } }
+
+// 🟢 Touchpad Pinch-to-Zoom Precision
+document.getElementById('viewer-area').addEventListener('wheel', function(e) {
     if (e.ctrlKey) {
         e.preventDefault();
-        if (e.deltaY < 0) zoomIn(); else zoomOut();
+        const tab = openedTabs.find(x => x.id === activeTabId); if (!tab) return;
+        if (e.deltaY < 0) { if (tab.zoom < 3.0) tab.zoom += 0.05; } 
+        else { if (tab.zoom > 0.4) tab.zoom -= 0.05; }
+        document.getElementById('zoom-text').textContent = Math.round(tab.zoom * 100) + '%';
+        if(window.zoomTimeout) clearTimeout(window.zoomTimeout);
+        window.zoomTimeout = setTimeout(renderActiveViewer, 40);
     }
 }, { passive: false });
-
-function zoomIn() { if (currentZoom < 3.0) { currentZoom += 0.2; renderViewer(); } }
-function zoomOut() { if (currentZoom > 0.4) { currentZoom -= 0.2; renderViewer(); } }
-function rotatePDF() { currentRotation = (currentRotation + 90) % 360; renderViewer(); }
 )HTML";
 
-    // --- PART 9: Advanced PDF Features (Merge, Split, Watermark) ---
+    // --- PART 9: JS Advanced Features Fixed for Multi-Tab ---
     wstring htmlPart9 = LR"HTML(
-function uiShowMergeModal() {
-    showModal("Combine Files", `<p style="margin-bottom:8px;font-size:13px;">Select PDFs to combine:</p><input type="file" id="mergeFiles" accept=".pdf" multiple>
-        <div class="modal-actions"><button class="btn btn-secondary" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="actionMergeFiles()">Combine</button></div>`);
-}
+function uiShowMergeModal() { showModal("Combine Files", `<input type="file" id="mergeFiles" accept=".pdf" multiple><div class="modal-actions"><button class="btn btn-secondary" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="actionMergeFiles()">Combine</button></div>`); }
 async function actionMergeFiles() {
-    const files = document.getElementById('mergeFiles').files; if (files.length < 2) return alert("Select at least 2 files.");
+    const files = document.getElementById('mergeFiles').files; if (files.length < 2) return showToast("Select at least 2 files.");
     closeModal(); showLoading(true, "Merging PDFs...");
     try {
         const mergedPdf = await PDFLib.PDFDocument.create();
         for (let file of files) {
             const pdf = await PDFLib.PDFDocument.load(new Uint8Array(await file.arrayBuffer()));
-            const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
-            copiedPages.forEach((page) => mergedPdf.addPage(page));
+            const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices()); copiedPages.forEach(p => mergedPdf.addPage(p));
         }
-        await addTab("Combined_Doc.pdf", await mergedPdf.save()); showToast("Merged Successfully");
-    } catch(e) { showToast("Failed to merge."); }
-    showLoading(false);
+        await createNewTab("Combined_Doc.pdf", new Uint8Array(await mergedPdf.save())); showToast("Merged!");
+    } catch(e) { showToast("Merge failed."); } showLoading(false);
 }
 
 function uiShowSplitModal() {
-    if(!currentPdfBytes) return showToast("Open a PDF first.");
-    showModal("Split PDF", `<p style="margin-bottom:8px;font-size:13px;">Split after page number:</p><input type="number" id="splitPage" min="1" max="${currentPdfjsDoc.numPages - 1}" value="1">
-        <div class="modal-actions"><button class="btn btn-secondary" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="actionSplitPDF()">Split</button></div>`);
+    const tab = openedTabs.find(t => t.id === activeTabId); if(!tab) return showToast("Open a PDF first.");
+    showModal("Split PDF", `<p>Split after page (1 - ${tab.pdfjsDoc.numPages - 1}):</p><input type="number" id="splitPage" min="1" max="${tab.pdfjsDoc.numPages - 1}" value="1"><div class="modal-actions"><button class="btn btn-secondary" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="actionSplitPDF()">Split</button></div>`);
 }
 async function actionSplitPDF() {
-    const splitAt = parseInt(document.getElementById('splitPage').value); closeModal(); showLoading(true, "Splitting...");
+    const tab = openedTabs.find(t => t.id === activeTabId); const splitAt = parseInt(document.getElementById('splitPage').value);
+    closeModal(); showLoading(true, "Splitting...");
     try {
-        const srcDoc = await PDFLib.PDFDocument.load(currentPdfBytes);
-        const doc1 = await PDFLib.PDFDocument.create(); const doc2 = await PDFLib.PDFDocument.create();
+        const srcDoc = await PDFLib.PDFDocument.load(tab.bytes); const doc1 = await PDFLib.PDFDocument.create(); const doc2 = await PDFLib.PDFDocument.create();
         const indices = srcDoc.getPageIndices();
         const copied1 = await doc1.copyPages(srcDoc, indices.slice(0, splitAt)); copied1.forEach(p => doc1.addPage(p));
         const copied2 = await doc2.copyPages(srcDoc, indices.slice(splitAt)); copied2.forEach(p => doc2.addPage(p));
-        await downloadBytes(await doc1.save(), "Split_Part1.pdf"); await downloadBytes(await doc2.save(), "Split_Part2.pdf");
-    } catch(e) { showToast("Failed to split."); }
-    showLoading(false);
+        await saveBytesToFile(new Blob([await doc1.save()]), "Part1.pdf"); await saveBytesToFile(new Blob([await doc2.save()]), "Part2.pdf");
+    } catch(e) { showToast("Split failed."); } showLoading(false);
 }
 
 function uiShowExtractModal() {
-    if(!currentPdfBytes) return showToast("Open a PDF first.");
-    showModal("Extract Pages", `<p style="margin-bottom:8px;font-size:13px;">Page numbers (e.g., 1, 3):</p><input type="text" id="extractPagesInput" placeholder="1, 3">
-        <div class="modal-actions"><button class="btn btn-secondary" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="actionExtractPages()">Extract</button></div>`);
+    if(!activeTabId) return showToast("Open a PDF first.");
+    showModal("Extract Pages", `<p>Page numbers (e.g., 1, 3):</p><input type="text" id="extractPagesInput" placeholder="1, 2"><div class="modal-actions"><button class="btn btn-secondary" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="actionExtractPages()">Extract</button></div>`);
 }
 async function actionExtractPages() {
-    const input = document.getElementById('extractPagesInput').value;
-    const pagesToExtract = input.split(',').map(n => parseInt(n.trim()) - 1).filter(n => !isNaN(n) && n >= 0 && n < currentPdfjsDoc.numPages);
-    if(pagesToExtract.length === 0) return alert("Invalid page numbers");
+    const tab = openedTabs.find(t => t.id === activeTabId); const pagesStr = document.getElementById('extractPagesInput').value;
+    const pagesToExtract = pagesStr.split(',').map(n => parseInt(n.trim()) - 1).filter(n => !isNaN(n) && n >= 0 && n < tab.pdfjsDoc.numPages);
+    if(pagesToExtract.length === 0) return showToast("Invalid pages.");
     closeModal(); showLoading(true, "Extracting...");
     try {
-        const srcDoc = await PDFLib.PDFDocument.load(currentPdfBytes); const newDoc = await PDFLib.PDFDocument.create();
+        const srcDoc = await PDFLib.PDFDocument.load(tab.bytes); const newDoc = await PDFLib.PDFDocument.create();
         const copied = await newDoc.copyPages(srcDoc, pagesToExtract); copied.forEach(p => newDoc.addPage(p));
-        await addTab("Extracted_Pages.pdf", await newDoc.save()); showToast("Extracted Successfully");
-    } catch(e) { showToast("Extraction failed."); }
-    showLoading(false);
-}
-
-function uiShowDeleteModal() {
-    if(!currentPdfBytes) return showToast("Open a PDF first.");
-    showModal("Delete Page", `<p style="margin-bottom:8px;font-size:13px;">Enter page number to delete:</p><input type="number" id="deletePage" min="1" max="${currentPdfjsDoc.numPages}">
-        <div class="modal-actions"><button class="btn btn-secondary" onclick="closeModal()">Cancel</button><button class="btn btn-primary" style="background:#D32F2F;" onclick="actionDeletePage()">Delete</button></div>`);
-}
-async function actionDeletePage() {
-    const pageNum = parseInt(document.getElementById('deletePage').value) - 1; closeModal(); showLoading(true, "Deleting...");
-    try {
-        const srcDoc = await PDFLib.PDFDocument.load(currentPdfBytes); srcDoc.removePage(pageNum);
-        const newBytes = await srcDoc.save();
-        const tab = appTabs.find(t => t.id === activeTabId);
-        tab.bytes = newBytes; tab.doc = await pdfjsLib.getDocument({data: newBytes}).promise;
-        switchTab(activeTabId); showToast("Page deleted.");
-    } catch(e) { showToast("Failed to delete."); }
-    showLoading(false);
-}
-)HTML";
-
-    // --- PART 10: Study Tools (Toggleable), Export, OCR & Modes ---
-    wstring htmlPart10 = LR"HTML(
-function setStudyTool(tool) {
-    // If clicked again, cancel tool
-    if (currentStudyTool === tool) {
-        currentStudyTool = 'pointer';
-    } else {
-        currentStudyTool = tool;
-    }
-    
-    document.querySelectorAll('.toolbar .tool-btn').forEach(btn => btn.classList.remove('active'));
-    if(currentStudyTool === 'highlight') document.getElementById('tool-highlight').classList.add('active');
-    else if(currentStudyTool === 'note') document.getElementById('tool-note').classList.add('active');
-    else if(currentStudyTool === 'link') document.getElementById('tool-link').classList.add('active');
-    else if(currentStudyTool === 'hand') document.getElementById('tool-hand').classList.add('active');
-    else document.getElementById('tool-pointer').classList.add('active');
-    
-    const container = document.getElementById('pdf-container');
-    if (currentStudyTool === 'hand') container.style.cursor = 'grab';
-    else if (currentStudyTool === 'pointer') container.style.cursor = 'default';
-    else container.style.cursor = 'crosshair';
-}
-
-document.getElementById('pdf-container').addEventListener('click', async (e) => {
-    if (!currentStudyTool || currentStudyTool === 'pointer' || currentStudyTool === 'hand' || !currentPdfBytes) return;
-    const pageWrapper = e.target.closest('.pdf-page-wrapper'); if (!pageWrapper) return; 
-    const pageIndex = parseInt(pageWrapper.id.split('-')[1]) - 1;
-    const rect = e.target.getBoundingClientRect(); const canvasX = e.clientX - rect.left; const canvasY = e.clientY - rect.top;
-
-    showLoading(true, `Applying Tool...`);
-    try {
-        const pdfDoc = await PDFLib.PDFDocument.load(currentPdfBytes);
-        const page = pdfDoc.getPages()[pageIndex]; const { width, height } = page.getSize();
-        const pdfX = (canvasX / rect.width) * width; const pdfY = height - ((canvasY / rect.height) * height); 
-
-        if (currentStudyTool === 'highlight') {
-            page.drawRectangle({ x: pdfX, y: pdfY - 5, width: 120, height: 15, color: PDFLib.rgb(1, 1, 0), opacity: 0.4 });
-        } else if (currentStudyTool === 'note') {
-            const note = prompt("Enter your study note:");
-            if (note) {
-                page.drawRectangle({ x: pdfX, y: pdfY - 30, width: 200, height: 40, color: PDFLib.rgb(1, 0.98, 0.8), borderColor: PDFLib.rgb(0.9, 0.7, 0.3), borderWidth: 1 });
-                page.drawText("📝 " + note, { x: pdfX + 5, y: pdfY - 15, size: 12, color: PDFLib.rgb(0,0,0) });
-            } else { showLoading(false); return; }
-        } else if (currentStudyTool === 'link') {
-            const url = prompt("Enter link (e.g., https://...):");
-            if (url) {
-                page.drawText("🔗 " + url, { x: pdfX, y: pdfY, size: 10, color: PDFLib.rgb(0, 0, 1) });
-                const linkAnnot = pdfDoc.context.obj({ Type: 'Annot', Subtype: 'Link', Rect: [pdfX, pdfY - 5, pdfX + 150, pdfY + 10], Border: [0, 0, 0], A: { Type: 'Action', S: 'URI', URI: PDFLib.PDFString.of(url) } });
-                const linkAnnotRef = pdfDoc.context.register(linkAnnot);
-                let annots = page.node.Annots();
-                if (!annots) { annots = pdfDoc.context.obj([]); page.node.set(PDFLib.PDFName.of('Annots'), annots); }
-                annots.push(linkAnnotRef);
-            } else { showLoading(false); return; }
-        }
-        
-        const newBytes = await pdfDoc.save();
-        const tab = appTabs.find(t => t.id === activeTabId);
-        tab.bytes = newBytes; tab.doc = await pdfjsLib.getDocument({data: newBytes}).promise;
-        switchTab(activeTabId);
-    } catch (error) { showToast("Error applying tool."); }
-    showLoading(false);
-});
-
-async function actionPDFtoImage() {
-    if(!currentPdfjsDoc) return showToast("Open a PDF first.");
-    showLoading(true, "Exporting Images...");
-    try {
-        const zip = new JSZip();
-        for (let i = 1; i <= currentPdfjsDoc.numPages; i++) {
-            const page = await currentPdfjsDoc.getPage(i); const viewport = page.getViewport({ scale: 2.0 });
-            const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d'); canvas.height = viewport.height; canvas.width = viewport.width;
-            await page.render({ canvasContext: ctx, viewport: viewport }).promise;
-            const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png')); zip.file(`Page_${i}.png`, blob);
-        }
-        const zipBlob = await zip.generateAsync({type:"blob"}); await saveFileNative(zipBlob, "PDF_Images.zip");
-    } catch(e) { showToast("Failed to convert."); } showLoading(false);
-}
-
-async function actionPDFtoText() {
-    if(!currentPdfjsDoc) return showToast("Open a PDF first.");
-    showLoading(true, "Extracting Text...");
-    try {
-        let fullText = "";
-        for (let i = 1; i <= currentPdfjsDoc.numPages; i++) {
-            const page = await currentPdfjsDoc.getPage(i); const textContent = await page.getTextContent();
-            fullText += `\n--- Page ${i} ---\n${textContent.items.map(item => item.str).join(' ')}\n`;
-        }
-        await saveFileNative(new Blob([fullText], { type: "text/plain;charset=utf-8" }), "Extracted_Text.txt");
+        await createNewTab("Extracted.pdf", new Uint8Array(await newDoc.save()));
     } catch(e) { showToast("Extraction failed."); } showLoading(false);
 }
 
-async function actionPerformOCR() {
-    if (!currentPdfjsDoc) return showToast("Open a PDF first.");
-    showLoading(true, "Scanning OCR...");
+function uiShowDeleteModal() {
+    const tab = openedTabs.find(t => t.id === activeTabId); if(!tab) return showToast("Open a PDF first.");
+    showModal("Delete Page", `<p>Page to delete:</p><input type="number" id="deletePage" min="1" max="${tab.pdfjsDoc.numPages}"><div class="modal-actions"><button class="btn btn-secondary" onclick="closeModal()">Cancel</button><button class="btn btn-primary" style="background:var(--brand-red);" onclick="actionDeletePage()">Delete</button></div>`);
+}
+async function actionDeletePage() {
+    const tab = openedTabs.find(t => t.id === activeTabId); const pageNum = parseInt(document.getElementById('deletePage').value) - 1;
+    closeModal(); showLoading(true, "Deleting...");
     try {
-        const page = await currentPdfjsDoc.getPage(1); const viewport = page.getViewport({ scale: 2.0 });
-        const canvas = document.createElement('canvas'); canvas.height = viewport.height; canvas.width = viewport.width;
-        await page.render({ canvasContext: canvas.getContext('2d'), viewport: viewport }).promise;
-        const result = await Tesseract.recognize(canvas.toDataURL('image/png'), 'eng');
-        await saveFileNative(new Blob([result.data.text], { type: "text/plain;charset=utf-8" }), "OCR_Result.txt");
-    } catch (e) { showToast("OCR Failed."); } showLoading(false);
+        const srcDoc = await PDFLib.PDFDocument.load(tab.bytes); srcDoc.removePage(pageNum);
+        tab.bytes = new Uint8Array(await srcDoc.save()); tab.pdfjsDoc = await pdfjsLib.getDocument({data: tab.bytes}).promise;
+        renderActiveViewer(); showToast("Deleted.");
+    } catch(e) { showToast("Delete failed."); } showLoading(false);
+}
+)HTML";
+
+    // --- PART 10: Study Tools, Toggle Logic, View Modes ---
+    wstring htmlPart10 = LR"HTML(
+let currentStudyTool = null;
+function setStudyTool(tool) {
+    if (currentStudyTool === tool) tool = null; // 🟢 Toggle Off Logic
+    currentStudyTool = tool;
+    document.querySelectorAll('.toolbar .tool-btn').forEach(btn => btn.classList.remove('active'));
+    if(tool === 'highlight') document.getElementById('tool-highlight').classList.add('active');
+    else if(tool === 'note') document.getElementById('tool-note').classList.add('active');
+    else if(tool === 'link') document.getElementById('tool-link').classList.add('active');
+    else document.getElementById('tool-pointer').classList.add('active');
+    document.getElementById('pdf-container').style.cursor = tool ? 'crosshair' : 'default';
+}
+
+function addDOMAnnotation(pageIndex, type, xPercent, yPercent, textData="") {
+    const wrapper = document.getElementById(`page-${pageIndex + 1}`); if (!wrapper) return;
+    const div = document.createElement('div'); div.className = 'dom-annotation';
+    div.style.left = (xPercent * 100) + '%'; div.style.top = (yPercent * 100) + '%';
+    if (type === 'highlight') { div.style.width = '120px'; div.style.height = '15px'; div.style.backgroundColor = 'rgba(255, 255, 0, 0.4)'; div.style.mixBlendMode = 'multiply'; }
+    else if (type === 'note') { div.style.padding = '4px 8px'; div.style.backgroundColor = '#fffec8'; div.style.border = '1px solid #dcd777'; div.style.fontSize = '12px'; div.textContent = '📝 ' + textData; }
+    else if (type === 'link') { div.style.color = 'blue'; div.style.textDecoration = 'underline'; div.style.fontSize = '11px'; div.style.cursor = 'pointer'; div.style.pointerEvents = 'auto'; div.textContent = '🔗 ' + textData; div.onclick = (e) => { e.stopPropagation(); window.open(textData, '_blank'); }; }
+    wrapper.appendChild(div);
+}
+
+function redrawActiveAnnotations(pageNum) {
+    const tab = openedTabs.find(t => t.id === activeTabId); if (!tab) return;
+    tab.annotations.forEach(ann => { if(ann.pageIndex === (pageNum - 1) && ann.type !== 'image') addDOMAnnotation(ann.pageIndex, ann.type, ann.ratioX, 1 - ann.ratioY, ann.text); });
+}
+
+document.getElementById('pdf-container').addEventListener('click', (e) => {
+    const tab = openedTabs.find(t => t.id === activeTabId); if (!tab || !currentStudyTool) return;
+    const pageWrapper = e.target.closest('.pdf-page-wrapper'); if (!pageWrapper) return; 
+    const pageIndex = parseInt(pageWrapper.id.split('-')[1]) - 1;
+    const rect = e.target.getBoundingClientRect(); const ratioX = (e.clientX - rect.left) / rect.width; const ratioY = 1 - ((e.clientY - rect.top) / rect.height);
+    if (currentStudyTool === 'highlight') { tab.annotations.push({ type: 'highlight', pageIndex, ratioX, ratioY }); addDOMAnnotation(pageIndex, 'highlight', ratioX, (e.clientY - rect.top)/rect.height); }
+    else if (currentStudyTool === 'note') { const note = prompt("Enter note:"); if (note) { tab.annotations.push({ type: 'note', pageIndex, ratioX, ratioY: ratioY - 0.03, text: note }); addDOMAnnotation(pageIndex, 'note', ratioX, (e.clientY - rect.top)/rect.height, note); } }
+    else if (currentStudyTool === 'link') { const url = prompt("Enter URL:"); if (url) { tab.annotations.push({ type: 'link', pageIndex, ratioX, ratioY, text: url }); addDOMAnnotation(pageIndex, 'link', ratioX, (e.clientY - rect.top)/rect.height, url); } }
+});
+
+async function downloadCurrentPDF() {
+    const tab = openedTabs.find(t => t.id === activeTabId); if (!tab) return showToast("No active file.");
+    showLoading(true, "Preparing PDF...");
+    try {
+        const pdfDoc = await PDFLib.PDFDocument.load(tab.bytes); const pages = pdfDoc.getPages();
+        for (let ann of tab.annotations) {
+            const page = pages[ann.pageIndex]; const { width, height } = page.getSize();
+            if (ann.type === 'highlight') page.drawRectangle({ x: ann.ratioX*width, y: ann.ratioY*height, width: 120, height: 15, color: PDFLib.rgb(1, 1, 0), opacity: 0.4, blendMode: PDFLib.BlendMode.Multiply });
+            else if (ann.type === 'note') { page.drawRectangle({ x: ann.ratioX*width, y: ann.ratioY*height, width: 200, height: 40, color: PDFLib.rgb(0.98, 0.96, 0.84), borderColor: PDFLib.rgb(0.8, 0.6, 0.2) }); page.drawText("📝 "+ann.text, { x: ann.ratioX*width+5, y: ann.ratioY*height+15, size: 12 }); }
+            else if (ann.type === 'link') { page.drawText("🔗 "+ann.text, { x: ann.ratioX*width, y: ann.ratioY*height, size: 10, color: PDFLib.rgb(0,0,1) }); const linkAnnot = pdfDoc.context.obj({ Type: 'Annot', Subtype: 'Link', Rect: [ann.ratioX*width, ann.ratioY*height-5, ann.ratioX*width+150, ann.ratioY*height+10], Border:[0,0,0], A:{ Type:'Action', S:'URI', URI: PDFLib.PDFString.of(ann.text) } }); const ref = pdfDoc.context.register(linkAnnot); let annots = page.node.Annots(); if(!annots){ annots = pdfDoc.context.obj([]); page.node.set(PDFLib.PDFName.of('Annots'), annots); } annots.push(ref); }
+        }
+        await saveBytesToFile(new Blob([await pdfDoc.save()]), tab.name);
+    } catch(e) { showToast("Save failed."); } showLoading(false);
 }
 
 async function actionAddWatermark() {
-    if (!currentPdfBytes) return showToast("Open a PDF first.");
-    const watermarkText = prompt("Enter watermark text:", "CONFIDENTIAL"); if (!watermarkText) return;
-    showLoading(true, "Adding Watermark...");
+    const tab = openedTabs.find(t => t.id === activeTabId); if (!tab) return showToast("No file.");
+    const text = prompt("Enter watermark text:"); if (!text) return;
+    showLoading(true, "Applying...");
     try {
-        const pdfDoc = await PDFLib.PDFDocument.load(currentPdfBytes); const { rgb, degrees } = PDFLib;
-        pdfDoc.getPages().forEach((page) => { const { width, height } = page.getSize(); page.drawText(watermarkText, { x: width / 2 - 150, y: height / 2, size: 60, color: rgb(0.9, 0.2, 0.2), opacity: 0.3, rotate: degrees(45) }); });
-        const newBytes = await pdfDoc.save(); const tab = appTabs.find(t => t.id === activeTabId);
-        tab.bytes = newBytes; tab.doc = await pdfjsLib.getDocument({data: newBytes}).promise; switchTab(activeTabId); showToast("Watermark added!");
-    } catch (e) { showToast("Failed."); } showLoading(false);
+        const pdfDoc = await PDFLib.PDFDocument.load(tab.bytes); const { rgb, degrees } = PDFLib;
+        pdfDoc.getPages().forEach((page) => { const { width, height } = page.getSize(); page.drawText(text, { x: width / 2 - 150, y: height / 2, size: 60, color: rgb(0.8, 0.2, 0.2), opacity: 0.25, rotate: degrees(45) }); });
+        await saveBytesToFile(new Blob([await pdfDoc.save()]), "Watermarked_" + tab.name);
+    } catch(e) { showToast("Failed."); } showLoading(false);
 }
 
-async function actionAddStamp() {
-    if (!currentPdfBytes) return showToast("Open a PDF first.");
-    showLoading(true, "Applying Stamp...");
+async function actionPDFtoImage() {
+    const tab = openedTabs.find(t => t.id === activeTabId); if (!tab) return showToast("No file.");
+    showLoading(true, "Zipping...");
     try {
-        const pdfDoc = await PDFLib.PDFDocument.load(currentPdfBytes); const firstPage = pdfDoc.getPages()[0]; 
-        const { width, height } = firstPage.getSize(); const { rgb } = PDFLib;
-        firstPage.drawRectangle({ x: width - 220, y: height - 100, width: 180, height: 50, borderColor: rgb(0.1, 0.6, 0.1), borderWidth: 3 });
-        firstPage.drawText("APPROVED", { x: width - 200, y: height - 85, size: 30, color: rgb(0.1, 0.6, 0.1) });
-        const newBytes = await pdfDoc.save(); const tab = appTabs.find(t => t.id === activeTabId);
-        tab.bytes = newBytes; tab.doc = await pdfjsLib.getDocument({data: newBytes}).promise; switchTab(activeTabId); showToast("Stamp applied!");
-    } catch (e) { showToast("Failed."); } showLoading(false);
+        const zip = new JSZip();
+        for (let i = 1; i <= tab.pdfjsDoc.numPages; i++) {
+            const page = await tab.pdfjsDoc.getPage(i); const viewport = page.getViewport({ scale: 2.0 });
+            const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d'); canvas.height = viewport.height; canvas.width = viewport.width;
+            await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+            zip.file(`Page_${i}.png`, await new Promise(res => canvas.toBlob(res, 'image/png')));
+        }
+        await saveBytesToFile(await zip.generateAsync({type:"blob"}), "Images.zip", "zip", "application/zip");
+    } catch(e) { showToast("Failed."); } showLoading(false);
 }
 
-function toggleNightMode() {
-    document.body.classList.toggle('night-mode');
-    showToast(document.body.classList.contains('night-mode') ? "Night Mode Activated 🌙" : "Light Mode Activated ☀️");
+async function actionPDFtoText() {
+    const tab = openedTabs.find(t => t.id === activeTabId); if (!tab) return showToast("No file.");
+    showLoading(true, "Extracting...");
+    try {
+        let txt = ""; for (let i = 1; i <= tab.pdfjsDoc.numPages; i++) { const page = await tab.pdfjsDoc.getPage(i); txt += `\n${(await page.getTextContent()).items.map(x => x.str).join(' ')}\n`; }
+        await saveBytesToFile(new Blob([txt], {type: "text/plain"}), "Extracted.txt", "txt", "text/plain");
+    } catch(e) { showToast("Failed."); } showLoading(false);
 }
 
-function toggleReadMode() {
-    document.body.classList.toggle('read-mode');
-    const isRead = document.body.classList.contains('read-mode');
-    const iconEl = document.getElementById('read-mode-icon');
-    if (isRead) {
-        iconEl.textContent = 'fullscreen_exit'; iconEl.style.color = '#EB1C24';
-        showToast("Read Mode Active. Only Topbar is visible.");
-        if (currentZoom < 1.3) { currentZoom = 1.3; renderViewer(); } 
-    } else {
-        iconEl.textContent = 'menu_book'; iconEl.style.color = '';
-        showToast("Normal Mode Active.");
-    }
+async function actionPerformOCR() {
+    const tab = openedTabs.find(t => t.id === activeTabId); if (!tab) return showToast("No file.");
+    showLoading(true, "OCR Scanning...");
+    try {
+        const page = await tab.pdfjsDoc.getPage(1); const viewport = page.getViewport({ scale: 2.0 });
+        const canvas = document.createElement('canvas'); canvas.height = viewport.height; canvas.width = viewport.width;
+        await page.render({ canvasContext: canvas.getContext('2d'), viewport: viewport }).promise;
+        const res = await Tesseract.recognize(canvas.toDataURL('image/png'), 'eng');
+        await saveBytesToFile(new Blob([res.data.text], {type: "text/plain"}), "OCR.txt", "txt", "text/plain");
+    } catch(e) { showToast("OCR Failed."); } showLoading(false);
 }
+
+function toggleNightMode() { document.body.classList.toggle('night-mode'); }
+function toggleReadMode() { document.body.classList.toggle('read-mode'); setTimeout(renderActiveViewer, 100); }
 </script>
 </body>
 </html>
 )HTML";
 
-    // ✅ Return the complete concatenated string safely
     return htmlPart1 + htmlPart2 + htmlPart3 + htmlPart4 + htmlPart5 + htmlPart6 + htmlPart7 + htmlPart8 + htmlPart9 + htmlPart10;
 }
 
@@ -678,6 +586,13 @@ HRESULT InitializeWebView2(HWND hWnd, HWND hHostWnd) {
                     settings->put_IsScriptEnabled(TRUE);
                     settings->put_IsWebMessageEnabled(TRUE);
                     
+                    ICoreWebView2Settings3* settings3;
+                    if (SUCCEEDED(g_webView->QueryInterface(IID_PPV_ARGS(&settings3)))) {
+                        settings3->put_AreFileAccessFromFileURLsEnabled(TRUE);
+                        settings3->put_AreUniversalAccessFromFileURLsEnabled(TRUE);
+                        settings3->Release();
+                    }
+                    
                     RECT r; GetClientRect(hWnd, &r);
                     g_webViewController->put_Bounds(RECT{0, 0, r.right, r.bottom});
                     
@@ -720,7 +635,7 @@ void LaunchFoxitStylePdfReader(std::wstring pdfPath) {
     g_acrobatPdfPath = pdfPath;
 
     if (g_hAcrobatWnd != NULL) {
-        ShowWindow(g_hAcrobatWnd, SW_RESTORE); 
+        ShowWindow(g_hAcrobatWnd, SW_RESTORE);
         SetForegroundWindow(g_hAcrobatWnd);    
         
         if (g_webViewInitialized && g_webView && !pdfPath.empty()) {
@@ -749,7 +664,7 @@ void LaunchFoxitStylePdfReader(std::wstring pdfPath) {
     }
 
     g_hAcrobatWnd = CreateWindowExW(
-        0, L"AcrobatWorkspaceClass", L"RasFocus PDF Pro",
+        0, L"AcrobatWorkspaceClass", L"RasFocus - PDF Pro Workspace",
         WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
         CW_USEDEFAULT, CW_USEDEFAULT,
         (int)(1200 * g_scaleFactor), (int)(800 * g_scaleFactor),
@@ -770,6 +685,16 @@ void LaunchFoxitStylePdfReader(std::wstring pdfPath) {
 // ==========================================
 // ⚠️ LEGACY FUNCTIONS
 // ==========================================
-void DrawPdfWorkspaceTab(Gdiplus::Graphics& g, float cx, float cy, float cw, float ch) {}
+void DrawPdfWorkspaceTab(Gdiplus::Graphics& g, float cx, float cy, float cw, float ch) {
+    FontFamily ff(L"Segoe UI");
+    Font fText(&ff, 20 * g_scaleFactor, FontStyleBold, UnitPixel);
+    SolidBrush textBrush(Color(255, 100, 100, 100));
+    StringFormat fmt;
+    fmt.SetAlignment(StringAlignmentCenter);
+    fmt.SetLineAlignment(StringAlignmentCenter);
+    g.DrawString(L"PDF Workspace is ready. Double click a PDF file to launch.",
+        -1, &fText, RectF(cx, cy, cw, ch), &fmt, &textBrush);
+}
+
 void ProcessPdfWorkspaceMouseMove(float x, float y) {}
 void ProcessPdfWorkspaceMouseClick(float x, float y) {}
