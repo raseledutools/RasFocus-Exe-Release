@@ -61,7 +61,23 @@ bool IsBlockedContent(const std::wstring& text) {
     
     // আপনার অ্যাডাল্ট ব্লক সেকশনের বেসিক কিওয়ার্ড লিস্ট (এখানে আরও যোগ করতে পারেন)
     const std::vector<std::wstring> badKeywords = { 
-        L"porn", L"xxx", L"sex", L"xvideos", L"pornhub", L"brazzers", L"xhamster", L"nude", L"nsfw"
+        L"porn", L"xxx", L"sex", L"xvideos", L"pornhub", L"brazzers", L"xhamster", L"nude", L"nsfw",  L"porn", L"xxx", L"sex", L"nude", L"nsfw", L"sexy", L"hentai", L"rule34", L"milf", 
+    L"blowjob", L"tits", L"boobs", L"pussy", L"dick", L"cock", L"escort", L"bdsm", 
+    L"fetish", L"erotica", L"dildo", L"webcam", L"camgirls", L"xvideos", L"pornhub", 
+    L"xnxx", L"xhamster", L"brazzers", L"onlyfans", L"playboy", L"chaturbate", 
+    L"stripchat", L"eporner", L"spankbang", L"redtube", L"youporn", L"mia khalifa", 
+    L"sunny leone", L"dani daniels", L"johnny sins", L"kendra lust",
+    L"চটি", L"পর্ণ", L"সেক্স", L"নগ্ন", L"উলঙ্গ", L"বেশ্যা", L"মাগি", L"খানকি", 
+    L"যৌন", L"পর্ণগ্রাফি", L"রেন্ডি", L"চোদাচুতি", L"গরম ভিডিও", L"খারাপ ছবি",
+    L"যৌন মিলন", L"যৌনাঙ্গ", L"চুদো", L"নগ্নতা",
+    L"bhabi", L"chudai", L"bangla choti", L"panu", L"desi bhabi", L"mms", L"magi", 
+    L"choda", L"chodachudi", L"khanki", L"besha", L"randi", L"nengta", L"nangta", 
+    L"baal", L"vodai", L"bokachoda", L"kuttar bacha", L"shuarer bacha", L"kharap video", 
+    L"hot dance", L"seductive dance", L"item song", L"belly dance", L"hot", 
+    L"kissing scene", L"bikini", L"swimsuit", L"sexy dance", L"cleavage", L"hot scene", 
+    L"romantic kiss", L"bedroom scene", L"bath scene", L"rain dance", L"bold scene", 
+    L"semi nude", L"lingerie", L"erotic", L"hot song", L"romantic video hot", 
+    L"navel show", L"deep neck", L"short dress sexy", L"unfaithful scene"
     };
 
     for (const auto& keyword : badKeywords) {
