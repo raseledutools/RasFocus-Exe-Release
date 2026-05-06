@@ -17,7 +17,7 @@
 #include <wrl/event.h>   
 
 #pragma comment(lib, "Shlwapi.lib")
-#pragma comment(lib, "WebView2Loader.dll.lib")
+// 🟢 FIX: Removed WebView2Loader.dll.lib as your build.yml already handles static linking
 
 using namespace Gdiplus;
 using namespace Microsoft::WRL;
@@ -25,7 +25,7 @@ using namespace std;
 
 extern HWND hParentWnd;
 extern float g_scaleFactor;
-wstring currentWorkspacePdf = L"";
+extern wstring currentWorkspacePdf; // 🟢 FIX: Added 'extern' so it doesn't conflict with main.cpp
 
 // --- WebView2 Global Variables ---
 HWND g_hAcrobatWnd = NULL;
@@ -41,7 +41,7 @@ HRESULT InitializeWebView2(HWND hWnd, HWND hHostWnd);
 LRESULT CALLBACK AcrobatViewerWndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp);
 
 // ==========================================
-// 🎨 HTML/CSS/JS UI - SPLIT INTO 5 PARTS TO FIX "STRING TOO BIG" ERROR
+// 🎨 HTML/CSS/JS UI - SPLIT INTO 5 PARTS 
 // ==========================================
 wstring GetAcrobatHTML() {
     
@@ -402,7 +402,7 @@ window.loadPdfFromFile = loadPdfFromFile;
 </html>
 )HTML";
 
-    // ✅ Re-combining the 5 parts to return a single clean string
+    // ✅ Combine the 5 parts safely
     return htmlPart1 + htmlPart2 + htmlPart3 + htmlPart4 + htmlPart5;
 }
 
@@ -465,7 +465,6 @@ HRESULT InitializeWebView2(HWND hWnd, HWND hHostWnd) {
                     RECT r; GetClientRect(hWnd, &r);
                     g_webViewController->put_Bounds(RECT{0, 0, r.right, r.bottom});
                     
-                    // 🟢 Here we pass the dynamically combined 5-part string
                     g_webView->NavigateToString(GetAcrobatHTML().c_str());
                     
                     auto navCompletedHandler = Callback<ICoreWebView2NavigationCompletedEventHandler>(
