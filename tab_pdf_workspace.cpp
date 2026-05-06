@@ -327,7 +327,7 @@ async function renderActiveViewer() {
     for (let i = 1; i <= t.pdfjsDoc.numPages; i++) {
         const page = await t.pdfjsDoc.getPage(i);
         const vp = page.getViewport({ scale: t.zoom, rotation: t.rotation });
-        const wrap = document.createElement('div'); wrapper = wrap; wrap.className = 'pdf-page-wrapper'; wrap.id = `page-${i}`;
+        const wrap = document.createElement('div'); wrap.className = 'pdf-page-wrapper'; wrap.id = `page-${i}`;
         const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d');
         canvas.height = vp.height; canvas.width = vp.width;
         wrap.appendChild(canvas); c.appendChild(wrap);
@@ -358,7 +358,6 @@ document.getElementById('viewer-area').addEventListener('wheel', function(e) {
     wstring htmlPart11 = LR"HTML(
 let currentStudyTool = 'pointer';
 function setStudyTool(tool) {
-    // 🟢 Toggle off logic (if clicking same tool, switch to pointer)
     if (currentStudyTool === tool) tool = 'pointer';
     if (!tool) tool = 'pointer';
     currentStudyTool = tool;
@@ -509,7 +508,7 @@ LRESULT CALLBACK AcrobatViewerWndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp)
 }
 
 // ==========================================
-// 🌐 WEBVIEW2 INITIALIZATION (C2039 Fixed - No Settings3)
+// 🌐 WEBVIEW2 INITIALIZATION
 // ==========================================
 HRESULT InitializeWebView2(HWND hWnd, HWND hHostWnd) {
     auto envCompletedHandler = Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
