@@ -1,7 +1,7 @@
 // tab_dashboard.cpp
 
 #include "tab_dashboard.h"
-#include "mini_browser.h" // লিংকার এরর এড়াতে এটি অবশ্যই থাকতে হবে
+#include "mini_browser.h" // 🟢 FIX: লিংকার এরর এড়াতে এটি অবশ্যই থাকতে হবে
 #include <string>
 #include <vector>
 
@@ -25,7 +25,7 @@ static float d_cX = 0.0f, d_cY = 0.0f, d_cW = 0.0f, d_cH = 0.0f;
 // --- Dashboard Sub-Tab States ---
 static int selectedDashTab = 0;
 static int hoveredDashTab = -1;
-static RectF s_tabRects[5]; 
+static RectF s_tabRects[5]; // ৫টি ট্যাবের বাউন্ডিং বক্স
 
 // --- Dynamic Grid Layout Structures ---
 struct DashBtn {
@@ -110,7 +110,7 @@ void InitDashboardData() {
     s_init = true;
 }
 
-// --- Helper: Premium Rounded Rectangle Path ---
+// --- Helper: Rounded Rectangle Path ---
 static void AddRoundedRectPath(GraphicsPath& path, float x, float y, float w, float h, float r) {
     float d = r * 2.0f;
     if (d > w) d = w; if (d > h) d = h;
@@ -121,14 +121,12 @@ static void AddRoundedRectPath(GraphicsPath& path, float x, float y, float w, fl
     path.CloseFigure();
 }
 
-// --- Helper: Soft Premium Shadow ---
-static void DrawPremiumShadow(Graphics& g, float x, float y, float w, float h, float r) {
-    for (int i = 0; i < 5; ++i) {
+static void DrawCardShadow(Graphics& g, float x, float y, float w, float h, float r) {
+    for (int i = 0; i < 4; ++i) {
         GraphicsPath path;
-        float expand = 5.0f - (float)i;
-        AddRoundedRectPath(path, x - expand, y - expand + (float)i * 1.5f, w + expand * 2.0f, h + expand * 2.0f, r + expand);
-        // Soft fading black shadow
-        SolidBrush shadowBrush(Color(6 + (i * 2), 0, 0, 0)); 
+        float expand = 4.0f - (float)i;
+        AddRoundedRectPath(path, x - expand, y - expand + (float)i, w + expand * 2.0f, h + expand * 2.0f, r + expand);
+        SolidBrush shadowBrush(Color(4 + (i * 2), 0, 0, 0)); 
         g.FillPath(&shadowBrush, &path);
     }
 }
@@ -138,33 +136,31 @@ void DrawDashboardTab(Graphics& g, float cx, float cy, float cw, float ch) {
     InitDashboardData();
 
     FontFamily ff(L"Segoe UI");
-    Font fH1(&ff, 32 * g_scaleFactor, FontStyleBold, UnitPixel); // একটু বড় ও প্রিমিয়াম ফন্ট
-    Font fTabTxt(&ff, 15 * g_scaleFactor, FontStyleBold, UnitPixel); 
-    Font fBtn(&ff, 14 * g_scaleFactor, FontStyleBold, UnitPixel);
+    Font fH1(&ff, 28, FontStyleBold, UnitPixel);
+    Font fTabTxt(&ff, 15, FontStyleBold, UnitPixel); 
+    Font fBtn(&ff, 14, FontStyleBold, UnitPixel);
     
     FontFamily ffIc(L"Segoe MDL2 Assets");
-    Font fIconBig(&ffIc, 22 * g_scaleFactor, FontStyleRegular, UnitPixel);
+    Font fIconBig(&ffIc, 22, FontStyleRegular, UnitPixel);
 
     SolidBrush bWhite(Color(255, 255, 255, 255));
-    // 🟢 Premium Very Light Gray Background
-    SolidBrush bBg(Color(255, 245, 247, 250)); 
+    SolidBrush bBg(Color(255, 248, 250, 252)); 
     SolidBrush bDark(Color(255, 30, 40, 50));
+    SolidBrush bTeal(Color(255, 12, 168, 176));
     
     StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
     StringFormat fmtL; fmtL.SetAlignment(StringAlignmentNear); fmtL.SetLineAlignment(StringAlignmentCenter);
 
     // 1. Background
     g.FillRectangle(&bBg, cx, cy, cw, ch);
-    
-    // 🟢 FIX: "RasFocus Workspace" টেক্সট সরিয়ে এখানে একটি প্রিমিয়াম গ্রিটিং বসানো হলো
-    g.DrawString(L"Welcome to RasFocus Pro", -1, &fH1, RectF(cx + 40.0f * g_scaleFactor, cy + 20.0f * g_scaleFactor, cw, 50.0f * g_scaleFactor), &fmtL, &bDark);
+    g.DrawString(L"RasFocus Workspace", -1, &fH1, RectF(cx + 40.0f, cy + 20.0f, cw, 40.0f), &fmtL, &bDark);
 
-    // 2. Draw 5 Sub-Tabs (Premium Look)
-    float marginX = cx + 40.0f * g_scaleFactor;
-    float usableWidth = cw - (80.0f * g_scaleFactor);
-    float tabY = cy + 90.0f * g_scaleFactor;
-    float tabH = 48.0f * g_scaleFactor;
-    float tabGap = 8.0f * g_scaleFactor; 
+    // 2. Draw 5 Sub-Tabs 
+    float marginX = cx + 40.0f;
+    float usableWidth = cw - 80.0f;
+    float tabY = cy + 80.0f;
+    float tabH = 45.0f;
+    float tabGap = 6.0f; 
     float tabW = (usableWidth - (tabGap * 4.0f)) / 5.0f;
 
     std::wstring subNames[] = { L"Quick Blocks", L"Web & Cloud", L"Pro Tools", L"Personal Notes", L"Student Corner" };
@@ -173,35 +169,26 @@ void DrawDashboardTab(Graphics& g, float cx, float cy, float cw, float ch) {
     for (int i = 0; i < 5; i++) {
         s_tabRects[i] = RectF(currTabX, tabY, tabW, tabH);
         
-        GraphicsPath tabPath;
-        AddRoundedRectPath(tabPath, s_tabRects[i].X, s_tabRects[i].Y, s_tabRects[i].Width, s_tabRects[i].Height, 8.0f);
-
         if (selectedDashTab == i) {
-            // Active Tab - Premium Teal with subtle shadow
-            DrawPremiumShadow(g, s_tabRects[i].X, s_tabRects[i].Y, s_tabRects[i].Width, s_tabRects[i].Height, 8.0f);
             SolidBrush activeBg(Color(255, 12, 168, 176));
-            g.FillPath(&activeBg, &tabPath);
+            g.FillRectangle(&activeBg, s_tabRects[i]);
             g.DrawString(subNames[i].c_str(), -1, &fTabTxt, s_tabRects[i], &fmtC, &bWhite);
         } else {
-            // Inactive Tab
-            SolidBrush inactiveBg(hoveredDashTab == i ? Color(255, 230, 235, 240) : Color(255, 255, 255, 255));
-            g.FillPath(&inactiveBg, &tabPath);
-            Pen inactivePen(Color(255, 220, 225, 230), 1.0f);
-            g.DrawPath(&inactivePen, &tabPath);
-
-            SolidBrush inactiveTxt(hoveredDashTab == i ? Color(255, 12, 168, 176) : Color(255, 100, 110, 120));
+            SolidBrush inactiveBg(hoveredDashTab == i ? Color(255, 225, 230, 235) : Color(255, 242, 244, 246));
+            g.FillRectangle(&inactiveBg, s_tabRects[i]);
+            SolidBrush inactiveTxt(Color(255, 90, 100, 110));
             g.DrawString(subNames[i].c_str(), -1, &fTabTxt, s_tabRects[i], &fmtC, &inactiveTxt);
         }
         currTabX += tabW + tabGap;
     }
 
     // 3. Draw Grid Section for the Selected Tab Only
-    float currentY = tabY + tabH + 40.0f * g_scaleFactor;
+    float currentY = tabY + tabH + 30.0f;
     int columns = 4; 
-    float gapX = 25.0f * g_scaleFactor;
-    float gapY = 25.0f * g_scaleFactor;
+    float gapX = 20.0f;
+    float gapY = 20.0f;
     float btnW = (usableWidth - (gapX * (columns - 1))) / columns;
-    float btnH = 65.0f * g_scaleFactor; // একটু বড় বাটন
+    float btnH = 55.0f;
 
     float currentX = marginX;
     int colCount = 0;
@@ -213,29 +200,24 @@ void DrawDashboardTab(Graphics& g, float cx, float cy, float cw, float ch) {
 
         btn.bounds = RectF(currentX, currentY, btnW, btnH);
         GraphicsPath bPath;
-        AddRoundedRectPath(bPath, btn.bounds.X, btn.bounds.Y, btn.bounds.Width, btn.bounds.Height, 12.0f);
+        AddRoundedRectPath(bPath, btn.bounds.X, btn.bounds.Y, btn.bounds.Width, btn.bounds.Height, 10.0f);
         
         SolidBrush btnBg(btn.isHovered ? Color(255, 12, 168, 176) : Color(255, 255, 255, 255));
-        SolidBrush btnTxtC(btn.isHovered ? Color(255, 255, 255, 255) : Color(255, 50, 60, 70));
+        SolidBrush btnTxtC(btn.isHovered ? Color(255, 255, 255, 255) : Color(255, 60, 70, 80));
         SolidBrush btnIc(btn.isHovered ? Color(255, 255, 255, 255) : Color(255, 12, 168, 176)); 
         
         if (btn.isHovered) {
-            DrawPremiumShadow(g, btn.bounds.X, btn.bounds.Y, btn.bounds.Width, btn.bounds.Height, 12.0f);
-        } else {
-            // Light static shadow for unhovered buttons
-            SolidBrush lightShadow(Color(5, 0, 0, 0));
-            g.FillRectangle(&lightShadow, btn.bounds.X + 2, btn.bounds.Y + 4, btn.bounds.Width, btn.bounds.Height);
+            DrawCardShadow(g, btn.bounds.X, btn.bounds.Y, btn.bounds.Width, btn.bounds.Height, 10.0f);
         }
 
         g.FillPath(&btnBg, &bPath);
-        
-        Pen borderPen(btn.isHovered ? Color(255, 12, 168, 176) : Color(255, 230, 235, 240), 1.5f);
+        Pen borderPen(btn.isHovered ? Color(255, 12, 168, 176) : Color(255, 225, 230, 235), 1.5f);
         g.DrawPath(&borderPen, &bPath);
         
-        RectF iconRect(btn.bounds.X + 15.0f * g_scaleFactor, btn.bounds.Y, 35.0f * g_scaleFactor, btn.bounds.Height);
+        RectF iconRect(btn.bounds.X + 15.0f, btn.bounds.Y, 30.0f, btn.bounds.Height);
         g.DrawString(btn.icon.c_str(), -1, &fIconBig, iconRect, &fmtC, &btnIc);
 
-        RectF textRect(btn.bounds.X + 55.0f * g_scaleFactor, btn.bounds.Y, btn.bounds.Width - 60.0f * g_scaleFactor, btn.bounds.Height);
+        RectF textRect(btn.bounds.X + 50.0f, btn.bounds.Y, btn.bounds.Width - 55.0f, btn.bounds.Height);
         StringFormat fmtTL; fmtTL.SetAlignment(StringAlignmentNear); fmtTL.SetLineAlignment(StringAlignmentCenter);
         g.DrawString(btn.title.c_str(), -1, &fBtn, textRect, &fmtTL, &btnTxtC);
 
@@ -243,16 +225,16 @@ void DrawDashboardTab(Graphics& g, float cx, float cy, float cw, float ch) {
         colCount++;
     }
 
-    // 4. DEBUG KILL BUTTON (Hidden/Discreet)
-    float killW = 120.0f * g_scaleFactor, killH = 35.0f * g_scaleFactor;
-    float killX = cx + cw - killW - 30.0f * g_scaleFactor;
-    float killY = cy + ch - killH - 30.0f * g_scaleFactor;
+    // 4. DEBUG KILL BUTTON
+    float killW = 120.0f, killH = 35.0f;
+    float killX = cx + cw - killW - 30.0f;
+    float killY = cy + ch - killH - 30.0f;
     GraphicsPath kPath;
     AddRoundedRectPath(kPath, killX, killY, killW, killH, 6.0f);
     SolidBrush redBtn(dash_hovKillBtn ? Color(255, 220, 50, 50) : Color(255, 240, 240, 240));
     SolidBrush redTxt(dash_hovKillBtn ? Color(255, 255, 255, 255) : Color(255, 200, 100, 100));
     g.FillPath(&redBtn, &kPath);
-    Font fKill(&ff, 12 * g_scaleFactor, FontStyleBold, UnitPixel);
+    Font fKill(&ff, 12, FontStyleBold, UnitPixel);
     g.DrawString(L"DEBUG KILL", -1, &fKill, RectF(killX, killY, killW, killH), &fmtC, &redTxt);
 
     // 5. PASSWORD NUMPAD OVERLAY 
@@ -260,34 +242,34 @@ void DrawDashboardTab(Graphics& g, float cx, float cy, float cw, float ch) {
         SolidBrush overBg(Color(220, 10, 15, 20));
         g.FillRectangle(&overBg, cx, cy, cw, ch);
 
-        float pW = 320.0f * g_scaleFactor, pH = 420.0f * g_scaleFactor;
+        float pW = 320.0f, pH = 420.0f;
         float pX = cx + (cw - pW) / 2.0f;
         float pY = cy + (ch - pH) / 2.0f;
 
-        DrawPremiumShadow(g, pX, pY, pW, pH, 15.0f);
+        DrawCardShadow(g, pX, pY, pW, pH, 15.0f);
         GraphicsPath popPath;
         AddRoundedRectPath(popPath, pX, pY, pW, pH, 15.0f);
         g.FillPath(&bWhite, &popPath);
 
-        Font fH2(&ff, 20 * g_scaleFactor, FontStyleBold, UnitPixel);
-        g.DrawString(L"Enter Debug Password", -1, &fH2, RectF(pX, pY + 20.0f * g_scaleFactor, pW, 30.0f * g_scaleFactor), &fmtC, &bDark);
+        Font fH2(&ff, 20, FontStyleBold, UnitPixel);
+        g.DrawString(L"Enter Debug Password", -1, &fH2, RectF(pX, pY + 20.0f, pW, 30.0f), &fmtC, &bDark);
 
-        Font fClose(&ffIc, 14 * g_scaleFactor, FontStyleRegular, UnitPixel);
+        Font fClose(&ffIc, 14, FontStyleRegular, UnitPixel);
         SolidBrush closeC(hoverNumBtn == 12 ? Color(255, 230, 50, 50) : Color(255, 120, 120, 120));
-        g.DrawString(L"\xE8BB", -1, &fClose, RectF(pX + pW - 40.0f * g_scaleFactor, pY + 10.0f * g_scaleFactor, 30.0f * g_scaleFactor, 30.0f * g_scaleFactor), &fmtC, &closeC);
+        g.DrawString(L"\xE8BB", -1, &fClose, RectF(pX + pW - 40.0f, pY + 10.0f, 30.0f, 30.0f), &fmtC, &closeC);
 
-        float disX = pX + 30.0f * g_scaleFactor, disY = pY + 70.0f * g_scaleFactor, disW = pW - 60.0f * g_scaleFactor, disH = 45.0f * g_scaleFactor;
+        float disX = pX + 30.0f, disY = pY + 70.0f, disW = pW - 60.0f, disH = 45.0f;
         GraphicsPath disPath;
         AddRoundedRectPath(disPath, disX, disY, disW, disH, 6.0f);
         SolidBrush disBg(Color(255, 240, 240, 240));
         g.FillPath(&disBg, &disPath);
         
         wstring stars = wstring(killInput.length(), L'*');
-        Font fStar(&ff, 28 * g_scaleFactor, FontStyleBold, UnitPixel);
-        g.DrawString(stars.c_str(), -1, &fStar, RectF(disX, disY + 8.0f * g_scaleFactor, disW, disH), &fmtC, &bDark);
+        Font fStar(&ff, 28, FontStyleBold, UnitPixel);
+        g.DrawString(stars.c_str(), -1, &fStar, RectF(disX, disY + 8.0f, disW, disH), &fmtC, &bDark);
 
-        float padX = pX + 40.0f * g_scaleFactor; float padY = disY + 65.0f * g_scaleFactor;
-        float nW = 70.0f * g_scaleFactor, nH = 50.0f * g_scaleFactor, nGap = 15.0f * g_scaleFactor;
+        float padX = pX + 40.0f; float padY = disY + 65.0f;
+        float nW = 70.0f, nH = 50.0f, nGap = 15.0f;
         wstring btnText[12] = { L"1", L"2", L"3", L"4", L"5", L"6", L"7", L"8", L"9", L"C", L"0", L"OK" };
         int btnId[12] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 0, 11 };
 
@@ -321,12 +303,12 @@ void ProcessDashboardMouseMove(float x, float y) {
     bool needsRedraw = false;
 
     if (showKillPrompt) {
-        float pW = 320.0f * g_scaleFactor, pH = 420.0f * g_scaleFactor;
+        float pW = 320.0f, pH = 420.0f;
         float pX = d_cX + (d_cW - pW) / 2.0f; float pY = d_cY + (d_cH - pH) / 2.0f;
-        if (x >= pX + pW - 40.0f * g_scaleFactor && x <= pX + pW - 10.0f * g_scaleFactor && y >= pY + 10.0f * g_scaleFactor && y <= pY + 40.0f * g_scaleFactor) hoverNumBtn = 12;
+        if (x >= pX + pW - 40.0f && x <= pX + pW - 10.0f && y >= pY + 10.0f && y <= pY + 40.0f) hoverNumBtn = 12;
 
-        float padX = pX + 40.0f * g_scaleFactor, padY = pY + 135.0f * g_scaleFactor;
-        float nW = 70.0f * g_scaleFactor, nH = 50.0f * g_scaleFactor, nGap = 15.0f * g_scaleFactor;
+        float padX = pX + 40.0f, padY = pY + 135.0f;
+        float nW = 70.0f, nH = 50.0f, nGap = 15.0f;
         int btnId[12] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 0, 11 };
         for (int i = 0; i < 12; ++i) {
             int row = i / 3; int col = i % 3;
@@ -350,8 +332,8 @@ void ProcessDashboardMouseMove(float x, float y) {
         if (wasHovered != btn.isHovered) needsRedraw = true;
     }
 
-    float killW = 120.0f * g_scaleFactor, killH = 35.0f * g_scaleFactor;
-    float killX = d_cX + d_cW - killW - 30.0f * g_scaleFactor; float killY = d_cY + d_cH - killH - 30.0f * g_scaleFactor;
+    float killW = 120.0f, killH = 35.0f;
+    float killX = d_cX + d_cW - killW - 30.0f; float killY = d_cY + d_cH - killH - 30.0f;
     if (x >= killX && x <= killX + killW && y >= killY && y <= killY + killH) {
         dash_hovKillBtn = true; needsRedraw = true;
     }
@@ -398,6 +380,7 @@ void ProcessDashboardMouseClick(float x, float y, int& selectedTab) {
             else if (btn.title == L"Internet Block" || btn.title == L"Uninstall Block" || btn.title == L"Ads Block" || btn.title == L"YT Shorts Block" || btn.title == L"FB Reels Block") selectedTab = 1; 
             else if (btn.title == L"Adult Block") selectedTab = 2;
             else if (btn.title == L"Personal Diary") selectedTab = 4;
+
             else if (btn.title == L"Gemini") LaunchMiniBrowser(L"https://gemini.google.com/?authuser=0", L"Gemini Workspace");
             else if (btn.title == L"ChatGPT") LaunchMiniBrowser(L"https://chatgpt.com", L"ChatGPT Workspace");
             else if (btn.title == L"DeepSeek") LaunchMiniBrowser(L"https://chat.deepseek.com", L"DeepSeek Workspace");
@@ -412,6 +395,7 @@ void ProcessDashboardMouseClick(float x, float y, int& selectedTab) {
             else if (btn.title == L"Google Docs") LaunchMiniBrowser(L"https://docs.google.com/document", L"Google Docs");
             else if (btn.title == L"Google Slides") LaunchMiniBrowser(L"https://docs.google.com/presentation", L"Google Slides");
             else if (btn.title == L"Google Sheets") LaunchMiniBrowser(L"https://docs.google.com/spreadsheets", L"Google Sheets");
+
             else if (btn.title == L"Photo Viewer") LaunchMiniBrowser(L"LOCAL_PHOTO_VIEWER", L"RasBrowse Photo Viewer");
             else if (btn.title == L"Docs Viewer") LaunchMiniBrowser(L"LOCAL_DOCS_VIEWER", L"RasBrowse Docs Viewer");
             else if (btn.title == L"PDF Merge") LaunchMiniBrowser(L"LOCAL_PDF_MERGE", L"PDF Merge Tool");
@@ -424,7 +408,9 @@ void ProcessDashboardMouseClick(float x, float y, int& selectedTab) {
             else if (btn.title == L"Age Calculator") LaunchMiniBrowser(L"LOCAL_AGE_CALC", L"RasBrowse Age Calculator");
             else if (btn.title == L"Graphic Calc") LaunchMiniBrowser(L"https://www.desmos.com/calculator", L"Graphic Calculator");
             else if (btn.title == L"Scientific Calc") LaunchMiniBrowser(L"https://web2.0calc.com", L"Scientific Calculator");
+
             else if (btn.title == L"Instant Note") LaunchMiniBrowser(L"LOCAL_INSTANT_NOTE", L"Instant Note");
+
             else if (btn.title == L"Study Materials") LaunchMiniBrowser(L"LOCAL_STUDY_MATS", L"Study Materials Vault");
             else if (btn.title == L"CGPA Calc") LaunchMiniBrowser(L"LOCAL_CGPA_CALC", L"CGPA Calculator");
             else if (btn.title == L"Exam Routine") LaunchMiniBrowser(L"LOCAL_ROUTINE", L"Exam Routine Tracker");
