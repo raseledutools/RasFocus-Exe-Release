@@ -17,9 +17,11 @@ HWND hParentWnd = NULL; // গ্লোবাল উইন্ডো হ্যা
 #include <process.h> 
 #include <wininet.h>
 
+// 🟢 1. ফায়ারবেস হেডার ফাইল যুক্ত করা হলো
+#include "firebase/app.h"
+
 // --- Custom Includes ---
 #include "mini_browser.h" 
-
 #include "tab_blocks.h"
 #include "tab_adult.h" 
 #include "tab_settings.h" 
@@ -29,6 +31,9 @@ HWND hParentWnd = NULL; // গ্লোবাল উইন্ডো হ্যা
 #include "tab_special.h"    
 #include "tab_statistics.h" 
 #include "prewindow.h"
+
+// 🟢 2. Accounts ফাইলের লিংক যুক্ত করা হলো
+#include "accounts.h"
 
 using namespace Gdiplus;
 using namespace std;
@@ -53,11 +58,13 @@ ULONG_PTR gdiplusToken;
 float g_scaleFactor = 1.0f;
 int windowWidth = 1024;  
 int windowHeight = 600;  
-bool isMaximized = false;
+bool isMaximized = true; // 🟢 3. ডিফল্টভাবে ফুলস্ক্রিন ম্যাক্সিমাইজড থাকবে
 
-// 🟢 FIX: Viewer Mode Variables
+// 🟢 Firebase Global App Object
+firebase::App* g_firebaseApp = nullptr;
+
 bool g_isPureViewerMode = false; 
-wstring currentWorkspacePdf = L""; // 🟢 গ্লোবাল ভ্যারিয়েবল: ফোল্ডার থেকে ডাবল-ক্লিক করা পিডিএফ রিসিভ করার জন্য
+wstring currentWorkspacePdf = L""; 
 
 NOTIFYICONDATA nid = {}; 
 
@@ -80,7 +87,7 @@ vector<wstring> sidebarIcons = {
 };
 
 // Colors
-const Color ColTeal(255, 12, 168, 176);         
+const Color ColTeal(255, 12, 168, 176);          
 const Color ColTealHover(255, 30, 185, 195);    
 const Color ColWhite(255, 255, 255, 255);
 const Color ColBgContent(255, 248, 250, 252);   
@@ -120,7 +127,8 @@ string GetSecretDir() {
         secretPath = string(currentDir) + "\\rasfocus_data\\";
     }
     CreateDirectoryA(secretPath.c_str(), NULL);
-    SetFileAttributesA(secretPath.c_str(), FILE_ATTRIBUTE_HIDDEN); // ফোল্ডার হিডেন করে দেওয়া হলো
+    // 🟢 4. ফোল্ডার হিডেন রাখা হচ্ছে, যাতে ইউজার সহজে ডাটা নষ্ট করতে না পারে
+    SetFileAttributesA(secretPath.c_str(), FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM); 
     return secretPath;
 }
 
@@ -131,7 +139,7 @@ string GetExePath() {
 }
 
 // ==========================================
-// 🟢 DEFAULT VIEWER REGISTRY SETUP (NEW)
+// 🟢 DEFAULT VIEWER REGISTRY SETUP 
 // ==========================================
 void RegisterFileAssociation(const string& ext, const string& progId, const string& desc) {
     string exePath = GetExePath();
@@ -164,7 +172,6 @@ void RegisterFileAssociation(const string& ext, const string& progId, const stri
 }
 
 void SetupDefaultViewer() {
-    // পিসির ডিফল্ট পিডিএফ ও ইমেজ ভিউয়ার হিসেবে রেজিস্ট্রি এন্ট্রি করা হচ্ছে
     RegisterFileAssociation(".pdf", "RasFocus.PDF", "RasFocus PDF Document");
     RegisterFileAssociation(".jpg", "RasFocus.Image", "RasFocus Image File");
     RegisterFileAssociation(".png", "RasFocus.Image", "RasFocus Image File");
@@ -552,16 +559,9 @@ void DrawMainArea(Graphics& g, int w, int h) {
     else if (selectedTab == 4) { DrawSpecialFeatureTab(g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 5) { DrawStatisticsTab(g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 6) { DrawSettingsTab(g, contentX, contentY, contentW, contentH); }
-    else if (selectedTab == 7) { 
-        SolidBrush textBrush(ColTextDark);
-        FontFamily ff(L"Segoe UI");
-        Font f(&ff, 24, FontStyleBold, UnitPixel);
-        g.DrawString(L"Accounts settings will be available here.", -1, &f, PointF(contentX + 30.0f, contentY + 30.0f), &textBrush);
-    }
-    // 🟢 FIX: PDF Workspace Tab যুক্ত করা হলো (Tab 8)
-    else if (selectedTab == 8) {
-        DrawPdfWorkspaceTab(g, contentX, contentY, contentW, contentH);
-    }
+    // 🟢 2. Accounts Tab Drawing
+    else if (selectedTab == 7) { DrawAccountsTab(g, contentX, contentY, contentW, contentH); }
+    else if (selectedTab == 8) { DrawPdfWorkspaceTab(g, contentX, contentY, contentW, contentH); }
 }
 
 void OnPaint(HWND hWnd, HDC hdc) {
@@ -645,6 +645,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         
         HMONITOR hMonitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
         MONITORINFO mi = { sizeof(mi) };
+        // 🟢 3. এটি নিশ্চিত করবে ফুলস্ক্রিন হলেও টাস্কবারের জায়গা ছেড়ে দেবে
         if (GetMonitorInfo(hMonitor, &mi)) {
             lpMMI->ptMaxPosition.x = mi.rcWork.left - mi.rcMonitor.left;
             lpMMI->ptMaxPosition.y = mi.rcWork.top - mi.rcMonitor.top;
@@ -725,7 +726,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         else if (selectedTab == 4) { ProcessSpecialFeatureMouseMove(x, y); redraw = true; } 
         else if (selectedTab == 5) { ProcessStatisticsMouseMove(x, y); redraw = true; } 
         else if (selectedTab == 6) { ProcessSettingsMouseMove(x, y); redraw = true; }
-        // 🟢 FIX: PDF Workspace Mouse Movement (Tab 8)
+        // 🟢 2. Accounts Mouse Move
+        else if (selectedTab == 7) { ProcessAccountsMouseMove(x, y); redraw = true; }
         else if (selectedTab == 8) { ProcessPdfWorkspaceMouseMove(x, y); redraw = true; }
 
         if (redraw) InvalidateRect(hWnd, NULL, FALSE);
@@ -764,7 +766,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (hoveredTab != -1) {
             if (selectedTab != hoveredTab) {
                 selectedTab = hoveredTab;
-                HideAllWebViews(); // সব WebView হাইড করে দাও
+                HideAllWebViews(); 
             }
             InvalidateRect(hWnd, NULL, FALSE);
         }
@@ -782,7 +784,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         else if (selectedTab == 4) { ProcessSpecialFeatureMouseClick(x, y); } 
         else if (selectedTab == 5) { ProcessStatisticsMouseClick(x, y); } 
         else if (selectedTab == 6) { ProcessSettingsMouseClick(x, y); }
-        // 🟢 FIX: PDF Workspace Mouse Click (Tab 8)
+        // 🟢 2. Accounts Mouse Click
+        else if (selectedTab == 7) { ProcessAccountsMouseClick(x, y); }
         else if (selectedTab == 8) { ProcessPdfWorkspaceMouseClick(x, y); }
 
         if (prevTab != selectedTab) {
@@ -889,6 +892,20 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
         return 0; 
     }
 
+    // 🟢 1. ফায়ারবেস কনফিগারেশন ও ইনিশিয়ালাইজেশন
+    firebase::AppOptions options;
+    options.set_project_id("rasfocus-c746d");
+    options.set_app_id("1:868329616276:web:2f1954de893f5d3f231581");
+    options.set_api_key("AIzaSyBVl3BuW6gfmp_K2IMYd1rbvLEA2l0yinA");
+    options.set_storage_bucket("rasfocus-c746d.firebasestorage.app");
+
+    g_firebaseApp = firebase::App::Create(options);
+    if (g_firebaseApp) {
+        OutputDebugStringW(L"[RasFocus] Firebase Initialized Successfully!\n");
+    } else {
+        OutputDebugStringW(L"[RasFocus] Failed to Initialize Firebase!\n");
+    }
+
     // =======================================================
     // 🔍 ARGUMENT PARSING (File & Link Detection)
     // =======================================================
@@ -938,7 +955,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
 
     CheckDailyMessage();
     SetupAutoRun();
-    SetupDefaultViewer(); // 🟢 FIX: উইন্ডোজের ডিফল্ট অ্যাপ হিসেবে সেট করা হলো
+    SetupDefaultViewer(); 
     CreateDesktopShortcut();
     ExtractAndRunObserver(); 
 
@@ -992,17 +1009,15 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
     string cmdLine(lpCmdLine);
     
     // =======================================================
-    // 🌐 LAUNCH LOGIC (FOLDER CLICK Auto-Open PDF Workspace)
+    // 🌐 LAUNCH LOGIC
     // =======================================================
     if (g_isPureViewerMode) {
         if (viewerUrl.find(L".pdf") != std::wstring::npos) {
-            // 🟢 ফোল্ডার থেকে ডাবল-ক্লিক করলে সরাসরি PDF Workspace (Tab 8) ওপেন হবে
             selectedTab = 8;
-            currentWorkspacePdf = viewerUrl; // পাথটি সেট করে দেওয়া হলো
+            currentWorkspacePdf = viewerUrl; 
             ShowWindow(hWnd, SW_SHOWMAXIMIZED);
             SetForegroundWindow(hWnd);
         } else {
-            // ছবি হলে মিনি ব্রাউজার (Photo Viewer) ওপেন হবে
             ShowWindow(hWnd, SW_HIDE); 
             LaunchMiniBrowser(viewerUrl, viewerTitle);
         }
@@ -1016,6 +1031,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
         }
     } 
     else {
+        // 🟢 3. ডিফল্টভাবে অ্যাপ ওপেন করলেই ফুলস্ক্রিন (Maximized) ওপেন হবে
         ShowWindow(hWnd, SW_SHOWMAXIMIZED); 
     }
     
