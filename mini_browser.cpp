@@ -314,7 +314,7 @@ namespace Clr {
     static const Color TxtDim    (255, 138, 138, 138);  // #8A8A8A  dimmed text
     static const Color AddrBg    (255, 56,  56,  56);   // #383838  address bar bg
     static const Color AddrFocus (255, 48,  48,  48);   // #303030  focused addr
-    static const Color HoverBtn  (255,255,255, 255, 30); // semi-transparent
+    static const Color HoverBtn  (30, 255, 255, 255);    // semi-transparent (A,R,G,B)
     static const Color BrandBlue (255, 66, 133, 244);   // Google-blue accent
     static const Color DivLine   (255, 60,  60,  60);   // separator
     static const Color CloseHov  (255, 196,  43,  28);  // red close hover
@@ -451,7 +451,7 @@ void DrawBrowser(HWND hWnd, HDC hdc) {
             // Tab close (×) — visible on hover or active
             if (isActive || isHover) {
                 float cx = tx + tw - 20, cy = ty + (th - 16) / 2;
-                if (isHover && !isActive) { SolidBrush hb(Color(50,255,255,255)); g.FillEllipse(&hb, cx, cy, 16, 16); }
+                if (isHover && !isActive) { SolidBrush hb(Color(50,255,255,255)); g.FillEllipse(&hb, cx, cy, 16.0f, 16.0f); }
                 SolidBrush xBrush(Clr::TabClose);
                 g.DrawString(L"\xE8BB", -1, &fIconSm,
                     RectF(cx, cy, 16, 16), &sfC, &xBrush);
