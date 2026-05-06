@@ -18,7 +18,7 @@ jobs:
     - name: Setup MSVC Compiler Environment
       uses: ilammy/msvc-dev-cmd@v1
 
-    # 🟢 MAGIC TRICK 1: WebView2 Cache (বারবার ডাউনলোড ঠেকানোর জন্য)
+    # 🟢 1. WebView2 Caching (বারবার ডাউনলোড ঠেকানোর জন্য)
     - name: Cache WebView2 SDK
       id: cache-webview2
       uses: actions/cache@v4
@@ -26,11 +26,11 @@ jobs:
         path: packages
         key: webview2-1.0.2420.47
 
-    - name: Install WebView2 SDK via NuGet (If not cached)
+    - name: Install WebView2 SDK via NuGet
       if: steps.cache-webview2.outputs.cache-hit != 'true'
       run: nuget install Microsoft.Web.WebView2 -Version 1.0.2420.47 -OutputDirectory packages
 
-    # 🟢 MAGIC TRICK 2: Firebase SDK Cache (সবচেয়ে বেশি সময় বাঁচাবে)
+    # 🟢 2. Firebase SDK Caching (সবচেয়ে বেশি সময় বাঁচাবে)
     - name: Cache Firebase SDK
       id: cache-firebase
       uses: actions/cache@v4
@@ -38,29 +38,31 @@ jobs:
         path: firebase_cpp_sdk
         key: firebase-cpp-sdk-12.4.0
 
-    # 🟢 MAGIC TRICK 3: 7-Zip দিয়ে সুপার ফাস্ট এক্সট্র্যাক্ট (শুধুমাত্র ক্যাশ না থাকলে)
-    - name: Download and Setup Firebase C++ SDK (If not cached)
+    # 🟢 3. আপনার ভেরিফাইড কোড: শুধুমাত্র ক্যাশ না থাকলে ডাউনলোড ও আনজিপ করবে
+    - name: Download and Setup Firebase C++ SDK
       if: steps.cache-firebase.outputs.cache-hit != 'true'
       run: |
         curl -L https://dl.google.com/firebase/sdk/cpp/firebase_cpp_sdk_12.4.0.zip -o firebase.zip
-        7z x firebase.zip -o. -y
+        powershell Expand-Archive -Path firebase.zip -DestinationPath . -Force
         del firebase.zip
 
     - name: Compile Resources
       run: rc.exe resources.rc
 
-    - name: Compile RasFocus.exe (Super Fast Cached & Parallel Build)
+    - name: Compile RasFocus.exe (Super Fast Optimized & Auto Lib Finder)
       shell: pwsh
       run: |
+        # -notmatch "Debug" যুক্ত করা হয়েছে যাতে শুধু মেইন/রিলিজ ফাইলটাই সিলেক্ট হয়
         $libPath = (Get-ChildItem -Path .\firebase_cpp_sdk\libs -Filter firebase_app.lib -Recurse | Where-Object { $_.FullName -match "x64" -and $_.FullName -match "MT" -and $_.FullName -notmatch "Debug" }).FullName | Select-Object -First 1
         
+        # যদি MT ফোল্ডার না থাকে, তবে শুধু x64 এর ফাইলটি নেবে (Debug বাদ দিয়ে)
         if (!$libPath) {
             $libPath = (Get-ChildItem -Path .\firebase_cpp_sdk\libs -Filter firebase_app.lib -Recurse | Where-Object { $_.FullName -match "x64" -and $_.FullName -notmatch "Debug" }).FullName | Select-Object -First 1
         }
         
         Write-Host "🎯 BINGO! Found Release Firebase Lib exactly at -> $libPath"
 
-        # 🟢 MAGIC TRICK 4: /MP ফ্ল্যাগ যোগ করা হয়েছে মাল্টি-কোর প্যারালাল কম্পাইল করার জন্য
+        # 🟢 /MP ফ্ল্যাগ যোগ করা হয়েছে। এটি মাল্টি-কোর ইউজ করে খুব দ্রুত কোড বিল্ড করবে।
         cl.exe /MP /EHsc /MT /O2 /GL /utf-8 /W3 main.cpp prewindow.cpp tab_dashboard.cpp tab_pdf_workspace.cpp mini_browser.cpp tab_blocks.cpp tab_schedule_blocks.cpp tab_adult.cpp tab_deep_study.cpp tab_special.cpp tab_statistics.cpp tab_settings.cpp tab_utilities.cpp tab_ai.cpp tab_strict.cpp tab_diary.cpp accounts.cpp resources.res /I"./packages/Microsoft.Web.WebView2.1.0.2420.47/build/native/include" /I"./firebase_cpp_sdk/include" /link /LTCG /OPT:REF /OPT:ICF /SUBSYSTEM:WINDOWS /OUT:RasFocus.exe user32.lib gdi32.lib gdiplus.lib comctl32.lib ole32.lib oleaut32.lib uiautomationcore.lib uuid.lib psapi.lib shlwapi.lib winmm.lib shell32.lib urlmon.lib wininet.lib comdlg32.lib advapi32.lib crypt32.lib ws2_32.lib rpcrt4.lib secur32.lib bcrypt.lib "./packages/Microsoft.Web.WebView2.1.0.2420.47/build/native/x64/WebView2LoaderStatic.lib" "$libPath"
 
     - name: Sign RasFocus.exe
