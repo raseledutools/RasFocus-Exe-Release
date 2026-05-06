@@ -2,6 +2,7 @@
 
 #define _CRT_SECURE_NO_WARNINGS
 #include "mini_browser.h"
+#include <vector>
 #include "html_tools.h"
 #include "WebView2.h"
 #include "WebView2EnvironmentOptions.h" // 🟢 FIX: Environment Options এরর সলভ করার জন্য
