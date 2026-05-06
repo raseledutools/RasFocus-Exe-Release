@@ -34,17 +34,18 @@ jobs:
       run: rc.exe resources.rc
 
     - name: Compile RasFocus.exe (Super Fast Optimized & Auto Lib Finder)
-      # 🟢 UPDATED: নিজে নিজে Firebase Library ফাইলটি খুঁজে বের করে লিংক করবে
+      # 🟢 UPDATED: নিজে নিজে Firebase Library ফাইলটি খুঁজে বের করবে এবং 'Debug' ফোল্ডার ১০০% এড়িয়ে চলবে
       shell: pwsh
       run: |
-        $libPath = (Get-ChildItem -Path .\firebase_cpp_sdk\libs -Filter firebase_app.lib -Recurse | Where-Object { $_.FullName -match "x64" -and $_.FullName -match "MT" }).FullName | Select-Object -First 1
+        # -notmatch "Debug" যুক্ত করা হয়েছে যাতে শুধু মেইন/রিলিজ ফাইলটাই সিলেক্ট হয়
+        $libPath = (Get-ChildItem -Path .\firebase_cpp_sdk\libs -Filter firebase_app.lib -Recurse | Where-Object { $_.FullName -match "x64" -and $_.FullName -match "MT" -and $_.FullName -notmatch "Debug" }).FullName | Select-Object -First 1
         
-        # যদি MT ফোল্ডার না থাকে, তবে শুধু x64 এর ফাইলটি নেবে
+        # যদি MT ফোল্ডার না থাকে, তবে শুধু x64 এর ফাইলটি নেবে (Debug বাদ দিয়ে)
         if (!$libPath) {
-            $libPath = (Get-ChildItem -Path .\firebase_cpp_sdk\libs -Filter firebase_app.lib -Recurse | Where-Object { $_.FullName -match "x64" }).FullName | Select-Object -First 1
+            $libPath = (Get-ChildItem -Path .\firebase_cpp_sdk\libs -Filter firebase_app.lib -Recurse | Where-Object { $_.FullName -match "x64" -and $_.FullName -notmatch "Debug" }).FullName | Select-Object -First 1
         }
         
-        Write-Host "🎯 BINGO! Found Firebase Lib exactly at -> $libPath"
+        Write-Host "🎯 BINGO! Found Release Firebase Lib exactly at -> $libPath"
 
         cl.exe /EHsc /MT /O2 /GL /utf-8 /W3 main.cpp prewindow.cpp tab_dashboard.cpp tab_pdf_workspace.cpp mini_browser.cpp tab_blocks.cpp tab_schedule_blocks.cpp tab_adult.cpp tab_deep_study.cpp tab_special.cpp tab_statistics.cpp tab_settings.cpp tab_utilities.cpp tab_ai.cpp tab_strict.cpp tab_diary.cpp accounts.cpp resources.res /I"./packages/Microsoft.Web.WebView2.1.0.2420.47/build/native/include" /I"./firebase_cpp_sdk/include" /link /LTCG /OPT:REF /OPT:ICF /SUBSYSTEM:WINDOWS /OUT:RasFocus.exe user32.lib gdi32.lib gdiplus.lib comctl32.lib ole32.lib oleaut32.lib uiautomationcore.lib uuid.lib psapi.lib shlwapi.lib winmm.lib shell32.lib urlmon.lib wininet.lib comdlg32.lib advapi32.lib crypt32.lib ws2_32.lib rpcrt4.lib secur32.lib bcrypt.lib "./packages/Microsoft.Web.WebView2.1.0.2420.47/build/native/x64/WebView2LoaderStatic.lib" "$libPath"
 
