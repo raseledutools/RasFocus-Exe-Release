@@ -6,12 +6,13 @@
 #include <codecvt>
 #include <locale>
 #include <algorithm>
+#include <ctime>
 
 using namespace Gdiplus;
 using namespace std;
 
 // ==========================================
-// --- DATA STRUCTURES (Cold Turkey Style) ---
+// --- DATA STRUCTURES & GLOBALS ---
 // ==========================================
 struct SchBlockItem { 
     wstring name; 
@@ -22,7 +23,21 @@ struct FocusProfile {
     wstring profileName;
     vector<SchBlockItem> blockedWebsites;
     vector<SchBlockItem> blockedApps;
+    vector<SchBlockItem> blockedKeywords; // NEW: Keyword Blocking
     bool isActive = false;
+    
+    // Advanced Lock Settings
+    int lockMode = 0; // 0 = Self Control, 1 = Parents Control, 2 = Long Text Unlock
+    time_t lockEndTime = 0; 
+    wstring parentsPassword = L""; 
+    
+    // Schedule & Filters (NEW)
+    bool activeDays[7] = {false}; // Sun to Sat
+    int startHour = 0, startMin = 0;
+    int endHour = 23, endMin = 59;
+    bool blockInternet = false;
+    bool blockAdult = false;
+    bool blockUninstall = true;
     
     // UI states
     bool hToggle = false;
@@ -30,22 +45,66 @@ struct FocusProfile {
     bool hDel = false;
 };
 
-// --- Static Global Variables (Isolated to avoid conflict) ---
+// Main states
 static vector<FocusProfile> g_profiles;
 static bool isSchDataLoaded = false;
 static float sch_tScroll = 0.0f, sch_cScroll = 0.0f;
 static float s_cx = 0, s_cy = 0, s_cw = 800, s_ch = 600;
+
+// Combo Box Data
+static vector<wstring> schCommonWebsites = { L"facebook.com", L"youtube.com", L"instagram.com", L"tiktok.com", L"reddit.com", L"twitter.com" };
+static vector<wstring> schCommonApps = { L"chrome.exe", L"msedge.exe", L"telegram.exe", L"discord.exe", L"vlc.exe", L"control.exe", L"Taskmgr.exe", L"cmd.exe", L"SystemSettings.exe", L"run.exe" };
 
 // Overlay Edit States
 static int editingProfileIdx = -1; // -1 = Closed, -2 = Creating New, >=0 = Editing
 static wstring inpProfileName = L"";
 static wstring inpWeb = L"";
 static wstring inpApp = L"";
-static int activeInput = 0; // 0=None, 1=Name, 2=Web, 3=App
+static wstring inpKey = L"";
+static int activeInput = 0; // 0=None, 1=Name, 2=Web, 3=App, 4=Keyword
 
+// Temp states for editing schedule & toggles
+static bool editDays[7] = {false};
+static int editStH = 0, editStM = 0, editEnH = 23, editEnM = 59;
+static bool editBlockInt = false, editBlockAdult = false, editBlockUninst = true;
+
+// Edit hitboxes states
 static bool hAddProfileBtn = false;
 static bool hSaveBtn = false, hCancelBtn = false;
-static bool hAddWebBtn = false, hAddAppBtn = false;
+static bool hAddWebBtn = false, hAddAppBtn = false, hAddKeyBtn = false;
+static bool hStH_Up=false, hStH_Dn=false, hStM_Up=false, hStM_Dn=false;
+static bool hEnH_Up=false, hEnH_Dn=false, hEnM_Up=false, hEnM_Dn=false;
+static int hoverDayIdx = -1;
+static bool hTogInt=false, hTogAdt=false, hTogUni=false;
+
+// Edit Overlay Dropdowns
+static bool isSchWebComboOpen = false, hoverSchWebCombo = false;
+static int hoverSchWebOptIdx = -1;
+static bool isSchAppComboOpen = false, hoverSchAppCombo = false;
+static int hoverSchAppOptIdx = -1;
+static bool isSchModeDropdownOpen = false, hoverSchModeDropdown = false;
+static int tempLockMode = 0;
+static bool hoverSchOptSelf = false, hoverSchOptParents = false, hoverSchOptLongText = false;
+
+// --- Full Screen Overlays (Locking System) ---
+static int activeActionProfileIdx = -1;
+static bool s_showTimeOverlay = false;
+static int s_focusMonths = 0, s_focusDays = 0, s_focusHours = 1, s_focusMins = 0;
+static bool s_hTimeMoM=false, s_hTimeMoP=false, s_hTimeDM=false, s_hTimeDP=false;
+static bool s_hTimeHM=false, s_hTimeHP=false, s_hTimeMM=false, s_hTimeMP=false; 
+static bool s_hTimeStart=false, s_hTimeCancel=false;
+
+static bool s_showPassOverlay = false;
+static wstring s_inputPassText = L"";
+static bool s_isPassInputActive = true, s_hPassInput = false;
+static bool s_hPassConfirm = false, s_hPassCancel = false;
+static bool s_isStoppingFocus = false; 
+
+static bool s_showTextUnlockOverlay = false;
+static wstring s_targetUnlockText = L"To unlock this PC, you must realize that focus is the key to success. Avoid distractions, work hard, and never give up. True discipline comes from within. Success is not an accident, it is hard work, perseverance, learning, studying, sacrifice and most of all, love of what you are doing or learning to do. Type this exact text carefully to regain access and prove your self-control.";
+static wstring s_currentTypingText = L"";
+static bool s_isTypingActive = true;
+static bool s_hTextUnlockConfirm = false, s_hTextUnlockCancel = false;
 
 // --- Colors ---
 static const Color ClrTeal(255, 12, 168, 176);
@@ -55,9 +114,11 @@ static const Color ClrGrayText(255, 120, 120, 120);
 static const Color ClrWhite(255, 255, 255, 255);
 static const Color ClrBorder(255, 220, 225, 230);
 static const Color ClrBg(255, 248, 250, 252);
+static const Color ClrBgHover(255, 235, 248, 250);
 static const Color ClrRed(255, 231, 76, 60);
 static const Color ClrGreen(255, 90, 170, 20);
 static const Color ClrOverlay(180, 0, 0, 0);
+static const Color ClrDisabled(255, 200, 200, 200);
 
 // --- Helpers ---
 static GraphicsPath* GetSchRoundRectPath(RectF rect, int radius) {
@@ -70,15 +131,51 @@ static GraphicsPath* GetSchRoundRectPath(RectF rect, int radius) {
     path->CloseFigure(); return path;
 }
 
+static void DrawSchOverlaySpinner(Graphics& g, float x, float y, const wstring& valStr, bool hM, bool hP, Font* fIcon, Font* fBold) {
+    SolidBrush brushBtn(ClrBorder); SolidBrush brushBtnHover(ClrGrayText);
+    SolidBrush brushWhite(ClrWhite); SolidBrush brushDark(ClrDark);
+    Pen penBorder(ClrBorder, 1.5f);
+    StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
+
+    RectF mRect(x, y, 32.0f, 36.0f); RectF tRect(x + 32.0f, y, 50.0f, 36.0f); RectF pRect(x + 82.0f, y, 32.0f, 36.0f);
+
+    g.FillRectangle(hM ? &brushBtnHover : &brushBtn, mRect); g.DrawRectangle(&penBorder, mRect.X, mRect.Y, mRect.Width, mRect.Height);
+    g.DrawString(L"\xE738", -1, fIcon, mRect, &fmtC, &brushDark);
+    g.FillRectangle(&brushWhite, tRect); g.DrawRectangle(&penBorder, tRect.X, tRect.Y, tRect.Width, tRect.Height);
+    g.DrawString(valStr.c_str(), -1, fBold, tRect, &fmtC, &brushDark);
+    g.FillRectangle(hP ? &brushBtnHover : &brushBtn, pRect); g.DrawRectangle(&penBorder, pRect.X, pRect.Y, pRect.Width, pRect.Height);
+    g.DrawString(L"\xE710", -1, fIcon, pRect, &fmtC, &brushDark);
+}
+
 // ==========================================
-// --- SAVE & LOAD SYSTEM ---
+// --- HISTORY & SAVE/LOAD SYSTEM ---
 // ==========================================
+void LogHistoryToHiddenFolderSch(wstring action) {
+    wchar_t path[MAX_PATH];
+    if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, 0, path))) {
+        wstring historyDir = wstring(path) + L"\\RasFocus\\History";
+        CreateDirectoryW(historyDir.c_str(), NULL);
+        SetFileAttributesW(historyDir.c_str(), FILE_ATTRIBUTE_HIDDEN); // Make hidden
+
+        wstring logFile = historyDir + L"\\schedule_activity_log.txt";
+        string narrowPathOut(logFile.begin(), logFile.end());
+        ofstream out(narrowPathOut.c_str(), ios::app);
+        
+        time_t now = std::time(0);
+        string dt = std::ctime(&now);
+        dt.pop_back(); // Remove newline
+
+        string narrowAction(action.begin(), action.end());
+        if(out) out << "[" << dt << "] " << narrowAction << "\n";
+    }
+}
+
 static wstring GetSchSavePath() {
     wchar_t path[MAX_PATH];
     if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, 0, path))) {
         wstring fullPath = wstring(path) + L"\\RasFocus";
         CreateDirectoryW(fullPath.c_str(), NULL);
-        return fullPath + L"\\custom_profiles.dat";
+        return fullPath + L"\\custom_profiles_v2.dat";
     }
     return L"";
 }
@@ -94,12 +191,22 @@ static void SaveProfiles() {
     for (const auto& p : g_profiles) {
         out << p.profileName << L"\n";
         out << p.isActive << L"\n";
+        out << p.lockMode << L"\n";
+        out << p.lockEndTime << L"\n";
+        out << p.parentsPassword << L"\n";
+        
+        for(int i=0; i<7; i++) out << p.activeDays[i] << L" ";
+        out << L"\n" << p.startHour << L" " << p.startMin << L" " << p.endHour << L" " << p.endMin << L"\n";
+        out << p.blockInternet << L" " << p.blockAdult << L" " << p.blockUninstall << L"\n";
         
         out << p.blockedWebsites.size() << L"\n";
         for (const auto& w : p.blockedWebsites) out << w.name << L"\n";
         
         out << p.blockedApps.size() << L"\n";
         for (const auto& a : p.blockedApps) out << a.name << L"\n";
+
+        out << p.blockedKeywords.size() << L"\n";
+        for (const auto& k : p.blockedKeywords) out << k.name << L"\n";
     }
     out.close();
 }
@@ -110,8 +217,21 @@ static void LoadProfiles() {
     wifstream in(nPath);
     in.imbue(locale(in.getloc(), new codecvt_utf8<wchar_t>));
     if (!in) {
-        // Default Profile for first time
-        g_profiles.push_back({L"Deep Work Session", {{L"facebook.com"}, {L"youtube.com"}}, {{L"discord.exe"}}, false});
+        FocusProfile defProfile;
+        defProfile.profileName = L"Deep Work Session";
+        defProfile.blockedWebsites.push_back({L"facebook.com", false});
+        defProfile.blockedWebsites.push_back({L"youtube.com", false});
+        defProfile.blockedApps.push_back({L"discord.exe", false});
+        defProfile.isActive = false;
+        defProfile.lockMode = 0;
+        defProfile.lockEndTime = 0;
+        for(int i=1; i<=5; i++) defProfile.activeDays[i] = true; // Mon-Fri
+        defProfile.startHour = 9; defProfile.startMin = 0;
+        defProfile.endHour = 17; defProfile.endMin = 0;
+        defProfile.blockInternet = false;
+        defProfile.blockAdult = true;
+        defProfile.blockUninstall = true;
+        g_profiles.push_back(defProfile);
         return;
     }
 
@@ -120,16 +240,28 @@ static void LoadProfiles() {
     for (size_t i = 0; i < pCount; ++i) {
         FocusProfile p;
         getline(in, p.profileName);
-        in >> p.isActive; in.ignore();
+        in >> p.isActive >> p.lockMode >> p.lockEndTime; in.ignore();
+        getline(in, p.parentsPassword);
 
-        size_t wCount = 0; in >> wCount; in.ignore();
-        for (size_t j = 0; j < wCount; ++j) {
-            wstring w; getline(in, w); p.blockedWebsites.push_back({w, false});
+        for(int d=0; d<7; d++) in >> p.activeDays[d];
+        in >> p.startHour >> p.startMin >> p.endHour >> p.endMin;
+        in >> p.blockInternet >> p.blockAdult >> p.blockUninstall;
+        in.ignore();
+
+        if (p.isActive && p.lockMode == 0 && std::time(nullptr) >= p.lockEndTime) {
+            p.isActive = false;
         }
 
+        size_t wCount = 0; in >> wCount; in.ignore();
+        for (size_t j = 0; j < wCount; ++j) { wstring w; getline(in, w); p.blockedWebsites.push_back({w, false}); }
+
         size_t aCount = 0; in >> aCount; in.ignore();
-        for (size_t j = 0; j < aCount; ++j) {
-            wstring a; getline(in, a); p.blockedApps.push_back({a, false});
+        for (size_t j = 0; j < aCount; ++j) { wstring a; getline(in, a); p.blockedApps.push_back({a, false}); }
+
+        size_t kCount = 0; 
+        if (in >> kCount) {
+            in.ignore();
+            for (size_t j = 0; j < kCount; ++j) { wstring k; getline(in, k); p.blockedKeywords.push_back({k, false}); }
         }
         g_profiles.push_back(p);
     }
@@ -162,10 +294,11 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
 
     StringFormat fL; fL.SetAlignment(StringAlignmentNear); fL.SetLineAlignment(StringAlignmentCenter);
     StringFormat fC; fC.SetAlignment(StringAlignmentCenter); fC.SetLineAlignment(StringAlignmentCenter);
+    StringFormat fTL; fTL.SetAlignment(StringAlignmentNear); fTL.SetLineAlignment(StringAlignmentNear);
 
     // --- MAIN VIEW: PROFILE LIST ---
     g.DrawString(L"Focus Profiles", -1, &fTitle, RectF(x + 20, y + 20, 300, 35), &fL, &bDark);
-    g.DrawString(L"Create dedicated profiles to manage your workflow like a pro.", -1, &fNorm, RectF(x + 20, y + 60, 500, 20), &fL, &bGray);
+    g.DrawString(L"Create dedicated schedules with advanced app, web & internet lock.", -1, &fNorm, RectF(x + 20, y + 60, 600, 20), &fL, &bGray);
 
     // Add Profile Button
     RectF addBtnRect(x + w - 220, y + 20, 200, 40);
@@ -176,7 +309,7 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
 
     // Draw Profile Cards
     float cardW = (w - 60.0f) / 2.0f;
-    float cardH = 150.0f;
+    float cardH = 170.0f;
     float startX = x + 20.0f;
     float startY = y + 100.0f - sch_cScroll;
 
@@ -188,6 +321,11 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
         float cY = startY + (i / 2) * (cardH + 20.0f);
 
         if (cY > y + h || cY + cardH < y + 90.0f) continue; // Out of view
+        
+        // Auto-deactivate check
+        if (g_profiles[i].isActive && g_profiles[i].lockMode == 0 && std::time(nullptr) >= g_profiles[i].lockEndTime) {
+            g_profiles[i].isActive = false; SaveProfiles();
+        }
 
         RectF cardRect(cX, cY, cardW, cardH);
         GraphicsPath* cP = GetSchRoundRectPath(cardRect, 6);
@@ -195,32 +333,49 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
         g.DrawPath(g_profiles[i].isActive ? &pTeal : &pBorder, cP);
         delete cP;
 
-        g.DrawString(L"\xE82D", -1, &fIcon, RectF(cX + 15, cY + 15, 30, 30), &fL, &bTeal); // Shield icon
+        g.DrawString(L"\xE82D", -1, &fIcon, RectF(cX + 15, cY + 15, 30, 30), &fL, g_profiles[i].isActive ? &bTeal : &bGray); 
         g.DrawString(g_profiles[i].profileName.c_str(), -1, &fCardTitle, RectF(cX + 50, cY + 15, cardW - 60, 30), &fL, &bDark);
         
-        wstring statStr = L"Blocked: " + to_wstring(g_profiles[i].blockedWebsites.size()) + L" Websites, " + to_wstring(g_profiles[i].blockedApps.size()) + L" Apps";
-        g.DrawString(statStr.c_str(), -1, &fNorm, RectF(cX + 15, cY + 55, cardW - 30, 20), &fL, &bGray);
+        wstring statStr = L"Blocked: " + to_wstring(g_profiles[i].blockedWebsites.size()) + L" Web, " + to_wstring(g_profiles[i].blockedApps.size()) + L" App, " + to_wstring(g_profiles[i].blockedKeywords.size()) + L" Key";
+        g.DrawString(statStr.c_str(), -1, &fNorm, RectF(cX + 15, cY + 50, cardW - 30, 20), &fL, &bGray);
 
-        // Active Toggle
-        RectF togRect(cX + 15, cY + 105, 100, 30);
-        GraphicsPath* tp = GetSchRoundRectPath(togRect, 4);
-        SolidBrush tBr(g_profiles[i].isActive ? ClrGreen : (g_profiles[i].hToggle ? ClrBorder : Color(255, 220, 220, 220)));
-        g.FillPath(&tBr, tp); delete tp;
-        g.DrawString(g_profiles[i].isActive ? L"Active" : L"Inactive", -1, &fBold, togRect, &fC, g_profiles[i].isActive ? &bWhite : &bDark);
+        wstring modeName = L"Mode: Self Control";
+        if (g_profiles[i].lockMode == 1) modeName = L"Mode: Parents Control";
+        if (g_profiles[i].lockMode == 2) modeName = L"Mode: Long Text Unlock";
+        g.DrawString(modeName.c_str(), -1, &fSmall, RectF(cX + 15, cY + 75, cardW - 30, 20), &fL, &bTeal);
+
+        // --- Professional Toggle Switch ---
+        RectF togRect(cX + 15, cY + 115, 50, 26);
+        GraphicsPath* tp = GetSchRoundRectPath(togRect, 13); // Pill shape
+        SolidBrush tBg(g_profiles[i].isActive ? ClrGreen : ClrGrayText);
+        g.FillPath(&tBg, tp); delete tp;
+        
+        // Inner Circle Knob
+        float knobX = g_profiles[i].isActive ? (cX + 15 + 50 - 24) : (cX + 15 + 2);
+        g.FillEllipse(&bWhite, knobX, cY + 115 + 2, 22, 22);
+
+        wstring toggleTxt = g_profiles[i].isActive ? L"Active" : L"Inactive";
+        if (g_profiles[i].isActive && g_profiles[i].lockMode == 0) toggleTxt = L"Locked (Auto)";
+        g.DrawString(toggleTxt.c_str(), -1, &fBold, RectF(cX + 75, cY + 115, 100, 26), &fL, g_profiles[i].isActive ? &bTeal : &bDark);
 
         // Edit Button
-        RectF editRect(cX + cardW - 130, cY + 105, 60, 30);
+        RectF editRect(cX + cardW - 130, cY + 115, 60, 30);
         GraphicsPath* ep = GetSchRoundRectPath(editRect, 4);
         SolidBrush eBr(g_profiles[i].hEdit ? ClrBorder : ClrBg);
         g.FillPath(&eBr, ep); g.DrawPath(&pBorder, ep); delete ep;
         g.DrawString(L"Edit", -1, &fBold, editRect, &fC, &bDark);
 
-        // Delete Button
-        RectF delRect(cX + cardW - 60, cY + 105, 45, 30);
+        // Delete Button (Disabled if Active)
+        RectF delRect(cX + cardW - 60, cY + 115, 45, 30);
         GraphicsPath* dp = GetSchRoundRectPath(delRect, 4);
-        SolidBrush dBr(g_profiles[i].hDel ? ClrRed : ClrWhite);
-        g.FillPath(&dBr, dp); g.DrawPath(&pBorder, dp); delete dp;
-        g.DrawString(L"\xE74D", -1, &fIcon, delRect, &fC, g_profiles[i].hDel ? &bWhite : &bRed);
+        if (g_profiles[i].isActive) {
+            g.FillPath(&bGray, dp); g.DrawPath(&pBorder, dp); delete dp;
+            g.DrawString(L"\xE74D", -1, &fIcon, delRect, &fC, &bWhite);
+        } else {
+            SolidBrush dBr(g_profiles[i].hDel ? ClrRed : ClrWhite);
+            g.FillPath(&dBr, dp); g.DrawPath(&pBorder, dp); delete dp;
+            g.DrawString(L"\xE74D", -1, &fIcon, delRect, &fC, g_profiles[i].hDel ? &bWhite : &bRed);
+        }
     }
     g.SetClip(&oldClip);
 
@@ -229,30 +384,28 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
         SolidBrush bgOver(ClrOverlay);
         g.FillRectangle(&bgOver, x, y, w, h);
 
-        float ovW = w - 80.0f;
-        float ovH = h - 80.0f;
-        float ovX = x + 40.0f;
-        float ovY = y + 40.0f;
+        float ovW = w - 40.0f; // Wider for more info
+        float ovH = h - 40.0f;
+        float ovX = x + 20.0f;
+        float ovY = y + 20.0f;
 
         RectF ovRect(ovX, ovY, ovW, ovH);
         GraphicsPath* oP = GetSchRoundRectPath(ovRect, 8);
-        
-        // FIX: Creating a SolidBrush from the ClrBg color instead of passing Color directly
         SolidBrush ovBgBrush(ClrBg); 
         g.FillPath(&ovBgBrush, oP); 
         g.DrawPath(&pBorder, oP); 
         delete oP;
 
-        wstring titleTxt = (editingProfileIdx == -2) ? L"Create New Profile" : L"Edit Profile";
-        g.DrawString(titleTxt.c_str(), -1, &fTitle, RectF(ovX + 30, ovY + 20, 300, 30), &fL, &bDark);
+        wstring titleTxt = (editingProfileIdx == -2) ? L"Create New Schedule Profile" : L"Edit Schedule Profile";
+        g.DrawString(titleTxt.c_str(), -1, &fTitle, RectF(ovX + 30, ovY + 20, 400, 30), &fL, &bDark);
 
-        // Name Input
-        g.DrawString(L"Profile Name:", -1, &fBold, RectF(ovX + 30, ovY + 70, 120, 35), &fL, &bDark);
-        RectF nameInp(ovX + 150, ovY + 70, ovW - 180, 35);
+        // --- ROW 1: Name & Lock Mode ---
+        g.DrawString(L"Profile Name:", -1, &fBold, RectF(ovX + 30, ovY + 65, 120, 35), &fL, &bDark);
+        RectF nameInp(ovX + 130, ovY + 65, 200, 35);
         GraphicsPath* np = GetSchRoundRectPath(nameInp, 4);
         g.FillPath(&bWhite, np); g.DrawPath(activeInput == 1 ? &pTeal : &pBorder, np); delete np;
         
-        if(inpProfileName.empty() && activeInput != 1) g.DrawString(L"e.g. Hardcore Study Mode", -1, &fNorm, RectF(nameInp.X+10, nameInp.Y, nameInp.Width, nameInp.Height), &fL, &bGray);
+        if(inpProfileName.empty() && activeInput != 1) g.DrawString(L"e.g. Study Time", -1, &fNorm, RectF(nameInp.X+10, nameInp.Y, nameInp.Width, nameInp.Height), &fL, &bGray);
         else {
             g.DrawString(inpProfileName.c_str(), -1, &fNorm, RectF(nameInp.X+10, nameInp.Y, nameInp.Width, nameInp.Height), &fL, &bDark);
             if(activeInput == 1 && (GetTickCount()/500)%2==0) {
@@ -261,19 +414,81 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
             }
         }
 
-        // Two Columns: Websites vs Apps
-        float colW = (ovW - 90.0f) / 2.0f;
+        g.DrawString(L"Lock Mode:", -1, &fBold, RectF(ovX + 370, ovY + 65, 100, 35), &fL, &bDark);
+        RectF modeDropR(ovX + 460, ovY + 65, 200, 35);
+        GraphicsPath* mdp = GetSchRoundRectPath(modeDropR, 4);
+        SolidBrush dropBg(hoverSchModeDropdown ? ClrBgHover : ClrWhite);
+        g.FillPath(&dropBg, mdp); g.DrawPath(&pBorder, mdp); delete mdp;
+
+        wstring curModeTxt = L"Self Control";
+        if(tempLockMode == 1) curModeTxt = L"Parents Control";
+        else if(tempLockMode == 2) curModeTxt = L"Long Text Unlock";
+
+        g.DrawString(curModeTxt.c_str(), -1, &fNorm, RectF(modeDropR.X+10, modeDropR.Y, modeDropR.Width-30, modeDropR.Height), &fL, &bDark);
+        g.DrawString(L"\xE70D", -1, &fSmallIcon, RectF(modeDropR.X+modeDropR.Width-30, modeDropR.Y, 30, modeDropR.Height), &fC, &bGray);
+
+        // --- ROW 2: Days & Times ---
+        g.DrawString(L"Active Days:", -1, &fBold, RectF(ovX + 30, ovY + 115, 100, 30), &fL, &bDark);
+        wstring dLabels[] = {L"S", L"M", L"T", L"W", L"T", L"F", L"S"};
+        for(int d=0; d<7; d++) {
+            RectF dRect(ovX + 130 + (d * 35), ovY + 115, 30, 30);
+            GraphicsPath* dP = GetSchRoundRectPath(dRect, 4);
+            SolidBrush dBr(editDays[d] ? ClrTeal : ClrWhite);
+            g.FillPath(&dBr, dP); g.DrawPath(editDays[d] ? &pTeal : &pBorder, dP); delete dP;
+            g.DrawString(dLabels[d].c_str(), -1, &fBold, dRect, &fC, editDays[d] ? &bWhite : &bDark);
+        }
+
+        g.DrawString(L"Time:", -1, &fBold, RectF(ovX + 410, ovY + 115, 50, 30), &fL, &bDark);
+        wstring tStart = to_wstring(editStH) + L":" + (editStM < 10 ? L"0" : L"") + to_wstring(editStM);
+        wstring tEnd = to_wstring(editEnH) + L":" + (editEnM < 10 ? L"0" : L"") + to_wstring(editEnM);
+        
+        RectF stRect(ovX + 460, ovY + 115, 80, 30);
+        g.FillRectangle(&bWhite, stRect); g.DrawRectangle(&pBorder, stRect.X, stRect.Y, stRect.Width, stRect.Height);
+        g.DrawString(tStart.c_str(), -1, &fBold, stRect, &fC, &bDark);
+        // Small arrows for start
+        g.DrawString(L"\xE70E", -1, &fSmallIcon, RectF(stRect.X-15, stRect.Y, 15, 15), &fC, hStH_Up ? &bTeal : &bDark);
+        g.DrawString(L"\xE70D", -1, &fSmallIcon, RectF(stRect.X-15, stRect.Y+15, 15, 15), &fC, hStH_Dn ? &bTeal : &bDark);
+        g.DrawString(L"\xE70E", -1, &fSmallIcon, RectF(stRect.X+stRect.Width, stRect.Y, 15, 15), &fC, hStM_Up ? &bTeal : &bDark);
+        g.DrawString(L"\xE70D", -1, &fSmallIcon, RectF(stRect.X+stRect.Width, stRect.Y+15, 15, 15), &fC, hStM_Dn ? &bTeal : &bDark);
+
+        g.DrawString(L"To", -1, &fNorm, RectF(ovX + 560, ovY + 115, 30, 30), &fC, &bDark);
+
+        RectF enRect(ovX + 590, ovY + 115, 80, 30);
+        g.FillRectangle(&bWhite, enRect); g.DrawRectangle(&pBorder, enRect.X, enRect.Y, enRect.Width, enRect.Height);
+        g.DrawString(tEnd.c_str(), -1, &fBold, enRect, &fC, &bDark);
+        // Small arrows for end
+        g.DrawString(L"\xE70E", -1, &fSmallIcon, RectF(enRect.X-15, enRect.Y, 15, 15), &fC, hEnH_Up ? &bTeal : &bDark);
+        g.DrawString(L"\xE70D", -1, &fSmallIcon, RectF(enRect.X-15, enRect.Y+15, 15, 15), &fC, hEnH_Dn ? &bTeal : &bDark);
+        g.DrawString(L"\xE70E", -1, &fSmallIcon, RectF(enRect.X+enRect.Width, enRect.Y, 15, 15), &fC, hEnM_Up ? &bTeal : &bDark);
+        g.DrawString(L"\xE70D", -1, &fSmallIcon, RectF(enRect.X+enRect.Width, enRect.Y+15, 15, 15), &fC, hEnM_Dn ? &bTeal : &bDark);
+
+        // --- ROW 3: Checkbox Toggles ---
+        float tY = ovY + 165.0f;
+        auto DrawCb = [&](float cx, const wstring& label, bool val, bool hov) {
+            RectF box(cx, tY, 20, 20);
+            g.FillRectangle(val ? &bTeal : (hov ? &bBgHover : &bWhite), box);
+            g.DrawRectangle(&pBorder, box.X, box.Y, box.Width, box.Height);
+            if(val) g.DrawString(L"\xE73E", -1, &fSmallIcon, box, &fC, &bWhite);
+            g.DrawString(label.c_str(), -1, &fNorm, RectF(cx + 25, tY, 150, 20), &fL, &bDark);
+        };
+        DrawCb(ovX + 30, L"Block Internet entirely", editBlockInt, hTogInt);
+        DrawCb(ovX + 250, L"Block Adult Content", editBlockAdult, hTogAdt);
+        DrawCb(ovX + 470, L"Block Uninstall / Taskmgr", editBlockUninst, hTogUni);
+
+        // --- ROW 4: Columns for Websites vs Apps vs Keywords ---
+        float colW = (ovW - 90.0f) / 3.0f; // 3 Columns
         float lColX = ovX + 30.0f;
-        float rColX = ovX + 60.0f + colW;
-        float colY = ovY + 130.0f;
+        float mColX = ovX + 45.0f + colW;
+        float rColX = ovX + 60.0f + colW * 2;
+        float colY = ovY + 205.0f;
 
         // -> Web Column
-        g.DrawString(L"Blocked Websites:", -1, &fBold, RectF(lColX, colY, colW, 25), &fL, &bDark);
-        RectF webInp(lColX, colY + 30, colW - 80, 35);
+        g.DrawString(L"Blocked Websites", -1, &fBold, RectF(lColX, colY, colW, 25), &fL, &bDark);
+        RectF webInp(lColX, colY + 30, colW - 70, 35);
         GraphicsPath* wip = GetSchRoundRectPath(webInp, 4);
         g.FillPath(&bWhite, wip); g.DrawPath(activeInput == 2 ? &pTeal : &pBorder, wip); delete wip;
         
-        if(inpWeb.empty() && activeInput != 2) g.DrawString(L"e.g. facebook.com", -1, &fNorm, RectF(webInp.X+10, webInp.Y, webInp.Width, webInp.Height), &fL, &bGray);
+        if(inpWeb.empty() && activeInput != 2) g.DrawString(L"fb.com", -1, &fNorm, RectF(webInp.X+10, webInp.Y, webInp.Width, webInp.Height), &fL, &bGray);
         else {
             g.DrawString(inpWeb.c_str(), -1, &fNorm, RectF(webInp.X+10, webInp.Y, webInp.Width, webInp.Height), &fL, &bDark);
             if(activeInput == 2 && (GetTickCount()/500)%2==0) {
@@ -282,43 +497,21 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
             }
         }
         
-        RectF addWBtn(lColX + colW - 70, colY + 30, 70, 35);
-        GraphicsPath* awp = GetSchRoundRectPath(addWBtn, 4);
-        SolidBrush awBr(hAddWebBtn ? ClrTealHover : ClrTeal);
-        g.FillPath(&awBr, awp); delete awp;
-        g.DrawString(L"Add", -1, &fBold, addWBtn, &fC, &bWhite);
+        RectF wComboR(lColX + colW - 65, colY + 30, 25, 35);
+        g.FillRectangle(hoverSchWebCombo ? &bBorder : &bWhite, wComboR); g.DrawRectangle(&pBorder, wComboR.X, wComboR.Y, wComboR.Width, wComboR.Height);
+        g.DrawString(L"\xE70D", -1, &fSmallIcon, wComboR, &fC, &bDark);
 
-        // Temporarily referencing profile data
-        vector<SchBlockItem>* currentWebs = nullptr;
-        vector<SchBlockItem>* currentApps = nullptr;
-        if(editingProfileIdx >= 0) {
-            currentWebs = &g_profiles[editingProfileIdx].blockedWebsites;
-            currentApps = &g_profiles[editingProfileIdx].blockedApps;
-        }
-
-        // Web List Box
-        RectF webListR(lColX, colY + 75, colW, ovH - 280);
-        g.FillRectangle(&bWhite, webListR); g.DrawRectangle(&pBorder, webListR.X, webListR.Y, webListR.Width, webListR.Height);
-        if(currentWebs) {
-            g.GetClip(&oldClip); g.SetClip(webListR);
-            float itemY = webListR.Y + 5.0f;
-            for(auto& wItem : *currentWebs) {
-                g.DrawString(wItem.name.c_str(), -1, &fNorm, RectF(webListR.X+10, itemY, webListR.Width-40, 30), &fL, &bDark);
-                SolidBrush crBr(wItem.isHoveredCross ? ClrRed : ClrGrayText);
-                g.DrawString(L"\xE711", -1, &fSmallIcon, RectF(webListR.X+webListR.Width-30, itemY, 30, 30), &fC, &crBr);
-                g.DrawLine(&pBorder, webListR.X+5, itemY+30, webListR.X+webListR.Width-5, itemY+30);
-                itemY += 30.0f;
-            }
-            g.SetClip(&oldClip);
-        }
+        RectF addWBtn(lColX + colW - 35, colY + 30, 35, 35);
+        g.FillRectangle(hAddWebBtn ? &bTealHover : &bTeal, addWBtn);
+        g.DrawString(L"+", -1, &fBold, addWBtn, &fC, &bWhite);
 
         // -> App Column
-        g.DrawString(L"Blocked Apps:", -1, &fBold, RectF(rColX, colY, colW, 25), &fL, &bDark);
-        RectF appInp(rColX, colY + 30, colW - 80, 35);
+        g.DrawString(L"Blocked Apps", -1, &fBold, RectF(mColX, colY, colW, 25), &fL, &bDark);
+        RectF appInp(mColX, colY + 30, colW - 70, 35);
         GraphicsPath* aip = GetSchRoundRectPath(appInp, 4);
         g.FillPath(&bWhite, aip); g.DrawPath(activeInput == 3 ? &pTeal : &pBorder, aip); delete aip;
         
-        if(inpApp.empty() && activeInput != 3) g.DrawString(L"e.g. valorant.exe", -1, &fNorm, RectF(appInp.X+10, appInp.Y, appInp.Width, appInp.Height), &fL, &bGray);
+        if(inpApp.empty() && activeInput != 3) g.DrawString(L"vlc.exe", -1, &fNorm, RectF(appInp.X+10, appInp.Y, appInp.Width, appInp.Height), &fL, &bGray);
         else {
             g.DrawString(inpApp.c_str(), -1, &fNorm, RectF(appInp.X+10, appInp.Y, appInp.Width, appInp.Height), &fL, &bDark);
             if(activeInput == 3 && (GetTickCount()/500)%2==0) {
@@ -327,40 +520,217 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
             }
         }
 
-        RectF addABtn(rColX + colW - 70, colY + 30, 70, 35);
-        GraphicsPath* aap = GetSchRoundRectPath(addABtn, 4);
-        SolidBrush aaBr(hAddAppBtn ? ClrTealHover : ClrTeal);
-        g.FillPath(&aaBr, aap); delete aap;
-        g.DrawString(L"Add", -1, &fBold, addABtn, &fC, &bWhite);
+        RectF aComboR(mColX + colW - 65, colY + 30, 25, 35);
+        g.FillRectangle(hoverSchAppCombo ? &bBorder : &bWhite, aComboR); g.DrawRectangle(&pBorder, aComboR.X, aComboR.Y, aComboR.Width, aComboR.Height);
+        g.DrawString(L"\xE70D", -1, &fSmallIcon, aComboR, &fC, &bDark);
 
-        // App List Box
-        RectF appListR(rColX, colY + 75, colW, ovH - 280);
+        RectF addABtn(mColX + colW - 35, colY + 30, 35, 35);
+        g.FillRectangle(hAddAppBtn ? &bTealHover : &bTeal, addABtn);
+        g.DrawString(L"+", -1, &fBold, addABtn, &fC, &bWhite);
+
+        // -> Keyword Column
+        g.DrawString(L"Blocked Keywords", -1, &fBold, RectF(rColX, colY, colW, 25), &fL, &bDark);
+        RectF keyInp(rColX, colY + 30, colW - 40, 35);
+        GraphicsPath* kip = GetSchRoundRectPath(keyInp, 4);
+        g.FillPath(&bWhite, kip); g.DrawPath(activeInput == 4 ? &pTeal : &pBorder, kip); delete kip;
+        
+        if(inpKey.empty() && activeInput != 4) g.DrawString(L"e.g. games", -1, &fNorm, RectF(keyInp.X+10, keyInp.Y, keyInp.Width, keyInp.Height), &fL, &bGray);
+        else {
+            g.DrawString(inpKey.c_str(), -1, &fNorm, RectF(keyInp.X+10, keyInp.Y, keyInp.Width, keyInp.Height), &fL, &bDark);
+            if(activeInput == 4 && (GetTickCount()/500)%2==0) {
+                Graphics gT(GetDesktopWindow()); RectF bR; gT.MeasureString(inpKey.c_str(), -1, &fNorm, PointF(0,0), &bR);
+                g.FillRectangle(&bDark, keyInp.X+12+(inpKey.empty()?0:bR.Width), keyInp.Y+7, 1.5f, 21.0f);
+            }
+        }
+
+        RectF addKBtn(rColX + colW - 35, colY + 30, 35, 35);
+        g.FillRectangle(hAddKeyBtn ? &bTealHover : &bTeal, addKBtn);
+        g.DrawString(L"+", -1, &fBold, addKBtn, &fC, &bWhite);
+
+        // Render Lists
+        vector<SchBlockItem>* cWebs = nullptr; vector<SchBlockItem>* cApps = nullptr; vector<SchBlockItem>* cKeys = nullptr;
+        if(editingProfileIdx >= 0) {
+            cWebs = &g_profiles[editingProfileIdx].blockedWebsites;
+            cApps = &g_profiles[editingProfileIdx].blockedApps;
+            cKeys = &g_profiles[editingProfileIdx].blockedKeywords;
+        }
+
+        float listH = ovH - 330.0f;
+        RectF webListR(lColX, colY + 70, colW, listH);
+        RectF appListR(mColX, colY + 70, colW, listH);
+        RectF keyListR(rColX, colY + 70, colW, listH);
+        g.FillRectangle(&bWhite, webListR); g.DrawRectangle(&pBorder, webListR.X, webListR.Y, webListR.Width, webListR.Height);
         g.FillRectangle(&bWhite, appListR); g.DrawRectangle(&pBorder, appListR.X, appListR.Y, appListR.Width, appListR.Height);
-        if(currentApps) {
-            g.GetClip(&oldClip); g.SetClip(appListR);
-            float itemY = appListR.Y + 5.0f;
-            for(auto& aItem : *currentApps) {
-                g.DrawString(aItem.name.c_str(), -1, &fNorm, RectF(appListR.X+10, itemY, appListR.Width-40, 30), &fL, &bDark);
-                SolidBrush crBr(aItem.isHoveredCross ? ClrRed : ClrGrayText);
-                g.DrawString(L"\xE711", -1, &fSmallIcon, RectF(appListR.X+appListR.Width-30, itemY, 30, 30), &fC, &crBr);
-                g.DrawLine(&pBorder, appListR.X+5, itemY+30, appListR.X+appListR.Width-5, itemY+30);
-                itemY += 30.0f;
+        g.FillRectangle(&bWhite, keyListR); g.DrawRectangle(&pBorder, keyListR.X, keyListR.Y, keyListR.Width, keyListR.Height);
+
+        auto DrawItemList = [&](vector<SchBlockItem>* list, RectF box) {
+            if(!list) return;
+            g.GetClip(&oldClip); g.SetClip(box);
+            float itemY = box.Y + 5.0f;
+            for(auto& item : *list) {
+                g.DrawString(item.name.c_str(), -1, &fNorm, RectF(box.X+5, itemY, box.Width-30, 25), &fL, &bDark);
+                SolidBrush crBr(item.isHoveredCross ? ClrRed : ClrGrayText);
+                g.DrawString(L"\xE711", -1, &fSmallIcon, RectF(box.X+box.Width-25, itemY, 25, 25), &fC, &crBr);
+                g.DrawLine(&pBorder, box.X+5, itemY+25, box.X+box.Width-5, itemY+25);
+                itemY += 25.0f;
             }
             g.SetClip(&oldClip);
+        };
+
+        DrawItemList(cWebs, webListR);
+        DrawItemList(cApps, appListR);
+        DrawItemList(cKeys, keyListR);
+
+        // --- Overlapping Dropdown Lists (Draw Last) ---
+        if (isSchModeDropdownOpen) {
+            RectF mlR(modeDropR.X, modeDropR.Y + 38, 200, 118);
+            GraphicsPath* mlP = GetSchRoundRectPath(mlR, 4);
+            g.FillPath(&bWhite, mlP); g.DrawPath(&pBorder, mlP); delete mlP;
+
+            SolidBrush o1Br(hoverSchOptSelf ? ClrBgHover : ClrWhite); g.FillRectangle(&o1Br, RectF(mlR.X+2, mlR.Y+2, 196, 38));
+            g.DrawString(L"Self Control", -1, &fNorm, RectF(mlR.X+15, mlR.Y+2, 180, 38), &fL, &bDark);
+
+            SolidBrush o2Br(hoverSchOptParents ? ClrBgHover : ClrWhite); g.FillRectangle(&o2Br, RectF(mlR.X+2, mlR.Y+40, 196, 38));
+            g.DrawString(L"Parents Control", -1, &fNorm, RectF(mlR.X+15, mlR.Y+40, 180, 38), &fL, &bDark);
+
+            SolidBrush o3Br(hoverSchOptLongText ? ClrBgHover : ClrWhite); g.FillRectangle(&o3Br, RectF(mlR.X+2, mlR.Y+78, 196, 38));
+            g.DrawString(L"Long Text Unlock", -1, &fNorm, RectF(mlR.X+15, mlR.Y+78, 180, 38), &fL, &bDark);
+        }
+        if (isSchWebComboOpen) {
+            RectF wlR(wComboR.X - 125, wComboR.Y + 38, 150, schCommonWebsites.size() * 30 + 10);
+            GraphicsPath* wlP = GetSchRoundRectPath(wlR, 4);
+            g.FillPath(&bWhite, wlP); g.DrawPath(&pBorder, wlP); delete wlP;
+            float iY = wlR.Y + 5;
+            for(size_t i=0; i<schCommonWebsites.size(); ++i) {
+                SolidBrush oBr(hoverSchWebOptIdx == i ? ClrBgHover : ClrWhite);
+                g.FillRectangle(&oBr, RectF(wlR.X+2, iY, wlR.Width-4, 30));
+                g.DrawString(schCommonWebsites[i].c_str(), -1, &fNorm, RectF(wlR.X+10, iY, wlR.Width-10, 30), &fL, &bDark); iY += 30;
+            }
+        }
+        if (isSchAppComboOpen) {
+            RectF alR(aComboR.X - 125, aComboR.Y + 38, 150, schCommonApps.size() * 30 + 10);
+            GraphicsPath* alP = GetSchRoundRectPath(alR, 4);
+            g.FillPath(&bWhite, alP); g.DrawPath(&pBorder, alP); delete alP;
+            float iY = alR.Y + 5;
+            for(size_t i=0; i<schCommonApps.size(); ++i) {
+                SolidBrush oBr(hoverSchAppOptIdx == i ? ClrBgHover : ClrWhite);
+                g.FillRectangle(&oBr, RectF(alR.X+2, iY, alR.Width-4, 30));
+                g.DrawString(schCommonApps[i].c_str(), -1, &fNorm, RectF(alR.X+10, iY, alR.Width-10, 30), &fL, &bDark); iY += 30;
+            }
         }
 
         // Action Buttons (Bottom)
-        RectF saveBtn(ovX + ovW - 140, ovY + ovH - 60, 110, 40);
+        RectF saveBtn(ovX + ovW - 140, ovY + ovH - 50, 110, 35);
         GraphicsPath* svp = GetSchRoundRectPath(saveBtn, 4);
         SolidBrush svBr(hSaveBtn ? ClrTealHover : ClrTeal);
         g.FillPath(&svBr, svp); delete svp;
         g.DrawString(L"Save Profile", -1, &fBold, saveBtn, &fC, &bWhite);
 
-        RectF cancelBtn(ovX + ovW - 260, ovY + ovH - 60, 100, 40);
+        RectF cancelBtn(ovX + ovW - 260, ovY + ovH - 50, 100, 35);
         GraphicsPath* cvp = GetSchRoundRectPath(cancelBtn, 4);
         SolidBrush cvBr(hCancelBtn ? Color(255, 235, 235, 235) : ClrWhite);
         g.FillPath(&cvBr, cvp); g.DrawPath(&pBorder, cvp); delete cvp;
         g.DrawString(L"Cancel", -1, &fBold, cancelBtn, &fC, &bDark);
+    }
+
+    // ==========================================
+    // 3. FULL SCREEN OVERLAYS FOR LOCKING
+    // ==========================================
+    if (s_showTimeOverlay || s_showPassOverlay || s_showTextUnlockOverlay) {
+        SolidBrush overlayBg(ClrOverlay);
+        g.FillRectangle(&overlayBg, x, y, w, h);
+
+        float ovW = s_showTextUnlockOverlay ? 600.0f : 500.0f; 
+        float ovH = s_showTextUnlockOverlay ? 450.0f : 280.0f;
+        float ovX = x + (w - ovW) / 2.0f;
+        float ovY = y + (h - ovH) / 2.0f;
+
+        RectF ovRect(ovX, ovY, ovW, ovH);
+        GraphicsPath* op = GetSchRoundRectPath(ovRect, 8);
+        SolidBrush bBg(ClrBg); g.FillPath(&bBg, op); g.DrawPath(&pBorder, op); delete op;
+
+        if (s_showTimeOverlay) {
+            g.DrawString(L"SET FOCUS DURATION (SELF CONTROL)", -1, &fTitle, RectF(ovX, ovY + 20, ovW, 30), &fC, &bDark);
+            
+            g.DrawString(L"Months:", -1, &fBold, RectF(ovX + 40, ovY + 80, 60, 36), &fL, &bDark);
+            DrawSchOverlaySpinner(g, ovX + 110, ovY + 80, to_wstring(s_focusMonths), s_hTimeMoM, s_hTimeMoP, &fIcon, &fBold);
+            
+            g.DrawString(L"Days:", -1, &fBold, RectF(ovX + 250, ovY + 80, 50, 36), &fL, &bDark);
+            DrawSchOverlaySpinner(g, ovX + 300, ovY + 80, to_wstring(s_focusDays), s_hTimeDM, s_hTimeDP, &fIcon, &fBold);
+
+            g.DrawString(L"Hours:", -1, &fBold, RectF(ovX + 40, ovY + 140, 60, 36), &fL, &bDark);
+            DrawSchOverlaySpinner(g, ovX + 110, ovY + 140, to_wstring(s_focusHours), s_hTimeHM, s_hTimeHP, &fIcon, &fBold);
+            
+            g.DrawString(L"Mins:", -1, &fBold, RectF(ovX + 250, ovY + 140, 50, 36), &fL, &bDark);
+            DrawSchOverlaySpinner(g, ovX + 300, ovY + 140, to_wstring(s_focusMins), s_hTimeMM, s_hTimeMP, &fIcon, &fBold);
+
+            RectF cancelRect(ovX + 60, ovY + 210, 140, 40);
+            GraphicsPath* cp = GetSchRoundRectPath(cancelRect, 4);
+            SolidBrush cancelBrush(s_hTimeCancel ? ClrBgHover : ClrWhite);
+            g.FillPath(&cancelBrush, cp); g.DrawPath(&pBorder, cp); delete cp;
+            g.DrawString(L"Cancel (Esc)", -1, &fBold, cancelRect, &fC, &bDark);
+
+            RectF startRect(ovX + 240, ovY + 210, 140, 40);
+            GraphicsPath* sp = GetSchRoundRectPath(startRect, 4);
+            SolidBrush startBrush(s_hTimeStart ? ClrTealHover : ClrTeal);
+            g.FillPath(&startBrush, sp); delete sp;
+            g.DrawString(L"Start Profile", -1, &fBold, startRect, &fC, &bWhite);
+        }
+        else if (s_showPassOverlay) {
+            wstring titleTxt = s_isStoppingFocus ? L"ENTER PARENTS PASSWORD TO STOP" : L"SET PARENTS PASSWORD";
+            g.DrawString(titleTxt.c_str(), -1, &fTitle, RectF(ovX, ovY + 20, ovW, 30), &fC, &bDark);
+            RectF passInpRect(ovX + 40, ovY + 80, ovW - 80, 40);
+            GraphicsPath* pp = GetSchRoundRectPath(passInpRect, 4);
+            g.FillPath(&bWhite, pp); g.DrawPath(s_isPassInputActive ? &pTeal : &pBorder, pp); delete pp;
+            
+            wstring displayPass = wstring(s_inputPassText.length(), L'*');
+            if (s_inputPassText.empty() && !s_isPassInputActive) g.DrawString(L"Type password here...", -1, &fNorm, passInpRect, &fC, &bGray);
+            else {
+                g.DrawString(displayPass.c_str(), -1, &fTitle, RectF(ovX + 50, ovY + 85, ovW - 100, 30), &fL, &bDark);
+                if (s_isPassInputActive && (GetTickCount() / 500) % 2 == 0) {
+                     Graphics gT(GetDesktopWindow()); RectF bR; gT.MeasureString(displayPass.c_str(), -1, &fTitle, PointF(0,0), &bR);
+                     float curX = ovX + 52 + (displayPass.empty()?0:bR.Width);
+                     g.FillRectangle(&bDark, curX, ovY + 90, 1.5f, 20.0f);
+                }
+            }
+
+            RectF cancelRect(ovX + 40, ovY + 150, 140, 40);
+            GraphicsPath* cp = GetSchRoundRectPath(cancelRect, 4);
+            SolidBrush cancelBrush(s_hPassCancel ? ClrBgHover : ClrWhite);
+            g.FillPath(&cancelBrush, cp); g.DrawPath(&pBorder, cp); delete cp;
+            g.DrawString(L"Cancel (Esc)", -1, &fBold, cancelRect, &fC, &bDark);
+
+            RectF confRect(ovX + 220, ovY + 150, 160, 40);
+            GraphicsPath* sp = GetSchRoundRectPath(confRect, 4);
+            SolidBrush confBrush(s_hPassConfirm ? ClrTealHover : ClrTeal);
+            g.FillPath(&confBrush, sp); delete sp;
+            g.DrawString(L"Confirm", -1, &fBold, confRect, &fC, &bWhite);
+        }
+        else if (s_showTextUnlockOverlay) {
+            g.DrawString(L"EXACT TEXT UNLOCK MODE", -1, &fTitle, RectF(ovX, ovY + 20, ovW, 30), &fC, &bDark);
+            
+            RectF targetBox(ovX + 20, ovY + 60, ovW - 40, 110);
+            g.FillRectangle(&bWhite, targetBox); g.DrawRectangle(&pBorder, targetBox.X, targetBox.Y, targetBox.Width, targetBox.Height);
+            g.DrawString(s_targetUnlockText.c_str(), -1, &fNorm, RectF(targetBox.X+5, targetBox.Y+5, targetBox.Width-10, targetBox.Height-10), &fTL, &bGray);
+
+            RectF typeBox(ovX + 20, ovY + 180, ovW - 40, 160);
+            GraphicsPath* tp = GetSchRoundRectPath(typeBox, 4);
+            g.FillPath(&bWhite, tp); g.DrawPath(s_isTypingActive ? &pTeal : &pBorder, tp); delete tp;
+
+            g.DrawString(s_currentTypingText.c_str(), -1, &fNorm, RectF(typeBox.X + 5, typeBox.Y + 5, typeBox.Width - 10, typeBox.Height - 10), &fTL, &bDark);
+
+            RectF cancelRect(ovX + 120, ovY + 380, 140, 40);
+            GraphicsPath* cp = GetSchRoundRectPath(cancelRect, 4);
+            SolidBrush cancelBrush(s_hTextUnlockCancel ? ClrBgHover : ClrWhite);
+            g.FillPath(&cancelBrush, cp); g.DrawPath(&pBorder, cp); delete cp;
+            g.DrawString(L"Cancel (Esc)", -1, &fBold, cancelRect, &fC, &bDark);
+
+            RectF confRect(ovX + 280, ovY + 380, 160, 40);
+            GraphicsPath* sp = GetSchRoundRectPath(confRect, 4);
+            SolidBrush confBrush((s_currentTypingText == s_targetUnlockText) ? (s_hTextUnlockConfirm ? ClrTealHover : ClrTeal) : ClrDisabled);
+            g.FillPath(&confBrush, sp); delete sp;
+            g.DrawString(L"Unlock Profile", -1, &fBold, confRect, &fC, &bWhite);
+        }
     }
 }
 
@@ -370,48 +740,136 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
 void ProcessScheduleBlocksMouseMove(float x, float y) {
     hAddProfileBtn = false;
     hSaveBtn = false; hCancelBtn = false;
-    hAddWebBtn = false; hAddAppBtn = false;
+    hAddWebBtn = false; hAddAppBtn = false; hAddKeyBtn = false;
+    hoverSchWebCombo = false; hoverSchAppCombo = false; hoverSchModeDropdown = false;
+    hoverSchWebOptIdx = -1; hoverSchAppOptIdx = -1;
+    hoverSchOptSelf = false; hoverSchOptParents = false; hoverSchOptLongText = false;
+    hStH_Up=false; hStH_Dn=false; hStM_Up=false; hStM_Dn=false;
+    hEnH_Up=false; hEnH_Dn=false; hEnM_Up=false; hEnM_Dn=false;
+    hoverDayIdx = -1; hTogInt=false; hTogAdt=false; hTogUni=false;
+    
+    s_hTimeMoM=false; s_hTimeMoP=false; s_hTimeDM=false; s_hTimeDP=false;
+    s_hTimeHM=false; s_hTimeHP=false; s_hTimeMM=false; s_hTimeMP=false; s_hTimeStart=false; s_hTimeCancel=false;
+    s_hPassInput=false; s_hPassConfirm=false; s_hPassCancel=false;
+    s_hTextUnlockConfirm=false; s_hTextUnlockCancel=false;
+
+    if (s_showTimeOverlay || s_showPassOverlay || s_showTextUnlockOverlay) {
+        float ovW = s_showTextUnlockOverlay ? 600.0f : 500.0f; 
+        float ovH = s_showTextUnlockOverlay ? 450.0f : 280.0f;
+        float ovX = s_cx + (s_cw - ovW) / 2.0f;
+        float ovY = s_cy + (s_ch - ovH) / 2.0f;
+
+        if (s_showTimeOverlay) {
+            if (RectF(ovX + 110, ovY + 80, 32, 36).Contains(x, y)) s_hTimeMoM = true;
+            if (RectF(ovX + 110 + 92, ovY + 80, 32, 36).Contains(x, y)) s_hTimeMoP = true;
+            if (RectF(ovX + 300, ovY + 80, 32, 36).Contains(x, y)) s_hTimeDM = true;
+            if (RectF(ovX + 300 + 92, ovY + 80, 32, 36).Contains(x, y)) s_hTimeDP = true;
+
+            if (RectF(ovX + 110, ovY + 140, 32, 36).Contains(x, y)) s_hTimeHM = true;
+            if (RectF(ovX + 110 + 92, ovY + 140, 32, 36).Contains(x, y)) s_hTimeHP = true;
+            if (RectF(ovX + 300, ovY + 140, 32, 36).Contains(x, y)) s_hTimeMM = true;
+            if (RectF(ovX + 300 + 92, ovY + 140, 32, 36).Contains(x, y)) s_hTimeMP = true;
+
+            if (RectF(ovX + 60, ovY + 210, 140, 40).Contains(x, y)) s_hTimeCancel = true;
+            if (RectF(ovX + 240, ovY + 210, 140, 40).Contains(x, y)) s_hTimeStart = true;
+        }
+        else if (s_showPassOverlay) {
+            if (RectF(ovX + 40, ovY + 80, ovW - 80, 40).Contains(x, y)) s_hPassInput = true;
+            if (RectF(ovX + 40, ovY + 150, 140, 40).Contains(x, y)) s_hPassCancel = true;
+            if (RectF(ovX + 220, ovY + 150, 160, 40).Contains(x, y)) s_hPassConfirm = true;
+        }
+        else if (s_showTextUnlockOverlay) {
+            if (RectF(ovX + 120, ovY + 380, 140, 40).Contains(x, y)) s_hTextUnlockCancel = true;
+            if (RectF(ovX + 280, ovY + 380, 160, 40).Contains(x, y)) s_hTextUnlockConfirm = true;
+        }
+        return;
+    }
 
     if (editingProfileIdx != -1) {
-        float ovW = s_cw - 80.0f, ovH = s_ch - 80.0f;
-        float ovX = s_cx + 40.0f, ovY = s_cy + 40.0f;
-        float colW = (ovW - 90.0f) / 2.0f;
-        float lColX = ovX + 30.0f, rColX = ovX + 60.0f + colW;
-        float colY = ovY + 130.0f;
+        float ovW = s_cw - 40.0f, ovH = s_ch - 40.0f;
+        float ovX = s_cx + 20.0f, ovY = s_cy + 20.0f;
+        
+        if (isSchModeDropdownOpen) {
+            RectF mlR(ovX + 460, ovY + 103, 200, 118);
+            if (RectF(mlR.X, mlR.Y, 200, 38).Contains(x, y)) hoverSchOptSelf = true;
+            if (RectF(mlR.X, mlR.Y+38, 200, 38).Contains(x, y)) hoverSchOptParents = true;
+            if (RectF(mlR.X, mlR.Y+76, 200, 38).Contains(x, y)) hoverSchOptLongText = true;
+            return;
+        }
 
-        if (RectF(ovX + ovW - 140, ovY + ovH - 60, 110, 40).Contains(x,y)) hSaveBtn = true;
-        if (RectF(ovX + ovW - 260, ovY + ovH - 60, 100, 40).Contains(x,y)) hCancelBtn = true;
-        if (RectF(lColX + colW - 70, colY + 30, 70, 35).Contains(x,y)) hAddWebBtn = true;
-        if (RectF(rColX + colW - 70, colY + 30, 70, 35).Contains(x,y)) hAddAppBtn = true;
+        float colW = (ovW - 90.0f) / 3.0f;
+        float lColX = ovX + 30.0f, mColX = ovX + 45.0f + colW, rColX = ovX + 60.0f + colW * 2;
+        float colY = ovY + 205.0f;
+
+        if (isSchWebComboOpen) {
+            float iY = colY + 68;
+            for(size_t i=0; i<schCommonWebsites.size(); ++i) {
+                if (RectF(lColX + colW - 190, iY, 150, 30).Contains(x, y)) { hoverSchWebOptIdx = i; return; } iY += 30;
+            }
+        }
+        if (isSchAppComboOpen) {
+            float iY = colY + 68;
+            for(size_t i=0; i<schCommonApps.size(); ++i) {
+                if (RectF(mColX + colW - 190, iY, 150, 30).Contains(x, y)) { hoverSchAppOptIdx = i; return; } iY += 30;
+            }
+        }
+
+        // Toggles & Basic Edit hovers
+        if (RectF(ovX + 460, ovY + 65, 200, 35).Contains(x, y)) hoverSchModeDropdown = true;
+        if (RectF(lColX + colW - 65, colY + 30, 25, 35).Contains(x, y)) hoverSchWebCombo = true;
+        if (RectF(mColX + colW - 65, colY + 30, 25, 35).Contains(x, y)) hoverSchAppCombo = true;
+
+        if (RectF(ovX + ovW - 140, ovY + ovH - 50, 110, 35).Contains(x,y)) hSaveBtn = true;
+        if (RectF(ovX + ovW - 260, ovY + ovH - 50, 100, 35).Contains(x,y)) hCancelBtn = true;
+
+        if (RectF(lColX + colW - 35, colY + 30, 35, 35).Contains(x,y)) hAddWebBtn = true;
+        if (RectF(mColX + colW - 35, colY + 30, 35, 35).Contains(x,y)) hAddAppBtn = true;
+        if (RectF(rColX + colW - 35, colY + 30, 35, 35).Contains(x,y)) hAddKeyBtn = true;
+
+        for(int d=0; d<7; d++) { if(RectF(ovX + 130 + d*35, ovY + 115, 30, 30).Contains(x, y)) hoverDayIdx = d; }
+        
+        float stX = ovX + 460;
+        if(RectF(stX-15, ovY+115, 15, 15).Contains(x,y)) hStH_Up = true;
+        if(RectF(stX-15, ovY+130, 15, 15).Contains(x,y)) hStH_Dn = true;
+        if(RectF(stX+80, ovY+115, 15, 15).Contains(x,y)) hStM_Up = true;
+        if(RectF(stX+80, ovY+130, 15, 15).Contains(x,y)) hStM_Dn = true;
+
+        float enX = ovX + 590;
+        if(RectF(enX-15, ovY+115, 15, 15).Contains(x,y)) hEnH_Up = true;
+        if(RectF(enX-15, ovY+130, 15, 15).Contains(x,y)) hEnH_Dn = true;
+        if(RectF(enX+80, ovY+115, 15, 15).Contains(x,y)) hEnM_Up = true;
+        if(RectF(enX+80, ovY+130, 15, 15).Contains(x,y)) hEnM_Dn = true;
+
+        if(RectF(ovX + 30, ovY + 165, 20, 20).Contains(x, y)) hTogInt = true;
+        if(RectF(ovX + 250, ovY + 165, 20, 20).Contains(x, y)) hTogAdt = true;
+        if(RectF(ovX + 470, ovY + 165, 20, 20).Contains(x, y)) hTogUni = true;
 
         if (editingProfileIdx >= 0) {
-            float iY = colY + 80.0f;
-            for (auto& w : g_profiles[editingProfileIdx].blockedWebsites) {
-                w.isHoveredCross = RectF(lColX + colW - 30, iY, 30, 30).Contains(x, y); iY += 30.0f;
-            }
-            iY = colY + 80.0f;
-            for (auto& a : g_profiles[editingProfileIdx].blockedApps) {
-                a.isHoveredCross = RectF(rColX + colW - 30, iY, 30, 30).Contains(x, y); iY += 30.0f;
-            }
+            auto checkListHover = [&](vector<SchBlockItem>& list, float bx) {
+                float iY = colY + 75.0f;
+                for(auto& it : list) { it.isHoveredCross = RectF(bx + colW - 25, iY, 25, 25).Contains(x, y); iY += 25.0f; }
+            };
+            checkListHover(g_profiles[editingProfileIdx].blockedWebsites, lColX);
+            checkListHover(g_profiles[editingProfileIdx].blockedApps, mColX);
+            checkListHover(g_profiles[editingProfileIdx].blockedKeywords, rColX);
         }
         return;
     }
 
     if (RectF(s_cx + s_cw - 220, s_cy + 20, 200, 40).Contains(x, y)) hAddProfileBtn = true;
 
-    float cardW = (s_cw - 60.0f) / 2.0f;
-    float cardH = 150.0f;
-    float startX = s_cx + 20.0f;
-    float startY = s_cy + 100.0f - sch_cScroll;
+    float cardW = (s_cw - 60.0f) / 2.0f; float cardH = 170.0f;
+    float startX = s_cx + 20.0f; float startY = s_cy + 100.0f - sch_cScroll;
 
     for (size_t i = 0; i < g_profiles.size(); ++i) {
         float cX = startX + (i % 2) * (cardW + 20.0f);
         float cY = startY + (i / 2) * (cardH + 20.0f);
         if (cY > s_cy + s_ch || cY + cardH < s_cy + 90.0f) continue;
 
-        g_profiles[i].hToggle = RectF(cX + 15, cY + 105, 100, 30).Contains(x, y);
-        g_profiles[i].hEdit = RectF(cX + cardW - 130, cY + 105, 60, 30).Contains(x, y);
-        g_profiles[i].hDel = RectF(cX + cardW - 60, cY + 105, 45, 30).Contains(x, y);
+        g_profiles[i].hToggle = RectF(cX + 15, cY + 115, 60, 26).Contains(x, y) || RectF(cX + 75, cY + 115, 60, 26).Contains(x, y);
+        g_profiles[i].hEdit = RectF(cX + cardW - 130, cY + 115, 60, 30).Contains(x, y);
+        if(!g_profiles[i].isActive) g_profiles[i].hDel = RectF(cX + cardW - 60, cY + 115, 45, 30).Contains(x, y);
+        else g_profiles[i].hDel = false; // Disable delete if active
     }
 }
 
@@ -419,51 +877,167 @@ void ProcessScheduleBlocksMouseMove(float x, float y) {
 // --- MOUSE CLICK LOGIC ---
 // ==========================================
 void ProcessScheduleBlocksMouseClick(float x, float y) {
-    if (editingProfileIdx != -1) {
-        float ovW = s_cw - 80.0f, ovH = s_ch - 80.0f;
-        float ovX = s_cx + 40.0f, ovY = s_cy + 40.0f;
-        float colW = (ovW - 90.0f) / 2.0f;
-        float lColX = ovX + 30.0f, rColX = ovX + 60.0f + colW;
-        float colY = ovY + 130.0f;
+    if (s_showTimeOverlay) {
+        if (s_hTimeMoM && s_focusMonths > 0) s_focusMonths--;
+        if (s_hTimeMoP && s_focusMonths < 12) s_focusMonths++;
+        if (s_hTimeDM && s_focusDays > 0) s_focusDays--;
+        if (s_hTimeDP && s_focusDays < 30) s_focusDays++;
 
-        // Input Box Focus
+        if (s_hTimeHM && s_focusHours > 0) s_focusHours--;
+        if (s_hTimeHP && s_focusHours < 23) s_focusHours++;
+        if (s_hTimeMM) { s_focusMins -= 5; if (s_focusMins < 0) s_focusMins = 55; }
+        if (s_hTimeMP) { s_focusMins = (s_focusMins + 5) % 60; }
+
+        if (s_hTimeCancel) s_showTimeOverlay = false;
+        if (s_hTimeStart && activeActionProfileIdx >= 0) { 
+            g_profiles[activeActionProfileIdx].isActive = true; 
+            g_profiles[activeActionProfileIdx].lockEndTime = std::time(nullptr) + (s_focusMonths * 30 * 24 * 3600) + (s_focusDays * 24 * 3600) + (s_focusHours * 3600) + (s_focusMins * 60);
+            s_showTimeOverlay = false; 
+            LogHistoryToHiddenFolderSch(L"Started Schedule: " + g_profiles[activeActionProfileIdx].profileName);
+            SaveProfiles();
+        }
+        return;
+    }
+    if (s_showPassOverlay) {
+        s_isPassInputActive = s_hPassInput;
+        if (s_hPassCancel) { s_showPassOverlay = false; s_inputPassText = L""; }
+        if (s_hPassConfirm && !s_inputPassText.empty() && activeActionProfileIdx >= 0) {
+            if (!s_isStoppingFocus) {
+                g_profiles[activeActionProfileIdx].parentsPassword = s_inputPassText;
+                g_profiles[activeActionProfileIdx].isActive = true;
+                LogHistoryToHiddenFolderSch(L"Locked (Parents) Schedule: " + g_profiles[activeActionProfileIdx].profileName);
+            } else {
+                if (g_profiles[activeActionProfileIdx].parentsPassword == s_inputPassText) {
+                    g_profiles[activeActionProfileIdx].isActive = false;
+                    LogHistoryToHiddenFolderSch(L"Unlocked (Parents) Schedule: " + g_profiles[activeActionProfileIdx].profileName);
+                }
+            }
+            s_showPassOverlay = false; s_inputPassText = L""; 
+            SaveProfiles();
+        }
+        return;
+    }
+    if (s_showTextUnlockOverlay) {
+        if (s_hTextUnlockCancel) s_showTextUnlockOverlay = false;
+        if (s_hTextUnlockConfirm && s_currentTypingText == s_targetUnlockText && activeActionProfileIdx >= 0) {
+            g_profiles[activeActionProfileIdx].isActive = false;
+            s_showTextUnlockOverlay = false; s_currentTypingText = L"";
+            LogHistoryToHiddenFolderSch(L"Unlocked (Long Text) Schedule: " + g_profiles[activeActionProfileIdx].profileName);
+            SaveProfiles();
+        }
+        return;
+    }
+
+    if (editingProfileIdx != -1) {
+        float ovW = s_cw - 40.0f, ovH = s_ch - 40.0f;
+        float ovX = s_cx + 20.0f, ovY = s_cy + 20.0f;
+        float colW = (ovW - 90.0f) / 3.0f;
+        float lColX = ovX + 30.0f, mColX = ovX + 45.0f + colW, rColX = ovX + 60.0f + colW * 2;
+        float colY = ovY + 205.0f;
+
+        bool dropdownClosed = false;
+
+        if (isSchModeDropdownOpen && !hoverSchModeDropdown && !hoverSchOptSelf && !hoverSchOptParents && !hoverSchOptLongText) {
+            isSchModeDropdownOpen = false; dropdownClosed = true;
+        } else if (isSchModeDropdownOpen) {
+            if (hoverSchOptSelf) tempLockMode = 0;
+            if (hoverSchOptParents) tempLockMode = 1;
+            if (hoverSchOptLongText) tempLockMode = 2;
+            isSchModeDropdownOpen = false; return;
+        }
+
+        if (isSchWebComboOpen && !hoverSchWebCombo && hoverSchWebOptIdx == -1) {
+            isSchWebComboOpen = false; dropdownClosed = true;
+        } else if (isSchWebComboOpen) {
+            if (hoverSchWebOptIdx != -1 && editingProfileIdx >= 0) {
+                g_profiles[editingProfileIdx].blockedWebsites.push_back({schCommonWebsites[hoverSchWebOptIdx], false});
+            }
+            isSchWebComboOpen = false; return;
+        }
+
+        if (isSchAppComboOpen && !hoverSchAppCombo && hoverSchAppOptIdx == -1) {
+            isSchAppComboOpen = false; dropdownClosed = true;
+        } else if (isSchAppComboOpen) {
+            if (hoverSchAppOptIdx != -1 && editingProfileIdx >= 0) {
+                g_profiles[editingProfileIdx].blockedApps.push_back({schCommonApps[hoverSchAppOptIdx], false});
+            }
+            isSchAppComboOpen = false; return;
+        }
+
+        if (dropdownClosed) return;
+
+        if (hoverSchModeDropdown) { isSchModeDropdownOpen = true; return; }
+        if (hoverSchWebCombo) { isSchWebComboOpen = true; return; }
+        if (hoverSchAppCombo) { isSchAppComboOpen = true; return; }
+
+        if(hoverDayIdx != -1) editDays[hoverDayIdx] = !editDays[hoverDayIdx];
+
+        if(hStH_Up) { editStH = (editStH + 1) % 24; } if(hStH_Dn) { editStH = (editStH - 1 + 24) % 24; }
+        if(hStM_Up) { editStM = (editStM + 5) % 60; } if(hStM_Dn) { editStM = (editStM - 5 + 60) % 60; }
+        if(hEnH_Up) { editEnH = (editEnH + 1) % 24; } if(hEnH_Dn) { editEnH = (editEnH - 1 + 24) % 24; }
+        if(hEnM_Up) { editEnM = (editEnM + 5) % 60; } if(hEnM_Dn) { editEnM = (editEnM - 5 + 60) % 60; }
+
+        if(hTogInt) editBlockInt = !editBlockInt;
+        if(hTogAdt) editBlockAdult = !editBlockAdult;
+        if(hTogUni) editBlockUninst = !editBlockUninst;
+
         activeInput = 0;
-        if (RectF(ovX + 150, ovY + 70, ovW - 180, 35).Contains(x,y)) activeInput = 1;
-        if (RectF(lColX, colY + 30, colW - 80, 35).Contains(x,y)) activeInput = 2;
-        if (RectF(rColX, colY + 30, colW - 80, 35).Contains(x,y)) activeInput = 3;
+        if (RectF(ovX + 130, ovY + 65, 200, 35).Contains(x,y)) activeInput = 1;
+        if (RectF(lColX, colY + 30, colW - 70, 35).Contains(x,y)) activeInput = 2;
+        if (RectF(mColX, colY + 30, colW - 70, 35).Contains(x,y)) activeInput = 3;
+        if (RectF(rColX, colY + 30, colW - 40, 35).Contains(x,y)) activeInput = 4;
 
         if (hCancelBtn) { editingProfileIdx = -1; return; }
         
         if (hSaveBtn) {
             if (inpProfileName.empty()) inpProfileName = L"Custom Profile";
             if (editingProfileIdx == -2) {
-                FocusProfile np; np.profileName = inpProfileName;
-                g_profiles.push_back(np);
+                g_profiles.back().profileName = inpProfileName;
             } else if (editingProfileIdx >= 0) {
                 g_profiles[editingProfileIdx].profileName = inpProfileName;
             }
+            if(editingProfileIdx >= 0) {
+                g_profiles[editingProfileIdx].lockMode = tempLockMode;
+                for(int d=0; d<7; d++) g_profiles[editingProfileIdx].activeDays[d] = editDays[d];
+                g_profiles[editingProfileIdx].startHour = editStH; g_profiles[editingProfileIdx].startMin = editStM;
+                g_profiles[editingProfileIdx].endHour = editEnH; g_profiles[editingProfileIdx].endMin = editEnM;
+                g_profiles[editingProfileIdx].blockInternet = editBlockInt;
+                g_profiles[editingProfileIdx].blockAdult = editBlockAdult;
+                g_profiles[editingProfileIdx].blockUninstall = editBlockUninst;
+            }
+            LogHistoryToHiddenFolderSch(L"Saved Profile: " + inpProfileName);
             editingProfileIdx = -1; SaveProfiles(); return;
         }
 
         if (editingProfileIdx >= 0) {
             if (hAddWebBtn && !inpWeb.empty()) { g_profiles[editingProfileIdx].blockedWebsites.push_back({inpWeb, false}); inpWeb = L""; }
-            if (hAddAppBtn && !inpApp.empty()) { g_profiles[editingProfileIdx].blockedApps.push_back({inpApp, false}); inpApp = L""; }
+            if (hAddAppBtn && !inpApp.empty()) { 
+                if (inpApp.length() < 4 || inpApp.substr(inpApp.length() - 4) != L".exe") inpApp += L".exe";
+                g_profiles[editingProfileIdx].blockedApps.push_back({inpApp, false}); inpApp = L""; 
+            }
+            if (hAddKeyBtn && !inpKey.empty()) { g_profiles[editingProfileIdx].blockedKeywords.push_back({inpKey, false}); inpKey = L""; }
             
             auto& webs = g_profiles[editingProfileIdx].blockedWebsites;
             for(auto it = webs.begin(); it != webs.end();) { if(it->isHoveredCross) it = webs.erase(it); else ++it; }
             
             auto& apps = g_profiles[editingProfileIdx].blockedApps;
             for(auto it = apps.begin(); it != apps.end();) { if(it->isHoveredCross) it = apps.erase(it); else ++it; }
+            
+            auto& keys = g_profiles[editingProfileIdx].blockedKeywords;
+            for(auto it = keys.begin(); it != keys.end();) { if(it->isHoveredCross) it = keys.erase(it); else ++it; }
         }
         return;
     }
 
     if (hAddProfileBtn) {
         editingProfileIdx = -2; // Create new
-        inpProfileName = L""; inpWeb = L""; inpApp = L"";
+        inpProfileName = L""; inpWeb = L""; inpApp = L""; inpKey = L"";
+        tempLockMode = 0;
+        for(int d=0; d<7; d++) editDays[d] = false;
+        editStH = 0; editStM = 0; editEnH = 23; editEnM = 59;
+        editBlockInt = false; editBlockAdult = false; editBlockUninst = true;
         
-        // Add a temporary empty profile to edit directly
-        FocusProfile np; np.profileName = L"";
+        FocusProfile np; np.profileName = L""; np.lockMode = 0;
         g_profiles.push_back(np);
         editingProfileIdx = g_profiles.size() - 1;
         
@@ -471,16 +1045,42 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
     }
 
     for (size_t i = 0; i < g_profiles.size(); ++i) {
-        if (g_profiles[i].hToggle) { g_profiles[i].isActive = !g_profiles[i].isActive; SaveProfiles(); }
+        if (g_profiles[i].hToggle) { 
+            activeActionProfileIdx = i;
+            if (!g_profiles[i].isActive) {
+                if (g_profiles[i].lockMode == 0) { s_showTimeOverlay = true; }
+                else if (g_profiles[i].lockMode == 1) { s_showPassOverlay = true; s_isStoppingFocus = false; s_inputPassText = L""; }
+                else if (g_profiles[i].lockMode == 2) { 
+                    g_profiles[i].isActive = true; 
+                    LogHistoryToHiddenFolderSch(L"Started Schedule: " + g_profiles[i].profileName);
+                    SaveProfiles(); 
+                }
+            } else {
+                if (g_profiles[i].lockMode == 0) { /* Block premature stopping handled visually */ }
+                else if (g_profiles[i].lockMode == 1) { s_showPassOverlay = true; s_isStoppingFocus = true; s_inputPassText = L""; }
+                else if (g_profiles[i].lockMode == 2) { s_showTextUnlockOverlay = true; s_currentTypingText = L""; s_isTypingActive = true; }
+            }
+        }
         if (g_profiles[i].hEdit) {
             editingProfileIdx = i;
             inpProfileName = g_profiles[i].profileName;
-            inpWeb = L""; inpApp = L"";
+            tempLockMode = g_profiles[i].lockMode;
+            for(int d=0; d<7; d++) editDays[d] = g_profiles[i].activeDays[d];
+            editStH = g_profiles[i].startHour; editStM = g_profiles[i].startMin;
+            editEnH = g_profiles[i].endHour; editEnM = g_profiles[i].endMin;
+            editBlockInt = g_profiles[i].blockInternet;
+            editBlockAdult = g_profiles[i].blockAdult;
+            editBlockUninst = g_profiles[i].blockUninstall;
+
+            inpWeb = L""; inpApp = L""; inpKey = L"";
             activeInput = 1;
         }
-        if (g_profiles[i].hDel) {
+        if (g_profiles[i].hDel && !g_profiles[i].isActive) {
             int r = MessageBoxA(NULL, "Are you sure you want to delete this profile?", "Delete Profile", MB_YESNO | MB_ICONWARNING);
-            if (r == IDYES) { g_profiles.erase(g_profiles.begin() + i); SaveProfiles(); break; }
+            if (r == IDYES) { 
+                LogHistoryToHiddenFolderSch(L"Deleted Profile: " + g_profiles[i].profileName);
+                g_profiles.erase(g_profiles.begin() + i); SaveProfiles(); break; 
+            }
         }
     }
 }
@@ -489,26 +1089,48 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
 // --- KEYBOARD LOGIC ---
 // ==========================================
 void ProcessScheduleBlocksKeyPress(wchar_t c) {
-    if (editingProfileIdx == -1 || activeInput == 0) return;
-    if (c >= 32 && c <= 126) {
-        if (activeInput == 1 && inpProfileName.length() < 30) inpProfileName += c;
-        if (activeInput == 2 && inpWeb.length() < 40) inpWeb += c;
-        if (activeInput == 3 && inpApp.length() < 40) inpApp += c;
+    if (s_showPassOverlay && s_isPassInputActive) {
+        if (c >= 32 && c <= 126 && s_inputPassText.length() < 20) s_inputPassText += c;
+    } else if (s_showTextUnlockOverlay && s_isTypingActive) {
+        if (c >= 32 && c <= 126 && s_currentTypingText.length() < 1000) s_currentTypingText += c;
+    } else if (editingProfileIdx != -1 && activeInput != 0) {
+        if (c >= 32 && c <= 126) {
+            if (activeInput == 1 && inpProfileName.length() < 30) inpProfileName += c;
+            if (activeInput == 2 && inpWeb.length() < 40) inpWeb += c;
+            if (activeInput == 3 && inpApp.length() < 40) inpApp += c;
+            if (activeInput == 4 && inpKey.length() < 40) inpKey += c;
+        }
     }
 }
 
 void ProcessScheduleBlocksKeyDown(WPARAM key) {
-    if (editingProfileIdx == -1) return;
-    if (key == VK_ESCAPE) { editingProfileIdx = -1; return; }
-    
-    if (key == VK_BACK) {
-        if (activeInput == 1 && !inpProfileName.empty()) inpProfileName.pop_back();
-        if (activeInput == 2 && !inpWeb.empty()) inpWeb.pop_back();
-        if (activeInput == 3 && !inpApp.empty()) inpApp.pop_back();
+    if (key == VK_ESCAPE) { 
+        if (s_showTimeOverlay || s_showPassOverlay || s_showTextUnlockOverlay) {
+            s_showTimeOverlay = false; s_showPassOverlay = false; s_showTextUnlockOverlay = false;
+            return;
+        }
+        if (editingProfileIdx != -1) { editingProfileIdx = -1; return; }
     }
-    else if (key == VK_RETURN && editingProfileIdx >= 0) {
-        if (activeInput == 2 && !inpWeb.empty()) { g_profiles[editingProfileIdx].blockedWebsites.push_back({inpWeb, false}); inpWeb = L""; }
-        if (activeInput == 3 && !inpApp.empty()) { g_profiles[editingProfileIdx].blockedApps.push_back({inpApp, false}); inpApp = L""; }
+    
+    if (s_showPassOverlay && s_isPassInputActive) {
+        if (key == VK_BACK && !s_inputPassText.empty()) s_inputPassText.pop_back();
+    } else if (s_showTextUnlockOverlay && s_isTypingActive) {
+        if (key == VK_BACK && !s_currentTypingText.empty()) s_currentTypingText.pop_back();
+    } else if (editingProfileIdx != -1) {
+        if (key == VK_BACK) {
+            if (activeInput == 1 && !inpProfileName.empty()) inpProfileName.pop_back();
+            if (activeInput == 2 && !inpWeb.empty()) inpWeb.pop_back();
+            if (activeInput == 3 && !inpApp.empty()) inpApp.pop_back();
+            if (activeInput == 4 && !inpKey.empty()) inpKey.pop_back();
+        }
+        else if (key == VK_RETURN && editingProfileIdx >= 0) {
+            if (activeInput == 2 && !inpWeb.empty()) { g_profiles[editingProfileIdx].blockedWebsites.push_back({inpWeb, false}); inpWeb = L""; }
+            if (activeInput == 3 && !inpApp.empty()) { 
+                if (inpApp.length() < 4 || inpApp.substr(inpApp.length() - 4) != L".exe") inpApp += L".exe";
+                g_profiles[editingProfileIdx].blockedApps.push_back({inpApp, false}); inpApp = L""; 
+            }
+            if (activeInput == 4 && !inpKey.empty()) { g_profiles[editingProfileIdx].blockedKeywords.push_back({inpKey, false}); inpKey = L""; }
+        }
     }
 }
 
@@ -518,8 +1140,7 @@ void ProcessScheduleBlocksMouseWheel(float x, float y, int delta) {
     int steps = (delta > 0) ? 1 : -1;
     sch_tScroll -= steps * 50.0f;
     
-    // std::max/min ব্যবহার করে ফিক্স
     float totalRows = ceil((float)g_profiles.size() / 2.0f);
-    float maxScroll = (std::max)(0.0f, (totalRows * 170.0f) - (s_ch - 100.0f));
+    float maxScroll = (std::max)(0.0f, (totalRows * 190.0f) - (s_ch - 100.0f));
     sch_tScroll = (std::max)(0.0f, (std::min)(sch_tScroll, maxScroll));
 }
