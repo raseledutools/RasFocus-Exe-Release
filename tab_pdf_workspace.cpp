@@ -1,5 +1,5 @@
 // tab_pdf_workspace.cpp
-// Adobe Acrobat Style PDF Workspace with Complete Working Features
+// Professional PDF Workspace - SumatraPDF Style with Multi-Tab Support
 
 #define _CRT_SECURE_NO_WARNINGS
 #include "tab_pdf_workspace.h"
@@ -13,10 +13,12 @@
 #include <sstream>
 #include <Shlwapi.h>
 #include <WebView2.h>
-#include <wrl.h>         
-#include <wrl/event.h>   
+#include <wrl.h>
+#include <wrl/event.h>
+#include <commdlg.h>
 
 #pragma comment(lib, "Shlwapi.lib")
+#pragma comment(lib, "Comdlg32.lib")
 
 using namespace Gdiplus;
 using namespace Microsoft::WRL;
@@ -24,9 +26,9 @@ using namespace std;
 
 extern HWND hParentWnd;
 extern float g_scaleFactor;
-extern wstring currentWorkspacePdf; 
+extern wstring currentWorkspacePdf;
 
-// --- WebView2 Global Variables ---
+// WebView2 Global
 HWND g_hAcrobatWnd = NULL;
 HWND g_hWebViewWnd = NULL;
 ComPtr<ICoreWebView2Environment> g_webViewEnv = nullptr;
@@ -35,683 +37,295 @@ ComPtr<ICoreWebView2> g_webView = nullptr;
 wstring g_acrobatPdfPath = L"";
 bool g_webViewInitialized = false;
 
-// Forward Declarations
 HRESULT InitializeWebView2(HWND hWnd, HWND hHostWnd);
 LRESULT CALLBACK AcrobatViewerWndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp);
 
 // ==========================================
-// 🎨 HTML/CSS/JS UI - SPLIT INTO MULTIPLE SMALL PARTS 
+// HTML - COMPLETE PROFESSIONAL PDF VIEWER
 // ==========================================
 wstring GetAcrobatHTML() {
-    
-    // --- PART 1: HTML Head, Fonts, Libs & CSS Variables ---
-    wstring htmlPart1 = LR"HTML(
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PDF Workspace - Acrobat Edition</title>
+    wstring h = LR"HTML(
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>PDF Pro</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet" />
-
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
 <style>
-:root {
-    --adobe-red: #EB1C24;
-    --adobe-red-hover: #BA1617;
-    --bg-dark: #333333;
-    --bg-panel: #F4F4F4;
-    --bg-doc: #E1E1E1;
-    --border-color: #CCCCCC;
-    --text-primary: #2C2C2C;
-    --text-light: #FFFFFF;
-    --text-muted: #757575;
-    --hover-bg: #EAEAEA;
-    --selected-bg: #FBECEE;
-    --topbar-height: 48px;
-    --toolbar-height: 40px;
-    --left-sidebar-width: 240px;
-    --right-sidebar-width: 280px;
-}
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: 'Segoe UI', system-ui, sans-serif; height: 100vh; overflow: hidden; display: flex; flex-direction: column; background: var(--bg-doc); color: var(--text-primary); user-select: none; }
-.material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; font-size: 20px; }
-)HTML";
-
-    // --- PART 2: UI Modals, Toasts & Layout CSS ---
-    wstring htmlPart2 = LR"HTML(
-.toast-container { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
-.toast { padding: 10px 24px; border-radius: 4px; color: white; background: #323232; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); animation: fadeInUp 0.3s ease; }
-@keyframes fadeInUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-
-.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; }
-.modal-overlay.show { display: flex; }
-.modal { background: white; border-radius: 6px; padding: 24px; min-width: 350px; box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
-.modal h3 { font-size: 18px; margin-bottom: 16px; font-weight: 600; }
-.modal input[type="file"], .modal input[type="number"], .modal input[type="text"] { width: 100%; padding: 8px; margin-bottom: 16px; border: 1px solid var(--border-color); border-radius: 4px; }
-.modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
-.btn { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500; transition: 0.2s; }
-.btn-primary { background: var(--adobe-red); color: white; }
-.btn-primary:hover { background: var(--adobe-red-hover); }
-.btn-secondary { background: transparent; border: 1px solid var(--border-color); color: var(--text-primary); }
-.btn-secondary:hover { background: var(--hover-bg); }
-
-.topbar { height: var(--topbar-height); background: var(--bg-dark); display: flex; align-items: center; padding: 0 16px; color: var(--text-light); }
-.topbar-menu { display: flex; gap: 20px; font-size: 13px; }
-.topbar-item { cursor: pointer; opacity: 0.8; transition: opacity 0.2s; }
-.topbar-item:hover { opacity: 1; }
-.topbar-title { margin-left: auto; margin-right: auto; font-size: 14px; font-weight: 500; opacity: 0.9; }
-.topbar-actions { display: flex; gap: 12px; margin-left: auto; }
-.topbar-icon { cursor: pointer; opacity: 0.8; }
-.topbar-icon:hover { opacity: 1; }
-)HTML";
-
-    // --- PART 3: Workspace Layout CSS & Night Mode ---
-    wstring htmlPart3 = LR"HTML(
-.toolbar { height: var(--toolbar-height); background: white; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; padding: 0 16px; gap: 16px; font-size: 14px; }
-.tool-btn { display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 6px 10px; border-radius: 4px; color: var(--text-primary); transition: 0.2s; }
-.tool-btn:hover { background: var(--hover-bg); }
-.tool-btn.active { background: var(--selected-bg); color: var(--adobe-red); }
-.divider { width: 1px; height: 20px; background: var(--border-color); }
-
-.workspace { flex: 1; display: flex; overflow: hidden; }
-.left-sidebar { width: var(--left-sidebar-width); background: var(--bg-panel); border-right: 1px solid var(--border-color); display: flex; flex-direction: column; }
-.sidebar-header { padding: 12px 16px; font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); border-bottom: 1px solid var(--border-color); }
-.thumbnail-list { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
-.thumb-item { border: 1px solid var(--border-color); background: white; padding: 4px; cursor: pointer; transition: 0.2s; position: relative; }
-.thumb-item:hover { border-color: var(--adobe-red); }
-.thumb-item.active { border: 2px solid var(--adobe-red); }
-.thumb-item canvas { width: 100%; height: auto; display: block; }
-.thumb-label { text-align: center; font-size: 11px; margin-top: 4px; color: var(--text-muted); }
-
-.right-sidebar { width: var(--right-sidebar-width); background: var(--bg-panel); border-left: 1px solid var(--border-color); display: flex; flex-direction: column; overflow-y: auto; }
-.tool-pane-btn { display: flex; align-items: center; gap: 12px; padding: 12px 16px; cursor: pointer; border-bottom: 1px solid var(--border-color); background: white; transition: 0.2s; }
-.tool-pane-btn:hover { background: var(--selected-bg); }
-.tool-pane-btn .material-symbols-outlined { color: var(--adobe-red); font-size: 24px; }
-.tool-pane-text { font-size: 14px; font-weight: 500; }
-
-.pdf-viewer-area { flex: 1; overflow-y: auto; display: flex; justify-content: center; padding: 24px; background: var(--bg-doc); }
-.pdf-container { display: flex; flex-direction: column; gap: 20px; align-items: center; width: 100%; cursor: default; }
-.pdf-page-wrapper { background: white; box-shadow: 0 2px 8px rgba(0,0,0,0.15); margin-bottom: 20px; position: relative; }
-.pdf-page-wrapper canvas { display: block; }
-
-.loading-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 2000; flex-direction: column; justify-content: center; align-items: center; color: white; font-size: 16px; }
-.loading-overlay.show { display: flex; }
-.spinner { border: 4px solid rgba(255,255,255,0.3); border-top: 4px solid white; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin-bottom: 16px; }
-@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-
-/* Night Mode & Read Mode */
-body.night-mode .pdf-viewer-area { background: #1a1a1a !important; }
-body.night-mode .toolbar { background: #252525 !important; border-color: #333 !important; color: #e0e0e0 !important; }
-body.night-mode .toolbar .tool-btn { color: #e0e0e0 !important; }
-body.night-mode .toolbar .tool-btn:hover { background: #333 !important; }
-body.night-mode .toolbar .divider { background: #333 !important; }
-body.night-mode .left-sidebar, body.night-mode .right-sidebar { background: #252525 !important; border-color: #333 !important; }
-body.night-mode .sidebar-header { color: #aaa !important; border-color: #333 !important; }
-body.night-mode .thumb-item { background: #1a1a1a !important; border-color: #333 !important; }
-body.night-mode .tool-pane-btn { background: #252525 !important; border-color: #333 !important; color: #e0e0e0 !important; }
-body.night-mode .tool-pane-btn:hover { background: #333 !important; }
-body.night-mode .pdf-page-wrapper { box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
-body.read-mode .toolbar, body.read-mode .left-sidebar, body.read-mode .right-sidebar { display: none !important; }
-</style>
-</head>
-<body>
-<div class="toast-container" id="toast-container"></div>
-<div class="loading-overlay" id="loading-overlay"><div class="spinner"></div><div id="loading-text">Processing...</div></div>
-<div class="modal-overlay" id="modal-overlay"><div class="modal" id="modal-content"></div></div>
-)HTML";
-
-    // --- PART 4: HTML Structure (Body, Toolbar, Sidebars) ---
-    wstring htmlPart4 = LR"HTML(
+:root{--red:#EB1C24;--rh:#BA1617;--dk:#2C2C2C;--pn:#F0F0F0;--doc:#E8E8E8;--bd:#D0D0D0;--tx:#222;--mu:#777;--hv:#E5E5E5;--th:44px;--tbh:38px;--lsw:200px;--rsw:240px}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',sans-serif;height:100vh;overflow:hidden;display:flex;flex-direction:column;background:var(--doc);color:var(--tx);user-select:none}
+.ms{font-variation-settings:'FILL'0,'wght'400,'GRAD'0,'opsz'24;font-size:20px}
+.toast-container{position:fixed;bottom:30px;left:50%;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;gap:8px}
+.toast{padding:10px 24px;border-radius:4px;color:#fff;background:#323232;font-size:13px;box-shadow:0 4px 12px rgba(0,0,0,0.2);animation:fu 0.3s}
+@keyframes fu{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;justify-content:center;align-items:center}
+.modal-overlay.show{display:flex}
+.modal{background:#fff;border-radius:6px;padding:20px;min-width:340px;box-shadow:0 8px 24px rgba(0,0,0,0.2)}
+.modal h3{font-size:17px;margin-bottom:14px;font-weight:600}
+.modal input{width:100%;padding:8px;margin-bottom:14px;border:1px solid var(--bd);border-radius:4px}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end}
+.btn{padding:7px 14px;border:none;border-radius:4px;cursor:pointer;font-size:13px;font-weight:500;transition:0.2s}
+.btn-primary{background:var(--red);color:#fff}.btn-primary:hover{background:var(--rh)}
+.btn-secondary{background:transparent;border:1px solid var(--bd);color:var(--tx)}.btn-secondary:hover{background:var(--hv)}
+.topbar{height:var(--th);background:var(--dk);display:flex;align-items:center;padding:0 12px;color:#fff;gap:8px}
+.topbar-menu{display:flex;gap:16px;font-size:12px}
+.topbar-item{cursor:pointer;opacity:0.8;transition:0.2s}.topbar-item:hover{opacity:1}
+.topbar-title{flex:1;text-align:center;font-size:13px;font-weight:500;opacity:0.9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topbar-actions{display:flex;gap:10px}
+.topbar-icon{cursor:pointer;opacity:0.8}.topbar-icon:hover{opacity:1}
+.tab-bar{height:34px;background:#444;display:flex;align-items:center;padding:0 4px;gap:2px;overflow-x:auto;overflow-y:hidden}
+.tab-item{display:flex;align-items:center;gap:6px;padding:4px 10px;background:#555;color:#ccc;font-size:11px;border-radius:4px 4px 0 0;cursor:pointer;white-space:nowrap;min-width:80px;max-width:180px;transition:0.2s}
+.tab-item.active{background:#666;color:#fff}
+.tab-item:hover{background:#6a6a6a}
+.tab-close{margin-left:auto;font-size:14px;opacity:0.6;cursor:pointer;line-height:1}.tab-close:hover{opacity:1;color:#f44}
+.tab-add{display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:4px;cursor:pointer;color:#aaa;font-size:18px;transition:0.2s;flex-shrink:0}.tab-add:hover{background:#555;color:#fff}
+.toolbar{height:var(--tbh);background:#fff;border-bottom:1px solid var(--bd);display:flex;align-items:center;padding:0 10px;gap:12px;font-size:13px}
+.tool-btn{display:flex;align-items:center;gap:4px;cursor:pointer;padding:4px 8px;border-radius:4px;color:var(--tx);transition:0.2s}
+.tool-btn:hover{background:var(--hv)}.tool-btn.active{background:#FBECEE;color:var(--red)}
+.divider{width:1px;height:18px;background:var(--bd)}
+.workspace{flex:1;display:flex;overflow:hidden}
+.left-sidebar{width:var(--lsw);background:var(--pn);border-right:1px solid var(--bd);display:flex;flex-direction:column;transition:0.3s}
+.left-sidebar.hidden{width:0!important;border:none!important;overflow:hidden}
+.sidebar-header{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;font-size:11px;font-weight:600;text-transform:uppercase;color:var(--mu);border-bottom:1px solid var(--bd)}
+.sidebar-toggle{cursor:pointer;opacity:0.6;font-size:16px}.sidebar-toggle:hover{opacity:1}
+.thumb-list{flex:1;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:8px}
+.thumb-item{border:1px solid var(--bd);background:#fff;padding:3px;cursor:pointer;transition:0.2s}
+.thumb-item:hover{border-color:var(--red)}
+.thumb-item.active{border:2px solid var(--red)}
+.thumb-item canvas{width:100%;height:auto;display:block}
+.thumb-label{text-align:center;font-size:10px;margin-top:2px;color:var(--mu)}
+.right-sidebar{width:var(--rsw);background:var(--pn);border-left:1px solid var(--bd);display:flex;flex-direction:column;overflow-y:auto;transition:0.3s}
+.right-sidebar.hidden{width:0!important;border:none!important;overflow:hidden}
+.rs-header{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;font-size:11px;font-weight:600;text-transform:uppercase;color:var(--mu);border-bottom:1px solid var(--bd)}
+.tool-pane-btn{display:flex;align-items:center;gap:8px;padding:10px 12px;cursor:pointer;border-bottom:1px solid var(--bd);background:#fff;transition:0.2s}
+.tool-pane-btn:hover{background:var(--hv)}.tool-pane-btn .ms{color:var(--red);font-size:22px}
+.tool-pane-text{font-size:13px;font-weight:500}
+.pdf-viewer-area{flex:1;overflow-y:auto;display:flex;justify-content:center;padding:20px;background:var(--doc)}
+.pdf-container{display:flex;flex-direction:column;gap:16px;align-items:center;width:100%;cursor:default}
+.pdf-page-wrapper{background:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.12);margin-bottom:16px;position:relative}
+.pdf-page-wrapper canvas{display:block;max-width:100%;height:auto}
+.loading-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:2000;flex-direction:column;justify-content:center;align-items:center;color:#fff;font-size:15px}
+.loading-overlay.show{display:flex}
+.spin{border:4px solid rgba(255,255,255,0.3);border-top:4px solid #fff;border-radius:50%;width:36px;height:36px;animation:spin 1s linear infinite;margin-bottom:12px}
+@keyframes spin{0%{transform:rotate(0)}100%{transform:rotate(360deg)}}
+body.night .pdf-viewer-area{background:#1a1a1a!important}
+body.night .toolbar{background:#252525!important;border-color:#333!important;color:#e0e0e0!important}
+body.night .tool-btn{color:#e0e0e0!important}.night .tool-btn:hover{background:#333!important}
+body.night .divider{background:#333!important}
+body.night .left-sidebar,body.night .right-sidebar{background:#252525!important;border-color:#333!important}
+body.night .sidebar-header,body.night .rs-header{color:#aaa!important;border-color:#333!important}
+body.night .thumb-item{background:#1a1a1a!important;border-color:#333!important}
+body.night .tool-pane-btn{background:#252525!important;border-color:#333!important;color:#e0e0e0!important}
+body.night .tool-pane-btn:hover{background:#333!important}
+body.night .pdf-page-wrapper{box-shadow:0 4px 15px rgba(0,0,0,0.5)}
+body.read .toolbar,body.read .left-sidebar,body.read .right-sidebar{display:none!important}
+body.read .tab-bar{display:none!important}
+</style></head><body>
+<div class="toast-container" id="tc"></div>
+<div class="loading-overlay" id="lo"><div class="spin"></div><div id="lt">Processing...</div></div>
+<div class="modal-overlay" id="mo"><div class="modal" id="mc"></div></div>
 <div class="topbar">
-    <div class="topbar-menu">
-        <div class="topbar-item" onclick="document.getElementById('fileInput').click()">File</div>
-        <div class="topbar-item" onclick="downloadCurrentPDF()">Save</div>
-    </div>
-    <div class="topbar-title" id="app-title">RasFocus PDF Pro</div>
-    <div class="topbar-actions">
-        <span class="material-symbols-outlined topbar-icon" onclick="toggleNightMode()" title="Toggle Night Mode">dark_mode</span>
-        <span class="material-symbols-outlined topbar-icon" onclick="toggleReadMode()" title="Toggle Read Mode" id="read-mode-icon">menu_book</span>
-        <span class="material-symbols-outlined topbar-icon" onclick="downloadCurrentPDF()" title="Download PDF">download</span>
-    </div>
-</div>
-
+<div class="topbar-menu"><div class="topbar-item" onclick="of()">Open</div><div class="topbar-item" onclick="sf()">Save</div><div class="topbar-item" onclick="saf()">Save As</div></div>
+<div class="topbar-title" id="at">PDF Pro</div>
+<div class="topbar-actions">
+<span class="ms topbar-icon" onclick="tn()" title="Night Mode">dark_mode</span>
+<span class="ms topbar-icon" onclick="tr()" title="Read Mode" id="ri">menu_book</span>
+<span class="ms topbar-icon" onclick="tl()" id="lti" title="Toggle Left">dock_to_left</span>
+<span class="ms topbar-icon" onclick="trt()" id="rti" title="Toggle Right">dock_to_right</span>
+</div></div>
+<div class="tab-bar" id="tb"></div>
 <div class="toolbar">
-    <div class="tool-btn active" onclick="setStudyTool(null)" id="tool-pointer" title="Normal Pointer"><span class="material-symbols-outlined">pan_tool</span></div>
-    <div class="divider"></div>
-    <span style="font-weight:600; font-size:12px; color:var(--text-muted);">STUDY TOOLS:</span>
-    <div class="tool-btn" onclick="setStudyTool('highlight')" id="tool-highlight" title="Highlight Text"><span class="material-symbols-outlined" style="color: #FFC107;">format_ink_highlighter</span></div>
-    <div class="tool-btn" onclick="setStudyTool('note')" id="tool-note" title="Add Sticky Note"><span class="material-symbols-outlined" style="color: #4CAF50;">speaker_notes</span></div>
-    <div class="tool-btn" onclick="setStudyTool('link')" id="tool-link" title="Add URL Link"><span class="material-symbols-outlined" style="color: #2196F3;">link</span></div>
-    <div class="divider"></div>
-    <div class="tool-btn" onclick="zoomOut()"><span class="material-symbols-outlined">remove</span></div>
-    <span id="zoom-text" style="font-size:13px;width:40px;text-align:center;">100%</span>
-    <div class="tool-btn" onclick="zoomIn()"><span class="material-symbols-outlined">add</span></div>
-    <div class="divider"></div>
-    <div class="tool-btn" onclick="rotatePDF()"><span class="material-symbols-outlined">rotate_right</span></div>
+<div class="tool-btn active" onclick="ss(null)" id="tp"><span class="ms">pan_tool</span></div>
+<div class="divider"></div>
+<span style="font-weight:600;font-size:11px;color:var(--mu)">TOOLS:</span>
+<div class="tool-btn" onclick="ss('hl')" id="thl"><span class="ms" style="color:#FFC107">format_ink_highlighter</span></div>
+<div class="tool-btn" onclick="ss('nt')" id="tnt"><span class="ms" style="color:#4CAF50">speaker_notes</span></div>
+<div class="tool-btn" onclick="ss('lk')" id="tlk"><span class="ms" style="color:#2196F3">link</span></div>
+<div class="divider"></div>
+<div class="tool-btn" onclick="zo()"><span class="ms">remove</span></div>
+<span id="zt" style="font-size:12px;width:36px;text-align:center">100%</span>
+<div class="tool-btn" onclick="zi()"><span class="ms">add</span></div>
+<div class="divider"></div>
+<div class="tool-btn" onclick="rp()"><span class="ms">rotate_right</span></div>
 </div>
-
 <div class="workspace">
-    <div class="left-sidebar">
-        <div class="sidebar-header">Page Thumbnails</div>
-        <div class="thumbnail-list" id="thumbnail-list"></div>
-    </div>
-
-    <div class="pdf-viewer-area" id="viewer-area">
-        <div class="pdf-container" id="pdf-container">
-            <div style="margin-top: 100px; text-align: center; color: var(--text-muted);">
-                <span class="material-symbols-outlined" style="font-size: 64px; color: #ccc;">description</span>
-                <p style="margin-top: 16px; font-size: 16px;">Open a PDF to begin</p>
-                <button class="btn btn-primary" style="margin-top: 16px;" onclick="document.getElementById('fileInput').click()">Open File</button>
-            </div>
-        </div>
-    </div>
-
-    <div class="right-sidebar">
-        <div class="sidebar-header">Advanced Tools</div>
-        <div class="tool-pane-btn" onclick="uiShowMergeModal()"><span class="material-symbols-outlined">library_add</span><span class="tool-pane-text">Combine Files</span></div>
-        <div class="tool-pane-btn" onclick="uiShowSplitModal()"><span class="material-symbols-outlined">splitscreen</span><span class="tool-pane-text">Split PDF</span></div>
-        <div class="tool-pane-btn" onclick="uiShowExtractModal()"><span class="material-symbols-outlined">file_upload</span><span class="tool-pane-text">Extract Pages</span></div>
-        <div class="tool-pane-btn" onclick="uiShowDeleteModal()"><span class="material-symbols-outlined">delete</span><span class="tool-pane-text">Delete Pages</span></div>
-        <div class="tool-pane-btn" onclick="actionPDFtoImage()"><span class="material-symbols-outlined">image</span><span class="tool-pane-text">Export to Image (ZIP)</span></div>
-        <div class="tool-pane-btn" onclick="actionPDFtoText()"><span class="material-symbols-outlined">article</span><span class="tool-pane-text">Export Text (.txt)</span></div>
-        <div class="tool-pane-btn" onclick="actionPerformOCR()"><span class="material-symbols-outlined">document_scanner</span><span class="tool-pane-text">OCR Scan (English)</span></div>
-        <div class="tool-pane-btn" onclick="actionAddWatermark()"><span class="material-symbols-outlined">branding_watermark</span><span class="tool-pane-text">Add Watermark</span></div>
-        <div class="tool-pane-btn" onclick="actionAddStamp()"><span class="material-symbols-outlined">verified</span><span class="tool-pane-text">Add "APPROVED" Stamp</span></div>
-    </div>
+<div class="left-sidebar" id="ls">
+<div class="sidebar-header"><span>Pages</span><span class="ms sidebar-toggle" onclick="tl()">chevron_left</span></div>
+<div class="thumb-list" id="tlst"></div>
 </div>
-<input type="file" id="fileInput" accept=".pdf" style="display:none;" onchange="handleFileOpen(event)">
-)HTML";
-
-    // --- PART 5: JS Base, Loading, Render Viewers ---
-    wstring htmlPart5 = LR"HTML(
+<div class="pdf-viewer-area" id="va"><div class="pdf-container" id="pc">
+<div style="margin-top:80px;text-align:center;color:var(--mu)">
+<span class="ms" style="font-size:60px;color:#ccc">description</span>
+<p style="margin-top:12px;font-size:15px">Open PDF or drag here</p>
+<button class="btn btn-primary" style="margin-top:12px" onclick="of()">Open File</button>
+</div></div></div>
+<div class="right-sidebar" id="rs">
+<div class="rs-header"><span>Tools</span><span class="ms sidebar-toggle" onclick="trt()">chevron_right</span></div>
+<div class="tool-pane-btn" onclick="sm()"><span class="ms">library_add</span><span class="tool-pane-text">Merge</span></div>
+<div class="tool-pane-btn" onclick="ssp()"><span class="ms">splitscreen</span><span class="tool-pane-text">Split</span></div>
+<div class="tool-pane-btn" onclick="sep()"><span class="ms">file_upload</span><span class="tool-pane-text">Extract</span></div>
+<div class="tool-pane-btn" onclick="sdp()"><span class="ms">delete</span><span class="tool-pane-text">Delete</span></div>
+<div class="tool-pane-btn" onclick="pi()"><span class="ms">image</span><span class="tool-pane-text">To Images</span></div>
+<div class="tool-pane-btn" onclick="pt()"><span class="ms">article</span><span class="tool-pane-text">To Text</span></div>
+<div class="tool-pane-btn" onclick="ocr()"><span class="ms">document_scanner</span><span class="tool-pane-text">OCR</span></div>
+<div class="tool-pane-btn" onclick="aw()"><span class="ms">branding_watermark</span><span class="tool-pane-text">Watermark</span></div>
+<div class="tool-pane-btn" onclick="as()"><span class="ms">verified</span><span class="tool-pane-text">Stamp</span></div>
+</div></div>
+<input type="file" id="fi" accept=".pdf" style="display:none" onchange="ho(event)">
+<input type="file" id="mfi" accept=".pdf" multiple style="display:none">
 <script>
-let currentPdfBytes = null; let currentPdfjsDoc = null; let currentZoom = 1.0; let currentRotation = 0;
-
-function showToast(msg) {
-    const container = document.getElementById('toast-container');
-    const toast = document.createElement('div');
-    toast.className = 'toast'; toast.textContent = msg;
-    container.appendChild(toast); setTimeout(() => toast.remove(), 3000);
-}
-function showLoading(show, text="Processing...") {
-    document.getElementById('loading-overlay').classList.toggle('show', show);
-    document.getElementById('loading-text').textContent = text;
-}
-function showModal(title, htmlContent) {
-    document.getElementById('modal-content').innerHTML = `<h3>${title}</h3>${htmlContent}`;
-    document.getElementById('modal-overlay').classList.add('show');
-}
-function closeModal() { document.getElementById('modal-overlay').classList.remove('show'); }
-
-async function handleFileOpen(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    document.getElementById('app-title').textContent = file.name;
-    const arrayBuffer = await file.arrayBuffer();
-    await loadPDF(new Uint8Array(arrayBuffer));
-}
-
-// Called by C++ WebView2 natively
-async function loadPdfFromPath(path) {
-    try {
-        const response = await fetch('file:///' + path.replace(/\\/g, '/'));
-        const arrayBuffer = await response.arrayBuffer();
-        const pathParts = path.split('\\');
-        document.getElementById('app-title').textContent = pathParts[pathParts.length - 1];
-        await loadPDF(new Uint8Array(arrayBuffer));
-    } catch (e) { showToast("Failed to load PDF."); }
-}
-
-async function loadPDF(uint8Array) {
-    try {
-        currentPdfBytes = uint8Array;
-        currentPdfjsDoc = await pdfjsLib.getDocument({data: uint8Array}).promise;
-        currentZoom = 1.0; currentRotation = 0;
-        await renderViewer(); await renderThumbnails();
-        showToast("PDF Loaded Successfully");
-    } catch (e) { console.error(e); showToast("Error rendering PDF"); }
-}
-
-async function renderViewer() {
-    if (!currentPdfjsDoc) return;
-    const container = document.getElementById('pdf-container'); container.innerHTML = '';
-    document.getElementById('zoom-text').textContent = Math.round(currentZoom * 100) + '%';
-    for (let i = 1; i <= currentPdfjsDoc.numPages; i++) {
-        const page = await currentPdfjsDoc.getPage(i);
-        const viewport = page.getViewport({ scale: currentZoom, rotation: currentRotation });
-        const wrapper = document.createElement('div'); wrapper.className = 'pdf-page-wrapper'; wrapper.id = `page-${i}`;
-        const canvas = document.createElement('canvas'); const context = canvas.getContext('2d');
-        canvas.height = viewport.height; canvas.width = viewport.width;
-        wrapper.appendChild(canvas); container.appendChild(wrapper);
-        await page.render({ canvasContext: context, viewport: viewport }).promise;
-    }
-}
-
-async function renderThumbnails() {
-    if (!currentPdfjsDoc) return;
-    const thumbList = document.getElementById('thumbnail-list'); thumbList.innerHTML = '';
-    for (let i = 1; i <= currentPdfjsDoc.numPages; i++) {
-        const page = await currentPdfjsDoc.getPage(i);
-        const viewport = page.getViewport({ scale: 0.2, rotation: currentRotation });
-        const item = document.createElement('div'); item.className = 'thumb-item';
-        item.onclick = () => document.getElementById(`page-${i}`).scrollIntoView({behavior: 'smooth'});
-        const canvas = document.createElement('canvas'); canvas.height = viewport.height; canvas.width = viewport.width;
-        const label = document.createElement('div'); label.className = 'thumb-label'; label.textContent = i;
-        item.appendChild(canvas); item.appendChild(label); thumbList.appendChild(item);
-        await page.render({ canvasContext: canvas.getContext('2d'), viewport: viewport }).promise;
-    }
-}
-function zoomIn() { if (currentZoom < 3.0) { currentZoom += 0.2; renderViewer(); } }
-function zoomOut() { if (currentZoom > 0.4) { currentZoom -= 0.2; renderViewer(); } }
-function rotatePDF() { currentRotation = (currentRotation + 90) % 360; renderViewer(); renderThumbnails(); }
+let tabs=[],activeTab=-1,cz=1.0,cr=0,st=null,lv=true,rv=true;
+function sts(m){let c=document.getElementById('tc'),t=document.createElement('div');t.className='toast';t.textContent=m;c.appendChild(t);setTimeout(()=>t.remove(),2500)}
+function sl(s,t="Working..."){document.getElementById('lo').classList.toggle('show',s);document.getElementById('lt').textContent=t}
+function smd(t,h){document.getElementById('mc').innerHTML=`<h3>${t}</h3>${h}`;document.getElementById('mo').classList.add('show')}
+function cmd(){document.getElementById('mo').classList.remove('show')}
+function of(){document.getElementById('fi').click()}
+function sf(){if(activeTab>=0&&tabs[activeTab])db(tabs[activeTab].bytes,tabs[activeTab].name)}
+function saf(){if(activeTab>=0&&tabs[activeTab]){let n=prompt('Save as:',tabs[activeTab].name);if(n)db(tabs[activeTab].bytes,n)}}
+function db(b,n){let bl=new Blob([b],{type:'application/pdf'});saveAs(bl,n);sts('Saved: '+n)}
+function tl(){lv=!lv;document.getElementById('ls').classList.toggle('hidden',!lv);document.getElementById('lti').style.color=lv?'':'var(--red)';sts(lv?'Sidebar shown':'Sidebar hidden')}
+function trt(){rv=!rv;document.getElementById('rs').classList.toggle('hidden',!rv);document.getElementById('rti').style.color=rv?'':'var(--red)';sts(rv?'Tools shown':'Tools hidden')}
+function tn(){document.body.classList.toggle('night');sts(document.body.classList.contains('night')?'Night Mode':'Light Mode')}
+function tr(){document.body.classList.toggle('read');let r=document.body.classList.contains('read'),i=document.getElementById('ri');i.textContent=r?'fullscreen_exit':'menu_book';i.style.color=r?'var(--red)':'';if(r&&cz<1.5)cz=1.5;if(!r)cz=1.0;setTimeout(rv,100);sts(r?'Read Mode':'Normal Mode')}
+function atab(t){activeTab=t;rv();rth();sts('Tab '+(t+1))}
+function ctab(t){tabs.splice(t,1);if(activeTab>=tabs.length)activeTab=tabs.length-1;rtb();rv();rth()}
+function ntab(){of()}
+function rtb(){let b=document.getElementById('tb');b.innerHTML='';tabs.forEach((t,i)=>{let d=document.createElement('div');d.className='tab-item'+(i===activeTab?' active':'');d.innerHTML=`<span>${t.name}</span><span class="tab-close" onclick="event.stopPropagation();ctab(${i})">&times;</span>`;d.onclick=()=>atab(i);b.appendChild(d)});let a=document.createElement('div');a.className='tab-add';a.innerHTML='+';a.onclick=ntab;b.appendChild(a)}
+function ho(e){let f=e.target.files[0];if(!f)return;let r=new FileReader();r.onload=async function(){let u=new Uint8Array(r.result);tabs.push({name:f.name,bytes:u,doc:null});activeTab=tabs.length-1;rtb();await lp(u);sts('Loaded: '+f.name)};r.readAsArrayBuffer(f)}
+async function lpp(p){try{let r=await fetch('file:///'+p.replace(/\\/g,'/'));let ab=await r.arrayBuffer();let n=p.split('\\').pop();tabs.push({name:n,bytes:new Uint8Array(ab),doc:null});activeTab=tabs.length-1;rtb();await lp(new Uint8Array(ab))}catch(e){sts('Load failed')}}
+async function lp(u){try{tabs[activeTab].bytes=u;tabs[activeTab].doc=await pdfjsLib.getDocument({data:u}).promise;cz=1.0;cr=0;document.getElementById('at').textContent=tabs[activeTab].name;await rv();await rth();sts('Ready')}catch(e){sts('Error loading PDF')}}
+async function rv(){let d=tabs[activeTab]?tabs[activeTab].doc:null;let c=document.getElementById('pc');c.innerHTML='';if(!d){c.innerHTML=`<div style="margin-top:80px;text-align:center;color:var(--mu)"><span class="ms" style="font-size:60px;color:#ccc">description</span><p style="margin-top:12px;font-size:15px">No PDF open</p></div>`;return}document.getElementById('zt').textContent=Math.round(cz*100)+'%';for(let i=1;i<=d.numPages;i++){let p=await d.getPage(i);let v=p.getViewport({scale:cz,rotation:cr});let w=document.createElement('div');w.className='pdf-page-wrapper';w.id='pg-'+i;let cv=document.createElement('canvas');cv.height=v.height;cv.width=v.width;w.appendChild(cv);c.appendChild(w);await p.render({canvasContext:cv.getContext('2d'),viewport:v}).promise}}
+async function rth(){let d=tabs[activeTab]?tabs[activeTab].doc:null;let l=document.getElementById('tlst');l.innerHTML='';if(!d)return;for(let i=1;i<=d.numPages;i++){let p=await d.getPage(i);let v=p.getViewport({scale:0.18,rotation:cr});let it=document.createElement('div');it.className='thumb-item';it.onclick=()=>document.getElementById('pg-'+i).scrollIntoView({behavior:'smooth'});let cv=document.createElement('canvas');cv.height=v.height;cv.width=v.width;let lb=document.createElement('div');lb.className='thumb-label';lb.textContent=i;it.appendChild(cv);it.appendChild(lb);l.appendChild(it);await p.render({canvasContext:cv.getContext('2d'),viewport:v}).promise}}
+function zi(){if(cz<3.0){cz+=0.2;rv()}}
+function zo(){if(cz>0.4){cz-=0.2;rv()}}
+function rp(){cr=(cr+90)%360;rv();rth()}
+function ss(t){st=t;document.querySelectorAll('.toolbar .tool-btn').forEach(b=>b.classList.remove('active'));if(t==='hl')document.getElementById('thl').classList.add('active');else if(t==='nt')document.getElementById('tnt').classList.add('active');else if(t==='lk')document.getElementById('tlk').classList.add('active');else{document.getElementById('tp').classList.add('active');st=null}document.getElementById('pc').style.cursor=st?'crosshair':'default';sts(st?'Tool: '+st.toUpperCase():'Normal mode')}
+document.getElementById('pc').addEventListener('click',async(e)=>{if(!st||activeTab<0||!tabs[activeTab])return;let w=e.target.closest('.pdf-page-wrapper');if(!w)return;let pi=parseInt(w.id.split('-')[1])-1;let r=e.target.getBoundingClientRect();let cx=e.clientX-r.left,cy=e.clientY-r.top;sl(true,'Applying '+st+'...');try{let d=await PDFLib.PDFDocument.load(tabs[activeTab].bytes);let p=d.getPages()[pi];let{width,height}=p.getSize();let px=(cx/r.width)*width,py=height-((cy/r.height)*height);if(st==='hl'){p.drawRectangle({x:px,y:py-5,width:120,height:15,color:PDFLib.rgb(1,1,0),opacity:0.4,blendMode:PDFLib.BlendMode.Multiply})}else if(st==='nt'){let n=prompt('Note:');if(n){p.drawRectangle({x:px,y:py-30,width:200,height:40,color:PDFLib.rgb(0.98,0.96,0.84),borderColor:PDFLib.rgb(0.8,0.6,0.2),borderWidth:1});p.drawText('📝 '+n,{x:px+5,y:py-15,size:12,color:PDFLib.rgb(0,0,0)})}}else if(st==='lk'){let u=prompt('URL:');if(u){p.drawText('🔗 '+u,{x:px,y:py,size:10,color:PDFLib.rgb(0,0,1)});let a=d.context.obj({Type:'Annot',Subtype:'Link',Rect:[px,py-5,px+150,py+10],Border:[0,0,0],A:{Type:'Action',S:'URI',URI:PDFLib.PDFString.of(u)}});let ar=d.context.register(a);let an=p.node.Annots();if(!an){an=d.context.obj([]);p.node.set(PDFLib.PDFName.of('Annots'),an)}an.push(ar)}}tabs[activeTab].bytes=await d.save();await lp(tabs[activeTab].bytes)}catch(e){sts('Error')}sl(false)})
+async function aw(){if(activeTab<0)return sts('Open PDF');let t=prompt('Watermark:','DRAFT');if(!t)return;sl(true,'Adding...');try{let d=await PDFLib.PDFDocument.load(tabs[activeTab].bytes);let{rgb,degrees}=PDFLib;d.getPages().forEach(p=>{let{w,h}=p.getSize();p.drawText(t,{x:w/2-150,y:h/2,size:60,color:rgb(0.9,0.2,0.2),opacity:0.3,rotate:degrees(45)})});tabs[activeTab].bytes=await d.save();await lp(tabs[activeTab].bytes);sts('Done')}catch(e){sts('Failed')}sl(false)}
+async function as(){if(activeTab<0)return sts('Open PDF');sl(true,'Stamping...');try{let d=await PDFLib.PDFDocument.load(tabs[activeTab].bytes);let p=d.getPages()[0];let{w,h}=p.getSize();let{rgb}=PDFLib;p.drawRectangle({x:w-220,y:h-100,width:180,height:50,borderColor:rgb(0.1,0.6,0.1),borderWidth:3});p.drawText('APPROVED',{x:w-200,y:h-85,size:30,color:rgb(0.1,0.6,0.1)});tabs[activeTab].bytes=await d.save();await lp(tabs[activeTab].bytes);sts('Done')}catch(e){sts('Failed')}sl(false)}
+function sm(){document.getElementById('mfi').click();document.getElementById('mfi').onchange=async function(e){let fs=e.target.files;if(fs.length<2)return alert('Select 2+ files');cmd();sl(true,'Merging...');try{let md=await PDFLib.PDFDocument.create();for(let f of fs){let pd=await PDFLib.PDFDocument.load(new Uint8Array(await f.arrayBuffer()));let cp=await md.copyPages(pd,pd.getPageIndices());cp.forEach(p=>md.addPage(p))}let mb=await md.save();tabs.push({name:'Merged.pdf',bytes:mb,doc:null});activeTab=tabs.length-1;rtb();await lp(mb);db(mb,'Merged.pdf')}catch(e){sts('Merge failed')}sl(false)}}
+function ssp(){if(activeTab<0)return sts('Open PDF');smd('Split','<p>After page:</p><input type="number" id="spp" min="1" max="'+tabs[activeTab].doc.numPages+'" value="1"><div class="modal-actions"><button class="btn btn-secondary" onclick="cmd()">Cancel</button><button class="btn btn-primary" onclick="asp()">Split</button></div>')}
+async function asp(){let n=parseInt(document.getElementById('spp').value);cmd();sl(true,'Splitting...');try{let s=await PDFLib.PDFDocument.load(tabs[activeTab].bytes);let d1=await PDFLib.PDFDocument.create(),d2=await PDFLib.PDFDocument.create();let idx=s.getPageIndices();let c1=await d1.copyPages(s,idx.slice(0,n));c1.forEach(p=>d1.addPage(p));let c2=await d2.copyPages(s,idx.slice(n));c2.forEach(p=>d2.addPage(p));db(await d1.save(),'Part1.pdf');db(await d2.save(),'Part2.pdf')}catch(e){sts('Failed')}sl(false)}
+function sep(){if(activeTab<0)return sts('Open PDF');smd('Extract','<p>Pages (comma):</p><input type="text" id="epi" placeholder="1,2"><div class="modal-actions"><button class="btn btn-secondary" onclick="cmd()">Cancel</button><button class="btn btn-primary" onclick="aep()">Extract</button></div>')}
+async function aep(){let inp=document.getElementById('epi').value;let pg=inp.split(',').map(n=>parseInt(n.trim())-1).filter(n=>!isNaN(n)&&n>=0);if(!pg.length)return alert('Invalid');cmd();sl(true,'Extracting...');try{let s=await PDFLib.PDFDocument.load(tabs[activeTab].bytes);let nd=await PDFLib.PDFDocument.create();let cp=await nd.copyPages(s,pg);cp.forEach(p=>nd.addPage(p));let eb=await nd.save();tabs.push({name:'Extracted.pdf',bytes:eb,doc:null});activeTab=tabs.length-1;rtb();await lp(eb)}catch(e){sts('Failed')}sl(false)}
+function sdp(){if(activeTab<0)return sts('Open PDF');smd('Delete','<p>Page:</p><input type="number" id="dpi" min="1" max="'+tabs[activeTab].doc.numPages+'"><div class="modal-actions"><button class="btn btn-secondary" onclick="cmd()">Cancel</button><button class="btn btn-primary" style="background:#D13438" onclick="adp()">Delete</button></div>')}
+async function adp(){let n=parseInt(document.getElementById('dpi').value)-1;cmd();sl(true,'Deleting...');try{let s=await PDFLib.PDFDocument.load(tabs[activeTab].bytes);s.removePage(n);tabs[activeTab].bytes=await s.save();await lp(tabs[activeTab].bytes)}catch(e){sts('Failed')}sl(false)}
+async function pi(){if(activeTab<0)return sts('Open PDF');sl(true,'Converting...');try{let z=new JSZip();let d=tabs[activeTab].doc;for(let i=1;i<=d.numPages;i++){let p=await d.getPage(i);let v=p.getViewport({scale:2.0});let c=document.createElement('canvas');c.height=v.height;c.width=v.width;await p.render({canvasContext:c.getContext('2d'),viewport:v}).promise;let b=await new Promise(r=>c.toBlob(r,'image/png'));z.file('Page_'+i+'.png',b)}let zb=await z.generateAsync({type:'blob'});saveAs(zb,'Images.zip');sts('Done')}catch(e){sts('Failed')}sl(false)}
+async function pt(){if(activeTab<0)return sts('Open PDF');sl(true,'Extracting...');try{let t='';let d=tabs[activeTab].doc;for(let i=1;i<=d.numPages;i++){let p=await d.getPage(i);let tc=await p.getTextContent();t+='--- Page '+i+' ---\n\n'+tc.items.map(it=>it.str).join(' ')+'\n\n'}saveAs(new Blob([t],{type:'text/plain'}),'Text.txt');sts('Done')}catch(e){sts('Failed')}sl(false)}
+async function ocr(){if(activeTab<0)return sts('Open PDF');sl(true,'OCR...');try{let d=tabs[activeTab].doc;let p=await d.getPage(1);let v=p.getViewport({scale:2.0});let c=document.createElement('canvas');c.height=v.height;c.width=v.width;await p.render({canvasContext:c.getContext('2d'),viewport:v}).promise;let r=await Tesseract.recognize(c.toDataURL('image/png'),'eng');saveAs(new Blob([r.data.text],{type:'text/plain'}),'OCR.txt');sts('Done')}catch(e){sts('Failed')}sl(false)}
+document.addEventListener('wheel',(e)=>{if(e.ctrlKey){e.preventDefault();if(e.deltaY<0)zi();else zo()}},{passive:false})
+document.addEventListener('paste',async(e)=>{if(activeTab<0)return;let it=e.clipboardData.items,im=null;for(let i=0;i<it.length;i++){if(it[i].type.indexOf('image')!==-1){im=it[i].getAsFile();break}}if(!im)return;sl(true,'Pasting...');try{let ib=await im.arrayBuffer();let d=await PDFLib.PDFDocument.load(tabs[activeTab].bytes);let p=d.getPages()[0],ei;if(im.type==='image/png')ei=await d.embedPng(ib);else if(im.type==='image/jpeg'||im.type==='image/jpg')ei=await d.embedJpg(ib);else{sts('PNG/JPG only');sl(false);return}let{w,h}=p.getSize();let dim=ei.scale(0.5);p.drawImage(ei,{x:w/2-dim.width/2,y:h/2-dim.height/2,width:dim.width,height:dim.height});tabs[activeTab].bytes=await d.save();await lp(tabs[activeTab].bytes);sts('Pasted')}catch(e){sts('Paste failed')}sl(false)})
+</script></body></html>
 )HTML";
-
-    // --- PART 6: JS Converters (Merge, Split, Extract, Delete) ---
-    wstring htmlPart6 = LR"HTML(
-function downloadBytes(bytes, filename) { const blob = new Blob([bytes], { type: "application/pdf" }); saveAs(blob, filename); }
-function downloadCurrentPDF() { if (currentPdfBytes) downloadBytes(currentPdfBytes, "RasFocus_Document.pdf"); }
-
-function uiShowMergeModal() {
-    showModal("Combine Files", `<p>Select PDFs to combine:</p><input type="file" id="mergeFiles" accept=".pdf" multiple>
-        <div class="modal-actions"><button class="btn btn-secondary" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="actionMergeFiles()">Combine</button></div>`);
-}
-async function actionMergeFiles() {
-    const files = document.getElementById('mergeFiles').files; if (files.length < 2) return alert("Select at least 2 files.");
-    closeModal(); showLoading(true, "Merging PDFs...");
-    try {
-        const mergedPdf = await PDFLib.PDFDocument.create();
-        for (let file of files) {
-            const pdf = await PDFLib.PDFDocument.load(new Uint8Array(await file.arrayBuffer()));
-            const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
-            copiedPages.forEach((page) => mergedPdf.addPage(page));
-        }
-        const mergedBytes = await mergedPdf.save(); await loadPDF(mergedBytes); downloadBytes(mergedBytes, "Combined_Document.pdf");
-    } catch(e) { showToast("Failed to merge."); }
-    showLoading(false);
+    return h;
 }
 
-function uiShowSplitModal() {
-    if(!currentPdfBytes) return showToast("Open a PDF first.");
-    showModal("Split PDF", `<p>Split after page number:</p><input type="number" id="splitPage" min="1" max="${currentPdfjsDoc.numPages - 1}" value="1">
-        <div class="modal-actions"><button class="btn btn-secondary" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="actionSplitPDF()">Split</button></div>`);
-}
-async function actionSplitPDF() {
-    const splitAt = parseInt(document.getElementById('splitPage').value); closeModal(); showLoading(true, "Splitting...");
-    try {
-        const srcDoc = await PDFLib.PDFDocument.load(currentPdfBytes);
-        const doc1 = await PDFLib.PDFDocument.create(); const doc2 = await PDFLib.PDFDocument.create();
-        const indices = srcDoc.getPageIndices();
-        const copied1 = await doc1.copyPages(srcDoc, indices.slice(0, splitAt)); copied1.forEach(p => doc1.addPage(p));
-        const copied2 = await doc2.copyPages(srcDoc, indices.slice(splitAt)); copied2.forEach(p => doc2.addPage(p));
-        downloadBytes(await doc1.save(), "Split_Part1.pdf"); downloadBytes(await doc2.save(), "Split_Part2.pdf");
-    } catch(e) { showToast("Failed to split."); }
-    showLoading(false);
-}
-
-function uiShowExtractModal() {
-    if(!currentPdfBytes) return showToast("Open a PDF first.");
-    showModal("Extract Pages", `<p>Page numbers separated by comma:</p><input type="text" id="extractPagesInput" placeholder="1, 2">
-        <div class="modal-actions"><button class="btn btn-secondary" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="actionExtractPages()">Extract</button></div>`);
-}
-async function actionExtractPages() {
-    const input = document.getElementById('extractPagesInput').value;
-    const pagesToExtract = input.split(',').map(n => parseInt(n.trim()) - 1).filter(n => !isNaN(n) && n >= 0 && n < currentPdfjsDoc.numPages);
-    if(pagesToExtract.length === 0) return alert("Invalid page numbers");
-    closeModal(); showLoading(true, "Extracting...");
-    try {
-        const srcDoc = await PDFLib.PDFDocument.load(currentPdfBytes); const newDoc = await PDFLib.PDFDocument.create();
-        const copied = await newDoc.copyPages(srcDoc, pagesToExtract); copied.forEach(p => newDoc.addPage(p));
-        const extractedBytes = await newDoc.save(); await loadPDF(extractedBytes); downloadBytes(extractedBytes, "Extracted_Pages.pdf");
-    } catch(e) { showToast("Extraction failed."); }
-    showLoading(false);
-}
-
-function uiShowDeleteModal() {
-    if(!currentPdfBytes) return showToast("Open a PDF first.");
-    showModal("Delete Page", `<p>Enter page number to delete:</p><input type="number" id="deletePage" min="1" max="${currentPdfjsDoc.numPages}">
-        <div class="modal-actions"><button class="btn btn-secondary" onclick="closeModal()">Cancel</button><button class="btn btn-primary" style="background:#D13438;" onclick="actionDeletePage()">Delete</button></div>`);
-}
-async function actionDeletePage() {
-    const pageNum = parseInt(document.getElementById('deletePage').value) - 1; closeModal(); showLoading(true, "Deleting...");
-    try {
-        const srcDoc = await PDFLib.PDFDocument.load(currentPdfBytes); srcDoc.removePage(pageNum);
-        const newBytes = await srcDoc.save(); await loadPDF(newBytes); showToast("Page deleted.");
-    } catch(e) { showToast("Failed to delete."); }
-    showLoading(false);
-}
-)HTML";
-
-    // --- PART 7: JS Study Tools, Watermark, Stamp ---
-    wstring htmlPart7 = LR"HTML(
-let currentStudyTool = null;
-function setStudyTool(tool) {
-    currentStudyTool = tool;
-    document.querySelectorAll('.toolbar .tool-btn').forEach(btn => btn.classList.remove('active'));
-    if(tool === 'highlight') document.getElementById('tool-highlight').classList.add('active');
-    else if(tool === 'note') document.getElementById('tool-note').classList.add('active');
-    else if(tool === 'link') document.getElementById('tool-link').classList.add('active');
-    else document.getElementById('tool-pointer').classList.add('active');
-    
-    document.getElementById('pdf-container').style.cursor = tool ? 'crosshair' : 'default';
-    showToast(tool ? `Study Tool Enabled: ${tool.toUpperCase()}` : 'Normal mode enabled.');
-}
-
-document.getElementById('pdf-container').addEventListener('click', async (e) => {
-    if (!currentStudyTool || !currentPdfBytes) return;
-    const pageWrapper = e.target.closest('.pdf-page-wrapper'); if (!pageWrapper) return; 
-    const pageIndex = parseInt(pageWrapper.id.split('-')[1]) - 1;
-    const rect = e.target.getBoundingClientRect(); const canvasX = e.clientX - rect.left; const canvasY = e.clientY - rect.top;
-
-    showLoading(true, `Applying ${currentStudyTool}...`);
-    try {
-        const pdfDoc = await PDFLib.PDFDocument.load(currentPdfBytes);
-        const page = pdfDoc.getPages()[pageIndex]; const { width, height } = page.getSize();
-        const pdfX = (canvasX / rect.width) * width; const pdfY = height - ((canvasY / rect.height) * height); 
-
-        if (currentStudyTool === 'highlight') {
-            page.drawRectangle({ x: pdfX, y: pdfY - 5, width: 120, height: 15, color: PDFLib.rgb(1, 1, 0), opacity: 0.4, blendMode: PDFLib.BlendMode.Multiply });
-        } else if (currentStudyTool === 'note') {
-            const note = prompt("Enter your study note:");
-            if (note) {
-                page.drawRectangle({ x: pdfX, y: pdfY - 30, width: 200, height: 40, color: PDFLib.rgb(0.98, 0.96, 0.84), borderColor: PDFLib.rgb(0.8, 0.6, 0.2), borderWidth: 1 });
-                page.drawText("📝 " + note, { x: pdfX + 5, y: pdfY - 15, size: 12, color: PDFLib.rgb(0,0,0) });
-            }
-        } else if (currentStudyTool === 'link') {
-            const url = prompt("Enter link (e.g., https://...):");
-            if (url) {
-                page.drawText("🔗 " + url, { x: pdfX, y: pdfY, size: 10, color: PDFLib.rgb(0, 0, 1) });
-                const linkAnnot = pdfDoc.context.obj({ Type: 'Annot', Subtype: 'Link', Rect: [pdfX, pdfY - 5, pdfX + 150, pdfY + 10], Border: [0, 0, 0], A: { Type: 'Action', S: 'URI', URI: PDFLib.PDFString.of(url) } });
-                const linkAnnotRef = pdfDoc.context.register(linkAnnot);
-                let annots = page.node.Annots();
-                if (!annots) { annots = pdfDoc.context.obj([]); page.node.set(PDFLib.PDFName.of('Annots'), annots); }
-                annots.push(linkAnnotRef);
-            }
-        }
-        currentPdfBytes = await pdfDoc.save(); await loadPDF(currentPdfBytes);
-    } catch (error) { showToast("Error applying tool."); }
-    showLoading(false);
-});
-
-async function actionAddWatermark() {
-    if (!currentPdfBytes) return showToast("Open a PDF first.");
-    const watermarkText = prompt("Enter watermark text:", "CONFIDENTIAL"); if (!watermarkText) return;
-    showLoading(true, "Adding Watermark...");
-    try {
-        const pdfDoc = await PDFLib.PDFDocument.load(currentPdfBytes); const { rgb, degrees } = PDFLib;
-        pdfDoc.getPages().forEach((page) => { const { width, height } = page.getSize(); page.drawText(watermarkText, { x: width / 2 - 150, y: height / 2, size: 60, color: rgb(0.9, 0.2, 0.2), opacity: 0.3, rotate: degrees(45) }); });
-        const modifiedBytes = await pdfDoc.save(); await loadPDF(modifiedBytes); downloadBytes(modifiedBytes, "Watermarked_Doc.pdf"); showToast("Watermark added!");
-    } catch (e) { showToast("Failed to add watermark."); } showLoading(false);
-}
-
-async function actionAddStamp() {
-    if (!currentPdfBytes) return showToast("Open a PDF first.");
-    showLoading(true, "Applying Stamp...");
-    try {
-        const pdfDoc = await PDFLib.PDFDocument.load(currentPdfBytes); const firstPage = pdfDoc.getPages()[0]; 
-        const { width, height } = firstPage.getSize(); const { rgb } = PDFLib;
-        firstPage.drawRectangle({ x: width - 220, y: height - 100, width: 180, height: 50, borderColor: rgb(0.1, 0.6, 0.1), borderWidth: 3 });
-        firstPage.drawText("APPROVED", { x: width - 200, y: height - 85, size: 30, color: rgb(0.1, 0.6, 0.1) });
-        const modifiedBytes = await pdfDoc.save(); await loadPDF(modifiedBytes); showToast("Stamp applied!");
-    } catch (e) { showToast("Failed to apply stamp."); } showLoading(false);
-}
-)HTML";
-
-    // --- PART 8: JS Export, Paste (Ctrl+V), and Viewing Modes ---
-    wstring htmlPart8 = LR"HTML(
-async function actionPDFtoImage() {
-    if(!currentPdfjsDoc) return showToast("Open a PDF first.");
-    showLoading(true, "Converting to Images (ZIP)...");
-    try {
-        const zip = new JSZip();
-        for (let i = 1; i <= currentPdfjsDoc.numPages; i++) {
-            const page = await currentPdfjsDoc.getPage(i); const viewport = page.getViewport({ scale: 2.0 });
-            const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d'); canvas.height = viewport.height; canvas.width = viewport.width;
-            await page.render({ canvasContext: ctx, viewport: viewport }).promise;
-            const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png')); zip.file(`Page_${i}.png`, blob);
-        }
-        const zipBlob = await zip.generateAsync({type:"blob"}); saveAs(zipBlob, "PDF_Images.zip"); showToast("Images downloaded successfully.");
-    } catch(e) { showToast("Failed to convert to image."); } showLoading(false);
-}
-
-async function actionPDFtoText() {
-    if(!currentPdfjsDoc) return showToast("Open a PDF first.");
-    showLoading(true, "Extracting Text...");
-    try {
-        let fullText = "";
-        for (let i = 1; i <= currentPdfjsDoc.numPages; i++) {
-            const page = await currentPdfjsDoc.getPage(i); const textContent = await page.getTextContent();
-            fullText += `--- Page ${i} ---\n\n${textContent.items.map(item => item.str).join(' ')}\n\n`;
-        }
-        saveAs(new Blob([fullText], { type: "text/plain;charset=utf-8" }), "Extracted_Text.txt"); showToast("Text extracted.");
-    } catch(e) { showToast("Failed to extract text."); } showLoading(false);
-}
-
-async function actionPerformOCR() {
-    if (!currentPdfjsDoc) return showToast("Open a PDF first.");
-    showLoading(true, "Scanning image to text (OCR)... This may take time.");
-    try {
-        const page = await currentPdfjsDoc.getPage(1); const viewport = page.getViewport({ scale: 2.0 });
-        const canvas = document.createElement('canvas'); canvas.height = viewport.height; canvas.width = viewport.width;
-        await page.render({ canvasContext: canvas.getContext('2d'), viewport: viewport }).promise;
-        const result = await Tesseract.recognize(canvas.toDataURL('image/png'), 'eng');
-        saveAs(new Blob([result.data.text], { type: "text/plain;charset=utf-8" }), "OCR_Result.txt"); showToast("OCR Completed!");
-    } catch (e) { showToast("OCR Failed."); } showLoading(false);
-}
-
-document.addEventListener('paste', async (e) => {
-    if (!currentPdfBytes) return;
-    const items = e.clipboardData.items; let imageFile = null;
-    for (let i = 0; i < items.length; i++) { if (items[i].type.indexOf('image') !== -1) { imageFile = items[i].getAsFile(); break; } }
-    if (!imageFile) return;
-
-    showLoading(true, "Pasting Image...");
-    try {
-        const imageBuffer = await imageFile.arrayBuffer(); const pdfDoc = await PDFLib.PDFDocument.load(currentPdfBytes);
-        const page = pdfDoc.getPages()[0]; let embeddedImage;
-        if (imageFile.type === 'image/png') embeddedImage = await pdfDoc.embedPng(imageBuffer);
-        else if (imageFile.type === 'image/jpeg' || imageFile.type === 'image/jpg') embeddedImage = await pdfDoc.embedJpg(imageBuffer);
-        else { showToast("Only PNG/JPG supported."); showLoading(false); return; }
-
-        const { width, height } = page.getSize(); const imgDims = embeddedImage.scale(0.5); 
-        page.drawImage(embeddedImage, { x: width / 2 - imgDims.width / 2, y: height / 2 - imgDims.height / 2, width: imgDims.width, height: imgDims.height });
-        currentPdfBytes = await pdfDoc.save(); await loadPDF(currentPdfBytes); showToast("Image pasted!");
-    } catch (error) { showToast("Failed to paste image."); } showLoading(false);
-});
-
-function toggleNightMode() {
-    document.body.classList.toggle('night-mode');
-    showToast(document.body.classList.contains('night-mode') ? "Night Mode Activated 🌙" : "Light Mode Activated ☀️");
-}
-
-function toggleReadMode() {
-    document.body.classList.toggle('read-mode');
-    const isRead = document.body.classList.contains('read-mode');
-    const iconEl = document.getElementById('read-mode-icon');
-    if (isRead) {
-        iconEl.textContent = 'fullscreen_exit'; iconEl.style.color = '#EB1C24';
-        showToast("Read Mode Active. Click exit icon to return.");
-        if (currentZoom < 1.5) currentZoom = 1.5; 
-    } else {
-        iconEl.textContent = 'menu_book'; iconEl.style.color = '';
-        showToast("Normal Mode Active.");
-    }
-    setTimeout(renderViewer, 100);
-}
-</script>
-</body>
-</html>
-)HTML";
-
-    // ✅ Return the complete concatenated string securely
-    return htmlPart1 + htmlPart2 + htmlPart3 + htmlPart4 + htmlPart5 + htmlPart6 + htmlPart7 + htmlPart8;
-}
-
-// ==========================================
-// 🪟 WINDOW PROCEDURE
 // ==========================================
 LRESULT CALLBACK AcrobatViewerWndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
     case WM_CREATE: {
         RECT r; GetClientRect(hWnd, &r);
-        g_hWebViewWnd = CreateWindowExW(0, L"STATIC", NULL, WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS, 0, 0, r.right, r.bottom, hWnd, (HMENU)1001, GetModuleHandle(NULL), NULL);
+        g_hWebViewWnd = CreateWindowExW(0, L"STATIC", NULL, WS_CHILD|WS_VISIBLE|WS_CLIPSIBLINGS, 0,0,r.right,r.bottom, hWnd,(HMENU)1001,GetModuleHandle(NULL),NULL);
         InitializeWebView2(hWnd, g_hWebViewWnd);
         break;
     }
     case WM_SIZE: {
-        if (g_hWebViewWnd && g_webViewController) {
+        if(g_hWebViewWnd && g_webViewController) {
             RECT r; GetClientRect(hWnd, &r);
-            SetWindowPos(g_hWebViewWnd, NULL, 0, 0, r.right, r.bottom, SWP_NOZORDER);
-            g_webViewController->put_Bounds(RECT{0, 0, r.right, r.bottom});
+            SetWindowPos(g_hWebViewWnd,NULL,0,0,r.right,r.bottom,SWP_NOZORDER);
+            g_webViewController->put_Bounds(RECT{0,0,r.right,r.bottom});
         }
         break;
     }
-    case WM_CLOSE: {
-        ShowWindow(hWnd, SW_HIDE);
-        return 0;
-    }
+    case WM_CLOSE: { ShowWindow(hWnd, SW_HIDE); return 0; }
     case WM_DESTROY: {
-        if (g_webViewController) { g_webViewController->Close(); g_webViewController = nullptr; }
-        g_webView = nullptr; g_webViewEnv = nullptr; g_webViewInitialized = false;
-        if (g_hWebViewWnd) { DestroyWindow(g_hWebViewWnd); g_hWebViewWnd = NULL; }
-        g_hAcrobatWnd = NULL;
+        if(g_webViewController){g_webViewController->Close();g_webViewController=nullptr;}
+        g_webView=nullptr;g_webViewEnv=nullptr;g_webViewInitialized=false;
+        if(g_hWebViewWnd){DestroyWindow(g_hWebViewWnd);g_hWebViewWnd=NULL;}
+        g_hAcrobatWnd=NULL;
         break;
     }
-    default: return DefWindowProcW(hWnd, msg, wp, lp);
+    default: return DefWindowProcW(hWnd,msg,wp,lp);
     }
     return 0;
 }
 
 // ==========================================
-// 🌐 WEBVIEW2 INITIALIZATION
-// ==========================================
 HRESULT InitializeWebView2(HWND hWnd, HWND hHostWnd) {
-    auto envCompletedHandler = Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
-        [hWnd, hHostWnd](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
-            if (FAILED(result)) return result;
+    auto ec = Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
+        [hWnd,hHostWnd](HRESULT r, ICoreWebView2Environment* env) -> HRESULT {
+            if(FAILED(r)) return r;
             g_webViewEnv = env;
-            
-            auto controllerCompletedHandler = Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
-                [hWnd](HRESULT result, ICoreWebView2Controller* controller) -> HRESULT {
-                    if (FAILED(result)) return result;
-                    
-                    g_webViewController = controller;
+            auto cc = Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
+                [hWnd](HRESULT r, ICoreWebView2Controller* ctrl) -> HRESULT {
+                    if(FAILED(r)) return r;
+                    g_webViewController = ctrl;
                     g_webViewController->get_CoreWebView2(&g_webView);
-                    
-                    ICoreWebView2Settings* settings;
-                    g_webView->get_Settings(&settings);
-                    settings->put_IsScriptEnabled(TRUE);
-                    settings->put_IsWebMessageEnabled(TRUE);
-                    
-                    RECT r; GetClientRect(hWnd, &r);
-                    g_webViewController->put_Bounds(RECT{0, 0, r.right, r.bottom});
-                    
+                    ICoreWebView2Settings* s;
+                    g_webView->get_Settings(&s);
+                    s->put_IsScriptEnabled(TRUE);
+                    s->put_IsWebMessageEnabled(TRUE);
+                    RECT rc; GetClientRect(hWnd,&rc);
+                    g_webViewController->put_Bounds(RECT{0,0,rc.right,rc.bottom});
                     g_webView->NavigateToString(GetAcrobatHTML().c_str());
-                    
-                    auto navCompletedHandler = Callback<ICoreWebView2NavigationCompletedEventHandler>(
+                    auto nc = Callback<ICoreWebView2NavigationCompletedEventHandler>(
                         [](ICoreWebView2* sender, ICoreWebView2NavigationCompletedEventArgs* args) -> HRESULT {
-                            BOOL success; args->get_IsSuccess(&success);
-                            if (success) {
-                                g_webViewInitialized = true;
-                                if (!g_acrobatPdfPath.empty()) {
-                                    std::wstring escapedPath = g_acrobatPdfPath;
-                                    size_t pos = 0;
-                                    while ((pos = escapedPath.find(L"\\", pos)) != std::wstring::npos) {
-                                        escapedPath.replace(pos, 1, L"\\\\");
-                                        pos += 2;
-                                    }
-                                    std::wstring script = L"loadPdfFromPath('" + escapedPath + L"');";
-                                    sender->ExecuteScript(script.c_str(), nullptr);
-                                }
-                            }
+                            BOOL ok; args->get_IsSuccess(&ok);
+                            if(ok){g_webViewInitialized=true;
+                                if(!g_acrobatPdfPath.empty()){
+                                    wstring ep=g_acrobatPdfPath;size_t p=0;
+                                    while((p=ep.find(L"\\",p))!=wstring::npos){ep.replace(p,1,L"\\\\");p+=2;}
+                                    wstring sc=L"lpp('"+ep+L"');";
+                                    sender->ExecuteScript(sc.c_str(),nullptr);
+                                }}
                             return S_OK;
-                        }
-                    );
-                    g_webView->add_NavigationCompleted(navCompletedHandler.Get(), nullptr);
+                        });
+                    g_webView->add_NavigationCompleted(nc.Get(),nullptr);
                     return S_OK;
-                }
-            );
-            env->CreateCoreWebView2Controller(hHostWnd, controllerCompletedHandler.Get());
+                });
+            env->CreateCoreWebView2Controller(hHostWnd,cc.Get());
             return S_OK;
-        }
-    );
-    return CreateCoreWebView2EnvironmentWithOptions(nullptr, nullptr, nullptr, envCompletedHandler.Get());
+        });
+    return CreateCoreWebView2EnvironmentWithOptions(nullptr,nullptr,nullptr,ec.Get());
 }
 
 // ==========================================
-// 🚀 LAUNCH ACROBAT STYLE PDF VIEWER
-// ==========================================
-void LaunchFoxitStylePdfReader(std::wstring pdfPath) {
+void LaunchFoxitStylePdfReader(wstring pdfPath) {
     g_acrobatPdfPath = pdfPath;
-
-    // যদি উইন্ডো আগে থেকেই তৈরি করা থাকে
-    if (g_hAcrobatWnd != NULL) {
-        ShowWindow(g_hAcrobatWnd, SW_RESTORE); // মিনিমাইজ থাকলে রিস্টোর করবে
-        SetForegroundWindow(g_hAcrobatWnd);    // উইন্ডোটি সবার সামনে নিয়ে আসবে
-        
-        if (g_webViewInitialized && g_webView && !pdfPath.empty()) {
-            std::wstring escapedPath = pdfPath;
-            size_t pos = 0;
-            while ((pos = escapedPath.find(L"\\", pos)) != std::wstring::npos) {
-                escapedPath.replace(pos, 1, L"\\\\");
-                pos += 2;
-            }
-            std::wstring script = L"loadPdfFromPath('" + escapedPath + L"');";
-            g_webView->ExecuteScript(script.c_str(), nullptr);
+    if(g_hAcrobatWnd){
+        ShowWindow(g_hAcrobatWnd,SW_RESTORE);SetForegroundWindow(g_hAcrobatWnd);
+        if(g_webViewInitialized&&g_webView&&!pdfPath.empty()){
+            wstring ep=pdfPath;size_t p=0;
+            while((p=ep.find(L"\\",p))!=wstring::npos){ep.replace(p,1,L"\\\\");p+=2;}
+            wstring sc=L"lpp('"+ep+L"');";
+            g_webView->ExecuteScript(sc.c_str(),nullptr);
         }
         return;
     }
-
-    // প্রথমবার ওপেন করার সময়
-    static bool registered = false;
-    if (!registered) {
-        WNDCLASSW wc = {0};
-        wc.lpfnWndProc = AcrobatViewerWndProc;
-        wc.hInstance = GetModuleHandle(NULL);
-        wc.lpszClassName = L"AcrobatWorkspaceClass";
-        wc.hCursor = LoadCursor(NULL, IDC_ARROW);
-        wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
-        RegisterClassW(&wc);
-        registered = true;
+    static bool reg=false;
+    if(!reg){
+        WNDCLASSW wc={0};wc.lpfnWndProc=AcrobatViewerWndProc;wc.hInstance=GetModuleHandle(NULL);
+        wc.lpszClassName=L"PDFProClass";wc.hCursor=LoadCursor(NULL,IDC_ARROW);
+        wc.hbrBackground=(HBRUSH)(COLOR_WINDOW+1);RegisterClassW(&wc);reg=true;
     }
-
-    g_hAcrobatWnd = CreateWindowExW(
-        0, L"AcrobatWorkspaceClass", L"RasFocus - PDF Pro Workspace",
-        WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
-        CW_USEDEFAULT, CW_USEDEFAULT,
-        (int)(1200 * g_scaleFactor), (int)(800 * g_scaleFactor),
-        NULL, NULL, GetModuleHandle(NULL), NULL
-    );
-
-    HICON hAppIcon = LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(101));
-    if (hAppIcon) {
-        SendMessage(g_hAcrobatWnd, WM_SETICON, ICON_BIG, (LPARAM)hAppIcon);
-        SendMessage(g_hAcrobatWnd, WM_SETICON, ICON_SMALL, (LPARAM)hAppIcon);
-    }
-
-    // 🟢 Fix: উইন্ডোটি ম্যাক্সিমাইজ অবস্থায় সাথে সাথেই সবার সামনে ওপেন হবে
-    ShowWindow(g_hAcrobatWnd, SW_SHOWMAXIMIZED);
-    SetForegroundWindow(g_hAcrobatWnd); 
-    UpdateWindow(g_hAcrobatWnd);
+    g_hAcrobatWnd = CreateWindowExW(0,L"PDFProClass",L"PDF Pro",
+        WS_OVERLAPPEDWINDOW|WS_CLIPCHILDREN,
+        CW_USEDEFAULT,CW_USEDEFAULT,(int)(1200*g_scaleFactor),(int)(800*g_scaleFactor),
+        NULL,NULL,GetModuleHandle(NULL),NULL);
+    ShowWindow(g_hAcrobatWnd,SW_SHOWMAXIMIZED);
+    SetForegroundWindow(g_hAcrobatWnd);UpdateWindow(g_hAcrobatWnd);
 }
 
-// ==========================================
-// ⚠️ LEGACY FUNCTIONS
-// ==========================================
 void DrawPdfWorkspaceTab(Gdiplus::Graphics& g, float cx, float cy, float cw, float ch) {
     FontFamily ff(L"Segoe UI");
-    Font fText(&ff, 20 * g_scaleFactor, FontStyleBold, UnitPixel);
-    SolidBrush textBrush(Color(255, 100, 100, 100));
-    StringFormat fmt;
-    fmt.SetAlignment(StringAlignmentCenter);
-    fmt.SetLineAlignment(StringAlignmentCenter);
-    g.DrawString(L"PDF Workspace is ready. Double click a PDF file to launch.",
-        -1, &fText, RectF(cx, cy, cw, ch), &fmt, &textBrush);
+    Font ft(&ff,20*g_scaleFactor,FontStyleBold,UnitPixel);
+    SolidBrush tb(Color(255,100,100,100));
+    StringFormat sf;sf.SetAlignment(StringAlignmentCenter);sf.SetLineAlignment(StringAlignmentCenter);
+    g.DrawString(L"PDF Pro Ready",-1,&ft,RectF(cx,cy,cw,ch),&sf,&tb);
 }
-
 void ProcessPdfWorkspaceMouseMove(float x, float y) {}
 void ProcessPdfWorkspaceMouseClick(float x, float y) {}
