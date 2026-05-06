@@ -41,9 +41,11 @@ HRESULT InitializeWebView2(HWND hWnd, HWND hHostWnd);
 LRESULT CALLBACK AcrobatViewerWndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp);
 
 // ==========================================
-// 🎨 HTML/CSS/JS UI - SPLIT STRINGS
+// 🎨 HTML/CSS/JS UI - SPLIT INTO 5 PARTS TO FIX "STRING TOO BIG" ERROR
 // ==========================================
 wstring GetAcrobatHTML() {
+    
+    // --- PART 1: HTML Head & Core CSS ---
     wstring htmlPart1 = LR"HTML(
 <!DOCTYPE html>
 <html lang="en">
@@ -79,6 +81,10 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; height: 100vh; overflow: 
 .modal .btn { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 500; }
 .modal .btn-primary { background: var(--purple); color: white; } .modal .btn-primary:hover { background: var(--purple-hover); }
 .modal .btn-secondary { background: #e0e0e0; color: var(--text-primary); } .modal .btn-secondary:hover { background: #d0d0d0; }
+)HTML";
+
+    // --- PART 2: UI Layout CSS ---
+    wstring htmlPart2 = LR"HTML(
 .ribbon { height: var(--ribbon-height); background: var(--bg-white); border-bottom: 1px solid var(--border); flex-shrink: 0; display: flex; flex-direction: column; }
 .tab-bar { height: var(--tab-height); display: flex; align-items: stretch; background: var(--bg-white); border-bottom: 1px solid var(--border); }
 .file-btn { background: var(--purple); color: white; padding: 0 18px; display: flex; align-items: center; font-weight: 600; font-size: 13px; cursor: pointer; transition: background 0.15s; }
@@ -106,6 +112,10 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; height: 100vh; overflow: 
 .sidebar-strip .strip-icon.active { background: var(--selected-bg); color: var(--purple); }
 .sidebar-panel { flex: 1; padding: 10px; overflow-y: auto; display: flex; flex-direction: column; }
 .sidebar-panel h3 { font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+)HTML";
+
+    // --- PART 3: Components CSS & HTML Structure Start ---
+    wstring htmlPart3 = LR"HTML(
 .thumbnail-list { display: flex; flex-direction: column; gap: 8px; }
 .thumbnail-item { background: white; border: 1px solid var(--border); border-radius: 4px; padding: 6px; cursor: pointer; transition: all 0.15s; position: relative; }
 .thumbnail-item:hover { border-color: var(--purple); box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
@@ -132,12 +142,13 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; height: 100vh; overflow: 
 </style>
 </head>
 <body>
-)HTML";
-
-    wstring htmlPart2 = LR"HTML(
 <div class="toast-container" id="toast-container"></div>
 <div class="modal-overlay" id="modal-overlay"><div class="modal" id="modal-content"></div></div>
 <div class="progress-bar" id="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+)HTML";
+
+    // --- PART 4: HTML Body Content ---
+    wstring htmlPart4 = LR"HTML(
 <div class="ribbon">
     <div class="tab-bar">
         <div class="file-btn" onclick="showFileMenu()">📄 File</div>
@@ -163,10 +174,6 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; height: 100vh; overflow: 
             <div class="tool-item" onclick="zoomOut()"><span class="tool-icon">🔍</span><span class="tool-label">Zoom Out</span></div>
             <div class="tool-item" onclick="fitPage()"><span class="tool-icon">📄</span><span class="tool-label">Fit Page</span></div>
             <div class="tool-item" onclick="fitWidth()"><span class="tool-icon">↔</span><span class="tool-label">Fit Width</span></div>
-        </div>
-        <div class="tool-separator"></div>
-        <div class="tool-group">
-            <div class="tool-item" onclick="rotateCW()"><span class="tool-icon">↻</span><span class="tool-label">Rotate</span></div>
         </div>
     </div>
     
@@ -228,7 +235,8 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; height: 100vh; overflow: 
 <div class="loading-overlay" id="loading-overlay"><div class="spinner"></div><div id="loading-text">Processing...</div></div>
 )HTML";
 
-    wstring htmlPart3 = LR"HTML(
+    // --- PART 5: Core JS Logic ---
+    wstring htmlPart5 = LR"HTML(
 <script>
 let pdfDoc = null; let pdfBytes = null; let currentPage = 1; let currentZoom = 100; let currentRotation = 0; let numPages = 0;
 let pageSelectionMode = false; let selectedPages = new Set(); let history = []; let historyIndex = -1;
@@ -394,7 +402,8 @@ window.loadPdfFromFile = loadPdfFromFile;
 </html>
 )HTML";
 
-    return htmlPart1 + htmlPart2 + htmlPart3;
+    // ✅ Re-combining the 5 parts to return a single clean string
+    return htmlPart1 + htmlPart2 + htmlPart3 + htmlPart4 + htmlPart5;
 }
 
 // ==========================================
@@ -456,6 +465,7 @@ HRESULT InitializeWebView2(HWND hWnd, HWND hHostWnd) {
                     RECT r; GetClientRect(hWnd, &r);
                     g_webViewController->put_Bounds(RECT{0, 0, r.right, r.bottom});
                     
+                    // 🟢 Here we pass the dynamically combined 5-part string
                     g_webView->NavigateToString(GetAcrobatHTML().c_str());
                     
                     auto navCompletedHandler = Callback<ICoreWebView2NavigationCompletedEventHandler>(
