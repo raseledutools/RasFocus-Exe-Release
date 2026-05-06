@@ -1,3 +1,7 @@
+#pragma warning(disable : 4996)
+#pragma warning(disable : 4244)
+#pragma warning(disable : 4267)
+
 #include "tab_schedule_blocks.h"
 #include <vector>
 #include <string>
@@ -290,6 +294,7 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
 
     SolidBrush bDark(ClrDark); SolidBrush bWhite(ClrWhite); SolidBrush bGray(ClrGrayText);
     SolidBrush bTeal(ClrTeal); SolidBrush bRed(ClrRed); SolidBrush bGreen(ClrGreen);
+    SolidBrush bBgHover(ClrBgHover); SolidBrush bBorder(ClrBorder); SolidBrush bTealHover(ClrTealHover);
     Pen pBorder(ClrBorder, 1.5f); Pen pTeal(ClrTeal, 2.0f);
 
     StringFormat fL; fL.SetAlignment(StringAlignmentNear); fL.SetLineAlignment(StringAlignmentCenter);
@@ -351,8 +356,8 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
         g.FillPath(&tBg, tp); delete tp;
         
         // Inner Circle Knob
-        float knobX = g_profiles[i].isActive ? (cX + 15 + 50 - 24) : (cX + 15 + 2);
-        g.FillEllipse(&bWhite, knobX, cY + 115 + 2, 22, 22);
+        float knobX = g_profiles[i].isActive ? (cX + 15.0f + 50.0f - 24.0f) : (cX + 15.0f + 2.0f);
+        g.FillEllipse(&bWhite, knobX, cY + 115.0f + 2.0f, 22.0f, 22.0f);
 
         wstring toggleTxt = g_profiles[i].isActive ? L"Active" : L"Inactive";
         if (g_profiles[i].isActive && g_profiles[i].lockMode == 0) toggleTxt = L"Locked (Auto)";
@@ -465,7 +470,7 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
         // --- ROW 3: Checkbox Toggles ---
         float tY = ovY + 165.0f;
         auto DrawCb = [&](float cx, const wstring& label, bool val, bool hov) {
-            RectF box(cx, tY, 20, 20);
+            RectF box(cx, tY, 20.0f, 20.0f);
             g.FillRectangle(val ? &bTeal : (hov ? &bBgHover : &bWhite), box);
             g.DrawRectangle(&pBorder, box.X, box.Y, box.Width, box.Height);
             if(val) g.DrawString(L"\xE73E", -1, &fSmallIcon, box, &fC, &bWhite);
