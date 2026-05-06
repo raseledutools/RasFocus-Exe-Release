@@ -4,10 +4,12 @@
 #include "mini_browser.h"
 #include "html_tools.h"
 #include "WebView2.h"
+#include "WebView2EnvironmentOptions.h" // 🟢 FIX: Environment Options এরর সলভ করার জন্য
 #include <wrl.h>
 #include <map>
 #include <gdiplus.h>
 #include <string>
+#include <algorithm>
 #include <windowsx.h>
 #include <commctrl.h>
 
@@ -35,7 +37,7 @@ struct MiniBrowserData {
     bool isBrowserMode = false;
     HWND hAddressBar = NULL;
     
-    // 🟢 UI Hit States
+    // UI Hit States
     bool hBack = false, hFwd = false, hRel = false;
     bool hExt = false, hDl = false, hSet = false, hAddTab = false;
     bool hMin = false, hMax = false, hClose = false;
@@ -43,11 +45,31 @@ struct MiniBrowserData {
 
 static std::map<HWND, MiniBrowserData> g_mbData;
 
-// 🟢 NEW: Chrome-like UI Dimensions
-static const int TITLE_HEIGHT = 28;   // Thin draggable top bar
-static const int TAB_HEIGHT = 34;     // Tab bar height
-static const int TOOLBAR_HEIGHT = 38; // Address bar row
-static const int NAV_HEIGHT = TITLE_HEIGHT + TAB_HEIGHT + TOOLBAR_HEIGHT; // Total 100px
+// Chrome-like UI Dimensions
+static const int TITLE_HEIGHT = 28;   
+static const int TAB_HEIGHT = 34;     
+static const int TOOLBAR_HEIGHT = 38; 
+static const int NAV_HEIGHT = TITLE_HEIGHT + TAB_HEIGHT + TOOLBAR_HEIGHT; 
+
+// ==========================================
+// 🟢 ADULT BLOCK & KEYWORD LOGIC
+// ==========================================
+bool IsBlockedContent(const std::wstring& text) {
+    std::wstring lowerText = text;
+    std::transform(lowerText.begin(), lowerText.end(), lowerText.begin(), ::towlower);
+    
+    // আপনার অ্যাডাল্ট ব্লক সেকশনের বেসিক কিওয়ার্ড লিস্ট (এখানে আরও যোগ করতে পারেন)
+    const std::vector<std::wstring> badKeywords = { 
+        L"porn", L"xxx", L"sex", L"xvideos", L"pornhub", L"brazzers", L"xhamster", L"nude", L"nsfw"
+    };
+
+    for (const auto& keyword : badKeywords) {
+        if (lowerText.find(keyword) != std::wstring::npos) {
+            return true; // খারাপ শব্দ পাওয়া গেছে
+        }
+    }
+    return false;
+}
 
 // ==========================================
 // FULL SCREEN LOGIC (F11 & ESC)
@@ -119,10 +141,28 @@ LRESULT CALLBACK AddressBarSubclassProc(HWND hWnd, UINT msg, WPARAM wParam, LPAR
             wchar_t urlBuf[2048];
             GetWindowTextW(hWnd, urlBuf, 2048);
             std::wstring urlStr = urlBuf;
-            if (urlStr.find(L"http://") != 0 && urlStr.find(L"https://") != 0) {
-                if (urlStr.find(L".") != std::wstring::npos) urlStr = L"https://" + urlStr;
-                else urlStr = L"https://www.google.com/search?q=" + urlStr;
+            
+            // 🟢 BLOCK LOGIC: খারাপ শব্দ থাকলে ইনপুট ফাঁকা করে দাও
+            if (IsBlockedContent(urlStr)) {
+                SetWindowTextW(hWnd, L""); // লেখা ক্লিয়ার করে দেওয়া হলো
+                return 0; // সার্চ বাতিল
             }
+
+            // 🟢 SAFE SEARCH LOGIC
+            if (urlStr.find(L"http://") != 0 && urlStr.find(L"https://") != 0) {
+                if (urlStr.find(L".") != std::wstring::npos && urlStr.find(L" ") == std::wstring::npos) {
+                    urlStr = L"https://" + urlStr;
+                } else {
+                    // গুগলে সার্চ করলে safe=active যুক্ত করা হলো
+                    urlStr = L"https://www.google.com/search?q=" + urlStr + L"&safe=active";
+                }
+            } else if (urlStr.find(L"google.com/search") != std::wstring::npos) {
+                // লিংকে আগে থেকেই গুগল সার্চ থাকলে সেফ সার্চ যুক্ত করো
+                if (urlStr.find(L"&safe=active") == std::wstring::npos) {
+                    urlStr += L"&safe=active";
+                }
+            }
+
             g_mbData[hParent].webview->Navigate(urlStr.c_str());
         }
         return 0;
@@ -144,13 +184,11 @@ void DrawMiniBrowserNav(HWND hWnd, HDC hdc) {
     g.SetSmoothingMode(SmoothingModeAntiAlias);
     g.SetTextRenderingHint(TextRenderingHintClearTypeGridFit);
 
-    // 🟢 1. Dark Mode Backgrounds
     SolidBrush bgTitle(Color(255, 20, 20, 20));   
     SolidBrush bgToolbar(Color(255, 40, 40, 40)); 
     g.FillRectangle(&bgTitle, 0, 0, w, TITLE_HEIGHT + TAB_HEIGHT);
     g.FillRectangle(&bgToolbar, 0, TITLE_HEIGHT + TAB_HEIGHT, w, TOOLBAR_HEIGHT);
     
-    // Bottom border of toolbar
     Pen borderPen(Color(255, 60, 60, 60), 1.0f);
     g.DrawLine(&borderPen, 0, NAV_HEIGHT - 1, w, NAV_HEIGHT - 1);
 
@@ -168,7 +206,6 @@ void DrawMiniBrowserNav(HWND hWnd, HDC hdc) {
     SolidBrush hoverBg(Color(50, 255, 255, 255));
     SolidBrush closeHoverBg(Color(255, 232, 17, 35)); 
 
-    // --- 1. Right Side Windows Controls (Min, Max, Close) ---
     int btnW = 45;
     int rightControlsX = w - (btnW * 3);
     
@@ -183,24 +220,17 @@ void DrawMiniBrowserNav(HWND hWnd, HDC hdc) {
     SolidBrush closeColor(data.hClose ? Color(255, 255, 255, 255) : Color(255, 150, 150, 150));
     g.DrawString(L"\xE8BB", -1, &fIconSml, RectF((float)(rightControlsX + btnW*2), 0.0f, (float)btnW, (float)TITLE_HEIGHT), &fmtC, &closeColor);
 
-    // --- 2. Chrome Style Tab Bar ---
-    int tabX = 10;
-    int tabW = 240;
-    
-    // Active Tab Shape
+    int tabX = 10; int tabW = 240;
     GraphicsPath tabPath;
     tabPath.AddArc((float)tabX, (float)(TITLE_HEIGHT + 6), 10.0f, 10.0f, 180.0f, 90.0f);
     tabPath.AddArc((float)(tabX + tabW - 10), (float)(TITLE_HEIGHT + 6), 10.0f, 10.0f, 270.0f, 90.0f);
     tabPath.AddLine((float)(tabX + tabW), (float)(TITLE_HEIGHT + TAB_HEIGHT), (float)tabX, (float)(TITLE_HEIGHT + TAB_HEIGHT));
     tabPath.CloseFigure();
     
-    g.FillPath(&bgToolbar, &tabPath); // Tab matches toolbar color
-    
-    // Tab Icon & Title
+    g.FillPath(&bgToolbar, &tabPath); 
     g.DrawString(L"\xE774", -1, &fIconSml, RectF((float)(tabX + 10), (float)TITLE_HEIGHT, 20.0f, (float)TAB_HEIGHT), &fmtC, &textWhite);
     g.DrawString(data.title.c_str(), -1, &fTabTitle, RectF((float)(tabX + 35), (float)TITLE_HEIGHT, (float)(tabW - 50), (float)TAB_HEIGHT), &fmtL, &textWhite);
 
-    // Add (+) Tab Button
     int addTabX = tabX + tabW + 5;
     if(data.hAddTab) {
         SolidBrush addHover(Color(80, 255, 255, 255));
@@ -208,10 +238,8 @@ void DrawMiniBrowserNav(HWND hWnd, HDC hdc) {
     }
     g.DrawString(L"\xE710", -1, &fIconSml, RectF((float)addTabX, (float)(TITLE_HEIGHT + 6), 22.0f, 22.0f), &fmtC, &textGray);
 
-    // --- 3. Toolbar (Back, Fwd, Reload, Address Bar, Ext, DL, Settings) ---
     int toolY = TITLE_HEIGHT + TAB_HEIGHT;
-    int navBtnW = 36;
-    int curX = 10;
+    int navBtnW = 36; int curX = 10;
 
     if(data.hBack) { SolidBrush hb(Color(50,255,255,255)); g.FillEllipse(&hb, curX, toolY+4, 30, 30); }
     g.DrawString(L"\xE72B", -1, &fIcon, RectF(curX, toolY, 30, TOOLBAR_HEIGHT), &fmtC, &textWhite); curX += navBtnW;
@@ -222,24 +250,21 @@ void DrawMiniBrowserNav(HWND hWnd, HDC hdc) {
     if(data.hRel) { SolidBrush hb(Color(50,255,255,255)); g.FillEllipse(&hb, curX, toolY+4, 30, 30); }
     g.DrawString(L"\xE72C", -1, &fIcon, RectF(curX, toolY, 30, TOOLBAR_HEIGHT), &fmtC, &textWhite); curX += navBtnW;
 
-    // Right Side Icons (Ext, DL, Settings)
     int rightIconsX = w - (navBtnW * 3) - 10;
-    
     if(data.hExt) { SolidBrush hb(Color(50,255,255,255)); g.FillEllipse(&hb, rightIconsX, toolY+4, 30, 30); }
-    g.DrawString(L"\xE9D2", -1, &fIcon, RectF(rightIconsX, toolY, 30, TOOLBAR_HEIGHT), &fmtC, &textWhite); // Extensions
+    g.DrawString(L"\xE9D2", -1, &fIcon, RectF(rightIconsX, toolY, 30, TOOLBAR_HEIGHT), &fmtC, &textWhite); 
     
     if(data.hDl) { SolidBrush hb(Color(50,255,255,255)); g.FillEllipse(&hb, rightIconsX + navBtnW, toolY+4, 30, 30); }
-    g.DrawString(L"\xE896", -1, &fIcon, RectF(rightIconsX + navBtnW, toolY, 30, TOOLBAR_HEIGHT), &fmtC, &textWhite); // Downloads
+    g.DrawString(L"\xE896", -1, &fIcon, RectF(rightIconsX + navBtnW, toolY, 30, TOOLBAR_HEIGHT), &fmtC, &textWhite); 
     
     if(data.hSet) { SolidBrush hb(Color(50,255,255,255)); g.FillEllipse(&hb, rightIconsX + navBtnW*2, toolY+4, 30, 30); }
-    g.DrawString(L"\xE713", -1, &fIcon, RectF(rightIconsX + navBtnW*2, toolY, 30, TOOLBAR_HEIGHT), &fmtC, &textWhite); // Settings
+    g.DrawString(L"\xE713", -1, &fIcon, RectF(rightIconsX + navBtnW*2, toolY, 30, TOOLBAR_HEIGHT), &fmtC, &textWhite); 
 
-    // Address Bar background
     int addressX = curX + 10;
     int addressW = rightIconsX - addressX - 20;
 
     if (data.isBrowserMode && data.hAddressBar) {
-        SolidBrush editBg(Color(255, 20, 20, 20)); // Dark Address Bar
+        SolidBrush editBg(Color(255, 20, 20, 20)); 
         GraphicsPath editPath;
         float r = 14.0f; float d = r*2;
         editPath.AddArc((float)addressX, (float)(toolY + 5), d, d, 180.0f, 90.0f);
@@ -274,13 +299,12 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lP
 
             if (pt.y < TITLE_HEIGHT) {
                 int rightControlsX = (r.right - r.left) - (45 * 3);
-                if (pt.x >= rightControlsX) return HTCLIENT; // Min,Max,Close
-                return HTCAPTION; // Draggable thin titlebar
+                if (pt.x >= rightControlsX) return HTCLIENT; 
+                return HTCAPTION; 
             }
             if (pt.y < NAV_HEIGHT) return HTCLIENT;
             return HTCLIENT;
         }
-
         case WM_PAINT: {
             PAINTSTRUCT ps; HDC hdc = BeginPaint(hWnd, &ps);
             if (g_mbData.count(hWnd)) DrawMiniBrowserNav(hWnd, hdc);
@@ -333,7 +357,6 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lP
 
             bool redraw = false;
             
-            // Windows Controls
             int rightControlsX = w - (45 * 3);
             bool oMin = data.hMin, oMax = data.hMax, oClose = data.hClose;
             data.hMin   = (y <= TITLE_HEIGHT && x >= rightControlsX && x < rightControlsX + 45);
@@ -341,13 +364,11 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lP
             data.hClose = (y <= TITLE_HEIGHT && x >= rightControlsX + 90 && x < w);
             if (oMin != data.hMin || oMax != data.hMax || oClose != data.hClose) redraw = true;
 
-            // Tab Add Button
             int addTabX = 10 + 240 + 5;
             bool oAdd = data.hAddTab;
             data.hAddTab = (y >= TITLE_HEIGHT && y < TITLE_HEIGHT + TAB_HEIGHT && x >= addTabX && x <= addTabX + 22);
             if (oAdd != data.hAddTab) redraw = true;
 
-            // Toolbar Controls
             int toolY = TITLE_HEIGHT + TAB_HEIGHT;
             int navBtnW = 36; int curX = 10;
             bool ob = data.hBack, of = data.hFwd, orl = data.hRel;
@@ -356,7 +377,6 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lP
             data.hRel  = (y >= toolY && y < NAV_HEIGHT && x >= curX && x < curX + 30);
             if (ob != data.hBack || of != data.hFwd || orl != data.hRel) redraw = true;
 
-            // Right Icons
             int rightIconsX = w - (navBtnW * 3) - 10;
             bool oe = data.hExt, odl = data.hDl, oSet = data.hSet;
             data.hExt = (y >= toolY && y < NAV_HEIGHT && x >= rightIconsX && x < rightIconsX + 30);
@@ -429,14 +449,12 @@ public:
             controller->get_CoreWebView2(&g_mbData[m_hWnd].webview);
             controller->put_IsVisible(TRUE);
 
-            // 🟢 NEW: Set Default Dark Mode Background
             ComPtr<ICoreWebView2Controller2> controller2;
             if (SUCCEEDED(controller->QueryInterface(IID_PPV_ARGS(&controller2)))) {
-                COREWEBVIEW2_COLOR darkBg = { 255, 30, 30, 30 }; // Dark grey
+                COREWEBVIEW2_COLOR darkBg = { 255, 30, 30, 30 }; 
                 controller2->put_DefaultBackgroundColor(darkBg);
             }
 
-            // 🟢 FIX: User-Agent Spoofing to Trick Gemini/AI (Real Chrome v124)
             ICoreWebView2Settings* settings;
             g_mbData[m_hWnd].webview->get_Settings(&settings);
             ComPtr<ICoreWebView2Settings2> settings2;
@@ -444,25 +462,41 @@ public:
                 settings2->put_UserAgent(L"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
             }
 
-            // 🟢 FIX: Intercept New Windows (All links open in the SAME tab like Chrome)
+            // 🟢 BLOCK CLICKED ADULT LINKS
+            g_mbData[m_hWnd].webview->add_NavigationStarting(Callback<ICoreWebView2NavigationStartingEventHandler>(
+                [this](ICoreWebView2* sender, ICoreWebView2NavigationStartingEventArgs* args) -> HRESULT {
+                    LPWSTR uri;
+                    args->get_Uri(&uri);
+                    if (uri) {
+                        std::wstring currentUrl = uri;
+                        CoTaskMemFree(uri);
+                        if (IsBlockedContent(currentUrl)) {
+                            args->put_Cancel(TRUE); // লিংক বাতিল করে দাও
+                            if (g_mbData.count(m_hWnd) && g_mbData[m_hWnd].hAddressBar) {
+                                SetWindowTextW(g_mbData[m_hWnd].hAddressBar, L""); // অ্যাড্রেসবার ক্লিয়ার
+                            }
+                        }
+                    }
+                    return S_OK;
+                }
+            ).Get(), nullptr);
+
             g_mbData[m_hWnd].webview->add_NewWindowRequested(Callback<ICoreWebView2NewWindowRequestedEventHandler>(
                 [this](ICoreWebView2* sender, ICoreWebView2NewWindowRequestedEventArgs* args) -> HRESULT {
-                    args->put_Handled(TRUE); // Block external popup
+                    args->put_Handled(TRUE); 
                     LPWSTR uri; args->get_Uri(&uri);
-                    sender->Navigate(uri);   // Open in current tab
+                    sender->Navigate(uri);   
                     CoTaskMemFree(uri);
                     return S_OK;
                 }
             ).Get(), nullptr);
 
-            // Esc & F11 Key Handler
             ComPtr<ICoreWebView2Controller3> controller3;
             if (SUCCEEDED(controller->QueryInterface(IID_PPV_ARGS(&controller3)))) {
                 EventRegistrationToken token;
                 controller3->add_AcceleratorKeyPressed(new AcceleratorHandler(m_hWnd), &token);
             }
 
-            // Update Address Bar & Title on URL change
             if (g_mbData[m_hWnd].isBrowserMode) {
                 EventRegistrationToken token2;
                 g_mbData[m_hWnd].webview->add_SourceChanged(Callback<ICoreWebView2SourceChangedEventHandler>(
@@ -560,21 +594,22 @@ void LaunchMiniBrowser(std::wstring url, std::wstring title) {
     if (g_miniEnv) {
         startWebView(); 
     } else {
-        // 🟢 FIX: Extensions Flag & Hidden Folder Storage Setup
-        ComPtr<ICoreWebView2EnvironmentOptions> options;
-        CreateCoreWebView2EnvironmentOptions(&options);
-        options->put_AdditionalBrowserArguments(L"--enable-features=msWebView2EnableExtensions --enable-gpu-rasterization");
+        // 🟢 FIX: GPU Rasterization, Zero Copy for Ultra Fast Speed
+        auto options = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
+        options->put_AdditionalBrowserArguments(L"--enable-features=msWebView2EnableExtensions --enable-gpu-rasterization --enable-zero-copy --disable-features=Translate");
 
         std::wstring userDataFolder = L"C:\\ProgramData\\RasFocus\\.BrowserData";
         CreateDirectoryW(L"C:\\ProgramData\\RasFocus", NULL);
         CreateDirectoryW(userDataFolder.c_str(), NULL);
-        SetFileAttributesW(userDataFolder.c_str(), FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM); // Hide Folder
+        SetFileAttributesW(userDataFolder.c_str(), FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM);
 
         CreateCoreWebView2EnvironmentWithOptions(nullptr, userDataFolder.c_str(), options.Get(),
             Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
                 [startWebView](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
-                    g_miniEnv = env;
-                    startWebView();
+                    if (SUCCEEDED(result)) {
+                        g_miniEnv = env;
+                        startWebView();
+                    }
                     return S_OK;
                 }).Get());
     }
