@@ -1,11 +1,12 @@
-// mini_browser.cpp
+// mini_browser.cpp — RasBrowser | Chrome-like tabbed browser using WebView2
+// Features: Multi-tab support, address bar, back/fwd/reload, fullscreen, adult content blocking
 
 #define _CRT_SECURE_NO_WARNINGS
 #include "mini_browser.h"
 #include <vector>
 #include "html_tools.h"
 #include "WebView2.h"
-#include "WebView2EnvironmentOptions.h" // 🟢 FIX: Environment Options এরর সলভ করার জন্য
+#include "WebView2EnvironmentOptions.h"
 #include <wrl.h>
 #include <map>
 #include <gdiplus.h>
@@ -13,621 +14,1040 @@
 #include <algorithm>
 #include <windowsx.h>
 #include <commctrl.h>
+#include <sstream>
 
 #pragma comment(lib, "comctl32.lib")
 
 using namespace Microsoft::WRL;
 using namespace Gdiplus;
 
-#define IDI_APP_ICON 101
-#define IDC_ADDRESS_BAR 1005
+#define IDI_APP_ICON      101
+#define IDC_ADDRESS_BAR   1005
+#define IDC_TAB_BAR       1006
 
-extern bool g_isPureViewerMode;
+extern bool  g_isPureViewerMode;
 extern float g_scaleFactor;
 
-static ComPtr<ICoreWebView2Environment> g_miniEnv = nullptr;
+// ──────────────────────────────────────────────────────────────────────────────
+// CONSTANTS  — Chrome-style chrome heights
+// ──────────────────────────────────────────────────────────────────────────────
+static const int TITLEBAR_H  = 32;   // Window drag / title / Win-controls
+static const int TABBAR_H    = 36;   // Tab strip (tabs + new-tab button)
+static const int TOOLBAR_H   = 40;   // Navigation bar (back/fwd/rel + address + icons)
+static const int NAV_TOTAL_H = TITLEBAR_H + TABBAR_H + TOOLBAR_H;
 
-// --- Data Structure for Each Mini Browser Window ---
-struct MiniBrowserData {
+static const int TAB_W_MAX   = 220;  // Maximum tab width
+static const int TAB_W_MIN   = 80;   // Minimum tab width (squished)
+static const int TAB_PAD     = 10;   // Tab horizontal padding
+static const int WIN_BTN_W   = 46;   // Width of each Win32 window control button
+
+// ──────────────────────────────────────────────────────────────────────────────
+// PER-TAB DATA
+// ──────────────────────────────────────────────────────────────────────────────
+struct TabData {
     ComPtr<ICoreWebView2Controller> controller;
-    ComPtr<ICoreWebView2> webview;
-    std::wstring title;
-    bool isFullScreen = false;
-    WINDOWPLACEMENT wpPrev = { sizeof(WINDOWPLACEMENT) };
-    
-    bool isBrowserMode = false;
-    HWND hAddressBar = NULL;
-    
-    // UI Hit States
-    bool hBack = false, hFwd = false, hRel = false;
-    bool hExt = false, hDl = false, hSet = false, hAddTab = false;
-    bool hMin = false, hMax = false, hClose = false;
+    ComPtr<ICoreWebView2>           webview;
+    std::wstring title   = L"New Tab";
+    std::wstring url     = L"https://www.google.com";
+    bool         loading = false;
 };
 
-static std::map<HWND, MiniBrowserData> g_mbData;
+// ──────────────────────────────────────────────────────────────────────────────
+// PER-WINDOW DATA
+// ──────────────────────────────────────────────────────────────────────────────
+struct BrowserWindowData {
+    // Tabs
+    std::vector<TabData> tabs;
+    int                  activeTab = 0;
 
-// Chrome-like UI Dimensions
-static const int TITLE_HEIGHT = 28;   
-static const int TAB_HEIGHT = 34;     
-static const int TOOLBAR_HEIGHT = 38; 
-static const int NAV_HEIGHT = TITLE_HEIGHT + TAB_HEIGHT + TOOLBAR_HEIGHT; 
+    // Window state
+    bool            isFullScreen = false;
+    WINDOWPLACEMENT wpPrev       = { sizeof(WINDOWPLACEMENT) };
 
-// ==========================================
-// 🟢 ADULT BLOCK & KEYWORD LOGIC
-// ==========================================
+    // Address bar (one shared EDIT control, repositioned)
+    HWND hAddressBar = NULL;
+
+    // Hit-test states for title-bar controls
+    bool hMin = false, hMax = false, hClose = false;
+
+    // Hit-test states for toolbar buttons
+    bool hBack = false, hFwd = false, hRel = false;
+    bool hExt  = false, hDl  = false, hSet = false;
+
+    // Hit-test states for tabs
+    int  hoverTabIndex  = -1;
+    bool hNewTab        = false;
+
+    // Returns the active tab (safe)
+    TabData* active() {
+        if (activeTab >= 0 && activeTab < (int)tabs.size())
+            return &tabs[activeTab];
+        return nullptr;
+    }
+};
+
+static std::map<HWND, BrowserWindowData> g_windows;
+static ComPtr<ICoreWebView2Environment>  g_sharedEnv;
+
+// ──────────────────────────────────────────────────────────────────────────────
+// ADULT / BLOCKED CONTENT FILTER
+// ──────────────────────────────────────────────────────────────────────────────
 bool IsBlockedContent(const std::wstring& text) {
-    std::wstring lowerText = text;
-    std::transform(lowerText.begin(), lowerText.end(), lowerText.begin(), ::towlower);
-    
-    // আপনার অ্যাডাল্ট ব্লক সেকশনের বেসিক কিওয়ার্ড লিস্ট (এখানে আরও যোগ করতে পারেন)
-    const std::vector<std::wstring> badKeywords = { 
-        L"porn", L"xxx", L"sex", L"xvideos", L"pornhub", L"brazzers", L"xhamster", L"nude", L"nsfw",  L"porn", L"xxx", L"sex", L"nude", L"nsfw", L"sexy", L"hentai", L"rule34", L"milf", 
-    L"blowjob", L"tits", L"boobs", L"pussy", L"dick", L"cock", L"escort", L"bdsm", 
-    L"fetish", L"erotica", L"dildo", L"webcam", L"camgirls", L"xvideos", L"pornhub", 
-    L"xnxx", L"xhamster", L"brazzers", L"onlyfans", L"playboy", L"chaturbate", 
-    L"stripchat", L"eporner", L"spankbang", L"redtube", L"youporn", L"mia khalifa", 
-    L"sunny leone", L"dani daniels", L"johnny sins", L"kendra lust",
-    L"চটি", L"পর্ণ", L"সেক্স", L"নগ্ন", L"উলঙ্গ", L"বেশ্যা", L"মাগি", L"খানকি", 
-    L"যৌন", L"পর্ণগ্রাফি", L"রেন্ডি", L"চোদাচুতি", L"গরম ভিডিও", L"খারাপ ছবি",
-    L"যৌন মিলন", L"যৌনাঙ্গ", L"চুদো", L"নগ্নতা",
-    L"bhabi", L"chudai", L"bangla choti", L"panu", L"desi bhabi", L"mms", L"magi", 
-    L"choda", L"chodachudi", L"khanki", L"besha", L"randi", L"nengta", L"nangta", 
-    L"baal", L"vodai", L"bokachoda", L"kuttar bacha", L"shuarer bacha", L"kharap video", 
-    L"hot dance", L"seductive dance", L"item song", L"belly dance", L"hot", 
-    L"kissing scene", L"bikini", L"swimsuit", L"sexy dance", L"cleavage", L"hot scene", 
-    L"romantic kiss", L"bedroom scene", L"bath scene", L"rain dance", L"bold scene", 
-    L"semi nude", L"lingerie", L"erotic", L"hot song", L"romantic video hot", 
-    L"navel show", L"deep neck", L"short dress sexy", L"unfaithful scene"
+    std::wstring lower = text;
+    std::transform(lower.begin(), lower.end(), lower.begin(), ::towlower);
+
+    static const std::vector<std::wstring> kBadWords = {
+        // English
+        L"porn", L"xxx", L"sex", L"nude", L"nsfw", L"sexy", L"hentai", L"rule34",
+        L"milf", L"blowjob", L"tits", L"boobs", L"pussy", L"dick", L"cock",
+        L"escort", L"bdsm", L"fetish", L"erotica", L"dildo", L"webcam",
+        L"camgirls", L"xvideos", L"pornhub", L"xnxx", L"xhamster", L"brazzers",
+        L"onlyfans", L"playboy", L"chaturbate", L"stripchat", L"eporner",
+        L"spankbang", L"redtube", L"youporn", L"mia khalifa", L"sunny leone",
+        L"dani daniels", L"johnny sins", L"kendra lust",
+        // Bangla / Romanised Bangla
+        L"চটি", L"পর্ণ", L"সেক্স", L"নগ্ন", L"উলঙ্গ", L"বেশ্যা", L"মাগি",
+        L"খানকি", L"যৌন", L"পর্ণগ্রাফি", L"রেন্ডি", L"চোদাচুতি",
+        L"গরম ভিডিও", L"খারাপ ছবি", L"যৌন মিলন", L"যৌনাঙ্গ", L"চুদো", L"নগ্নতা",
+        L"bhabi", L"chudai", L"bangla choti", L"panu", L"desi bhabi", L"mms",
+        L"magi", L"choda", L"chodachudi", L"khanki", L"besha", L"randi",
+        L"nengta", L"nangta", L"baal", L"vodai", L"bokachoda",
+        // Indirect / suggestive
+        L"hot dance", L"seductive dance", L"bikini", L"swimsuit", L"sexy dance",
+        L"cleavage", L"bedroom scene", L"bath scene", L"semi nude", L"lingerie",
+        L"erotic", L"navel show", L"deep neck", L"short dress sexy",
     };
 
-    for (const auto& keyword : badKeywords) {
-        if (lowerText.find(keyword) != std::wstring::npos) {
-            return true; // খারাপ শব্দ পাওয়া গেছে
-        }
-    }
+    for (const auto& kw : kBadWords)
+        if (lower.find(kw) != std::wstring::npos)
+            return true;
     return false;
 }
 
-// ==========================================
-// FULL SCREEN LOGIC (F11 & ESC)
-// ==========================================
-void ToggleFullScreen(HWND hWnd) {
-    if (g_mbData.find(hWnd) == g_mbData.end()) return;
-    auto& data = g_mbData[hWnd];
-    DWORD dwStyle = GetWindowLong(hWnd, GWL_STYLE);
+// ──────────────────────────────────────────────────────────────────────────────
+// GEOMETRY HELPERS
+// ──────────────────────────────────────────────────────────────────────────────
+static int CalcTabWidth(int windowW, int tabCount) {
+    int available = windowW - (WIN_BTN_W * 3) - 40 - 28; // 40=logo area, 28=new-tab btn
+    int w = (tabCount > 0) ? available / tabCount : TAB_W_MAX;
+    return max(TAB_W_MIN, min(TAB_W_MAX, w));
+}
 
-    if (!data.isFullScreen) {
+static RECT GetTabRect(int windowW, int index, int tabCount) {
+    int tw = CalcTabWidth(windowW, tabCount);
+    int x  = 40 + index * tw; // 40px = logo/brand area
+    RECT r = { x, TITLEBAR_H, x + tw, TITLEBAR_H + TABBAR_H };
+    return r;
+}
+
+static RECT GetNewTabBtnRect(int windowW, int tabCount) {
+    int tw = CalcTabWidth(windowW, tabCount);
+    int x  = 40 + tabCount * tw;
+    RECT r = { x, TITLEBAR_H + 6, x + 24, TITLEBAR_H + TABBAR_H - 6 };
+    return r;
+}
+
+// Returns the content area rect for the active WebView
+static RECT GetWebViewRect(HWND hWnd) {
+    RECT b; GetClientRect(hWnd, &b);
+    b.top += NAV_TOTAL_H;
+    return b;
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// ADDRESS BAR POSITIONING
+// ──────────────────────────────────────────────────────────────────────────────
+static void RepositionAddressBar(HWND hWnd) {
+    if (!g_windows.count(hWnd)) return;
+    auto& wd = g_windows[hWnd];
+    if (!wd.hAddressBar) return;
+
+    RECT r; GetClientRect(hWnd, &r);
+    int  w = r.right;
+
+    // Nav buttons: back(36) fwd(36) rel(36) = 108; plus 8px left pad
+    int navBtnArea = 8 + 36 * 3 + 4;
+    // Right icons: ext(36) dl(36) set(36) plus 8px right pad
+    int rightIconArea = 36 * 3 + 12;
+
+    int addrX = navBtnArea;
+    int addrW = w - navBtnArea - rightIconArea;
+    int addrY = TITLEBAR_H + TABBAR_H + (TOOLBAR_H - 26) / 2;
+
+    if (wd.isFullScreen)
+        ShowWindow(wd.hAddressBar, SW_HIDE);
+    else {
+        ShowWindow(wd.hAddressBar, SW_SHOW);
+        SetWindowPos(wd.hAddressBar, NULL, addrX + 4, addrY, addrW - 8, 26,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// FULLSCREEN TOGGLE
+// ──────────────────────────────────────────────────────────────────────────────
+void ToggleFullScreen(HWND hWnd) {
+    if (!g_windows.count(hWnd)) return;
+    auto& wd = g_windows[hWnd];
+    DWORD style = GetWindowLong(hWnd, GWL_STYLE);
+
+    if (!wd.isFullScreen) {
         MONITORINFO mi = { sizeof(mi) };
-        if (GetWindowPlacement(hWnd, &data.wpPrev) && GetMonitorInfo(MonitorFromWindow(hWnd, MONITOR_DEFAULTTOPRIMARY), &mi)) {
-            SetWindowLong(hWnd, GWL_STYLE, dwStyle & ~(WS_CAPTION | WS_THICKFRAME));
-            SetWindowPos(hWnd, HWND_TOP, mi.rcMonitor.left, mi.rcMonitor.top,
-                         mi.rcMonitor.right - mi.rcMonitor.left,
-                         mi.rcMonitor.bottom - mi.rcMonitor.top,
-                         SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
-            data.isFullScreen = true;
-            if (data.hAddressBar) ShowWindow(data.hAddressBar, SW_HIDE);
+        if (GetWindowPlacement(hWnd, &wd.wpPrev) &&
+            GetMonitorInfo(MonitorFromWindow(hWnd, MONITOR_DEFAULTTOPRIMARY), &mi))
+        {
+            SetWindowLong(hWnd, GWL_STYLE, style & ~(WS_CAPTION | WS_THICKFRAME));
+            SetWindowPos(hWnd, HWND_TOP,
+                mi.rcMonitor.left, mi.rcMonitor.top,
+                mi.rcMonitor.right  - mi.rcMonitor.left,
+                mi.rcMonitor.bottom - mi.rcMonitor.top,
+                SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+            wd.isFullScreen = true;
         }
     } else {
-        SetWindowLong(hWnd, GWL_STYLE, dwStyle | WS_CAPTION | WS_THICKFRAME);
-        SetWindowPlacement(hWnd, &data.wpPrev);
-        SetWindowPos(hWnd, NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
-        data.isFullScreen = false;
-        if (data.hAddressBar) ShowWindow(data.hAddressBar, SW_SHOW);
+        SetWindowLong(hWnd, GWL_STYLE, style | WS_CAPTION | WS_THICKFRAME);
+        SetWindowPlacement(hWnd, &wd.wpPrev);
+        SetWindowPos(hWnd, NULL, 0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
+            SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+        wd.isFullScreen = false;
     }
-    
-    if (data.controller) {
-        RECT b; GetClientRect(hWnd, &b);
-        if (!data.isFullScreen) b.top += NAV_HEIGHT;
-        data.controller->put_Bounds(b);
-    }
+
+    RepositionAddressBar(hWnd);
+
+    // Resize every tab's WebView
+    RECT wvr = GetWebViewRect(hWnd);
+    if (wd.isFullScreen) { wvr.top = 0; } // covers full screen
+    for (auto& tab : wd.tabs)
+        if (tab.controller)
+            tab.controller->put_Bounds(wvr);
+
     InvalidateRect(hWnd, NULL, TRUE);
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// ACCELERATOR KEY HANDLER (F11 / ESC for fullscreen)
+// ──────────────────────────────────────────────────────────────────────────────
 class AcceleratorHandler : public ICoreWebView2AcceleratorKeyPressedEventHandler {
-    HWND m_hWnd;
-    ULONG m_refCount = 1;
+    HWND  m_hWnd;
+    ULONG m_ref = 1;
 public:
-    AcceleratorHandler(HWND hWnd) : m_hWnd(hWnd) {}
+    AcceleratorHandler(HWND h) : m_hWnd(h) {}
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override {
         if (!ppv) return E_POINTER;
-        if (riid == IID_IUnknown || riid == __uuidof(ICoreWebView2AcceleratorKeyPressedEventHandler)) { *ppv = this; AddRef(); return S_OK; }
+        if (riid == IID_IUnknown || riid == __uuidof(ICoreWebView2AcceleratorKeyPressedEventHandler))
+            { *ppv = this; AddRef(); return S_OK; }
         *ppv = nullptr; return E_NOINTERFACE;
     }
-    ULONG STDMETHODCALLTYPE AddRef() override { return InterlockedIncrement(&m_refCount); }
-    ULONG STDMETHODCALLTYPE Release() override { ULONG r = InterlockedDecrement(&m_refCount); if (r==0) delete this; return r; }
-    
-    HRESULT STDMETHODCALLTYPE Invoke(ICoreWebView2Controller* sender, ICoreWebView2AcceleratorKeyPressedEventArgs* args) override {
-        COREWEBVIEW2_KEY_EVENT_KIND kind;
-        args->get_KeyEventKind(&kind);
-        if (kind == COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN || kind == COREWEBVIEW2_KEY_EVENT_KIND_SYSTEM_KEY_DOWN) {
-            UINT virtualKey; args->get_VirtualKey(&virtualKey);
-            if (virtualKey == VK_ESCAPE) {
-                if (g_mbData[m_hWnd].isFullScreen) { ToggleFullScreen(m_hWnd); args->put_Handled(TRUE); }
-            } else if (virtualKey == VK_F11) {
-                ToggleFullScreen(m_hWnd); args->put_Handled(TRUE);
-            }
+    ULONG STDMETHODCALLTYPE AddRef()  override { return InterlockedIncrement(&m_ref); }
+    ULONG STDMETHODCALLTYPE Release() override {
+        ULONG r = InterlockedDecrement(&m_ref);
+        if (!r) delete this; return r;
+    }
+    HRESULT STDMETHODCALLTYPE Invoke(
+        ICoreWebView2Controller*, ICoreWebView2AcceleratorKeyPressedEventArgs* args) override
+    {
+        COREWEBVIEW2_KEY_EVENT_KIND kind; args->get_KeyEventKind(&kind);
+        if (kind == COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN ||
+            kind == COREWEBVIEW2_KEY_EVENT_KIND_SYSTEM_KEY_DOWN)
+        {
+            UINT vk; args->get_VirtualKey(&vk);
+            if (vk == VK_F11)  { ToggleFullScreen(m_hWnd); args->put_Handled(TRUE); }
+            if (vk == VK_ESCAPE && g_windows.count(m_hWnd) && g_windows[m_hWnd].isFullScreen)
+                { ToggleFullScreen(m_hWnd); args->put_Handled(TRUE); }
         }
         return S_OK;
     }
 };
 
-LRESULT CALLBACK AddressBarSubclassProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR uIdSubclass, DWORD_PTR dwRefData) {
+// ──────────────────────────────────────────────────────────────────────────────
+// ADDRESS BAR SUBCLASS — handles Enter key
+// ──────────────────────────────────────────────────────────────────────────────
+LRESULT CALLBACK AddrBarProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam,
+                              UINT_PTR, DWORD_PTR) {
     if (msg == WM_KEYDOWN && wParam == VK_RETURN) {
         HWND hParent = GetParent(hWnd);
-        if (g_mbData.count(hParent) && g_mbData[hParent].webview) {
-            wchar_t urlBuf[2048];
-            GetWindowTextW(hWnd, urlBuf, 2048);
-            std::wstring urlStr = urlBuf;
-            
-            // 🟢 BLOCK LOGIC: খারাপ শব্দ থাকলে ইনপুট ফাঁকা করে দাও
-            if (IsBlockedContent(urlStr)) {
-                SetWindowTextW(hWnd, L""); // লেখা ক্লিয়ার করে দেওয়া হলো
-                return 0; // সার্চ বাতিল
-            }
+        if (!g_windows.count(hParent)) return 0;
+        auto& wd = g_windows[hParent];
+        auto* tab = wd.active();
+        if (!tab || !tab->webview) return 0;
 
-            // 🟢 SAFE SEARCH LOGIC
-            if (urlStr.find(L"http://") != 0 && urlStr.find(L"https://") != 0) {
-                if (urlStr.find(L".") != std::wstring::npos && urlStr.find(L" ") == std::wstring::npos) {
-                    urlStr = L"https://" + urlStr;
-                } else {
-                    // গুগলে সার্চ করলে safe=active যুক্ত করা হলো
-                    urlStr = L"https://www.google.com/search?q=" + urlStr + L"&safe=active";
-                }
-            } else if (urlStr.find(L"google.com/search") != std::wstring::npos) {
-                // লিংকে আগে থেকেই গুগল সার্চ থাকলে সেফ সার্চ যুক্ত করো
-                if (urlStr.find(L"&safe=active") == std::wstring::npos) {
-                    urlStr += L"&safe=active";
-                }
-            }
+        wchar_t buf[2048]; GetWindowTextW(hWnd, buf, 2048);
+        std::wstring input = buf;
 
-            g_mbData[hParent].webview->Navigate(urlStr.c_str());
+        if (IsBlockedContent(input)) { SetWindowTextW(hWnd, L""); return 0; }
+
+        // Build proper URL
+        std::wstring url;
+        if (input.find(L"http://") == 0 || input.find(L"https://") == 0) {
+            url = input;
+            // Append safe search to Google URLs
+            if (url.find(L"google.com/search") != std::wstring::npos &&
+                url.find(L"&safe=active") == std::wstring::npos)
+                url += L"&safe=active";
+        } else if (input.find(L'.') != std::wstring::npos &&
+                   input.find(L' ') == std::wstring::npos) {
+            url = L"https://" + input;
+        } else {
+            url = L"https://www.google.com/search?q=" + input + L"&safe=active";
         }
+
+        tab->webview->Navigate(url.c_str());
         return 0;
     }
     return DefSubclassProc(hWnd, msg, wParam, lParam);
 }
 
-// ==========================================
-// 🎨 CHROME-LIKE UI DRAWING
-// ==========================================
-void DrawMiniBrowserNav(HWND hWnd, HDC hdc) {
-    auto& data = g_mbData[hWnd];
-    if (data.isFullScreen) return;
+// ──────────────────────────────────────────────────────────────────────────────
+// DRAWING — Chrome-inspired dark UI
+// ──────────────────────────────────────────────────────────────────────────────
 
-    RECT r; GetClientRect(hWnd, &r);
-    int w = r.right - r.left;
+// Color palette (Chrome dark theme)
+namespace Clr {
+    static const Color BgTitle   (255, 32,  32,  32);   // #202020  title strip
+    static const Color BgTabBar  (255, 32,  32,  32);   // #202020  tab strip
+    static const Color BgToolbar (255, 41,  41,  41);   // #292929  toolbar
+    static const Color TabActive (255, 41,  41,  41);   // #292929  active tab bg
+    static const Color TabHover  (255, 55,  55,  55);   // #373737  hovered tab
+    static const Color TabNormal (255, 32,  32,  32);   // #202020  idle tab
+    static const Color TxtPrim   (255, 232, 232, 232);  // #E8E8E8  primary text
+    static const Color TxtDim    (255, 138, 138, 138);  // #8A8A8A  dimmed text
+    static const Color AddrBg    (255, 56,  56,  56);   // #383838  address bar bg
+    static const Color AddrFocus (255, 48,  48,  48);   // #303030  focused addr
+    static const Color HoverBtn  (255,255,255, 255, 30); // semi-transparent
+    static const Color BrandBlue (255, 66, 133, 244);   // Google-blue accent
+    static const Color DivLine   (255, 60,  60,  60);   // separator
+    static const Color CloseHov  (255, 196,  43,  28);  // red close hover
+    static const Color TabClose  (255, 160, 160, 160);  // tab X icon
+}
+
+// Helper: rounded-rect path (GDI+)
+static void AddRoundRect(GraphicsPath& path, float x, float y, float w, float h, float r) {
+    path.AddArc(x,         y,         r*2, r*2, 180, 90);
+    path.AddArc(x+w-r*2,  y,         r*2, r*2, 270, 90);
+    path.AddArc(x+w-r*2,  y+h-r*2,   r*2, r*2,   0, 90);
+    path.AddArc(x,         y+h-r*2,   r*2, r*2,  90, 90);
+    path.CloseFigure();
+}
+
+void DrawBrowser(HWND hWnd, HDC hdc) {
+    if (!g_windows.count(hWnd)) return;
+    auto& wd = g_windows[hWnd];
+    if (wd.isFullScreen) return;
+
+    RECT cr; GetClientRect(hWnd, &cr);
+    int W = cr.right, H = NAV_TOTAL_H;
 
     Graphics g(hdc);
     g.SetSmoothingMode(SmoothingModeAntiAlias);
     g.SetTextRenderingHint(TextRenderingHintClearTypeGridFit);
 
-    SolidBrush bgTitle(Color(255, 20, 20, 20));   
-    SolidBrush bgToolbar(Color(255, 40, 40, 40)); 
-    g.FillRectangle(&bgTitle, 0, 0, w, TITLE_HEIGHT + TAB_HEIGHT);
-    g.FillRectangle(&bgToolbar, 0, TITLE_HEIGHT + TAB_HEIGHT, w, TOOLBAR_HEIGHT);
-    
-    Pen borderPen(Color(255, 60, 60, 60), 1.0f);
-    g.DrawLine(&borderPen, 0, NAV_HEIGHT - 1, w, NAV_HEIGHT - 1);
+    // ── Background fills ──────────────────────────────────────────────────────
+    SolidBrush bTitle(Clr::BgTitle);
+    SolidBrush bTabBar(Clr::BgTabBar);
+    SolidBrush bToolbar(Clr::BgToolbar);
+    g.FillRectangle(&bTitle,   0, 0,              W, TITLEBAR_H);
+    g.FillRectangle(&bTabBar,  0, TITLEBAR_H,     W, TABBAR_H);
+    g.FillRectangle(&bToolbar, 0, TITLEBAR_H+TABBAR_H, W, TOOLBAR_H);
 
-    FontFamily ff(L"Segoe UI");
-    FontFamily ffIcon(L"Segoe MDL2 Assets");
-    Font fTabTitle(&ff, 12, FontStyleRegular, UnitPixel);
-    Font fIcon(&ffIcon, 16, FontStyleRegular, UnitPixel);
-    Font fIconSml(&ffIcon, 12, FontStyleRegular, UnitPixel);
-    
-    StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
-    StringFormat fmtL; fmtL.SetAlignment(StringAlignmentNear); fmtL.SetLineAlignment(StringAlignmentCenter);
+    // Bottom separator
+    Pen sepPen(Clr::DivLine, 1.0f);
+    g.DrawLine(&sepPen, 0, NAV_TOTAL_H-1, W, NAV_TOTAL_H-1);
 
-    SolidBrush textWhite(Color(255, 240, 240, 240));
-    SolidBrush textGray(Color(255, 150, 150, 150));
-    SolidBrush hoverBg(Color(50, 255, 255, 255));
-    SolidBrush closeHoverBg(Color(255, 232, 17, 35)); 
+    // ── Fonts ─────────────────────────────────────────────────────────────────
+    FontFamily ffSeg(L"Segoe UI");
+    FontFamily ffMDL(L"Segoe MDL2 Assets");
+    Font fNormal (&ffSeg, 13, FontStyleRegular, UnitPixel);
+    Font fSmall  (&ffSeg, 11, FontStyleRegular, UnitPixel);
+    Font fIcon   (&ffMDL, 15, FontStyleRegular, UnitPixel);
+    Font fIconSm (&ffMDL, 12, FontStyleRegular, UnitPixel);
 
-    int btnW = 45;
-    int rightControlsX = w - (btnW * 3);
-    
-    if(data.hMin) g.FillRectangle(&hoverBg, rightControlsX, 0, btnW, TITLE_HEIGHT);
-    g.DrawString(L"\xE921", -1, &fIconSml, RectF((float)rightControlsX, 0.0f, (float)btnW, (float)TITLE_HEIGHT), &fmtC, &textGray);
-    
-    if(data.hMax) g.FillRectangle(&hoverBg, rightControlsX + btnW, 0, btnW, TITLE_HEIGHT);
-    const wchar_t* maxIcon = IsZoomed(hWnd) ? L"\xE923" : L"\xE922";
-    g.DrawString(maxIcon, -1, &fIconSml, RectF((float)(rightControlsX + btnW), 0.0f, (float)btnW, (float)TITLE_HEIGHT), &fmtC, &textGray);
-    
-    if(data.hClose) g.FillRectangle(&closeHoverBg, rightControlsX + btnW*2, 0, btnW, TITLE_HEIGHT);
-    SolidBrush closeColor(data.hClose ? Color(255, 255, 255, 255) : Color(255, 150, 150, 150));
-    g.DrawString(L"\xE8BB", -1, &fIconSml, RectF((float)(rightControlsX + btnW*2), 0.0f, (float)btnW, (float)TITLE_HEIGHT), &fmtC, &closeColor);
+    StringFormat sfC; sfC.SetAlignment(StringAlignmentCenter); sfC.SetLineAlignment(StringAlignmentCenter);
+    StringFormat sfL; sfL.SetAlignment(StringAlignmentNear);   sfL.SetLineAlignment(StringAlignmentCenter);
+    sfL.SetFormatFlags(StringFormatFlagsNoWrap);
+    sfC.SetTrimming(StringTrimmingEllipsisCharacter);
+    sfL.SetTrimming(StringTrimmingEllipsisCharacter);
 
-    int tabX = 10; int tabW = 240;
-    GraphicsPath tabPath;
-    tabPath.AddArc((float)tabX, (float)(TITLE_HEIGHT + 6), 10.0f, 10.0f, 180.0f, 90.0f);
-    tabPath.AddArc((float)(tabX + tabW - 10), (float)(TITLE_HEIGHT + 6), 10.0f, 10.0f, 270.0f, 90.0f);
-    tabPath.AddLine((float)(tabX + tabW), (float)(TITLE_HEIGHT + TAB_HEIGHT), (float)tabX, (float)(TITLE_HEIGHT + TAB_HEIGHT));
-    tabPath.CloseFigure();
-    
-    g.FillPath(&bgToolbar, &tabPath); 
-    g.DrawString(L"\xE774", -1, &fIconSml, RectF((float)(tabX + 10), (float)TITLE_HEIGHT, 20.0f, (float)TAB_HEIGHT), &fmtC, &textWhite);
-    g.DrawString(data.title.c_str(), -1, &fTabTitle, RectF((float)(tabX + 35), (float)TITLE_HEIGHT, (float)(tabW - 50), (float)TAB_HEIGHT), &fmtL, &textWhite);
+    SolidBrush brPrim(Clr::TxtPrim);
+    SolidBrush brDim (Clr::TxtDim);
 
-    int addTabX = tabX + tabW + 5;
-    if(data.hAddTab) {
-        SolidBrush addHover(Color(80, 255, 255, 255));
-        g.FillEllipse(&addHover, (float)addTabX, (float)(TITLE_HEIGHT + 6), 22.0f, 22.0f);
+    // ── Title bar: "RasBrowser" brand ────────────────────────────────────────
+    {
+        Font fBrand(&ffSeg, 12, FontStyleBold, UnitPixel);
+        SolidBrush brBlue(Clr::BrandBlue);
+        // Small favicon placeholder circle
+        SolidBrush brCirc(Clr::BrandBlue);
+        g.FillEllipse(&brCirc, 10, (TITLEBAR_H-14)/2, 14, 14);
+        g.DrawString(L"R", -1, &fIconSm, RectF(10, (float)(TITLEBAR_H-14)/2, 14, 14), &sfC, &SolidBrush(Color(255,255,255,255)));
+        g.DrawString(L"RasBrowser", -1, &fBrand,
+            RectF(30, 0, 160, (float)TITLEBAR_H), &sfL, &brBlue);
     }
-    g.DrawString(L"\xE710", -1, &fIconSml, RectF((float)addTabX, (float)(TITLE_HEIGHT + 6), 22.0f, 22.0f), &fmtC, &textGray);
 
-    int toolY = TITLE_HEIGHT + TAB_HEIGHT;
-    int navBtnW = 36; int curX = 10;
+    // ── Title bar: Window controls (min / max / close) ────────────────────────
+    {
+        int bx = W - WIN_BTN_W * 3;
+        // Min
+        if (wd.hMin) { SolidBrush hb(Color(40,255,255,255)); g.FillRectangle(&hb, bx, 0, WIN_BTN_W, TITLEBAR_H); }
+        g.DrawString(L"\xE921", -1, &fIconSm, RectF((float)bx, 0, (float)WIN_BTN_W, (float)TITLEBAR_H), &sfC, &brDim);
+        // Max
+        if (wd.hMax) { SolidBrush hb(Color(40,255,255,255)); g.FillRectangle(&hb, bx+WIN_BTN_W, 0, WIN_BTN_W, TITLEBAR_H); }
+        const wchar_t* maxIco = IsZoomed(hWnd) ? L"\xE923" : L"\xE922";
+        g.DrawString(maxIco, -1, &fIconSm, RectF((float)(bx+WIN_BTN_W), 0, (float)WIN_BTN_W, (float)TITLEBAR_H), &sfC, &brDim);
+        // Close
+        if (wd.hClose) { SolidBrush hb(Clr::CloseHov); g.FillRectangle(&hb, bx+WIN_BTN_W*2, 0, WIN_BTN_W, TITLEBAR_H); }
+        SolidBrush closeClr(wd.hClose ? Color(255,255,255,255) : Clr::TxtDim);
+        g.DrawString(L"\xE8BB", -1, &fIconSm, RectF((float)(bx+WIN_BTN_W*2), 0, (float)WIN_BTN_W, (float)TITLEBAR_H), &sfC, &closeClr);
+    }
 
-    if(data.hBack) { SolidBrush hb(Color(50,255,255,255)); g.FillEllipse(&hb, curX, toolY+4, 30, 30); }
-    g.DrawString(L"\xE72B", -1, &fIcon, RectF(curX, toolY, 30, TOOLBAR_HEIGHT), &fmtC, &textWhite); curX += navBtnW;
+    // ── Tab strip ─────────────────────────────────────────────────────────────
+    {
+        int tabCount = (int)wd.tabs.size();
+        int tabW     = CalcTabWidth(W, tabCount);
 
-    if(data.hFwd) { SolidBrush hb(Color(50,255,255,255)); g.FillEllipse(&hb, curX, toolY+4, 30, 30); }
-    g.DrawString(L"\xE72A", -1, &fIcon, RectF(curX, toolY, 30, TOOLBAR_HEIGHT), &fmtC, &textWhite); curX += navBtnW;
+        for (int i = 0; i < tabCount; i++) {
+            RECT tr = GetTabRect(W, i, tabCount);
+            float tx = (float)tr.left, ty = (float)tr.top;
+            float tw = (float)(tr.right - tr.left), th = (float)(tr.bottom - tr.top);
 
-    if(data.hRel) { SolidBrush hb(Color(50,255,255,255)); g.FillEllipse(&hb, curX, toolY+4, 30, 30); }
-    g.DrawString(L"\xE72C", -1, &fIcon, RectF(curX, toolY, 30, TOOLBAR_HEIGHT), &fmtC, &textWhite); curX += navBtnW;
+            bool isActive = (i == wd.activeTab);
+            bool isHover  = (i == wd.hoverTabIndex);
 
-    int rightIconsX = w - (navBtnW * 3) - 10;
-    if(data.hExt) { SolidBrush hb(Color(50,255,255,255)); g.FillEllipse(&hb, rightIconsX, toolY+4, 30, 30); }
-    g.DrawString(L"\xE9D2", -1, &fIcon, RectF(rightIconsX, toolY, 30, TOOLBAR_HEIGHT), &fmtC, &textWhite); 
-    
-    if(data.hDl) { SolidBrush hb(Color(50,255,255,255)); g.FillEllipse(&hb, rightIconsX + navBtnW, toolY+4, 30, 30); }
-    g.DrawString(L"\xE896", -1, &fIcon, RectF(rightIconsX + navBtnW, toolY, 30, TOOLBAR_HEIGHT), &fmtC, &textWhite); 
-    
-    if(data.hSet) { SolidBrush hb(Color(50,255,255,255)); g.FillEllipse(&hb, rightIconsX + navBtnW*2, toolY+4, 30, 30); }
-    g.DrawString(L"\xE713", -1, &fIcon, RectF(rightIconsX + navBtnW*2, toolY, 30, TOOLBAR_HEIGHT), &fmtC, &textWhite); 
+            // Tab background (trapezoid via rounded rect at top, straight bottom)
+            GraphicsPath tabPath;
+            float cornerR = 8.0f;
+            tabPath.AddArc(tx+2,      ty+4, cornerR*2, cornerR*2, 180, 90);
+            tabPath.AddArc(tx+tw-2-cornerR*2, ty+4, cornerR*2, cornerR*2, 270, 90);
+            tabPath.AddLine(tx+tw-2, ty+th, tx+2, ty+th);
+            tabPath.CloseFigure();
 
-    int addressX = curX + 10;
-    int addressW = rightIconsX - addressX - 20;
+            Color tabFill = isActive ? Clr::TabActive :
+                            (isHover ? Clr::TabHover  : Clr::TabNormal);
+            SolidBrush bTab(tabFill);
+            g.FillPath(&bTab, &tabPath);
 
-    if (data.isBrowserMode && data.hAddressBar) {
-        SolidBrush editBg(Color(255, 20, 20, 20)); 
-        GraphicsPath editPath;
-        float r = 14.0f; float d = r*2;
-        editPath.AddArc((float)addressX, (float)(toolY + 5), d, d, 180.0f, 90.0f);
-        editPath.AddArc((float)(addressX + addressW - d), (float)(toolY + 5), d, d, 270.0f, 90.0f);
-        editPath.AddArc((float)(addressX + addressW - d), (float)(toolY + 33 - d), d, d, 0.0f, 90.0f);
-        editPath.AddArc((float)addressX, (float)(toolY + 33 - d), d, d, 90.0f, 90.0f);
-        editPath.CloseFigure();
-        g.FillPath(&editBg, &editPath);
+            // Active tab: top accent line (blue stripe)
+            if (isActive) {
+                SolidBrush accentBrush(Clr::BrandBlue);
+                g.FillRectangle(&accentBrush, tx+2+cornerR, ty+4, tw-4-cornerR*2, 2.5f);
+            }
+
+            // Favicon placeholder (small colored circle)
+            float iconX = tx + TAB_PAD + 2;
+            float iconY = ty + (th - 14) / 2;
+            SolidBrush fvBrush(isActive ? Clr::BrandBlue : Clr::TxtDim);
+            g.FillEllipse(&fvBrush, iconX, iconY, 14.0f, 14.0f);
+
+            // Tab title
+            const auto& tab = wd.tabs[i];
+            SolidBrush titleBrush(isActive ? Clr::TxtPrim : Clr::TxtDim);
+            RectF titleRect(iconX + 18, ty, tw - iconX - 18 - 24, th);
+            // Clamp the StringFormat to prevent going into close btn area
+            StringFormat sfTab; sfTab.SetAlignment(StringAlignmentNear);
+            sfTab.SetLineAlignment(StringAlignmentCenter);
+            sfTab.SetTrimming(StringTrimmingEllipsisCharacter);
+            sfTab.SetFormatFlags(StringFormatFlagsNoWrap);
+            g.DrawString(tab.title.c_str(), -1, &fSmall, titleRect, &sfTab, &titleBrush);
+
+            // Tab close (×) — visible on hover or active
+            if (isActive || isHover) {
+                float cx = tx + tw - 20, cy = ty + (th - 16) / 2;
+                if (isHover && !isActive) { SolidBrush hb(Color(50,255,255,255)); g.FillEllipse(&hb, cx, cy, 16, 16); }
+                SolidBrush xBrush(Clr::TabClose);
+                g.DrawString(L"\xE8BB", -1, &fIconSm,
+                    RectF(cx, cy, 16, 16), &sfC, &xBrush);
+            }
+
+            // Divider between non-adjacent tabs
+            if (i < tabCount - 1 && i != wd.activeTab && i+1 != wd.activeTab) {
+                Pen divPen(Clr::DivLine, 1.0f);
+                g.DrawLine(&divPen, tr.right-1, TITLEBAR_H+8, tr.right-1, TITLEBAR_H+TABBAR_H-8);
+            }
+        }
+
+        // New-tab (+) button
+        RECT ntr = GetNewTabBtnRect(W, tabCount);
+        if (wd.hNewTab) { SolidBrush hb(Color(40,255,255,255)); g.FillEllipse(&hb, (float)ntr.left, (float)ntr.top, (float)(ntr.right-ntr.left), (float)(ntr.bottom-ntr.top)); }
+        g.DrawString(L"\xE710", -1, &fIconSm,
+            RectF((float)ntr.left, (float)ntr.top,
+                  (float)(ntr.right-ntr.left), (float)(ntr.bottom-ntr.top)),
+            &sfC, &brDim);
+    }
+
+    // ── Toolbar ───────────────────────────────────────────────────────────────
+    {
+        int toolY  = TITLEBAR_H + TABBAR_H;
+        int curX   = 8;
+        float btnH = (float)TOOLBAR_H;
+
+        auto DrawNavBtn = [&](bool hover, const wchar_t* ico, int& x) {
+            if (hover) { SolidBrush hb(Color(35,255,255,255)); g.FillEllipse(&hb, (float)x+2, (float)toolY+4, 30.0f, 30.0f); }
+            g.DrawString(ico, -1, &fIcon,
+                RectF((float)x, (float)toolY, 34.0f, btnH), &sfC, &brPrim);
+            x += 36;
+        };
+
+        DrawNavBtn(wd.hBack, L"\xE72B", curX);
+        DrawNavBtn(wd.hFwd,  L"\xE72A", curX);
+        DrawNavBtn(wd.hRel,  L"\xE72C", curX);
+
+        // Address bar background pill (the actual EDIT is overlaid here)
+        {
+            int addrX = curX + 4;
+            int rightIconsX = W - 36 * 3 - 12;
+            int addrW = rightIconsX - addrX - 4;
+            int addrY = toolY + (TOOLBAR_H - 30) / 2;
+            SolidBrush addrBg(Clr::AddrBg);
+            GraphicsPath pill;
+            AddRoundRect(pill, (float)addrX, (float)addrY, (float)addrW, 30.0f, 15.0f);
+            g.FillPath(&addrBg, &pill);
+        }
+
+        // Right toolbar icons
+        int rx = W - 36 * 3 - 12;
+        auto DrawRightBtn = [&](bool hover, const wchar_t* ico, int x) {
+            if (hover) { SolidBrush hb(Color(35,255,255,255)); g.FillEllipse(&hb, (float)x+2, (float)toolY+4, 30.0f, 30.0f); }
+            g.DrawString(ico, -1, &fIcon,
+                RectF((float)x, (float)toolY, 34.0f, btnH), &sfC, &brPrim);
+        };
+        DrawRightBtn(wd.hExt, L"\xE9D2", rx);       rx += 36;
+        DrawRightBtn(wd.hDl,  L"\xE896", rx);       rx += 36;
+        DrawRightBtn(wd.hSet, L"\xE713", rx);
     }
 }
 
-// ==========================================
-// WINDOW PROCEDURE FOR MINI BROWSER
-// ==========================================
-LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
-    switch (message) {
-        case WM_NCCALCSIZE: { if (wParam == TRUE) return 0; break; }
-        case WM_NCHITTEST: {
-            POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
-            ScreenToClient(hWnd, &pt);
-            int border = 8;
-            RECT r; GetClientRect(hWnd, &r);
+// ──────────────────────────────────────────────────────────────────────────────
+// TAB MANAGEMENT
+// ──────────────────────────────────────────────────────────────────────────────
+static void SwitchToTab(HWND hWnd, int idx);
+static void AddTab(HWND hWnd, std::wstring url);
+static void CloseTab(HWND hWnd, int idx);
 
-            if (pt.y < border && pt.x < border) return HTTOPLEFT;
-            if (pt.y < border && pt.x >= r.right - border) return HTTOPRIGHT;
-            if (pt.y >= r.bottom - border && pt.x < border) return HTBOTTOMLEFT;
-            if (pt.y >= r.bottom - border && pt.x >= r.right - border) return HTBOTTOMRIGHT;
-            if (pt.y < border) return HTTOP;
-            if (pt.y >= r.bottom - border) return HTBOTTOM;
-            if (pt.x < border) return HTLEFT;
-            if (pt.x >= r.right - border) return HTRIGHT;
+// Forward declaration — defined after ViewerWndProc
+static void CreateWebViewForTab(HWND hWnd, int tabIdx);
 
-            if (pt.y < TITLE_HEIGHT) {
-                int rightControlsX = (r.right - r.left) - (45 * 3);
-                if (pt.x >= rightControlsX) return HTCLIENT; 
-                return HTCAPTION; 
-            }
-            if (pt.y < NAV_HEIGHT) return HTCLIENT;
-            return HTCLIENT;
-        }
-        case WM_PAINT: {
-            PAINTSTRUCT ps; HDC hdc = BeginPaint(hWnd, &ps);
-            if (g_mbData.count(hWnd)) DrawMiniBrowserNav(hWnd, hdc);
-            EndPaint(hWnd, &ps);
-            break;
-        }
-        case WM_CTLCOLOREDIT: {
-            if (g_mbData.count(hWnd) && (HWND)lParam == g_mbData[hWnd].hAddressBar) {
-                HDC hdcEdit = (HDC)wParam;
-                SetTextColor(hdcEdit, RGB(240, 240, 240));
-                SetBkColor(hdcEdit, RGB(20, 20, 20));
-                static HBRUSH hBrush = CreateSolidBrush(RGB(20, 20, 20));
-                return (LRESULT)hBrush;
-            }
-            break;
-        }
-        case WM_SIZE: {
-            if (g_mbData.count(hWnd)) {
-                auto& data = g_mbData[hWnd];
-                RECT b; GetClientRect(hWnd, &b);
-                int w = b.right - b.left;
-                
-                if (data.isBrowserMode && data.hAddressBar) {
-                    int navBtnW = 36;
-                    int curX = 10 + (navBtnW * 3);
-                    int rightIconsX = w - (navBtnW * 3) - 10;
-                    int addressX = curX + 10;
-                    int addressW = rightIconsX - addressX - 20;
-                    
-                    if (data.isFullScreen) ShowWindow(data.hAddressBar, SW_HIDE);
-                    else {
-                        ShowWindow(data.hAddressBar, SW_SHOW);
-                        SetWindowPos(data.hAddressBar, NULL, addressX + 15, TITLE_HEIGHT + TAB_HEIGHT + 8, addressW - 30, 20, SWP_NOZORDER);
-                    }
-                }
-                
-                if (data.controller) {
-                    if (!data.isFullScreen) b.top += NAV_HEIGHT;
-                    data.controller->put_Bounds(b);
-                }
-            }
-            InvalidateRect(hWnd, NULL, FALSE);
-            break;
-        }
-        case WM_MOUSEMOVE: {
-            if (!g_mbData.count(hWnd) || g_mbData[hWnd].isFullScreen) break;
-            auto& data = g_mbData[hWnd];
-            int x = GET_X_LPARAM(lParam); int y = GET_Y_LPARAM(lParam);
-            RECT r; GetClientRect(hWnd, &r); int w = r.right - r.left; 
+static void SwitchToTab(HWND hWnd, int idx) {
+    auto& wd = g_windows[hWnd];
+    if (idx < 0 || idx >= (int)wd.tabs.size()) return;
 
-            bool redraw = false;
-            
-            int rightControlsX = w - (45 * 3);
-            bool oMin = data.hMin, oMax = data.hMax, oClose = data.hClose;
-            data.hMin   = (y <= TITLE_HEIGHT && x >= rightControlsX && x < rightControlsX + 45);
-            data.hMax   = (y <= TITLE_HEIGHT && x >= rightControlsX + 45 && x < rightControlsX + 90);
-            data.hClose = (y <= TITLE_HEIGHT && x >= rightControlsX + 90 && x < w);
-            if (oMin != data.hMin || oMax != data.hMax || oClose != data.hClose) redraw = true;
-
-            int addTabX = 10 + 240 + 5;
-            bool oAdd = data.hAddTab;
-            data.hAddTab = (y >= TITLE_HEIGHT && y < TITLE_HEIGHT + TAB_HEIGHT && x >= addTabX && x <= addTabX + 22);
-            if (oAdd != data.hAddTab) redraw = true;
-
-            int toolY = TITLE_HEIGHT + TAB_HEIGHT;
-            int navBtnW = 36; int curX = 10;
-            bool ob = data.hBack, of = data.hFwd, orl = data.hRel;
-            data.hBack = (y >= toolY && y < NAV_HEIGHT && x >= curX && x < curX + 30); curX += navBtnW;
-            data.hFwd  = (y >= toolY && y < NAV_HEIGHT && x >= curX && x < curX + 30); curX += navBtnW;
-            data.hRel  = (y >= toolY && y < NAV_HEIGHT && x >= curX && x < curX + 30);
-            if (ob != data.hBack || of != data.hFwd || orl != data.hRel) redraw = true;
-
-            int rightIconsX = w - (navBtnW * 3) - 10;
-            bool oe = data.hExt, odl = data.hDl, oSet = data.hSet;
-            data.hExt = (y >= toolY && y < NAV_HEIGHT && x >= rightIconsX && x < rightIconsX + 30);
-            data.hDl  = (y >= toolY && y < NAV_HEIGHT && x >= rightIconsX + navBtnW && x < rightIconsX + navBtnW + 30);
-            data.hSet = (y >= toolY && y < NAV_HEIGHT && x >= rightIconsX + navBtnW*2 && x < rightIconsX + navBtnW*2 + 30);
-            if (oe != data.hExt || odl != data.hDl || oSet != data.hSet) redraw = true;
-
-            if (redraw) {
-                RECT navRect = { 0, 0, w, NAV_HEIGHT };
-                InvalidateRect(hWnd, &navRect, FALSE);
-            }
-            break;
-        }
-        case WM_LBUTTONDOWN: {
-            if (!g_mbData.count(hWnd) || g_mbData[hWnd].isFullScreen) break;
-            auto& data = g_mbData[hWnd];
-            
-            if (data.hBack && data.webview) data.webview->GoBack();
-            if (data.hFwd && data.webview) data.webview->GoForward();
-            if (data.hRel && data.webview) data.webview->Reload();
-            
-            if (data.hAddTab) {
-                if (data.webview) data.webview->Navigate(L"https://www.google.com");
-            }
-            
-            if (data.hExt) MessageBoxA(hWnd, "Extensions menu will open here.", "Extensions", MB_OK);
-            if (data.hDl) MessageBoxA(hWnd, "Downloads panel will open here.", "Downloads", MB_OK);
-            if (data.hSet) MessageBoxA(hWnd, "Settings menu will open here.", "Settings", MB_OK);
-
-            if (data.hMin) ShowWindow(hWnd, SW_MINIMIZE);
-            if (data.hMax) {
-                if (IsZoomed(hWnd)) ShowWindow(hWnd, SW_RESTORE);
-                else ShowWindow(hWnd, SW_MAXIMIZE);
-            }
-            if (data.hClose) DestroyWindow(hWnd);
-            
-            break;
-        }
-        case WM_GETMINMAXINFO: {
-            LPMINMAXINFO lpMMI = (LPMINMAXINFO)lParam;
-            lpMMI->ptMinTrackSize.x = 800; lpMMI->ptMinTrackSize.y = 600;
-            return 0;
-        }
-        case WM_CLOSE: DestroyWindow(hWnd); break;
-        case WM_DESTROY: {
-            g_mbData.erase(hWnd);
-            if (g_isPureViewerMode && g_mbData.empty()) PostQuitMessage(0);
-            break;
-        }
-        default: return DefWindowProcW(hWnd, message, wParam, lParam);
+    // Hide old tab's controller
+    if (wd.activeTab != idx && wd.activeTab < (int)wd.tabs.size()) {
+        auto& old = wd.tabs[wd.activeTab];
+        if (old.controller) old.controller->put_IsVisible(FALSE);
     }
-    return 0;
+
+    wd.activeTab = idx;
+    auto& tab = wd.tabs[idx];
+
+    if (tab.controller) {
+        tab.controller->put_IsVisible(TRUE);
+        RECT wvr = GetWebViewRect(hWnd);
+        tab.controller->put_Bounds(wvr);
+    } else {
+        CreateWebViewForTab(hWnd, idx);
+    }
+
+    // Update address bar
+    if (wd.hAddressBar)
+        SetWindowTextW(wd.hAddressBar, tab.url.c_str());
+
+    RepositionAddressBar(hWnd);
+    InvalidateRect(hWnd, NULL, FALSE);
 }
 
-// ==========================================
-// WEBVIEW2 SETUP HANDLERS
-// ==========================================
-class ViewerControllerHandler : public ICoreWebView2CreateCoreWebView2ControllerCompletedHandler {
-    std::wstring m_url;
+static void CloseTab(HWND hWnd, int idx) {
+    auto& wd = g_windows[hWnd];
+    if (wd.tabs.empty()) return;
+
+    auto& tab = wd.tabs[idx];
+    if (tab.controller) {
+        tab.controller->put_IsVisible(FALSE);
+        tab.controller->Close();
+    }
+    wd.tabs.erase(wd.tabs.begin() + idx);
+
+    if (wd.tabs.empty()) {
+        DestroyWindow(hWnd);
+        return;
+    }
+
+    wd.activeTab = min(wd.activeTab, (int)wd.tabs.size() - 1);
+    SwitchToTab(hWnd, wd.activeTab);
+    InvalidateRect(hWnd, NULL, FALSE);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// WEBVIEW2 CONTROLLER COMPLETED HANDLER
+// ──────────────────────────────────────────────────────────────────────────────
+class TabControllerHandler : public ICoreWebView2CreateCoreWebView2ControllerCompletedHandler {
     HWND m_hWnd;
+    int  m_tabIdx;
+    std::wstring m_startUrl;
+    ULONG m_ref = 1;
 public:
-    ViewerControllerHandler(std::wstring url, HWND hWnd) : m_url(url), m_hWnd(hWnd) {}
-    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override { *ppv = this; return S_OK; }
-    ULONG STDMETHODCALLTYPE AddRef() override { return 1; }
-    ULONG STDMETHODCALLTYPE Release() override { return 1; }
-    
-    HRESULT STDMETHODCALLTYPE Invoke(HRESULT result, ICoreWebView2Controller* controller) override {
-        if (controller != nullptr) {
-            g_mbData[m_hWnd].controller = controller;
-            controller->get_CoreWebView2(&g_mbData[m_hWnd].webview);
-            controller->put_IsVisible(TRUE);
+    TabControllerHandler(HWND hWnd, int tabIdx, std::wstring url)
+        : m_hWnd(hWnd), m_tabIdx(tabIdx), m_startUrl(url) {}
 
-            ComPtr<ICoreWebView2Controller2> controller2;
-            if (SUCCEEDED(controller->QueryInterface(IID_PPV_ARGS(&controller2)))) {
-                COREWEBVIEW2_COLOR darkBg = { 255, 30, 30, 30 }; 
-                controller2->put_DefaultBackgroundColor(darkBg);
-            }
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override {
+        *ppv = this; return S_OK;
+    }
+    ULONG STDMETHODCALLTYPE AddRef()  override { return InterlockedIncrement(&m_ref); }
+    ULONG STDMETHODCALLTYPE Release() override {
+        ULONG r = InterlockedDecrement(&m_ref);
+        if (!r) delete this; return r;
+    }
 
-            ICoreWebView2Settings* settings;
-            g_mbData[m_hWnd].webview->get_Settings(&settings);
-            ComPtr<ICoreWebView2Settings2> settings2;
-            if (SUCCEEDED(settings->QueryInterface(IID_PPV_ARGS(&settings2)))) {
-                settings2->put_UserAgent(L"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
-            }
+    HRESULT STDMETHODCALLTYPE Invoke(HRESULT hr, ICoreWebView2Controller* ctl) override {
+        if (!g_windows.count(m_hWnd)) return S_OK;
+        auto& wd = g_windows[m_hWnd];
+        if (m_tabIdx >= (int)wd.tabs.size()) return S_OK;
+        if (FAILED(hr) || !ctl) return S_OK;
 
-            // 🟢 BLOCK CLICKED ADULT LINKS
-            g_mbData[m_hWnd].webview->add_NavigationStarting(Callback<ICoreWebView2NavigationStartingEventHandler>(
-                [this](ICoreWebView2* sender, ICoreWebView2NavigationStartingEventArgs* args) -> HRESULT {
-                    LPWSTR uri;
-                    args->get_Uri(&uri);
+        auto& tab = wd.tabs[m_tabIdx];
+        tab.controller = ctl;
+        ctl->get_CoreWebView2(&tab.webview);
+
+        // Dark background
+        ComPtr<ICoreWebView2Controller2> ctl2;
+        if (SUCCEEDED(ctl->QueryInterface(IID_PPV_ARGS(&ctl2)))) {
+            COREWEBVIEW2_COLOR bg = { 255, 30, 30, 30 };
+            ctl2->put_DefaultBackgroundColor(bg);
+        }
+
+        // User-agent spoofing (Chrome)
+        ICoreWebView2Settings* settings = nullptr;
+        tab.webview->get_Settings(&settings);
+        ComPtr<ICoreWebView2Settings2> s2;
+        if (settings && SUCCEEDED(settings->QueryInterface(IID_PPV_ARGS(&s2)))) {
+            s2->put_UserAgent(
+                L"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                L"AppleWebKit/537.36 (KHTML, like Gecko) "
+                L"Chrome/124.0.0.0 Safari/537.36");
+        }
+
+        // Navigation blocking (adult content)
+        tab.webview->add_NavigationStarting(
+            Callback<ICoreWebView2NavigationStartingEventHandler>(
+                [this](ICoreWebView2*, ICoreWebView2NavigationStartingEventArgs* args) -> HRESULT {
+                    LPWSTR uri = nullptr; args->get_Uri(&uri);
                     if (uri) {
-                        std::wstring currentUrl = uri;
-                        CoTaskMemFree(uri);
-                        if (IsBlockedContent(currentUrl)) {
-                            args->put_Cancel(TRUE); // লিংক বাতিল করে দাও
-                            if (g_mbData.count(m_hWnd) && g_mbData[m_hWnd].hAddressBar) {
-                                SetWindowTextW(g_mbData[m_hWnd].hAddressBar, L""); // অ্যাড্রেসবার ক্লিয়ার
+                        if (IsBlockedContent(uri)) {
+                            args->put_Cancel(TRUE);
+                            if (g_windows.count(m_hWnd)) {
+                                auto& w = g_windows[m_hWnd];
+                                if (w.hAddressBar) SetWindowTextW(w.hAddressBar, L"");
                             }
                         }
+                        CoTaskMemFree(uri);
                     }
                     return S_OK;
-                }
-            ).Get(), nullptr);
+                }).Get(), nullptr);
 
-            g_mbData[m_hWnd].webview->add_NewWindowRequested(Callback<ICoreWebView2NewWindowRequestedEventHandler>(
-                [this](ICoreWebView2* sender, ICoreWebView2NewWindowRequestedEventArgs* args) -> HRESULT {
-                    args->put_Handled(TRUE); 
-                    LPWSTR uri; args->get_Uri(&uri);
-                    sender->Navigate(uri);   
-                    CoTaskMemFree(uri);
+        // Intercept new-window requests → same tab
+        tab.webview->add_NewWindowRequested(
+            Callback<ICoreWebView2NewWindowRequestedEventHandler>(
+                [](ICoreWebView2* sender, ICoreWebView2NewWindowRequestedEventArgs* args) -> HRESULT {
+                    args->put_Handled(TRUE);
+                    LPWSTR uri = nullptr; args->get_Uri(&uri);
+                    if (uri) { sender->Navigate(uri); CoTaskMemFree(uri); }
                     return S_OK;
-                }
-            ).Get(), nullptr);
+                }).Get(), nullptr);
 
-            ComPtr<ICoreWebView2Controller3> controller3;
-            if (SUCCEEDED(controller->QueryInterface(IID_PPV_ARGS(&controller3)))) {
-                EventRegistrationToken token;
-                controller3->add_AcceleratorKeyPressed(new AcceleratorHandler(m_hWnd), &token);
-            }
+        // Title changed
+        tab.webview->add_DocumentTitleChanged(
+            Callback<ICoreWebView2DocumentTitleChangedEventHandler>(
+                [this](ICoreWebView2* sender, IUnknown*) -> HRESULT {
+                    if (!g_windows.count(m_hWnd)) return S_OK;
+                    auto& w = g_windows[m_hWnd];
+                    if (m_tabIdx >= (int)w.tabs.size()) return S_OK;
+                    LPWSTR docTitle = nullptr; sender->get_DocumentTitle(&docTitle);
+                    if (docTitle) {
+                        w.tabs[m_tabIdx].title = docTitle;
+                        CoTaskMemFree(docTitle);
+                        RECT navR = { 0, 0, 10000, NAV_TOTAL_H };
+                        InvalidateRect(m_hWnd, &navR, FALSE);
+                    }
+                    return S_OK;
+                }).Get(), nullptr);
 
-            if (g_mbData[m_hWnd].isBrowserMode) {
-                EventRegistrationToken token2;
-                g_mbData[m_hWnd].webview->add_SourceChanged(Callback<ICoreWebView2SourceChangedEventHandler>(
-                    [this](ICoreWebView2* sender, ICoreWebView2SourceChangedEventArgs* args) -> HRESULT {
-                        if (g_mbData.count(m_hWnd)) {
-                            if(g_mbData[m_hWnd].hAddressBar) {
-                                LPWSTR uri; sender->get_Source(&uri);
-                                if (uri) { SetWindowTextW(g_mbData[m_hWnd].hAddressBar, uri); CoTaskMemFree(uri); }
-                            }
-                            LPWSTR docTitle; sender->get_DocumentTitle(&docTitle);
-                            if (docTitle) {
-                                g_mbData[m_hWnd].title = docTitle;
-                                CoTaskMemFree(docTitle);
-                                RECT navRect = { 0, 0, 800, NAV_HEIGHT };
-                                InvalidateRect(m_hWnd, &navRect, FALSE);
-                            }
-                        }
-                        return S_OK;
-                    }).Get(), &token2);
-            }
+        // URL changed → sync address bar if active
+        tab.webview->add_SourceChanged(
+            Callback<ICoreWebView2SourceChangedEventHandler>(
+                [this](ICoreWebView2* sender, ICoreWebView2SourceChangedEventArgs*) -> HRESULT {
+                    if (!g_windows.count(m_hWnd)) return S_OK;
+                    auto& w = g_windows[m_hWnd];
+                    if (m_tabIdx != w.activeTab) return S_OK;
+                    LPWSTR src = nullptr; sender->get_Source(&src);
+                    if (src && w.hAddressBar) { SetWindowTextW(w.hAddressBar, src); CoTaskMemFree(src); }
+                    return S_OK;
+                }).Get(), nullptr);
 
-            RECT b; GetClientRect(m_hWnd, &b);
-            b.top += NAV_HEIGHT;
-            controller->put_Bounds(b);
-
-            auto wv = g_mbData[m_hWnd].webview;
-            if (m_url == L"RAS_BROWSER") wv->Navigate(L"https://www.google.com");
-            else if (m_url == L"LOCAL_PDF_SPLIT") wv->NavigateToString(HTML_PDF_SPLIT.c_str());
-            else if (m_url == L"LOCAL_PDF_MERGE") wv->NavigateToString(HTML_PDF_MERGE.c_str());
-            else if (m_url == L"LOCAL_IMG_TO_PDF") wv->NavigateToString(HTML_IMG_TO_PDF.c_str());
-            else if (m_url == L"LOCAL_JOB_PHOTO") wv->NavigateToString(HTML_JOB_PHOTO.c_str());
-            else if (m_url == L"LOCAL_JOB_SIGN") wv->NavigateToString(HTML_JOB_SIGN.c_str());
-            else if (m_url == L"LOCAL_AGE_CALC") wv->NavigateToString(HTML_AGE_CALC.c_str());
-            else if (m_url == L"LOCAL_COMPRESS_PDF") wv->NavigateToString(HTML_COMPRESS_PDF.c_str());
-            else if (m_url == L"LOCAL_PHOTO_VIEWER") wv->NavigateToString(HTML_PHOTO_VIEWER.c_str());
-            else wv->Navigate(m_url.c_str());
+        // Keyboard shortcuts (F11 / ESC)
+        ComPtr<ICoreWebView2Controller3> ctl3;
+        if (SUCCEEDED(ctl->QueryInterface(IID_PPV_ARGS(&ctl3)))) {
+            EventRegistrationToken tok;
+            ctl3->add_AcceleratorKeyPressed(new AcceleratorHandler(m_hWnd), &tok);
         }
+
+        // Visibility & bounds
+        bool isActive = (m_tabIdx == wd.activeTab);
+        ctl->put_IsVisible(isActive ? TRUE : FALSE);
+        RECT wvr = GetWebViewRect(m_hWnd);
+        ctl->put_Bounds(wvr);
+
+        // Navigate
+        std::wstring nav = m_startUrl;
+        if (nav == L"RAS_BROWSER")           nav = L"https://www.google.com";
+        else if (nav == L"LOCAL_PDF_SPLIT")  { tab.webview->NavigateToString(HTML_PDF_SPLIT.c_str()); return S_OK; }
+        else if (nav == L"LOCAL_PDF_MERGE")  { tab.webview->NavigateToString(HTML_PDF_MERGE.c_str()); return S_OK; }
+        else if (nav == L"LOCAL_IMG_TO_PDF") { tab.webview->NavigateToString(HTML_IMG_TO_PDF.c_str()); return S_OK; }
+        else if (nav == L"LOCAL_JOB_PHOTO")  { tab.webview->NavigateToString(HTML_JOB_PHOTO.c_str()); return S_OK; }
+        else if (nav == L"LOCAL_JOB_SIGN")   { tab.webview->NavigateToString(HTML_JOB_SIGN.c_str()); return S_OK; }
+        else if (nav == L"LOCAL_AGE_CALC")   { tab.webview->NavigateToString(HTML_AGE_CALC.c_str()); return S_OK; }
+        else if (nav == L"LOCAL_COMPRESS_PDF"){ tab.webview->NavigateToString(HTML_COMPRESS_PDF.c_str()); return S_OK; }
+        else if (nav == L"LOCAL_PHOTO_VIEWER"){ tab.webview->NavigateToString(HTML_PHOTO_VIEWER.c_str()); return S_OK; }
+
+        tab.webview->Navigate(nav.c_str());
         return S_OK;
     }
 };
 
-// ==========================================
-// 🚀 LAUNCH FUNCTION 
-// ==========================================
-void LaunchMiniBrowser(std::wstring url, std::wstring title) {
-    static bool classRegistered = false;
-    if (!classRegistered) {
-        WNDCLASSW wc = {0};
-        wc.lpfnWndProc = ViewerWndProc;
-        wc.hInstance = GetModuleHandle(NULL);
-        wc.lpszClassName = L"RasMiniBrowserClass";
-        wc.hCursor = LoadCursor(NULL, IDC_ARROW);
-        RegisterClassW(&wc);
-        classRegistered = true;
-    }
+static void CreateWebViewForTab(HWND hWnd, int tabIdx) {
+    if (!g_windows.count(hWnd)) return;
+    auto& wd  = g_windows[hWnd];
+    auto& tab = wd.tabs[tabIdx];
 
-    std::wstring fullTitle = L"New Tab";
-    
-    HWND hViewerWnd = CreateWindowExW(
-        0, L"RasMiniBrowserClass", fullTitle.c_str(),
-        WS_POPUP | WS_THICKFRAME | WS_CAPTION | WS_SYSMENU | WS_MAXIMIZEBOX | WS_MINIMIZEBOX | WS_CLIPCHILDREN, 
-        CW_USEDEFAULT, CW_USEDEFAULT, 1050, 750,
-        NULL, NULL, GetModuleHandle(NULL), NULL
-    );
-    
-    DWORD style = GetWindowLong(hViewerWnd, GWL_STYLE);
-    SetWindowLong(hViewerWnd, GWL_STYLE, style & ~WS_CAPTION);
-
-    g_mbData[hViewerWnd].title = fullTitle;
-
-    if (url == L"RAS_BROWSER" || url.find(L"http") == 0) {
-        g_mbData[hViewerWnd].isBrowserMode = true;
-        HWND hEdit = CreateWindowExW(0, L"EDIT", L"https://www.google.com",
-            WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-            0, 0, 0, 0, hViewerWnd, (HMENU)IDC_ADDRESS_BAR, GetModuleHandle(NULL), NULL);
-        
-        SetWindowSubclass(hEdit, AddressBarSubclassProc, 1, 0);
-        SendMessage(hEdit, WM_SETFONT, (WPARAM)CreateFontW(16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI"), TRUE);
-        g_mbData[hViewerWnd].hAddressBar = hEdit;
-    }
-
-    HICON hAppIcon = LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APP_ICON));
-    if (hAppIcon) {
-        SendMessage(hViewerWnd, WM_SETICON, ICON_BIG, (LPARAM)hAppIcon);
-        SendMessage(hViewerWnd, WM_SETICON, ICON_SMALL, (LPARAM)hAppIcon);
-    }
-
-    ShowWindow(hViewerWnd, SW_SHOW);
-    UpdateWindow(hViewerWnd);
-
-    auto startWebView = [hViewerWnd, url]() {
-        g_miniEnv->CreateCoreWebView2Controller(hViewerWnd, new ViewerControllerHandler(url, hViewerWnd));
+    auto doCreate = [hWnd, tabIdx, &tab]() {
+        g_sharedEnv->CreateCoreWebView2Controller(
+            hWnd, new TabControllerHandler(hWnd, tabIdx, tab.url));
     };
 
-    if (g_miniEnv) {
-        startWebView(); 
+    if (g_sharedEnv) {
+        doCreate();
     } else {
-        // 🟢 FIX: GPU Rasterization, Zero Copy for Ultra Fast Speed
         auto options = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
-        options->put_AdditionalBrowserArguments(L"--enable-features=msWebView2EnableExtensions --enable-gpu-rasterization --enable-zero-copy --disable-features=Translate");
+        options->put_AdditionalBrowserArguments(
+            L"--enable-features=msWebView2EnableExtensions "
+            L"--enable-gpu-rasterization --enable-zero-copy "
+            L"--disable-features=Translate");
 
-        std::wstring userDataFolder = L"C:\\ProgramData\\RasFocus\\.BrowserData";
+        std::wstring udDir = L"C:\\ProgramData\\RasFocus\\.BrowserData";
         CreateDirectoryW(L"C:\\ProgramData\\RasFocus", NULL);
-        CreateDirectoryW(userDataFolder.c_str(), NULL);
-        SetFileAttributesW(userDataFolder.c_str(), FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM);
+        CreateDirectoryW(udDir.c_str(), NULL);
+        SetFileAttributesW(udDir.c_str(), FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM);
 
-        CreateCoreWebView2EnvironmentWithOptions(nullptr, userDataFolder.c_str(), options.Get(),
+        CreateCoreWebView2EnvironmentWithOptions(
+            nullptr, udDir.c_str(), options.Get(),
             Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
-                [startWebView](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
-                    if (SUCCEEDED(result)) {
-                        g_miniEnv = env;
-                        startWebView();
-                    }
+                [doCreate](HRESULT hr, ICoreWebView2Environment* env) -> HRESULT {
+                    if (SUCCEEDED(hr)) { g_sharedEnv = env; doCreate(); }
                     return S_OK;
                 }).Get());
     }
+}
+
+static void AddTab(HWND hWnd, std::wstring url) {
+    auto& wd = g_windows[hWnd];
+    TabData tab;
+    tab.url   = url;
+    tab.title = L"New Tab";
+    wd.tabs.push_back(tab);
+    int newIdx = (int)wd.tabs.size() - 1;
+    SwitchToTab(hWnd, newIdx);
+    CreateWebViewForTab(hWnd, newIdx);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// WINDOW PROCEDURE
+// ──────────────────────────────────────────────────────────────────────────────
+LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    switch (msg) {
+
+    // ── Custom chrome / borderless ────────────────────────────────────────────
+    case WM_NCCALCSIZE:
+        if (wParam == TRUE) return 0;
+        break;
+
+    case WM_NCHITTEST: {
+        POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+        ScreenToClient(hWnd, &pt);
+        RECT r; GetClientRect(hWnd, &r);
+        int border = 8;
+
+        if (!g_windows.count(hWnd) || !g_windows[hWnd].isFullScreen) {
+            if (pt.y < border && pt.x < border)           return HTTOPLEFT;
+            if (pt.y < border && pt.x >= r.right-border)  return HTTOPRIGHT;
+            if (pt.y >= r.bottom-border && pt.x < border) return HTBOTTOMLEFT;
+            if (pt.y >= r.bottom-border && pt.x >= r.right-border) return HTBOTTOMRIGHT;
+            if (pt.y < border)              return HTTOP;
+            if (pt.y >= r.bottom-border)    return HTBOTTOM;
+            if (pt.x < border)              return HTLEFT;
+            if (pt.x >= r.right-border)     return HTRIGHT;
+
+            // Title bar: drag unless over window buttons
+            if (pt.y < TITLEBAR_H) {
+                int btnX = r.right - WIN_BTN_W * 3;
+                if (pt.x >= btnX)  return HTCLIENT; // window buttons
+                if (pt.x < 200)    return HTCLIENT; // brand area (click-through)
+                return HTCAPTION;
+            }
+            // Tab strip & toolbar → client
+            if (pt.y < NAV_TOTAL_H) return HTCLIENT;
+        }
+        return HTCLIENT;
+    }
+
+    // ── Paint ─────────────────────────────────────────────────────────────────
+    case WM_PAINT: {
+        PAINTSTRUCT ps; HDC hdc = BeginPaint(hWnd, &ps);
+        DrawBrowser(hWnd, hdc);
+        EndPaint(hWnd, &ps);
+        return 0;
+    }
+
+    case WM_ERASEBKGND:
+        return 1; // prevent flicker; we paint everything in WM_PAINT
+
+    // ── Address bar text colour ───────────────────────────────────────────────
+    case WM_CTLCOLOREDIT: {
+        if (g_windows.count(hWnd) && (HWND)lParam == g_windows[hWnd].hAddressBar) {
+            HDC hEdit = (HDC)wParam;
+            SetTextColor(hEdit, RGB(232, 232, 232));
+            SetBkColor  (hEdit, RGB(56,  56,  56));
+            static HBRUSH hb = CreateSolidBrush(RGB(56, 56, 56));
+            return (LRESULT)hb;
+        }
+        break;
+    }
+
+    // ── Resize ────────────────────────────────────────────────────────────────
+    case WM_SIZE: {
+        if (!g_windows.count(hWnd)) break;
+        auto& wd = g_windows[hWnd];
+        RepositionAddressBar(hWnd);
+        RECT wvr = GetWebViewRect(hWnd);
+        for (int i = 0; i < (int)wd.tabs.size(); i++) {
+            if (wd.tabs[i].controller) {
+                if (i == wd.activeTab)
+                    wd.tabs[i].controller->put_Bounds(wvr);
+            }
+        }
+        InvalidateRect(hWnd, NULL, FALSE);
+        break;
+    }
+
+    // ── Mouse move (hover hit-testing) ────────────────────────────────────────
+    case WM_MOUSEMOVE: {
+        if (!g_windows.count(hWnd) || g_windows[hWnd].isFullScreen) break;
+        auto& wd = g_windows[hWnd];
+        int x = GET_X_LPARAM(lParam), y = GET_Y_LPARAM(lParam);
+        RECT cr; GetClientRect(hWnd, &cr);
+        int W = cr.right;
+        bool dirty = false;
+
+        // Window buttons
+        {
+            int bx = W - WIN_BTN_W*3;
+            bool nm = (y < TITLEBAR_H && x >= bx        && x < bx+WIN_BTN_W);
+            bool mx = (y < TITLEBAR_H && x >= bx+WIN_BTN_W && x < bx+WIN_BTN_W*2);
+            bool cl = (y < TITLEBAR_H && x >= bx+WIN_BTN_W*2);
+            if (wd.hMin!=nm||wd.hMax!=mx||wd.hClose!=cl) { wd.hMin=nm;wd.hMax=mx;wd.hClose=cl; dirty=true; }
+        }
+
+        // Tabs hover
+        {
+            int tc = (int)wd.tabs.size();
+            int prev = wd.hoverTabIndex; wd.hoverTabIndex = -1;
+            for (int i = 0; i < tc; i++) {
+                RECT tr = GetTabRect(W, i, tc);
+                if (x >= tr.left && x < tr.right && y >= tr.top && y < tr.bottom)
+                    { wd.hoverTabIndex = i; break; }
+            }
+            if (prev != wd.hoverTabIndex) dirty = true;
+        }
+
+        // New-tab button
+        {
+            RECT ntr = GetNewTabBtnRect(W, (int)wd.tabs.size());
+            bool nt = (x >= ntr.left && x < ntr.right && y >= ntr.top && y < ntr.bottom);
+            if (wd.hNewTab != nt) { wd.hNewTab = nt; dirty = true; }
+        }
+
+        // Toolbar nav buttons
+        {
+            int toolY = TITLEBAR_H + TABBAR_H;
+            int cx = 8;
+            bool b  = (y>=toolY&&y<NAV_TOTAL_H&&x>=cx&&x<cx+34); cx+=36;
+            bool f  = (y>=toolY&&y<NAV_TOTAL_H&&x>=cx&&x<cx+34); cx+=36;
+            bool rl = (y>=toolY&&y<NAV_TOTAL_H&&x>=cx&&x<cx+34);
+            if (wd.hBack!=b||wd.hFwd!=f||wd.hRel!=rl) { wd.hBack=b;wd.hFwd=f;wd.hRel=rl; dirty=true; }
+
+            int rx = W - 36*3 - 12;
+            bool e  = (y>=toolY&&y<NAV_TOTAL_H&&x>=rx&&x<rx+34); rx+=36;
+            bool dl = (y>=toolY&&y<NAV_TOTAL_H&&x>=rx&&x<rx+34); rx+=36;
+            bool st = (y>=toolY&&y<NAV_TOTAL_H&&x>=rx&&x<rx+34);
+            if (wd.hExt!=e||wd.hDl!=dl||wd.hSet!=st) { wd.hExt=e;wd.hDl=dl;wd.hSet=st; dirty=true; }
+        }
+
+        if (dirty) { RECT r={0,0,W,NAV_TOTAL_H}; InvalidateRect(hWnd,&r,FALSE); }
+        break;
+    }
+
+    // ── Mouse leave: reset hover ───────────────────────────────────────────────
+    case WM_MOUSELEAVE: {
+        if (g_windows.count(hWnd)) {
+            auto& wd = g_windows[hWnd];
+            wd.hMin=wd.hMax=wd.hClose=false;
+            wd.hBack=wd.hFwd=wd.hRel=false;
+            wd.hExt=wd.hDl=wd.hSet=false;
+            wd.hNewTab=false; wd.hoverTabIndex=-1;
+            RECT cr; GetClientRect(hWnd,&cr); cr.bottom=NAV_TOTAL_H;
+            InvalidateRect(hWnd,&cr,FALSE);
+        }
+        break;
+    }
+
+    // ── Left click ────────────────────────────────────────────────────────────
+    case WM_LBUTTONDOWN: {
+        if (!g_windows.count(hWnd) || g_windows[hWnd].isFullScreen) break;
+        auto& wd = g_windows[hWnd];
+        int x = GET_X_LPARAM(lParam), y = GET_Y_LPARAM(lParam);
+        RECT cr; GetClientRect(hWnd,&cr); int W=cr.right;
+
+        // Window controls
+        if (wd.hMin)   { ShowWindow(hWnd, SW_MINIMIZE); break; }
+        if (wd.hMax)   { ShowWindow(hWnd, IsZoomed(hWnd)?SW_RESTORE:SW_MAXIMIZE); break; }
+        if (wd.hClose) { DestroyWindow(hWnd); break; }
+
+        // Tab clicks
+        {
+            int tc = (int)wd.tabs.size();
+            for (int i = 0; i < tc; i++) {
+                RECT tr = GetTabRect(W, i, tc);
+                if (x>=tr.left&&x<tr.right&&y>=tr.top&&y<tr.bottom) {
+                    // Check close button (rightmost 20px of tab)
+                    if (x >= tr.right-22) { CloseTab(hWnd, i); break; }
+                    SwitchToTab(hWnd, i);
+                    break;
+                }
+            }
+        }
+
+        // New-tab button
+        if (wd.hNewTab) { AddTab(hWnd, L"https://www.google.com"); break; }
+
+        // Toolbar nav
+        if (auto* tab = wd.active()) {
+            if (wd.hBack && tab->webview) tab->webview->GoBack();
+            if (wd.hFwd  && tab->webview) tab->webview->GoForward();
+            if (wd.hRel  && tab->webview) tab->webview->Reload();
+        }
+
+        // Right icons (stubs)
+        if (wd.hExt) MessageBoxW(hWnd, L"এক্সটেনশন মেনু এখানে দেখাবে।", L"Extensions", MB_OK|MB_ICONINFORMATION);
+        if (wd.hDl)  MessageBoxW(hWnd, L"ডাউনলোড প্যানেল এখানে দেখাবে।",  L"Downloads",  MB_OK|MB_ICONINFORMATION);
+        if (wd.hSet) MessageBoxW(hWnd, L"সেটিংস মেনু এখানে দেখাবে।",       L"Settings",   MB_OK|MB_ICONINFORMATION);
+        break;
+    }
+
+    // ── Double-click on tab bar: new tab ──────────────────────────────────────
+    case WM_LBUTTONDBLCLK: {
+        if (!g_windows.count(hWnd)) break;
+        int y = GET_Y_LPARAM(lParam);
+        if (y >= TITLEBAR_H && y < TITLEBAR_H+TABBAR_H)
+            AddTab(hWnd, L"https://www.google.com");
+        break;
+    }
+
+    // ── Minimum window size ───────────────────────────────────────────────────
+    case WM_GETMINMAXINFO: {
+        auto* mm = (LPMINMAXINFO)lParam;
+        mm->ptMinTrackSize.x = 640;
+        mm->ptMinTrackSize.y = 480;
+        return 0;
+    }
+
+    case WM_CLOSE:
+        DestroyWindow(hWnd);
+        break;
+
+    case WM_DESTROY: {
+        if (g_windows.count(hWnd)) {
+            for (auto& tab : g_windows[hWnd].tabs)
+                if (tab.controller) tab.controller->Close();
+            g_windows.erase(hWnd);
+        }
+        if (g_isPureViewerMode && g_windows.empty())
+            PostQuitMessage(0);
+        break;
+    }
+
+    default:
+        return DefWindowProcW(hWnd, msg, wParam, lParam);
+    }
+    return 0;
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// PUBLIC API  —  LaunchMiniBrowser()
+// ──────────────────────────────────────────────────────────────────────────────
+void LaunchMiniBrowser(std::wstring url, std::wstring /*title*/) {
+    // Register window class once
+    static bool registered = false;
+    if (!registered) {
+        WNDCLASSW wc     = {};
+        wc.lpfnWndProc   = ViewerWndProc;
+        wc.hInstance     = GetModuleHandle(NULL);
+        wc.lpszClassName = L"RasBrowserWnd";
+        wc.hCursor       = LoadCursor(NULL, IDC_ARROW);
+        wc.style         = CS_DBLCLKS;            // enable double-click messages
+        RegisterClassW(&wc);
+        registered = true;
+    }
+
+    HWND hWnd = CreateWindowExW(
+        0, L"RasBrowserWnd", L"RasBrowser",
+        WS_POPUP | WS_THICKFRAME | WS_CAPTION | WS_SYSMENU |
+        WS_MAXIMIZEBOX | WS_MINIMIZEBOX | WS_CLIPCHILDREN,
+        CW_USEDEFAULT, CW_USEDEFAULT, 1100, 780,
+        NULL, NULL, GetModuleHandle(NULL), NULL);
+
+    // Remove OS caption (we draw our own)
+    SetWindowLong(hWnd, GWL_STYLE, GetWindowLong(hWnd, GWL_STYLE) & ~WS_CAPTION);
+
+    // Init window data
+    auto& wd = g_windows[hWnd];
+
+    // Address bar (shared EDIT control)
+    HWND hEdit = CreateWindowExW(
+        0, L"EDIT", L"https://www.google.com",
+        WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+        0, 0, 100, 26, hWnd,
+        (HMENU)IDC_ADDRESS_BAR, GetModuleHandle(NULL), NULL);
+
+    SetWindowSubclass(hEdit, AddrBarProc, 1, 0);
+    HFONT hFont = CreateFontW(15, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+    SendMessage(hEdit, WM_SETFONT, (WPARAM)hFont, TRUE);
+    wd.hAddressBar = hEdit;
+
+    // App icon
+    HICON hIco = LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APP_ICON));
+    if (hIco) {
+        SendMessage(hWnd, WM_SETICON, ICON_BIG,   (LPARAM)hIco);
+        SendMessage(hWnd, WM_SETICON, ICON_SMALL, (LPARAM)hIco);
+    }
+
+    ShowWindow(hWnd, SW_SHOW);
+    UpdateWindow(hWnd);
+
+    // Add first tab
+    TabData firstTab;
+    firstTab.url   = url;
+    firstTab.title = L"New Tab";
+    wd.tabs.push_back(firstTab);
+    wd.activeTab = 0;
+
+    RepositionAddressBar(hWnd);
+    CreateWebViewForTab(hWnd, 0);
 }
