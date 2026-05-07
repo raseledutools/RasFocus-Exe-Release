@@ -1,6 +1,6 @@
-
 #include "tab_blocks.h"
 #include "tab_schedule_blocks.h"
+#include "tab_schedule_blocks.h" // নতুন লিঙ্ক করা হলো
 #include <vector>
 #include <string>
 #include <commdlg.h> 
@@ -13,8 +13,6 @@
 #include <fstream>
 #include <shlobj.h>
 #include <ctime>
-#include <wininet.h> // For Firebase REST API
-#pragma comment(lib, "wininet.lib")
 
 using namespace Gdiplus;
 using namespace std;
@@ -36,11 +34,11 @@ static int hoverBlockTab = -1;
 
 // --- Focus Control States ---
 static bool isFocusActive = false; 
-static int controlMode = 0; // 0 = Self Control, 1 = Parents Control
+static int controlMode = 0; 
 static bool hoverControlDropdown = false;
 static bool isControlDropdownOpen = false;
 static bool hoverOptSelf = false;
-static bool hoverOptParents = false;
+static bool hoverOptFriend = false;
 static bool hoverStartFocusBtn = false;
 static time_t focusEndTimeBlocks = 0; // PC Restart persistence
 
@@ -67,9 +65,7 @@ vector<Quote> motivationalQuotes = {
 
 // --- Overlays States ---
 static bool showTimeOverlay = false;
-static int focusMonths = 0; static int focusDays = 0;
 static int focusHours = 1; static int focusMins = 0;
-static bool hTimeMoM = false, hTimeMoP = false, hTimeDM = false, hTimeDP = false;
 static bool hTimeHM = false, hTimeHP = false, hTimeMM = false, hTimeMP = false; 
 static bool hTimeStart = false, hTimeCancel = false;
 
@@ -78,13 +74,6 @@ static wstring inputPassText = L"";
 static bool isPassInputActive = true, hPassInput = false;
 static bool hPassConfirm = false, hPassCancel = false;
 static bool isStoppingFocus = false; 
-
-// --- Long Text Overlay States ---
-static bool showLongTextOverlay = false;
-static wstring inputLongText = L"";
-static bool isLongTextInputActive = true, hLongTextInput = false;
-static bool hLongTextConfirm = false, hLongTextCancel = false;
-static wstring target200Words = L"i promise to stay focused and not waste my precious time on useless distractions because my future depends on what i do today and every single second counts towards my ultimate goal of achieving success and making my parents proud i will build discipline and consistency to conquer my dreams and nothing will stop me from reaching the top level of my career i know it is hard but hard work pays off and i am ready to put in the effort required to be the best version of myself i will not let instant gratification ruin my long term vision i am strong i am dedicated i am unstoppable i will keep pushing forward no matter how many obstacles come my way i believe in my potential and i will prove it to the world through my actions focus is my superpower and i will use it to unlock my true greatness everyday is a new opportunity to learn grow and become better i will not waste it i am in full control of my actions and my destiny i will succeed and i will never give up on my dreams because i am meant for greatness and i will prove it to everyone who doubted me i am focused i am ready i am successful";
 
 // --- Store Apps Overlay ---
 static bool showStoreOverlay = false;
@@ -114,8 +103,7 @@ static wstring appInputText = L"";
 static bool isAppInputActive = false, hoverAppInput = false, hoverAppAddBtn = false;
 static bool hoverAppCombo = false, isAppComboOpen = false;
 static int hoverAppOptIdx = -1;
-// Updated to include requested PC tools for simple access
-vector<wstring> commonApps = { L"SystemSettings.exe", L"control.exe", L"cmd.exe", L"taskmgr.exe" };
+vector<wstring> commonApps = { L"chrome.exe", L"msedge.exe", L"firefox.exe", L"telegram.exe", L"whatsapp.exe", L"discord.exe", L"vlc.exe" };
 
 static bool hoverAddExe = false, hoverAddStoreApp = false, hoverAddWindowTitle = false;
 
@@ -139,41 +127,6 @@ static const Color SClrOverlay(180, 0, 0, 0);
 static const Color SClrDisabled(255, 200, 200, 200);
 
 // ==========================================
-// SYSTEM AUTO START & FIREBASE CLOUD SAVE
-// ==========================================
-void SetAutoStart() {
-    HKEY hKey;
-    const char* czStartName = "RasFocusApp";
-    char szPathToExe[MAX_PATH];
-    GetModuleFileNameA(NULL, szPathToExe, MAX_PATH);
-    if (RegCreateKeyExA(HKEY_CURRENT_USER, "Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, NULL, 0, KEY_WRITE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
-        RegSetValueExA(hKey, czStartName, 0, REG_SZ, (BYTE*)szPathToExe, strlen(szPathToExe) + 1);
-        RegCloseKey(hKey);
-    }
-}
-
-void SyncSessionToFirebase() {
-    thread([]() {
-        HINTERNET hSession = InternetOpenA("RasFocus Agent", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
-        if (hSession) {
-            HINTERNET hConnect = InternetConnectA(hSession, "rasfocus-c746d-default-rtdb.firebaseio.com", INTERNET_DEFAULT_HTTPS_PORT, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 1);
-            if (hConnect) {
-                HINTERNET hRequest = HttpOpenRequestA(hConnect, "PUT", "/sessions/current_user.json", NULL, NULL, NULL, INTERNET_FLAG_SECURE, 1);
-                if (hRequest) {
-                    string jsonData = "{\"isFocusActive\":" + to_string(isFocusActive) + 
-                                      ",\"controlMode\":" + to_string(controlMode) + 
-                                      ",\"endTime\":" + to_string(focusEndTimeBlocks) + "}";
-                    HttpSendRequestA(hRequest, NULL, 0, (LPVOID)jsonData.c_str(), jsonData.length());
-                    InternetCloseHandle(hRequest);
-                }
-                InternetCloseHandle(hConnect);
-            }
-            InternetCloseHandle(hSession);
-        }
-    }).detach();
-}
-
-// ==========================================
 // DATA PERSISTENCE (SAVE / LOAD)
 // ==========================================
 wstring GetAppDataFolder() {
@@ -181,7 +134,6 @@ wstring GetAppDataFolder() {
     if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, 0, path))) {
         wstring fullPath = wstring(path) + L"\\RasFocus";
         CreateDirectoryW(fullPath.c_str(), NULL);
-        SetFileAttributesW(fullPath.c_str(), FILE_ATTRIBUTE_HIDDEN); // Make folder hidden
         return fullPath;
     }
     return L"";
@@ -197,8 +149,6 @@ void SaveBlocksData() {
     out.write((char*)&controlMode, sizeof(controlMode));
     out.write((char*)&showQuotes, sizeof(showQuotes));
     out.write((char*)&quoteLanguage, sizeof(quoteLanguage));
-    out.write((char*)&focusMonths, sizeof(focusMonths));
-    out.write((char*)&focusDays, sizeof(focusDays));
     out.write((char*)&focusHours, sizeof(focusHours));
     out.write((char*)&focusMins, sizeof(focusMins));
     out.write((char*)&focusEndTimeBlocks, sizeof(focusEndTimeBlocks));
@@ -223,9 +173,6 @@ void SaveBlocksData() {
         out.write((char*)a.name.data(), len * sizeof(wchar_t));
         out.write((char*)&a.isSystemLocked, sizeof(a.isSystemLocked));
     }
-
-    SetAutoStart(); 
-    SyncSessionToFirebase();
 }
 
 void LoadBlocksData() {
@@ -238,8 +185,6 @@ void LoadBlocksData() {
     in.read((char*)&controlMode, sizeof(controlMode));
     in.read((char*)&showQuotes, sizeof(showQuotes));
     in.read((char*)&quoteLanguage, sizeof(quoteLanguage));
-    in.read((char*)&focusMonths, sizeof(focusMonths));
-    in.read((char*)&focusDays, sizeof(focusDays));
     in.read((char*)&focusHours, sizeof(focusHours));
     in.read((char*)&focusMins, sizeof(focusMins));
     in.read((char*)&focusEndTimeBlocks, sizeof(focusEndTimeBlocks));
@@ -631,7 +576,7 @@ static void DrawBlocksOverlaySpinner(Graphics& g, float x, float y, const wstrin
     Pen penBorder(SClrBorder, 1.5f);
     StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
 
-    RectF mRect(x, y, 32.0f, 36.0f); RectF tRect(x + 32.0f, y, 40.0f, 36.0f); RectF pRect(x + 72.0f, y, 32.0f, 36.0f);
+    RectF mRect(x, y, 32.0f, 36.0f); RectF tRect(x + 32.0f, y, 60.0f, 36.0f); RectF pRect(x + 92.0f, y, 32.0f, 36.0f);
 
     g.FillRectangle(hM ? &brushBtnHover : &brushBtn, mRect); g.DrawRectangle(&penBorder, mRect.X, mRect.Y, mRect.Width, mRect.Height);
     g.DrawString(L"\xE738", -1, fIcon, mRect, &fmtC, &brushDark);
@@ -718,11 +663,11 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
         SolidBrush cDropBg((!isFocusActive && hoverControlDropdown) ? SClrBgHover : (isFocusActive ? SClrBg : SClrWhite));
         g.FillPath(&cDropBg, cdp); g.DrawPath(&penBorder, cdp); delete cdp;
         
-        wstring ctrlTxt = (controlMode == 0) ? L"Self Control" : L"Parents Control";
+        wstring ctrlTxt = (controlMode == 0) ? L"Self Control" : L"Friend Control";
         g.DrawString(ctrlTxt.c_str(), -1, &fBold, RectF(ctrlDrop.X + 15.0f, ctrlDrop.Y, ctrlDrop.Width - 30.0f, ctrlDrop.Height), &fmtL, isFocusActive ? &brushGray : &brushDark);
         g.DrawString(L"\xE70D", -1, &fSmallIcon, RectF(ctrlDrop.X + ctrlDrop.Width - 30.0f, ctrlDrop.Y, 30.0f, ctrlDrop.Height), &fmtC, &brushGray);
 
-        RectF startBtn(boxX + 205.0f, rowY, 200.0f, 40.0f);
+        RectF startBtn(boxX + 205.0f, rowY, 140.0f, 40.0f);
         
         if (isFocusActive && controlMode == 0) {
             if (std::time(nullptr) >= focusEndTimeBlocks) { 
@@ -736,13 +681,10 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
         
         wstring startTextStr = L"Start Focus";
         if (isFocusActive) {
-            time_t left = focusEndTimeBlocks - std::time(nullptr);
-            int mLeft = left / 2592000; left %= 2592000;
-            int dLeft = left / 86400; left %= 86400;
-            int hLeft = left / 3600; left %= 3600;
-            int minLeft = left / 60;
             if (controlMode == 0) {
-                startTextStr = L"Locked " + to_wstring(mLeft) + L"M " + to_wstring(dLeft) + L"d " + to_wstring(hLeft) + L"h " + to_wstring(minLeft) + L"m";
+                time_t left = focusEndTimeBlocks - std::time(nullptr);
+                int mLeft = (left / 60) + 1;
+                startTextStr = L"Locked (" + to_wstring(mLeft) + L"m)";
             } else {
                 startTextStr = L"Stop Focus";
             }
@@ -750,7 +692,7 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
         g.DrawString(startTextStr.c_str(), -1, &fBold, startBtn, &fmtC, &brushWhite);
         
         if (isFocusActive) {
-            g.DrawString(L"FOCUS ACTIVE: Uninstallation & Task Manager restricted.", -1, &fInfo, RectF(boxX + 415.0f, rowY, 400.0f, 40.0f), &fmtL, &brushRed);
+            g.DrawString(L"FOCUS ACTIVE: Uninstallation & Task Manager restricted.", -1, &fInfo, RectF(boxX + 360.0f, rowY, 500.0f, 40.0f), &fmtL, &brushRed);
         }
 
         rowY += 60.0f; g.DrawLine(&penBorder, boxX + 30.0f, rowY, boxX + boxW - 30.0f, rowY); rowY += 15.0f;
@@ -984,25 +926,25 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
             g.FillRectangle(&opt1Bg, RectF(listRect.X + 2.0f, listY + 2.0f, listRect.Width - 4.0f, 38.0f));
             g.DrawString(L"Self Control", -1, &fBold, RectF(listRect.X + 15.0f, listY + 2.0f, listRect.Width, 38.0f), &fmtL, &brushDark);
 
-            SolidBrush opt2Bg(hoverOptParents ? SClrBgHover : SClrWhite);
+            SolidBrush opt2Bg(hoverOptFriend ? SClrBgHover : SClrWhite);
             g.FillRectangle(&opt2Bg, RectF(listRect.X + 2.0f, listY + 40.0f, listRect.Width - 4.0f, 38.0f));
-            g.DrawString(L"Parents Control", -1, &fBold, RectF(listRect.X + 15.0f, listY + 40.0f, listRect.Width, 38.0f), &fmtL, &brushDark);
+            g.DrawString(L"Friend Control", -1, &fBold, RectF(listRect.X + 15.0f, listY + 40.0f, listRect.Width, 38.0f), &fmtL, &brushDark);
         }
     } 
     else if (currentBlockTab == 1) {
-        // --- SCHEDULE BLOCKS ড্রয়িং লিংক করা হলো ---
+        // --- SCHEDULE BLOCKS ড্রয়িং লিংক করা হলো ---
         DrawScheduleBlocksTab(g, boxX, bodyY + 20.0f, boxW, boxH);
     }
     
     // ==========================================
     // 3. FULL SCREEN OVERLAYS
     // ==========================================
-    if (showTimeOverlay || showPassOverlay || showLongTextOverlay || showStoreOverlay || showTitleOverlay) {
+    if (showTimeOverlay || showPassOverlay || showStoreOverlay || showTitleOverlay) {
         SolidBrush overlayBg(SClrOverlay);
         g.FillRectangle(&overlayBg, contentX, contentY, contentW, contentH);
 
-        float ovW = (showTimeOverlay || showLongTextOverlay) ? 600.0f : ((showStoreOverlay) ? 500.0f : 400.0f); 
-        float ovH = (showLongTextOverlay) ? 380.0f : ((showStoreOverlay) ? 450.0f : 240.0f);
+        float ovW = (showStoreOverlay) ? 500.0f : 400.0f; 
+        float ovH = (showStoreOverlay) ? 450.0f : 220.0f;
         float ovX = contentX + (contentW - ovW) / 2.0f;
         float ovY = contentY + (contentH - ovH) / 2.0f;
 
@@ -1083,37 +1025,25 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
         }
         else if (showTimeOverlay) {
             g.DrawString(L"SET FOCUS DURATION", -1, &fTitle, RectF(ovX, ovY + 20.0f, ovW, 30.0f), &fmtC, &brushDark);
-            
-            float spX = ovX + 20.0f; float spY = ovY + 80.0f;
-            g.DrawString(L"Mon:", -1, &fBold, RectF(spX, spY, 50.0f, 36.0f), &fmtL, &brushDark);
-            DrawBlocksOverlaySpinner(g, spX + 45.0f, spY, to_wstring(focusMonths), hTimeMoM, hTimeMoP, &fIcon, &fBold);
-            
-            spX += 160.0f;
-            g.DrawString(L"Day:", -1, &fBold, RectF(spX, spY, 40.0f, 36.0f), &fmtL, &brushDark);
-            DrawBlocksOverlaySpinner(g, spX + 40.0f, spY, to_wstring(focusDays), hTimeDM, hTimeDP, &fIcon, &fBold);
-            
-            spX += 150.0f;
-            g.DrawString(L"Hr:", -1, &fBold, RectF(spX, spY, 30.0f, 36.0f), &fmtL, &brushDark);
-            DrawBlocksOverlaySpinner(g, spX + 30.0f, spY, to_wstring(focusHours), hTimeHM, hTimeHP, &fIcon, &fBold);
-            
-            spX += 140.0f;
-            g.DrawString(L"Min:", -1, &fBold, RectF(spX, spY, 40.0f, 36.0f), &fmtL, &brushDark);
-            DrawBlocksOverlaySpinner(g, spX + 40.0f, spY, to_wstring(focusMins), hTimeMM, hTimeMP, &fIcon, &fBold);
+            g.DrawString(L"Hours:", -1, &fBold, RectF(ovX + 50.0f, ovY + 80.0f, 60.0f, 36.0f), &fmtL, &brushDark);
+            DrawBlocksOverlaySpinner(g, ovX + 110.0f, ovY + 80.0f, to_wstring(focusHours), hTimeHM, hTimeHP, &fIcon, &fBold);
+            g.DrawString(L"Mins:", -1, &fBold, RectF(ovX + 250.0f, ovY + 80.0f, 50.0f, 36.0f), &fmtL, &brushDark);
+            DrawBlocksOverlaySpinner(g, ovX + 300.0f, ovY + 80.0f, to_wstring(focusMins), hTimeMM, hTimeMP, &fIcon, &fBold);
 
-            RectF cancelRect(ovX + 150.0f, ovY + 160.0f, 140.0f, 40.0f);
+            RectF cancelRect(ovX + 50.0f, ovY + 150.0f, 140.0f, 40.0f);
             GraphicsPath* cp = GetBlockRoundRectPath(cancelRect, 4);
             SolidBrush cancelBrush(hTimeCancel ? SClrBgHover : SClrWhite);
             g.FillPath(&cancelBrush, cp); g.DrawPath(&penBorder, cp); delete cp;
             g.DrawString(L"Cancel (Esc)", -1, &fBold, cancelRect, &fmtC, &brushDark);
 
-            RectF startRect(ovX + 310.0f, ovY + 160.0f, 140.0f, 40.0f);
+            RectF startRect(ovX + 210.0f, ovY + 150.0f, 140.0f, 40.0f);
             GraphicsPath* sp = GetBlockRoundRectPath(startRect, 4);
             SolidBrush startBrush(hTimeStart ? SClrTealHover : SClrTeal);
             g.FillPath(&startBrush, sp); delete sp;
             g.DrawString(L"Start Focus", -1, &fBold, startRect, &fmtC, &brushWhite);
         }
         else if (showPassOverlay) {
-            wstring titleTxt = isStoppingFocus ? L"ENTER PASSWORD TO STOP" : L"ENTER PARENTS PASSWORD";
+            wstring titleTxt = isStoppingFocus ? L"ENTER PASSWORD TO STOP" : L"ENTER FRIEND'S PASSWORD";
             g.DrawString(titleTxt.c_str(), -1, &fTitle, RectF(ovX, ovY + 20.0f, ovW, 30.0f), &fmtC, &brushDark);
             RectF passInpRect(ovX + 40.0f, ovY + 80.0f, ovW - 80.0f, 40.0f);
             GraphicsPath* pp = GetBlockRoundRectPath(passInpRect, 4);
@@ -1145,28 +1075,6 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
             g.FillPath(&confBrush, sp); delete sp;
             g.DrawString(L"Confirm", -1, &fBold, confRect, &fmtC, &brushWhite);
         }
-        else if (showLongTextOverlay) {
-            g.DrawString(L"TYPE 200 WORDS TO STOP (Copy-Paste Disabled)", -1, &fBold, RectF(ovX, ovY + 10.0f, ovW, 30.0f), &fmtC, &brushRed);
-            
-            RectF tgtRect(ovX + 20.0f, ovY + 50.0f, ovW - 40.0f, 130.0f);
-            g.FillRectangle(&brushWhite, tgtRect); g.DrawRectangle(&penBorder, tgtRect.X, tgtRect.Y, tgtRect.Width, tgtRect.Height);
-            StringFormat sfWrap; sfWrap.SetAlignment(StringAlignmentNear);
-            g.DrawString(target200Words.c_str(), -1, &fInfo, tgtRect, &sfWrap, &brushGray);
-
-            RectF inpRect(ovX + 20.0f, ovY + 190.0f, ovW - 40.0f, 110.0f);
-            g.FillRectangle(&brushWhite, inpRect); g.DrawRectangle(isLongTextInputActive ? &penTeal : &penBorder, inpRect.X, inpRect.Y, inpRect.Width, inpRect.Height);
-            g.DrawString(inputLongText.c_str(), -1, &fNormal, inpRect, &sfWrap, &brushDark);
-
-            RectF cancelRect(ovX + 150.0f, ovY + 320.0f, 140.0f, 40.0f);
-            SolidBrush cancelBrush(hLongTextCancel ? SClrBgHover : SClrWhite);
-            g.FillRectangle(&cancelBrush, cancelRect); g.DrawRectangle(&penBorder, cancelRect.X, cancelRect.Y, cancelRect.Width, cancelRect.Height);
-            g.DrawString(L"Cancel", -1, &fBold, cancelRect, &fmtC, &brushDark);
-
-            RectF confRect(ovX + 310.0f, ovY + 320.0f, 140.0f, 40.0f);
-            SolidBrush confBrush(hLongTextConfirm ? SClrTealHover : SClrTeal);
-            g.FillRectangle(&confBrush, confRect);
-            g.DrawString(L"Confirm Stop", -1, &fBold, confRect, &fmtC, &brushWhite);
-        }
     }
 }
 
@@ -1177,10 +1085,8 @@ void ProcessBlocksMouseMove(float x, float y) {
     float contentW = s_contentW; 
     float contentH = s_contentH;
 
-    hTimeMoM = false; hTimeMoP = false; hTimeDM = false; hTimeDP = false;
     hTimeHM = false; hTimeHP = false; hTimeMM = false; hTimeMP = false; hTimeStart = false; hTimeCancel = false;
     hPassInput = false; hPassConfirm = false; hPassCancel = false;
-    hLongTextInput = false; hLongTextConfirm = false; hLongTextCancel = false;
     hoverStoreClose = false; hoverStoreAddIdx = -1;
     hTitleInput = false; hTitleAdd = false; hTitleCancel = false;
     hoverControlDropdown = false; hoverModeDropdown = false; hoverWebCombo = false; hoverAppCombo = false;
@@ -1195,16 +1101,16 @@ void ProcessBlocksMouseMove(float x, float y) {
     for (auto& item : webList) item.isHoveredCross = false;
     for (auto& item : appList) item.isHoveredCross = false;
 
-    if (showTimeOverlay || showPassOverlay || showLongTextOverlay || showStoreOverlay || showTitleOverlay) {
-        float ovW = (showTimeOverlay || showLongTextOverlay) ? 600.0f : ((showStoreOverlay) ? 500.0f : 400.0f); 
-        float ovH = (showLongTextOverlay) ? 380.0f : ((showStoreOverlay) ? 450.0f : 240.0f);
+    if (showTimeOverlay || showPassOverlay || showStoreOverlay || showTitleOverlay) {
+        float ovW = (showStoreOverlay) ? 500.0f : 400.0f; 
+        float ovH = (showStoreOverlay) ? 450.0f : 220.0f;
         float ovX = contentX + (contentW - ovW) / 2.0f;
         float ovY = contentY + (contentH - ovH) / 2.0f;
 
         if (showStoreOverlay) {
             float listY = ovY + 70.0f - cStoreScrollY;
             for (size_t i = 0; i < systemStoreApps.size(); ++i) {
-                if (listY > ovY + 60.0f && listY < ovY + ovH - 60.0f) { 
+                if (listY > ovY + 60.0f && listY < ovY + ovH - 60.0f) { // roughly inside visible area
                     if (RectF(ovX + 30.0f, listY + 5.0f, 60.0f, 30.0f).Contains(x, y)) hoverStoreAddIdx = i;
                 }
                 listY += 45.0f;
@@ -1217,34 +1123,17 @@ void ProcessBlocksMouseMove(float x, float y) {
             if (RectF(ovX + 200.0f, ovY + 150.0f, 160.0f, 40.0f).Contains(x, y)) hTitleAdd = true;
         }
         else if (showTimeOverlay) {
-            float spX = ovX + 20.0f; float spY = ovY + 80.0f;
-            if (RectF(spX + 45.0f, spY, 32.0f, 36.0f).Contains(x, y)) hTimeMoM = true;
-            if (RectF(spX + 45.0f + 72.0f, spY, 32.0f, 36.0f).Contains(x, y)) hTimeMoP = true;
-            
-            spX += 160.0f;
-            if (RectF(spX + 40.0f, spY, 32.0f, 36.0f).Contains(x, y)) hTimeDM = true;
-            if (RectF(spX + 40.0f + 72.0f, spY, 32.0f, 36.0f).Contains(x, y)) hTimeDP = true;
-            
-            spX += 150.0f;
-            if (RectF(spX + 30.0f, spY, 32.0f, 36.0f).Contains(x, y)) hTimeHM = true;
-            if (RectF(spX + 30.0f + 72.0f, spY, 32.0f, 36.0f).Contains(x, y)) hTimeHP = true;
-            
-            spX += 140.0f;
-            if (RectF(spX + 40.0f, spY, 32.0f, 36.0f).Contains(x, y)) hTimeMM = true;
-            if (RectF(spX + 40.0f + 72.0f, spY, 32.0f, 36.0f).Contains(x, y)) hTimeMP = true;
-            
-            if (RectF(ovX + 150.0f, ovY + 160.0f, 140.0f, 40.0f).Contains(x, y)) hTimeCancel = true;
-            if (RectF(ovX + 310.0f, ovY + 160.0f, 140.0f, 40.0f).Contains(x, y)) hTimeStart = true;
+            if (RectF(ovX + 110.0f, ovY + 80.0f, 32.0f, 36.0f).Contains(x, y)) hTimeHM = true;
+            if (RectF(ovX + 110.0f + 92.0f, ovY + 80.0f, 32.0f, 36.0f).Contains(x, y)) hTimeHP = true;
+            if (RectF(ovX + 300.0f, ovY + 80.0f, 32.0f, 36.0f).Contains(x, y)) hTimeMM = true;
+            if (RectF(ovX + 300.0f + 92.0f, ovY + 80.0f, 32.0f, 36.0f).Contains(x, y)) hTimeMP = true;
+            if (RectF(ovX + 50.0f, ovY + 150.0f, 140.0f, 40.0f).Contains(x, y)) hTimeCancel = true;
+            if (RectF(ovX + 210.0f, ovY + 150.0f, 140.0f, 40.0f).Contains(x, y)) hTimeStart = true;
         }
         else if (showPassOverlay) {
             if (RectF(ovX + 40.0f, ovY + 80.0f, ovW - 80.0f, 40.0f).Contains(x, y)) hPassInput = true;
             if (RectF(ovX + 40.0f, ovY + 150.0f, 140.0f, 40.0f).Contains(x, y)) hPassCancel = true;
             if (RectF(ovX + 200.0f, ovY + 150.0f, 160.0f, 40.0f).Contains(x, y)) hPassConfirm = true;
-        }
-        else if (showLongTextOverlay) {
-            if (RectF(ovX + 20.0f, ovY + 190.0f, ovW - 40.0f, 110.0f).Contains(x, y)) hLongTextInput = true;
-            if (RectF(ovX + 150.0f, ovY + 320.0f, 140.0f, 40.0f).Contains(x, y)) hLongTextCancel = true;
-            if (RectF(ovX + 310.0f, ovY + 320.0f, 140.0f, 40.0f).Contains(x, y)) hLongTextConfirm = true;
         }
         return; 
     }
@@ -1285,7 +1174,7 @@ void ProcessBlocksMouseMove(float x, float y) {
         if (isControlDropdownOpen && !isFocusActive) {
             float listY = ctrlDropY + 42.0f;
             if (RectF(ctrlDropX + 2.0f, listY + 2.0f, 156.0f, 38.0f).Contains(x, y)) { hoverOptSelf = true; return; }
-            if (RectF(ctrlDropX + 2.0f, listY + 40.0f, 156.0f, 38.0f).Contains(x, y)) { hoverOptParents = true; return; }
+            if (RectF(ctrlDropX + 2.0f, listY + 40.0f, 156.0f, 38.0f).Contains(x, y)) { hoverOptFriend = true; return; }
         }
         if (isModeDropdownOpen && !isFocusActive) {
             float listY = modeDropY + 38.0f;
@@ -1313,7 +1202,7 @@ void ProcessBlocksMouseMove(float x, float y) {
         if (isFocusActive && controlMode == 0 && std::time(nullptr) < focusEndTimeBlocks) {
             hoverStartFocusBtn = false;
         } else {
-            if (RectF(boxX + 205.0f, ctrlDropY, 200.0f, 40.0f).Contains(x, y)) hoverStartFocusBtn = true;
+            if (RectF(boxX + 205.0f, ctrlDropY, 140.0f, 40.0f).Contains(x, y)) hoverStartFocusBtn = true;
         }
 
         if (!isFocusActive) {
@@ -1341,6 +1230,7 @@ void ProcessBlocksMouseMove(float x, float y) {
         if (RectF(rightColX + (btnW * 2) + 20.0f, btnY, btnW, 40.0f).Contains(x, y)) hoverAddWindowTitle = true;
 
         if (!isFocusActive) {
+            // Hover with smooth scroll bounds (Web)
             float itemY = secY + 90.0f + 5.0f - cWebScrollY;
             for (size_t i = 0; i < webList.size(); ++i) {
                 if (itemY > secY + 90.0f - 30.0f && itemY < secY + 90.0f + 160.0f) {
@@ -1348,6 +1238,7 @@ void ProcessBlocksMouseMove(float x, float y) {
                 }
                 itemY += 30.0f;
             }
+            // Hover with smooth scroll bounds (App)
             float aItemY = secY + 110.0f + 5.0f - cAppScrollY;
             for (size_t i = 0; i < appList.size(); ++i) {
                 if (!appList[i].isSystemLocked && aItemY > secY + 110.0f - 30.0f && aItemY < secY + 110.0f + 140.0f) {
@@ -1357,6 +1248,7 @@ void ProcessBlocksMouseMove(float x, float y) {
             }
         }
     } else if (currentBlockTab == 1) {
+        // --- SCHEDULE BLOCKS লিংক ---
         ProcessScheduleBlocksMouseMove(x, y);
     }
 }
@@ -1386,20 +1278,14 @@ void ProcessBlocksMouseClick(float x, float y) {
         return;
     }
     if (showTimeOverlay) {
-        if (hTimeMoM && focusMonths > 0) focusMonths--;
-        if (hTimeMoP && focusMonths < 12) focusMonths++;
-        if (hTimeDM && focusDays > 0) focusDays--;
-        if (hTimeDP && focusDays < 30) focusDays++;
         if (hTimeHM && focusHours > 0) focusHours--;
         if (hTimeHP && focusHours < 23) focusHours++;
         if (hTimeMM) { focusMins -= 5; if (focusMins < 0) focusMins = 55; }
         if (hTimeMP) { focusMins = (focusMins + 5) % 60; }
-        
         if (hTimeCancel) showTimeOverlay = false;
         if (hTimeStart) { 
             isFocusActive = true; 
-            long long totalSecs = (focusMonths * 2592000LL) + (focusDays * 86400LL) + (focusHours * 3600LL) + (focusMins * 60LL);
-            focusEndTimeBlocks = std::time(nullptr) + totalSecs;
+            focusEndTimeBlocks = std::time(nullptr) + (focusHours * 3600) + (focusMins * 60);
             showTimeOverlay = false; 
             SaveBlocksData();
         }
@@ -1412,19 +1298,6 @@ void ProcessBlocksMouseClick(float x, float y) {
             isFocusActive = !isStoppingFocus;
             showPassOverlay = false; inputPassText = L""; 
             SaveBlocksData();
-        }
-        return;
-    }
-    if (showLongTextOverlay) {
-        isLongTextInputActive = hLongTextInput;
-        if (hLongTextCancel) { showLongTextOverlay = false; inputLongText = L""; }
-        if (hLongTextConfirm) {
-            if (inputLongText.length() >= target200Words.length() - 20) {
-                isFocusActive = false;
-                showLongTextOverlay = false;
-                inputLongText = L"";
-                SaveBlocksData();
-            }
         }
         return;
     }
@@ -1444,7 +1317,10 @@ void ProcessBlocksMouseClick(float x, float y) {
 
             if (isFocusActive) {
                 if (controlMode == 1) { isStoppingFocus = true; showPassOverlay = true; isPassInputActive = true; }
-                else { showLongTextOverlay = true; isLongTextInputActive = true; } // Self control stopping with 200 words
+                else { 
+                    isFocusActive = false; 
+                    SaveBlocksData();
+                }
             } else {
                 if (controlMode == 0) { showTimeOverlay = true; }
                 else { isStoppingFocus = false; showPassOverlay = true; isPassInputActive = true; }
@@ -1464,11 +1340,11 @@ void ProcessBlocksMouseClick(float x, float y) {
             return;
         }
 
-        if (isControlDropdownOpen && !hoverControlDropdown && !hoverOptSelf && !hoverOptParents) {
+        if (isControlDropdownOpen && !hoverControlDropdown && !hoverOptSelf && !hoverOptFriend) {
             isControlDropdownOpen = false; closedAnyDropdown = true;
         } else if (isControlDropdownOpen) {
             if (hoverOptSelf) controlMode = 0;
-            if (hoverOptParents) controlMode = 1;
+            if (hoverOptFriend) controlMode = 1;
             isControlDropdownOpen = false; 
             SaveBlocksData();
             return;
@@ -1564,24 +1440,22 @@ void ProcessBlocksMouseClick(float x, float y) {
             if (listChanged) SaveBlocksData();
         }
     } else if (currentBlockTab == 1) {
+        // --- SCHEDULE BLOCKS লিংক ---
         ProcessScheduleBlocksMouseClick(x, y);
     }
 }
 
 void ProcessBlocksKeyPress(wchar_t c) {
-    if (showLongTextOverlay && isLongTextInputActive) {
-        // Only allow typing standard ASCII. Ctrl+V (Paste) doesn't produce standard ASCII char code directly here.
-        if (c >= 32 && c <= 126 && inputLongText.length() < 3000) inputLongText += c;
-    } 
-    else if (showPassOverlay && isPassInputActive) {
+    if (showPassOverlay && isPassInputActive) {
         if (c >= 32 && c <= 126 && inputPassText.length() < 20) inputPassText += c;
     } else if (showTitleOverlay && isTitleInputActive) {
         if (c >= 32 && c <= 126 && inputTitleText.length() < 40) inputTitleText += c;
-    } else if (!showTimeOverlay && !showPassOverlay && !showStoreOverlay && !showTitleOverlay && !showLongTextOverlay) {
+    } else if (!showTimeOverlay && !showPassOverlay && !showStoreOverlay && !showTitleOverlay) {
         if (currentBlockTab == 0) {
             if (isWebInputActive && c >= 32 && c <= 126 && webInputText.length() < 40) webInputText += c;
             if (isAppInputActive && c >= 32 && c <= 126 && appInputText.length() < 40) appInputText += c;
         } else if (currentBlockTab == 1) {
+            // --- SCHEDULE BLOCKS লিংক ---
             ProcessScheduleBlocksKeyPress(c);
         }
     }
@@ -1590,27 +1464,22 @@ void ProcessBlocksKeyPress(wchar_t c) {
 void ProcessBlocksKeyDown(WPARAM key) {
     // --- ESC TO CLOSE POPUPS ---
     if (key == VK_ESCAPE) {
-        if (showPassOverlay || showTitleOverlay || showTimeOverlay || showStoreOverlay || showLongTextOverlay) {
+        if (showPassOverlay || showTitleOverlay || showTimeOverlay || showStoreOverlay) {
             showPassOverlay = false;
             showTitleOverlay = false;
             showTimeOverlay = false;
             showStoreOverlay = false;
-            showLongTextOverlay = false;
             inputPassText = L"";
             inputTitleText = L"";
-            inputLongText = L"";
             return;
         }
     }
 
-    if (showLongTextOverlay && isLongTextInputActive) {
-        if (key == VK_BACK && !inputLongText.empty()) inputLongText.pop_back();
-    }
-    else if (showPassOverlay && isPassInputActive) {
+    if (showPassOverlay && isPassInputActive) {
         if (key == VK_BACK && !inputPassText.empty()) inputPassText.pop_back();
     } else if (showTitleOverlay && isTitleInputActive) {
         if (key == VK_BACK && !inputTitleText.empty()) inputTitleText.pop_back();
-    } else if (!showTimeOverlay && !showPassOverlay && !showStoreOverlay && !showTitleOverlay && !showLongTextOverlay) {
+    } else if (!showTimeOverlay && !showPassOverlay && !showStoreOverlay && !showTitleOverlay) {
         if (currentBlockTab == 0) {
             if (isWebInputActive) {
                 if (key == VK_BACK && !webInputText.empty()) webInputText.pop_back();
@@ -1627,6 +1496,7 @@ void ProcessBlocksKeyDown(WPARAM key) {
                 }
             }
         } else if (currentBlockTab == 1) {
+            // --- SCHEDULE BLOCKS লিংক ---
             ProcessScheduleBlocksKeyDown(key);
         }
     }
@@ -1644,7 +1514,7 @@ void ProcessBlocksMouseWheel(float x, float y, int delta) {
         return;
     }
     
-    if (!showTimeOverlay && !showPassOverlay && !showTitleOverlay && !showLongTextOverlay) {
+    if (!showTimeOverlay && !showPassOverlay && !showTitleOverlay) {
         if (currentBlockTab == 0) {
             float boxX = s_contentX + 30.0f;
             float boxW = s_contentW - 60.0f;
@@ -1667,6 +1537,7 @@ void ProcessBlocksMouseWheel(float x, float y, int delta) {
                 tAppScrollY = max(0.0f, min(tAppScrollY, maxAppScroll));
             }
         } else if (currentBlockTab == 1) {
+            // --- SCHEDULE BLOCKS লিংক ---
             ProcessScheduleBlocksMouseWheel(x, y, delta);
         }
     }
