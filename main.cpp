@@ -60,7 +60,7 @@ ULONG_PTR gdiplusToken;
 float g_scaleFactor = 1.0f;
 int windowWidth = 1024;  
 int windowHeight = 600;  
-bool isMaximized = true; // 🟢 3. ডিফল্টভাবে ফুলস্ক্রিন ম্যাক্সিমাইজড থাকবে
+bool isMaximized = true; 
 
 // 🟢 Firebase Global App Object
 firebase::App* g_firebaseApp = nullptr;
@@ -99,30 +99,50 @@ const Color ColUpgradeBtn(255, 243, 156, 18);
 const Color ColUpgradeHover(255, 211, 84, 0);
 
 // ==========================================
-// 🔴 FIREBASE REMOTE KILL SWITCH (NEW)
+// 🔴 SMART FIREBASE REAL-TIME KILL SWITCH (REVIVABLE)
 // ==========================================
-void CheckFirebaseKillSwitch() {
-    // ফায়ারবেস রিয়েলটাইম ডেটাবেস থেকে সরাসরি একটি JSON স্ট্যাটাস রিড করবে। 
-    // যদি আপনি ডেটাবেসে {"is_active": false} করে দেন, অ্যাপ আর রান হবে না!
-    string url = "https://rasfocus-c746d-default-rtdb.firebaseio.com/app_status.json";
-    char tempPath[MAX_PATH];
-    GetTempPathA(MAX_PATH, tempPath);
-    string savePath = string(tempPath) + "rf_status.json";
+bool g_isAppDisabledByAdmin = false;
 
-    DeleteUrlCacheEntryA(url.c_str()); 
-    HRESULT hr = URLDownloadToFileA(NULL, url.c_str(), savePath.c_str(), 0, NULL);
-    if (hr == S_OK) {
-        ifstream inFile(savePath);
-        string content((istreambuf_iterator<char>(inFile)), istreambuf_iterator<char>());
-        inFile.close();
-        remove(savePath.c_str());
+void __cdecl FirebaseKillThread(void* p) {
+    while (true) {
+        // Cache bypass করার জন্য লিংকের শেষে রেন্ডম টাইমস্ট্যাম্প দেওয়া হলো
+        string url = "https://rasfocus-c746d-default-rtdb.firebaseio.com/app_status.json?t=" + to_string(GetTickCount());
+        
+        char tempPath[MAX_PATH];
+        GetTempPathA(MAX_PATH, tempPath);
+        string savePath = string(tempPath) + "rf_status.json";
 
-        // যদি ডেটাবেসে is_active: false থাকে, তাহলে অ্যাপ জোরপূর্বক বন্ধ হয়ে যাবে।
-        if (content.find("\"is_active\":false") != string::npos || content.find("\"is_active\": false") != string::npos) {
-            MessageBoxA(NULL, "This application has been disabled by the server administrator.", "RasFocus Pro - Access Denied", MB_OK | MB_ICONERROR | MB_TOPMOST);
-            exit(0);
+        DeleteUrlCacheEntryA(url.c_str()); 
+        HRESULT hr = URLDownloadToFileA(NULL, url.c_str(), savePath.c_str(), 0, NULL);
+        
+        if (hr == S_OK) {
+            ifstream inFile(savePath);
+            string content((istreambuf_iterator<char>(inFile)), istreambuf_iterator<char>());
+            inFile.close();
+            remove(savePath.c_str());
+
+            bool isDisabled = (content.find("\"is_active\":false") != string::npos || content.find("\"is_active\": false") != string::npos);
+            
+            // যদি অ্যাডমিন অ্যাপ অফ করে দেয় এবং অ্যাপটি আগে থেকেই অফ না থাকে
+            if (isDisabled && !g_isAppDisabledByAdmin) {
+                g_isAppDisabledByAdmin = true;
+                if (hParentWnd) ShowWindow(hParentWnd, SW_HIDE); // অ্যাপ হাইড হয়ে যাবে
+                MessageBoxA(NULL, "This application has been disabled by the server administrator.", "RasFocus Pro - Access Denied", MB_OK | MB_ICONERROR | MB_TOPMOST);
+            } 
+            // যদি অ্যাডমিন আবার অন করে দেয় এবং অ্যাপটি অফ থাকে
+            else if (!isDisabled && g_isAppDisabledByAdmin) {
+                g_isAppDisabledByAdmin = false;
+                if (hParentWnd) {
+                    ShowWindow(hParentWnd, SW_SHOWMAXIMIZED); // অ্যাপ আবার শো করবে
+                    SetForegroundWindow(hParentWnd);
+                }
+                MessageBoxA(NULL, "Application access has been restored by admin.", "RasFocus Pro", MB_OK | MB_ICONINFORMATION | MB_TOPMOST);
+            }
         }
+        // প্রতি ৫ সেকেন্ড পর পর চেক করবে
+        Sleep(5000); 
     }
+    _endthread();
 }
 
 // ==========================================
@@ -693,12 +713,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         
         HMONITOR hMonitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
         MONITORINFO mi = { sizeof(mi) };
-        // 🟢 3. এটি নিশ্চিত করবে ফুলস্ক্রিন হলেও টাস্কবারের জায়গা ছেড়ে দেবে
         if (GetMonitorInfo(hMonitor, &mi)) {
             lpMMI->ptMaxPosition.x = mi.rcWork.left - mi.rcMonitor.left;
             lpMMI->ptMaxPosition.y = mi.rcWork.top - mi.rcMonitor.top;
             lpMMI->ptMaxSize.x = mi.rcWork.right - mi.rcWork.left;
-            lpMMI->ptMaxSize.y = mi.rcWork.bottom - mi.rcWork.top;
+            // 🟢 3. Taskbar Fix: Subtracting 2 pixels from max height to prevent covering taskbar
+            lpMMI->ptMaxSize.y = (mi.rcWork.bottom - mi.rcWork.top) - 2; 
         }
         return 0;
     }
@@ -924,22 +944,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 }
 
 int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
-    // 🟢 1. অ্যাপ ওপেন হওয়ার সাথে সাথেই ফায়ারবেস কিল-সুইচ চেক করবে
-    CheckFirebaseKillSwitch();
-
-    if (!IsRunAsAdmin()) {
-        wchar_t szPath[MAX_PATH];
-        GetModuleFileNameW(NULL, szPath, MAX_PATH);
-        
-        SHELLEXECUTEINFOW sei = { sizeof(sei) };
-        sei.lpVerb = L"runas"; 
-        sei.lpFile = szPath;
-        sei.lpParameters = (wstring(GetCommandLineW())).c_str();
-        sei.nShow = SW_SHOWNORMAL;
-        
-        ShellExecuteExW(&sei);
-        return 0; 
-    }
+    // 🟢 1. ব্যাকগ্রাউন্ডে রিয়েলটাইম কিল-সুইচ থ্রেড চালু করা হলো
+    _beginthread(FirebaseKillThread, 0, NULL);
 
     firebase::AppOptions options;
     options.set_project_id("rasfocus-c746d");
@@ -969,7 +975,6 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
             std::wstring argLower = arg;
             for (size_t k = 0; k < argLower.length(); ++k) argLower[k] = towlower(argLower[k]);
 
-            // 🟢 2. Mini Browser Argument Check
             if (argLower == L"-minibrowser") {
                 g_isPureViewerMode = true; 
                 viewerUrl = L"https://www.google.com"; // Default to Google
