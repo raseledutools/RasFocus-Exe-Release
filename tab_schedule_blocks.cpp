@@ -52,8 +52,9 @@ static bool isSchDataLoaded = false;
 static float sch_tScroll = 0.0f, sch_cScroll = 0.0f;
 static float s_cx = 0, s_cy = 0, s_cw = 800, s_ch = 600;
 
-// Edit Overlay Smooth Scroll
+// Edit Overlay & Sub-Tab System
 static float edit_tScroll = 0.0f, edit_cScroll = 0.0f, edit_maxScroll = 0.0f;
+static int s_activeSubTab = 0; // 0: Basic & Time, 1: Quick Settings, 2: Custom Lists
 
 // Scrollbar drag state
 static bool s_scrollbarDragging = false;
@@ -73,26 +74,10 @@ struct QuickBlockBtn {
 };
 
 static vector<QuickBlockBtn> s_quickBlocks = {
-    {
-        L"YT Shorts", L"\xE714",
-        { L"youtube.com/shorts" },
-        { L"youtube.com/shorts", L"/shorts/" }
-    },
-    {
-        L"FB Reels", L"\xE93E",
-        { L"facebook.com/reels", L"fb.watch" },
-        { L"facebook.com/reels", L"/reels/", L"fb.watch" }
-    },
-    {
-        L"YT Ads", L"\xE8D4",
-        {},
-        { L"googlevideo.com", L"doubleclick.net", L"googleadservices.com", L"youtube.com/pagead" }
-    },
-    {
-        L"IG Reels", L"\xE93E",
-        { L"instagram.com/reels" },
-        { L"instagram.com/reels", L"/reels/" }
-    },
+    { L"YT Shorts", L"\xE714", { L"youtube.com/shorts" }, { L"youtube.com/shorts", L"/shorts/" } },
+    { L"FB Reels", L"\xE93E", { L"facebook.com/reels", L"fb.watch" }, { L"facebook.com/reels", L"/reels/", L"fb.watch" } },
+    { L"YT Ads", L"\xE8D4", {}, { L"googlevideo.com", L"doubleclick.net", L"googleadservices.com", L"youtube.com/pagead" } },
+    { L"IG Reels", L"\xE93E", { L"instagram.com/reels" }, { L"instagram.com/reels", L"/reels/" } },
 };
 static vector<RectF> s_quickBlockRects;
 
@@ -164,6 +149,11 @@ static const Color ClrScrollbarTrack(255, 240, 242, 245);
 struct EditHitboxes {
     RectF scrollArea;
     RectF saveBtn, cancelBtn;
+    
+    // Sub-Tabs
+    RectF subTabRects[3];
+    int hSubTab = -1;
+
     RectF nameInp, modeDrop;
     RectF days[7];
     RectF stH_Up, stH_Dn, stM_Up, stM_Dn;
@@ -193,37 +183,14 @@ struct EditHitboxes {
 // ==========================================
 // --- BROWSER-ACCURATE BLOCKING LOGIC ---
 // ==========================================
-// Returns all URL/host patterns that need to be blocked for a given entry,
-// covering Chrome, Edge, Firefox, Brave, Opera, Vivaldi, Safari (Windows).
-// Each browser uses slightly different internal routing but all use the OS hosts file
-// and Windows Filtering Platform (WFP) for reliable blocking.
-//
-// BLOCKING STRATEGY (100% accurate for all Chromium + Firefox based browsers):
-//   1. hosts file redirect  -> blocks DNS resolution (works for all browsers)
-//   2. WFP callout driver   -> blocks TCP/UDP at kernel level (catches HTTPS/QUIC/DoH)
-//   3. URL keyword filter   -> catches sub-path blocks (e.g. /shorts/, /reels/)
-//
-// The returned vector contains:
-//   [0]       = primary domain (for hosts file: 0.0.0.0 <domain>)
-//   [1..N]    = additional domains / subdomains / CDN hosts
-//   "kw:XXX"  = keyword/path pattern (for URL-level filtering via browser extension or proxy)
-//
-// For sub-path blocking (Shorts, Reels, Ads) we CANNOT use only the hosts file because
-// blocking youtube.com entirely is too broad. Instead we use:
-//   - A local proxy rule (PAC file or transparent proxy) for path-based rules
-//   - WFP layer filters keyed on HTTP Host + URL path
-//   - Browser extension injection (if available) as fallback
 static vector<wstring> GetAllBlockPatterns(const wstring& entry) {
     vector<wstring> patterns;
     wstring e = entry;
-    // Normalize: remove protocol prefixes
     if (e.substr(0, 8) == L"https://") e = e.substr(8);
     if (e.substr(0, 7) == L"http://") e = e.substr(7);
     if (e.substr(0, 4) == L"www.") e = e.substr(4);
 
-    // ---- Sub-path rules (use keyword/proxy, NOT hosts) ----
     if (e == L"youtube.com/shorts" || e == L"/shorts/") {
-        // Block Shorts browse endpoint + API
         patterns.push_back(L"kw:youtube.com/shorts");
         patterns.push_back(L"kw:/shorts/");
         patterns.push_back(L"kw:youtubei.googleapis.com/youtubei/v1/reel");
@@ -238,15 +205,13 @@ static vector<wstring> GetAllBlockPatterns(const wstring& entry) {
         return patterns;
     }
     if (e == L"fb.watch") {
-        // Short-link redirector for FB Reels
         patterns.push_back(L"fb.watch");
         patterns.push_back(L"www.fb.watch");
         return patterns;
     }
-    // YouTube Ads CDN domains
     if (e == L"googlevideo.com") {
-        patterns.push_back(L"kw:googlevideo.com");          // video ad streams
-        patterns.push_back(L"kw:r?.---sn-*.googlevideo.com"); // CDN shards
+        patterns.push_back(L"kw:googlevideo.com");         
+        patterns.push_back(L"kw:r?.---sn-*.googlevideo.com"); 
         return patterns;
     }
     if (e == L"doubleclick.net") {
@@ -273,11 +238,9 @@ static vector<wstring> GetAllBlockPatterns(const wstring& entry) {
         return patterns;
     }
 
-    // ---- Full domain blocks ----
     patterns.push_back(e);
     patterns.push_back(L"www." + e);
 
-    // Per-domain additional subdomains/CDN hosts needed for complete blocking
     if (e == L"youtube.com") {
         patterns.push_back(L"m.youtube.com");
         patterns.push_back(L"music.youtube.com");
@@ -285,7 +248,6 @@ static vector<wstring> GetAllBlockPatterns(const wstring& entry) {
         patterns.push_back(L"yt3.ggpht.com");
         patterns.push_back(L"i.ytimg.com");
         patterns.push_back(L"s.ytimg.com");
-        // QUIC/UDP fallback - must also be blocked via WFP
         patterns.push_back(L"youtubei.googleapis.com");
     }
     else if (e == L"facebook.com") {
@@ -334,14 +296,11 @@ static vector<wstring> GetAllBlockPatterns(const wstring& entry) {
     return patterns;
 }
 
-// Write block rules to the Windows hosts file
-// (Requires admin rights - caller must elevate)
 static void ApplyHostsFileBlocking(const vector<wstring>& patterns, bool block) {
     wchar_t sysDir[MAX_PATH];
     GetSystemDirectoryW(sysDir, MAX_PATH);
     wstring hostsPath = wstring(sysDir) + L"\\drivers\\etc\\hosts";
     
-    // Read existing hosts file line-by-line (avoids wstringstream rdbuf issues on MSVC)
     wifstream fin(hostsPath);
     fin.imbue(locale(fin.getloc(), new codecvt_utf8<wchar_t>));
     wstring content;
@@ -352,7 +311,7 @@ static void ApplyHostsFileBlocking(const vector<wstring>& patterns, bool block) 
     }
 
     for (const auto& pat : patterns) {
-        if (pat.substr(0, 3) == L"kw:") continue; // keyword rules go to proxy, not hosts
+        if (pat.substr(0, 3) == L"kw:") continue; 
 
         wstring blockLine = L"0.0.0.0 " + pat;
         wstring fullLine = blockLine + L" # RasFocus";
@@ -378,13 +337,9 @@ static void ApplyHostsFileBlocking(const vector<wstring>& patterns, bool block) 
     fout.imbue(locale(fout.getloc(), new codecvt_utf8<wchar_t>));
     if (fout) { fout << content; fout.close(); }
 
-    // Flush DNS cache so changes take effect immediately in all browsers
     system("ipconfig /flushdns > nul 2>&1");
 }
 
-// Write keyword/path block rules to a PAC proxy script
-// All Chromium browsers (Chrome, Edge, Brave, Opera, Vivaldi) and Firefox
-// respect system proxy settings. We write a PAC file and point the OS proxy to it.
 static void ApplyPACFileBlocking(const vector<wstring>& keywords, bool block) {
     wchar_t appData[MAX_PATH];
     if (!SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, 0, appData))) return;
@@ -392,7 +347,6 @@ static void ApplyPACFileBlocking(const vector<wstring>& keywords, bool block) {
     wstring pacDir = wstring(appData) + L"\\RasFocus";
     CreateDirectoryW(pacDir.c_str(), NULL);
 
-    // Read existing PAC or create new (line-by-line to avoid wstringstream rdbuf MSVC issues)
     wifstream fin(pacPath);
     fin.imbue(locale(fin.getloc(), new codecvt_utf8<wchar_t>));
     wstring content;
@@ -402,27 +356,31 @@ static void ApplyPACFileBlocking(const vector<wstring>& keywords, bool block) {
         fin.close();
     }
 
-    // Build list of active keyword rules from all active profiles
     vector<wstring> allKw;
+    bool blockAllInternet = false;
+
     for (const auto& p : g_profiles) {
         if (!p.isActive) continue;
-        // Collect from websites
+        if (p.blockInternet) blockAllInternet = true; 
+        
         for (const auto& w : p.blockedWebsites) {
             auto pats = GetAllBlockPatterns(w.name);
             for (const auto& pt : pats) {
                 if (pt.substr(0, 3) == L"kw:") allKw.push_back(pt.substr(3));
             }
         }
-        // Collect from keywords
         for (const auto& k : p.blockedKeywords) {
             allKw.push_back(k.name);
         }
     }
 
-    // Generate PAC file content
     wstring pac = L"function FindProxyForURL(url, host) {\n";
-    for (const auto& kw : allKw) {
-        pac += L"  if (url.indexOf(\"" + kw + L"\") !== -1) return \"PROXY 127.0.0.1:1\";\n";
+    if (blockAllInternet) {
+        pac += L"  return \"PROXY 127.0.0.1:1\";\n";
+    } else {
+        for (const auto& kw : allKw) {
+            pac += L"  if (url.indexOf(\"" + kw + L"\") !== -1) return \"PROXY 127.0.0.1:1\";\n";
+        }
     }
     pac += L"  return \"DIRECT\";\n}\n";
 
@@ -430,18 +388,16 @@ static void ApplyPACFileBlocking(const vector<wstring>& keywords, bool block) {
     fout.imbue(locale(fout.getloc(), new codecvt_utf8<wchar_t>));
     if (fout) { fout << pac; fout.close(); }
 
-    // Point Windows proxy to this PAC file (affects all system browsers)
-    if (block && !allKw.empty()) {
+    if (block && (!allKw.empty() || blockAllInternet)) {
         string pacUrl = "file://" + string(pacPath.begin(), pacPath.end());
         string cmd = "reg add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v AutoConfigURL /t REG_SZ /d \"" + pacUrl + "\" /f > nul 2>&1";
         system(cmd.c_str());
         system("reg add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v ProxyEnable /t REG_DWORD /d 0 /f > nul 2>&1");
-    } else if (allKw.empty()) {
+    } else if (allKw.empty() && !blockAllInternet) {
         system("reg delete \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v AutoConfigURL /f > nul 2>&1");
     }
 }
 
-// Master function: apply or remove all blocks for a profile
 void ApplyProfileBlocking(int profileIdx, bool enable) {
     if (profileIdx < 0 || profileIdx >= (int)g_profiles.size()) return;
     const auto& p = g_profiles[profileIdx];
@@ -589,6 +545,7 @@ static void LoadProfiles() {
 
         if (p.isActive && p.lockMode == 0 && std::time(nullptr) >= p.lockEndTime) {
             p.isActive = false;
+            // No CMD open command here!
         }
 
         size_t wCount = 0; in >> wCount; in.ignore();
@@ -614,7 +571,9 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
     if (!isSchDataLoaded) { LoadProfiles(); isSchDataLoaded = true; }
     
     s_cx = x; s_cy = y; s_cw = w; s_ch = h;
-    sch_cScroll += (sch_tScroll - sch_cScroll) * 0.2f;
+    
+    // Smooth Scrolling Interpolation
+    sch_cScroll += (sch_tScroll - sch_cScroll) * 0.12f;
 
     FontFamily ff(L"Segoe UI");
     Font fTitle(&ff, 24, FontStyleBold, UnitPixel);
@@ -663,7 +622,10 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
         if (cY > y + h || cY + cardH < y + 90.0f) continue; 
         
         if (g_profiles[i].isActive && g_profiles[i].lockMode == 0 && std::time(nullptr) >= g_profiles[i].lockEndTime) {
-            g_profiles[i].isActive = false; SaveProfiles();
+            g_profiles[i].isActive = false; 
+            SaveProfiles();
+            ApplyProfileBlocking(i, false);
+            // No CMD open command here!
         }
 
         RectF cardRect(cX, cY, cardW, cardH);
@@ -714,7 +676,7 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
     }
     g.SetClip(&oldClip);
 
-    // --- OVERLAY: CREATE / EDIT PROFILE ---
+    // --- OVERLAY: CREATE / EDIT PROFILE (100% PROFESSIONAL TAB SYSTEM) ---
     if (editingProfileIdx != -1) {
         SolidBrush bgOver(ClrOverlay);
         g.FillRectangle(&bgOver, x, y, w, h);
@@ -725,10 +687,10 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
         float ovY = y + 20.0f;
 
         // Scrollbar geometry
-        float sbW = 10.0f;
+        float sbW = 16.0f; 
         float sbX = ovX + ovW - sbW - 4.0f;
-        float scrollAreaH = ovH - 136.0f; // header + footer
-        float scrollAreaTop = ovY + 66.0f;
+        float scrollAreaTop = ovY + 115.0f; // Adjusted for Tabs
+        float scrollAreaH = ovH - 185.0f; 
 
         RectF ovRect(ovX, ovY, ovW, ovH);
         GraphicsPath* oP = GetSchRoundRectPath(ovRect, 8);
@@ -737,7 +699,26 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
         // Header (Fixed)
         wstring titleTxt = (editingProfileIdx == -2) ? L"Create New Schedule Profile" : L"Edit Schedule Profile";
         g.DrawString(titleTxt.c_str(), -1, &fTitle, RectF(ovX + 30, ovY + 20, 400, 30), &fL, &bDark);
-        g.DrawLine(&pBorder, ovX, ovY + 65, ovX + ovW, ovY + 65);
+
+        // --- DRAW PROFESSIONAL SUB-TABS ---
+        wstring tabNames[3] = {L"Basic & Time", L"Quick Settings", L"Custom Lists"};
+        float tX = ovX + 30;
+        for (int i = 0; i < 3; i++) {
+            g_ehb.subTabRects[i] = RectF(tX, ovY + 68, 160, 35);
+            GraphicsPath* tabP = GetSchRoundRectPath(g_ehb.subTabRects[i], 17); // Professional Pill Shape
+            
+            if (s_activeSubTab == i) {
+                g.FillPath(&bTeal, tabP);
+                g.DrawString(tabNames[i].c_str(), -1, &fBold, g_ehb.subTabRects[i], &fC, &bWhite);
+            } else {
+                SolidBrush hovBr(g_ehb.hSubTab == i ? ClrBgHover : ClrBg);
+                g.FillPath(&hovBr, tabP);
+                g.DrawString(tabNames[i].c_str(), -1, &fBold, g_ehb.subTabRects[i], &fC, &bDark);
+            }
+            delete tabP;
+            tX += 170;
+        }
+        g.DrawLine(&pBorder, ovX, ovY + 115, ovX + ovW, ovY + 115);
 
         // Footer (Fixed)
         g.DrawLine(&pBorder, ovX, ovY + ovH - 70, ovX + ovW, ovY + ovH - 70);
@@ -754,244 +735,245 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
         g.DrawString(L"Cancel", -1, &fBold, g_ehb.cancelBtn, &fC, &bDark);
 
         // --- SCROLLABLE CONTENT ---
-        edit_cScroll += (edit_tScroll - edit_cScroll) * 0.2f;
+        edit_cScroll += (edit_tScroll - edit_cScroll) * 0.12f;
         g_ehb.scrollArea = RectF(ovX, scrollAreaTop, ovW - sbW - 6.0f, scrollAreaH);
         g.SetClip(g_ehb.scrollArea);
         
         g_ehb.webDel.clear(); g_ehb.appDel.clear(); g_ehb.keyDel.clear();
         s_quickBlockRects.clear();
 
-        float cY = ovY + 80 - edit_cScroll;
+        float cY = scrollAreaTop + 10 - edit_cScroll;
         float cardX = ovX + 30;
         float cardW_inner = ovW - 60 - sbW - 6.0f;
 
-        // Section 1: General Info Card
-        RectF c1Rect(cardX, cY, cardW_inner, 90);
-        GraphicsPath* c1P = GetSchRoundRectPath(c1Rect, 6);
-        g.FillPath(&bWhite, c1P); g.DrawPath(&pBorder, c1P); delete c1P;
-        
-        g.DrawString(L"General Information", -1, &fBold, RectF(cardX + 20, cY + 15, 200, 20), &fL, &bDark);
-        
-        g.DrawString(L"Profile Name:", -1, &fNorm, RectF(cardX + 20, cY + 45, 100, 30), &fL, &bGray);
-        g_ehb.nameInp = RectF(cardX + 120, cY + 42, 220, 35);
-        GraphicsPath* np = GetSchRoundRectPath(g_ehb.nameInp, 4);
-        g.FillPath(&bBg, np); g.DrawPath(activeInput == 1 ? &pTeal : &pBorder, np); delete np;
-        if(inpProfileName.empty() && activeInput != 1) g.DrawString(L"e.g. Study Time", -1, &fNorm, g_ehb.nameInp, &fC, &bGray);
-        else {
-            g.DrawString(inpProfileName.c_str(), -1, &fNorm, RectF(g_ehb.nameInp.X+10, g_ehb.nameInp.Y, g_ehb.nameInp.Width, g_ehb.nameInp.Height), &fL, &bDark);
-            if(activeInput == 1 && (GetTickCount()/500)%2==0) {
-                Graphics gT(GetDesktopWindow()); RectF bR; gT.MeasureString(inpProfileName.c_str(), -1, &fNorm, PointF(0,0), &bR);
-                g.FillRectangle(&bDark, g_ehb.nameInp.X+12+(inpProfileName.empty()?0:bR.Width), g_ehb.nameInp.Y+7, 1.5f, 21.0f);
-            }
-        }
-
-        g.DrawString(L"Lock Mode:", -1, &fNorm, RectF(cardX + 380, cY + 45, 80, 30), &fL, &bGray);
-        g_ehb.modeDrop = RectF(cardX + 470, cY + 42, 200, 35);
-        GraphicsPath* mdp = GetSchRoundRectPath(g_ehb.modeDrop, 4);
-        SolidBrush dropBg(hoverSchModeDropdown ? ClrBgHover : ClrBg);
-        g.FillPath(&dropBg, mdp); g.DrawPath(&pBorder, mdp); delete mdp;
-        wstring curModeTxt = (tempLockMode == 1) ? L"Parents Control" : ((tempLockMode == 2) ? L"Long Text Unlock" : L"Self Control");
-        g.DrawString(curModeTxt.c_str(), -1, &fNorm, RectF(g_ehb.modeDrop.X+10, g_ehb.modeDrop.Y, g_ehb.modeDrop.Width-30, g_ehb.modeDrop.Height), &fL, &bDark);
-        g.DrawString(L"\xE70D", -1, &fSmallIcon, RectF(g_ehb.modeDrop.X+g_ehb.modeDrop.Width-30, g_ehb.modeDrop.Y, 30, g_ehb.modeDrop.Height), &fC, &bGray);
-        cY += 110;
-
-        // Section 2: Schedule Settings Card
-        RectF c2Rect(cardX, cY, cardW_inner, 90);
-        GraphicsPath* c2P = GetSchRoundRectPath(c2Rect, 6);
-        g.FillPath(&bWhite, c2P); g.DrawPath(&pBorder, c2P); delete c2P;
-        
-        g.DrawString(L"Schedule Settings", -1, &fBold, RectF(cardX + 20, cY + 15, 200, 20), &fL, &bDark);
-        
-        g.DrawString(L"Active Days:", -1, &fNorm, RectF(cardX + 20, cY + 45, 80, 30), &fL, &bGray);
-        wstring dLabels[] = {L"S", L"M", L"T", L"W", L"T", L"F", L"S"};
-        for(int d=0; d<7; d++) {
-            g_ehb.days[d] = RectF(cardX + 110 + (d * 35), cY + 42, 30, 30);
-            GraphicsPath* dP = GetSchRoundRectPath(g_ehb.days[d], 4);
-            SolidBrush dBr(editDays[d] ? ClrTeal : (g_ehb.hDay == d ? ClrBgHover : ClrBg));
-            g.FillPath(&dBr, dP); g.DrawPath(editDays[d] ? &pTeal : &pBorder, dP); delete dP;
-            g.DrawString(dLabels[d].c_str(), -1, &fBold, g_ehb.days[d], &fC, editDays[d] ? &bWhite : &bDark);
-        }
-
-        g.DrawString(L"Time:", -1, &fNorm, RectF(cardX + 380, cY + 45, 50, 30), &fL, &bGray);
-        wstring tStart = to_wstring(editStH) + L":" + (editStM < 10 ? L"0" : L"") + to_wstring(editStM);
-        wstring tEnd = to_wstring(editEnH) + L":" + (editEnM < 10 ? L"0" : L"") + to_wstring(editEnM);
-        
-        RectF stRect(cardX + 430, cY + 42, 70, 30);
-        g.FillRectangle(&bBg, stRect); g.DrawRectangle(&pBorder, stRect.X, stRect.Y, stRect.Width, stRect.Height);
-        g.DrawString(tStart.c_str(), -1, &fBold, stRect, &fC, &bDark);
-        g_ehb.stH_Up = RectF(stRect.X-15, stRect.Y, 15, 15); g_ehb.stH_Dn = RectF(stRect.X-15, stRect.Y+15, 15, 15);
-        g_ehb.stM_Up = RectF(stRect.X+stRect.Width, stRect.Y, 15, 15); g_ehb.stM_Dn = RectF(stRect.X+stRect.Width, stRect.Y+15, 15, 15);
-        g.DrawString(L"\xE70E", -1, &fSmallIcon, g_ehb.stH_Up, &fC, g_ehb.hStH_Up ? &bTeal : &bDark);
-        g.DrawString(L"\xE70D", -1, &fSmallIcon, g_ehb.stH_Dn, &fC, g_ehb.hStH_Dn ? &bTeal : &bDark);
-        g.DrawString(L"\xE70E", -1, &fSmallIcon, g_ehb.stM_Up, &fC, g_ehb.hStM_Up ? &bTeal : &bDark);
-        g.DrawString(L"\xE70D", -1, &fSmallIcon, g_ehb.stM_Dn, &fC, g_ehb.hStM_Dn ? &bTeal : &bDark);
-
-        g.DrawString(L"To", -1, &fNorm, RectF(cardX + 515, cY + 45, 25, 30), &fC, &bGray);
-
-        RectF enRect(cardX + 555, cY + 42, 70, 30);
-        g.FillRectangle(&bBg, enRect); g.DrawRectangle(&pBorder, enRect.X, enRect.Y, enRect.Width, enRect.Height);
-        g.DrawString(tEnd.c_str(), -1, &fBold, enRect, &fC, &bDark);
-        g_ehb.enH_Up = RectF(enRect.X-15, enRect.Y, 15, 15); g_ehb.enH_Dn = RectF(enRect.X-15, enRect.Y+15, 15, 15);
-        g_ehb.enM_Up = RectF(enRect.X+enRect.Width, enRect.Y, 15, 15); g_ehb.enM_Dn = RectF(enRect.X+enRect.Width, enRect.Y+15, 15, 15);
-        g.DrawString(L"\xE70E", -1, &fSmallIcon, g_ehb.enH_Up, &fC, g_ehb.hEnH_Up ? &bTeal : &bDark);
-        g.DrawString(L"\xE70D", -1, &fSmallIcon, g_ehb.enH_Dn, &fC, g_ehb.hEnH_Dn ? &bTeal : &bDark);
-        g.DrawString(L"\xE70E", -1, &fSmallIcon, g_ehb.enM_Up, &fC, g_ehb.hEnM_Up ? &bTeal : &bDark);
-        g.DrawString(L"\xE70D", -1, &fSmallIcon, g_ehb.enM_Dn, &fC, g_ehb.hEnM_Dn ? &bTeal : &bDark);
-        cY += 110;
-
-        // Section 3: Restriction Filters Card
-        RectF c3Rect(cardX, cY, cardW_inner, 70);
-        GraphicsPath* c3P = GetSchRoundRectPath(c3Rect, 6);
-        g.FillPath(&bWhite, c3P); g.DrawPath(&pBorder, c3P); delete c3P;
-        
-        auto DrawCb = [&](RectF& box, float cx, const wstring& label, bool val, bool hov) {
-            box = RectF(cx, cY + 25, 20, 20);
-            g.FillRectangle(val ? &bTeal : (hov ? &bBgHover : &bBg), box);
-            g.DrawRectangle(&pBorder, box.X, box.Y, box.Width, box.Height);
-            if(val) g.DrawString(L"\xE73E", -1, &fSmallIcon, box, &fC, &bWhite);
-            g.DrawString(label.c_str(), -1, &fNorm, RectF(cx + 25, cY + 25, 150, 20), &fL, &bDark);
-        };
-        DrawCb(g_ehb.togInt, cardX + 20, L"Block Internet entirely", editBlockInt, g_ehb.hTogInt);
-        DrawCb(g_ehb.togAdt, cardX + 230, L"Block Adult Content", editBlockAdult, g_ehb.hTogAdt);
-        DrawCb(g_ehb.togUni, cardX + 440, L"Block Uninstall / Taskmgr", editBlockUninst, g_ehb.hTogUni);
-        cY += 90;
-
-        // ======================================================
-        // Section 4: Quick Block Buttons (Shorts / Reels / Ads)
-        // ======================================================
-        RectF c4Rect(cardX, cY, cardW_inner, 80);
-        GraphicsPath* c4P = GetSchRoundRectPath(c4Rect, 6);
-        g.FillPath(&bWhite, c4P); g.DrawPath(&pBorder, c4P); delete c4P;
-
-        g.DrawString(L"Quick Block", -1, &fBold, RectF(cardX + 20, cY + 12, 120, 20), &fL, &bDark);
-        g.DrawString(L"(Works in Chrome, Edge, Firefox, Brave, Opera)", -1, &fSmall,
-            RectF(cardX + 130, cY + 14, 400, 18), &fL, &bGray);
-
-        float qbX = cardX + 20;
-        float qbY = cY + 38;
-        float qbW = 120.0f;
-        float qbH = 28.0f;
-        float qbGap = 10.0f;
-
-        s_quickBlockRects.resize(s_quickBlocks.size());
-        for (size_t qi = 0; qi < s_quickBlocks.size(); ++qi) {
-            RectF qbRect(qbX + qi * (qbW + qbGap), qbY, qbW, qbH);
-            s_quickBlockRects[qi] = qbRect;
-
-            // Check if already added
-            bool alreadyAdded = false;
-            if (editingProfileIdx >= 0) {
-                for (const auto& w : g_profiles[editingProfileIdx].blockedWebsites) {
-                    if (!s_quickBlocks[qi].websites.empty() && w.name == s_quickBlocks[qi].websites[0]) {
-                        alreadyAdded = true; break;
-                    }
+        // ================== TAB 0: BASIC & TIME ==================
+        if (s_activeSubTab == 0) {
+            // General Info Card
+            RectF c1Rect(cardX, cY, cardW_inner, 90);
+            GraphicsPath* c1P = GetSchRoundRectPath(c1Rect, 6);
+            g.FillPath(&bWhite, c1P); g.DrawPath(&pBorder, c1P); delete c1P;
+            
+            g.DrawString(L"General Information", -1, &fBold, RectF(cardX + 20, cY + 15, 200, 20), &fL, &bDark);
+            
+            g.DrawString(L"Profile Name:", -1, &fNorm, RectF(cardX + 20, cY + 45, 100, 30), &fL, &bGray);
+            g_ehb.nameInp = RectF(cardX + 120, cY + 42, 220, 35);
+            GraphicsPath* np = GetSchRoundRectPath(g_ehb.nameInp, 4);
+            g.FillPath(&bBg, np); g.DrawPath(activeInput == 1 ? &pTeal : &pBorder, np); delete np;
+            if(inpProfileName.empty() && activeInput != 1) g.DrawString(L"e.g. Study Time", -1, &fNorm, g_ehb.nameInp, &fC, &bGray);
+            else {
+                g.DrawString(inpProfileName.c_str(), -1, &fNorm, RectF(g_ehb.nameInp.X+10, g_ehb.nameInp.Y, g_ehb.nameInp.Width, g_ehb.nameInp.Height), &fL, &bDark);
+                if(activeInput == 1 && (GetTickCount()/500)%2==0) {
+                    Graphics gT(GetDesktopWindow()); RectF bR; gT.MeasureString(inpProfileName.c_str(), -1, &fNorm, PointF(0,0), &bR);
+                    g.FillRectangle(&bDark, g_ehb.nameInp.X+12+(inpProfileName.empty()?0:bR.Width), g_ehb.nameInp.Y+7, 1.5f, 21.0f);
                 }
-                if (!alreadyAdded) {
-                    for (const auto& k : g_profiles[editingProfileIdx].blockedKeywords) {
-                        if (!s_quickBlocks[qi].keywords.empty() && k.name == s_quickBlocks[qi].keywords[0]) {
+            }
+
+            g.DrawString(L"Lock Mode:", -1, &fNorm, RectF(cardX + 380, cY + 45, 80, 30), &fL, &bGray);
+            g_ehb.modeDrop = RectF(cardX + 470, cY + 42, 200, 35);
+            GraphicsPath* mdp = GetSchRoundRectPath(g_ehb.modeDrop, 4);
+            SolidBrush dropBg(hoverSchModeDropdown ? ClrBgHover : ClrBg);
+            g.FillPath(&dropBg, mdp); g.DrawPath(&pBorder, mdp); delete mdp;
+            wstring curModeTxt = (tempLockMode == 1) ? L"Parents Control" : ((tempLockMode == 2) ? L"Long Text Unlock" : L"Self Control");
+            g.DrawString(curModeTxt.c_str(), -1, &fNorm, RectF(g_ehb.modeDrop.X+10, g_ehb.modeDrop.Y, g_ehb.modeDrop.Width-30, g_ehb.modeDrop.Height), &fL, &bDark);
+            g.DrawString(L"\xE70D", -1, &fSmallIcon, RectF(g_ehb.modeDrop.X+g_ehb.modeDrop.Width-30, g_ehb.modeDrop.Y, 30, g_ehb.modeDrop.Height), &fC, &bGray);
+            cY += 110;
+
+            // Schedule Settings Card Update
+            RectF c2Rect(cardX, cY, cardW_inner, 120);
+            GraphicsPath* c2P = GetSchRoundRectPath(c2Rect, 6);
+            g.FillPath(&bWhite, c2P); g.DrawPath(&pBorder, c2P); delete c2P;
+            
+            g.DrawString(L"Schedule Settings", -1, &fBold, RectF(cardX + 20, cY + 15, 200, 20), &fL, &bDark);
+            
+            g.DrawString(L"Select Active Days:", -1, &fSmallBold, RectF(cardX + 20, cY + 45, 150, 20), &fL, &bGray);
+            wstring dLabels[] = {L"S", L"M", L"T", L"W", L"T", L"F", L"S"};
+            for(int d=0; d<7; d++) {
+                g_ehb.days[d] = RectF(cardX + 20 + (d * 38), cY + 68, 32, 32);
+                GraphicsPath* dP = GetSchRoundRectPath(g_ehb.days[d], 16);
+                SolidBrush dBr(editDays[d] ? ClrTeal : (g_ehb.hDay == d ? ClrBgHover : ClrBg));
+                g.FillPath(&dBr, dP); g.DrawPath(editDays[d] ? &pTeal : &pBorder, dP); delete dP;
+                g.DrawString(dLabels[d].c_str(), -1, &fBold, g_ehb.days[d], &fC, editDays[d] ? &bWhite : &bDark);
+            }
+
+            g.DrawString(L"Session Time:", -1, &fSmallBold, RectF(cardX + 320, cY + 45, 120, 20), &fL, &bGray);
+
+            auto DrawModernTimeBox = [&](float tx, const wstring& lbl, int h, int m, RectF& hU, RectF& hD, RectF& mU, RectF& mD, bool hhu, bool hhd, bool mmu, bool mmd) {
+                g.DrawString(lbl.c_str(), -1, &fSmall, RectF(tx, cY + 68, 40, 32), &fC, &bGray);
+
+                RectF hBox(tx + 45, cY + 68, 35, 32);
+                g.FillRectangle(&bBg, hBox); g.DrawRectangle(&pBorder, hBox.X, hBox.Y, hBox.Width, hBox.Height);
+                g.DrawString((h < 10 ? L"0" + to_wstring(h) : to_wstring(h)).c_str(), -1, &fBold, hBox, &fC, &bDark);
+                hU = RectF(hBox.X, hBox.Y - 15, hBox.Width, 15);
+                hD = RectF(hBox.X, hBox.Y + hBox.Height, hBox.Width, 15);
+                g.DrawString(L"\xE70E", -1, &fSmallIcon, hU, &fC, hhu ? &bTeal : &bBorder);
+                g.DrawString(L"\xE70D", -1, &fSmallIcon, hD, &fC, hhd ? &bTeal : &bBorder);
+
+                g.DrawString(L":", -1, &fBold, RectF(tx + 80, cY + 68, 15, 32), &fC, &bDark);
+
+                RectF mBox(tx + 95, cY + 68, 35, 32);
+                g.FillRectangle(&bBg, mBox); g.DrawRectangle(&pBorder, mBox.X, mBox.Y, mBox.Width, mBox.Height);
+                g.DrawString((m < 10 ? L"0" + to_wstring(m) : to_wstring(m)).c_str(), -1, &fBold, mBox, &fC, &bDark);
+                mU = RectF(mBox.X, mBox.Y - 15, mBox.Width, 15);
+                mD = RectF(mBox.X, mBox.Y + mBox.Height, mBox.Width, 15);
+                g.DrawString(L"\xE70E", -1, &fSmallIcon, mU, &fC, mmu ? &bTeal : &bBorder);
+                g.DrawString(L"\xE70D", -1, &fSmallIcon, mD, &fC, mmd ? &bTeal : &bBorder);
+            };
+
+            DrawModernTimeBox(cardX + 320, L"Start", editStH, editStM, g_ehb.stH_Up, g_ehb.stH_Dn, g_ehb.stM_Up, g_ehb.stM_Dn, g_ehb.hStH_Up, g_ehb.hStH_Dn, g_ehb.hStM_Up, g_ehb.hStM_Dn);
+            DrawModernTimeBox(cardX + 480, L"End", editEnH, editEnM, g_ehb.enH_Up, g_ehb.enH_Dn, g_ehb.enM_Up, g_ehb.enM_Dn, g_ehb.hEnH_Up, g_ehb.hEnH_Dn, g_ehb.hEnM_Up, g_ehb.hEnM_Dn);
+            cY += 140;
+        }
+
+        // ================== TAB 1: QUICK SETTINGS ==================
+        else if (s_activeSubTab == 1) {
+            // Restriction Filters Card
+            RectF c3Rect(cardX, cY, cardW_inner, 70);
+            GraphicsPath* c3P = GetSchRoundRectPath(c3Rect, 6);
+            g.FillPath(&bWhite, c3P); g.DrawPath(&pBorder, c3P); delete c3P;
+            
+            auto DrawCb = [&](RectF& box, float cx, const wstring& label, bool val, bool hov) {
+                box = RectF(cx, cY + 25, 20, 20);
+                g.FillRectangle(val ? &bTeal : (hov ? &bBgHover : &bBg), box);
+                g.DrawRectangle(&pBorder, box.X, box.Y, box.Width, box.Height);
+                if(val) g.DrawString(L"\xE73E", -1, &fSmallIcon, box, &fC, &bWhite);
+                g.DrawString(label.c_str(), -1, &fNorm, RectF(cx + 25, cY + 25, 150, 20), &fL, &bDark);
+            };
+            DrawCb(g_ehb.togInt, cardX + 20, L"Block Internet entirely", editBlockInt, g_ehb.hTogInt);
+            DrawCb(g_ehb.togAdt, cardX + 230, L"Block Adult Content", editBlockAdult, g_ehb.hTogAdt);
+            DrawCb(g_ehb.togUni, cardX + 440, L"Block Uninstall / Taskmgr", editBlockUninst, g_ehb.hTogUni);
+            cY += 90;
+
+            // Quick Block Buttons
+            RectF c4Rect(cardX, cY, cardW_inner, 80);
+            GraphicsPath* c4P = GetSchRoundRectPath(c4Rect, 6);
+            g.FillPath(&bWhite, c4P); g.DrawPath(&pBorder, c4P); delete c4P;
+
+            g.DrawString(L"Quick Block", -1, &fBold, RectF(cardX + 20, cY + 12, 120, 20), &fL, &bDark);
+            g.DrawString(L"(Works in Chrome, Edge, Firefox, Brave, Opera)", -1, &fSmall,
+                RectF(cardX + 130, cY + 14, 400, 18), &fL, &bGray);
+
+            float qbX = cardX + 20;
+            float qbY = cY + 38;
+            float qbW = 120.0f;
+            float qbH = 28.0f;
+            float qbGap = 10.0f;
+
+            s_quickBlockRects.resize(s_quickBlocks.size());
+            for (size_t qi = 0; qi < s_quickBlocks.size(); ++qi) {
+                RectF qbRect(qbX + qi * (qbW + qbGap), qbY, qbW, qbH);
+                s_quickBlockRects[qi] = qbRect;
+
+                bool alreadyAdded = false;
+                if (editingProfileIdx >= 0) {
+                    for (const auto& w : g_profiles[editingProfileIdx].blockedWebsites) {
+                        if (!s_quickBlocks[qi].websites.empty() && w.name == s_quickBlocks[qi].websites[0]) {
                             alreadyAdded = true; break;
                         }
                     }
+                    if (!alreadyAdded) {
+                        for (const auto& k : g_profiles[editingProfileIdx].blockedKeywords) {
+                            if (!s_quickBlocks[qi].keywords.empty() && k.name == s_quickBlocks[qi].keywords[0]) {
+                                alreadyAdded = true; break;
+                            }
+                        }
+                    }
                 }
-            }
 
-            GraphicsPath* qp = GetSchRoundRectPath(qbRect, 4);
-            if (alreadyAdded) {
-                g.FillPath(&bTeal, qp); g.DrawPath(&pTeal, qp);
-            } else {
-                SolidBrush qbBg(s_quickBlocks[qi].hovered ? ClrBgHover : ClrBg);
-                g.FillPath(&qbBg, qp); g.DrawPath(&pBorder, qp);
-            }
-            delete qp;
+                GraphicsPath* qp = GetSchRoundRectPath(qbRect, 4);
+                if (alreadyAdded) {
+                    g.FillPath(&bTeal, qp); g.DrawPath(&pTeal, qp);
+                } else {
+                    SolidBrush qbBg(s_quickBlocks[qi].hovered ? ClrBgHover : ClrBg);
+                    g.FillPath(&qbBg, qp); g.DrawPath(&pBorder, qp);
+                }
+                delete qp;
 
-            SolidBrush* txtClr = alreadyAdded ? &bWhite : &bDark;
-            g.DrawString(s_quickBlocks[qi].label.c_str(), -1, &fSmallBold, qbRect, &fC, txtClr);
+                SolidBrush* txtClr = alreadyAdded ? &bWhite : &bDark;
+                g.DrawString(s_quickBlocks[qi].label.c_str(), -1, &fSmallBold, qbRect, &fC, txtClr);
+            }
+            cY += 100;
         }
-        cY += 100;
 
-        // Section 5, 6, 7: Dynamic Block Lists
-        vector<SchBlockItem>* cWebs = nullptr; vector<SchBlockItem>* cApps = nullptr; vector<SchBlockItem>* cKeys = nullptr;
-        if(editingProfileIdx >= 0) {
-            cWebs = &g_profiles[editingProfileIdx].blockedWebsites;
-            cApps = &g_profiles[editingProfileIdx].blockedApps;
-            cKeys = &g_profiles[editingProfileIdx].blockedKeywords;
+        // ================== TAB 2: CUSTOM LISTS ==================
+        else if (s_activeSubTab == 2) {
+            vector<SchBlockItem>* cWebs = nullptr; vector<SchBlockItem>* cApps = nullptr; vector<SchBlockItem>* cKeys = nullptr;
+            if(editingProfileIdx >= 0) {
+                cWebs = &g_profiles[editingProfileIdx].blockedWebsites;
+                cApps = &g_profiles[editingProfileIdx].blockedApps;
+                cKeys = &g_profiles[editingProfileIdx].blockedKeywords;
+            }
+
+            auto DrawListCard = [&](const wstring& title, const wstring& ph, wstring& inpStr, int inpIdx, vector<SchBlockItem>* list,
+                                    RectF& outInp, RectF* outCombo, RectF& outAdd, bool hovCombo, bool hovAdd, vector<RectF>& outDel) {
+                float listH = list ? (list->size() * 35.0f) : 0;
+                float cardH = 90.0f + (listH > 0 ? listH + 10.0f : 0);
+                
+                RectF cRect(cardX, cY, cardW_inner, cardH);
+                GraphicsPath* cP = GetSchRoundRectPath(cRect, 6);
+                g.FillPath(&bWhite, cP); g.DrawPath(&pBorder, cP); delete cP;
+
+                g.DrawString(title.c_str(), -1, &fBold, RectF(cardX + 20, cY + 15, 200, 20), &fL, &bDark);
+                
+                outInp = RectF(cardX + 20, cY + 40, outCombo ? 300 : 330, 35);
+                GraphicsPath* ip = GetSchRoundRectPath(outInp, 4);
+                g.FillPath(&bBg, ip); g.DrawPath(activeInput == inpIdx ? &pTeal : &pBorder, ip); delete ip;
+                
+                if(inpStr.empty() && activeInput != inpIdx) g.DrawString(ph.c_str(), -1, &fNorm, RectF(outInp.X+10, outInp.Y, outInp.Width, outInp.Height), &fL, &bGray);
+                else {
+                    g.DrawString(inpStr.c_str(), -1, &fNorm, RectF(outInp.X+10, outInp.Y, outInp.Width, outInp.Height), &fL, &bDark);
+                    if(activeInput == inpIdx && (GetTickCount()/500)%2==0) {
+                        Graphics gT(GetDesktopWindow()); RectF bR; gT.MeasureString(inpStr.c_str(), -1, &fNorm, PointF(0,0), &bR);
+                        g.FillRectangle(&bDark, outInp.X+12+(inpStr.empty()?0:bR.Width), outInp.Y+7, 1.5f, 21.0f);
+                    }
+                }
+
+                if(outCombo) {
+                    *outCombo = RectF(cardX + 325, cY + 40, 35, 35);
+                    g.FillRectangle(hovCombo ? &bBgHover : &bBg, *outCombo); g.DrawRectangle(&pBorder, outCombo->X, outCombo->Y, outCombo->Width, outCombo->Height);
+                    g.DrawString(L"\xE70D", -1, &fSmallIcon, *outCombo, &fC, &bDark);
+                }
+
+                outAdd = RectF(cardX + (outCombo ? 365 : 355), cY + 40, 90, 35);
+                GraphicsPath* ap = GetSchRoundRectPath(outAdd, 4);
+                SolidBrush aBr(hovAdd ? ClrTealHover : ClrTeal); g.FillPath(&aBr, ap); delete ap;
+                g.DrawString(L"+ Add", -1, &fBold, outAdd, &fC, &bWhite);
+
+                if(list && !list->empty()) {
+                    float itemY = cY + 85.0f;
+                    for(auto& item : *list) {
+                        RectF rowR(cardX + 20, itemY, cardW_inner - 40, 30);
+                        g.FillRectangle(&bBgHover, rowR);
+                        g.DrawString(item.name.c_str(), -1, &fNorm, RectF(rowR.X+10, rowR.Y, rowR.Width-40, rowR.Height), &fL, &bDark);
+                        
+                        RectF delR(rowR.X + rowR.Width - 30, rowR.Y + 2.5f, 25, 25);
+                        outDel.push_back(delR);
+                        SolidBrush crBr(item.isHoveredCross ? ClrRed : ClrGrayText);
+                        g.DrawString(L"\xE711", -1, &fSmallIcon, delR, &fC, &crBr);
+                        itemY += 35.0f;
+                    }
+                }
+                cY += cardH + 20;
+            };
+
+            DrawListCard(L"Blocked Websites", L"e.g. facebook.com", inpWeb, 2, cWebs, g_ehb.webInp, &g_ehb.webCombo, g_ehb.addWeb, hoverSchWebCombo, g_ehb.hAddWeb, g_ehb.webDel);
+            DrawListCard(L"Blocked Apps", L"e.g. vlc.exe", inpApp, 3, cApps, g_ehb.appInp, &g_ehb.appCombo, g_ehb.addApp, hoverSchAppCombo, g_ehb.hAddApp, g_ehb.appDel);
+            DrawListCard(L"Blocked Keywords", L"e.g. games", inpKey, 4, cKeys, g_ehb.keyInp, nullptr, g_ehb.addKey, false, g_ehb.hAddKey, g_ehb.keyDel);
         }
 
-        auto DrawListCard = [&](const wstring& title, const wstring& ph, wstring& inpStr, int inpIdx, vector<SchBlockItem>* list,
-                                RectF& outInp, RectF* outCombo, RectF& outAdd, bool hovCombo, bool hovAdd, vector<RectF>& outDel) {
-            float listH = list ? (list->size() * 35.0f) : 0;
-            float cardH = 90.0f + (listH > 0 ? listH + 10.0f : 0);
-            
-            RectF cRect(cardX, cY, cardW_inner, cardH);
-            GraphicsPath* cP = GetSchRoundRectPath(cRect, 6);
-            g.FillPath(&bWhite, cP); g.DrawPath(&pBorder, cP); delete cP;
-
-            g.DrawString(title.c_str(), -1, &fBold, RectF(cardX + 20, cY + 15, 200, 20), &fL, &bDark);
-            
-            outInp = RectF(cardX + 20, cY + 40, outCombo ? 300 : 330, 35);
-            GraphicsPath* ip = GetSchRoundRectPath(outInp, 4);
-            g.FillPath(&bBg, ip); g.DrawPath(activeInput == inpIdx ? &pTeal : &pBorder, ip); delete ip;
-            
-            if(inpStr.empty() && activeInput != inpIdx) g.DrawString(ph.c_str(), -1, &fNorm, RectF(outInp.X+10, outInp.Y, outInp.Width, outInp.Height), &fL, &bGray);
-            else {
-                g.DrawString(inpStr.c_str(), -1, &fNorm, RectF(outInp.X+10, outInp.Y, outInp.Width, outInp.Height), &fL, &bDark);
-                if(activeInput == inpIdx && (GetTickCount()/500)%2==0) {
-                    Graphics gT(GetDesktopWindow()); RectF bR; gT.MeasureString(inpStr.c_str(), -1, &fNorm, PointF(0,0), &bR);
-                    g.FillRectangle(&bDark, outInp.X+12+(inpStr.empty()?0:bR.Width), outInp.Y+7, 1.5f, 21.0f);
-                }
-            }
-
-            if(outCombo) {
-                *outCombo = RectF(cardX + 325, cY + 40, 35, 35);
-                g.FillRectangle(hovCombo ? &bBgHover : &bBg, *outCombo); g.DrawRectangle(&pBorder, outCombo->X, outCombo->Y, outCombo->Width, outCombo->Height);
-                g.DrawString(L"\xE70D", -1, &fSmallIcon, *outCombo, &fC, &bDark);
-            }
-
-            outAdd = RectF(cardX + (outCombo ? 365 : 355), cY + 40, 90, 35);
-            GraphicsPath* ap = GetSchRoundRectPath(outAdd, 4);
-            SolidBrush aBr(hovAdd ? ClrTealHover : ClrTeal); g.FillPath(&aBr, ap); delete ap;
-            g.DrawString(L"+ Add", -1, &fBold, outAdd, &fC, &bWhite);
-
-            if(list && !list->empty()) {
-                float itemY = cY + 85.0f;
-                for(auto& item : *list) {
-                    RectF rowR(cardX + 20, itemY, cardW_inner - 40, 30);
-                    g.FillRectangle(&bBgHover, rowR);
-                    g.DrawString(item.name.c_str(), -1, &fNorm, RectF(rowR.X+10, rowR.Y, rowR.Width-40, rowR.Height), &fL, &bDark);
-                    
-                    RectF delR(rowR.X + rowR.Width - 30, rowR.Y + 2.5f, 25, 25);
-                    outDel.push_back(delR);
-                    SolidBrush crBr(item.isHoveredCross ? ClrRed : ClrGrayText);
-                    g.DrawString(L"\xE711", -1, &fSmallIcon, delR, &fC, &crBr);
-                    itemY += 35.0f;
-                }
-            }
-            cY += cardH + 20;
-        };
-
-        DrawListCard(L"Blocked Websites", L"e.g. facebook.com", inpWeb, 2, cWebs, g_ehb.webInp, &g_ehb.webCombo, g_ehb.addWeb, hoverSchWebCombo, g_ehb.hAddWeb, g_ehb.webDel);
-        DrawListCard(L"Blocked Apps", L"e.g. vlc.exe", inpApp, 3, cApps, g_ehb.appInp, &g_ehb.appCombo, g_ehb.addApp, hoverSchAppCombo, g_ehb.hAddApp, g_ehb.appDel);
-        DrawListCard(L"Blocked Keywords", L"e.g. games", inpKey, 4, cKeys, g_ehb.keyInp, nullptr, g_ehb.addKey, false, g_ehb.hAddKey, g_ehb.keyDel);
-
-        // Extra bottom padding so last card isn't clipped
         cY += 20;
-
-        edit_maxScroll = (std::max)(0.0f, cY + edit_cScroll - (ovY + 80) - g_ehb.scrollArea.Height + 20.0f);
-        
-        g.SetClip(&oldClip); // Remove Clip for Scrollbar + Dropdowns
+        edit_maxScroll = (std::max)(0.0f, cY + edit_cScroll - scrollAreaTop - g_ehb.scrollArea.Height);
+        g.SetClip(&oldClip); 
 
         // ==========================================
         // SCROLLBAR DRAWING
         // ==========================================
         bool hasScroll = edit_maxScroll > 0.0f;
         if (hasScroll) {
-            // Track
             g_ehb.scrollbarTrack = RectF(sbX, scrollAreaTop + 4, sbW, scrollAreaH - 8);
             SolidBrush sbTrackBr(ClrScrollbarTrack);
-            GraphicsPath* trP = GetSchRoundRectPath(g_ehb.scrollbarTrack, 5);
+            GraphicsPath* trP = GetSchRoundRectPath(g_ehb.scrollbarTrack, 8);
             g.FillPath(&sbTrackBr, trP); delete trP;
 
-            // Thumb size proportional to visible/total ratio
             float totalContent = scrollAreaH + edit_maxScroll;
             float thumbRatio = (std::min)(1.0f, scrollAreaH / totalContent);
             float thumbH = (std::max)(28.0f, g_ehb.scrollbarTrack.Height * thumbRatio);
@@ -1002,12 +984,10 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
             g_ehb.scrollbarThumb = RectF(sbX + 1, thumbY, sbW - 2, thumbH);
             Color thumbClr = (s_scrollbarDragging || s_hScrollbarThumb) ? ClrScrollbarHover : ClrScrollbar;
             SolidBrush sbThumbBr(thumbClr);
-            GraphicsPath* thP = GetSchRoundRectPath(g_ehb.scrollbarThumb, 5);
+            GraphicsPath* thP = GetSchRoundRectPath(g_ehb.scrollbarThumb, 8);
             g.FillPath(&sbThumbBr, thP); delete thP;
 
-            // "Scroll for more" hint at bottom when not fully scrolled
             if (edit_cScroll < edit_maxScroll - 5.0f) {
-                // Fade gradient hint at bottom of scroll area
                 RectF hintRect(ovX, ovY + ovH - 140, ovW - sbW - 6, 35);
                 LinearGradientBrush fadeBrush(
                     PointF(hintRect.X, hintRect.Y),
@@ -1017,18 +997,16 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
                 );
                 g.FillRectangle(&fadeBrush, hintRect);
 
-                // Chevron down indicator
                 RectF chevRect(ovX + ovW/2 - 40, ovY + ovH - 112, 80, 22);
                 GraphicsPath* chevBg = GetSchRoundRectPath(chevRect, 11);
                 SolidBrush chevBgBr(Color(220, 12, 168, 176));
                 g.FillPath(&chevBgBr, chevBg); delete chevBg;
-
                 g.DrawString(L"\xE74B  scroll", -1, &fSmall, chevRect, &fC, &bWhite);
             }
         }
 
         // --- Overlapping Dropdown Menus (Z-Index Top) ---
-        if (isSchModeDropdownOpen) {
+        if (s_activeSubTab == 0 && isSchModeDropdownOpen) {
             RectF mlR(g_ehb.modeDrop.X, g_ehb.modeDrop.Y + 38, 200, 118);
             GraphicsPath* mlP = GetSchRoundRectPath(mlR, 4);
             g.FillPath(&bWhite, mlP); g.DrawPath(&pBorder, mlP); delete mlP;
@@ -1062,8 +1040,10 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
             }
         };
 
-        if (isSchWebComboOpen) DrawDynamicDropdown(g_ehb.webCombo, schCommonWebsites, g_ehb.webOpts, hoverSchWebOptIdx);
-        if (isSchAppComboOpen) DrawDynamicDropdown(g_ehb.appCombo, schCommonApps, g_ehb.appOpts, hoverSchAppOptIdx);
+        if (s_activeSubTab == 2) {
+            if (isSchWebComboOpen) DrawDynamicDropdown(g_ehb.webCombo, schCommonWebsites, g_ehb.webOpts, hoverSchWebOptIdx);
+            if (isSchAppComboOpen) DrawDynamicDropdown(g_ehb.appCombo, schCommonApps, g_ehb.appOpts, hoverSchAppOptIdx);
+        }
     }
 
     // ==========================================
@@ -1178,6 +1158,7 @@ void ProcessScheduleBlocksMouseMove(float x, float y) {
     s_hPassInput=false; s_hPassConfirm=false; s_hPassCancel=false;
     s_hTextUnlockConfirm=false; s_hTextUnlockCancel=false;
     s_hScrollbarThumb=false; s_hScrollbarTrack=false;
+    g_ehb.hSubTab = -1;
 
     if (s_showTimeOverlay || s_showPassOverlay || s_showTextUnlockOverlay) {
         float ovW = s_showTextUnlockOverlay ? 600.0f : 500.0f; 
@@ -1216,7 +1197,10 @@ void ProcessScheduleBlocksMouseMove(float x, float y) {
         hoverSchWebOptIdx = -1; hoverSchAppOptIdx = -1;
         g_ehb.hSave = false; g_ehb.hCancel = false;
 
-        // Scrollbar drag
+        for (int i = 0; i < 3; i++) {
+            if (g_ehb.subTabRects[i].Contains(x, y)) g_ehb.hSubTab = i;
+        }
+
         if (s_scrollbarDragging) {
             float scrollAreaH = g_ehb.scrollbarTrack.Height;
             float totalContent = scrollAreaH + edit_maxScroll;
@@ -1229,29 +1213,27 @@ void ProcessScheduleBlocksMouseMove(float x, float y) {
             return;
         }
 
-        // Scrollbar hover
         if (g_ehb.scrollbarThumb.Contains(x, y)) s_hScrollbarThumb = true;
         if (g_ehb.scrollbarTrack.Contains(x, y)) s_hScrollbarTrack = true;
         
-        // Z-Index Top (Dropdowns)
-        if (isSchModeDropdownOpen) {
+        if (s_activeSubTab == 0 && isSchModeDropdownOpen) {
             if (g_ehb.modeOpt[0].Contains(x, y)) g_ehb.hOptSelf = true;
             if (g_ehb.modeOpt[1].Contains(x, y)) g_ehb.hOptParents = true;
             if (g_ehb.modeOpt[2].Contains(x, y)) g_ehb.hOptLongText = true;
             return;
         }
-        if (isSchWebComboOpen) {
-            for(size_t i=0; i<g_ehb.webOpts.size(); ++i) { if(g_ehb.webOpts[i].Contains(x, y)) { hoverSchWebOptIdx = i; return; } }
-        }
-        if (isSchAppComboOpen) {
-            for(size_t i=0; i<g_ehb.appOpts.size(); ++i) { if(g_ehb.appOpts[i].Contains(x, y)) { hoverSchAppOptIdx = i; return; } }
+        if (s_activeSubTab == 2) {
+            if (isSchWebComboOpen) {
+                for(size_t i=0; i<g_ehb.webOpts.size(); ++i) { if(g_ehb.webOpts[i].Contains(x, y)) { hoverSchWebOptIdx = i; return; } }
+            }
+            if (isSchAppComboOpen) {
+                for(size_t i=0; i<g_ehb.appOpts.size(); ++i) { if(g_ehb.appOpts[i].Contains(x, y)) { hoverSchAppOptIdx = i; return; } }
+            }
         }
 
-        // Fixed Footers
         if(g_ehb.saveBtn.Contains(x,y)) g_ehb.hSave = true;
         if(g_ehb.cancelBtn.Contains(x,y)) g_ehb.hCancel = true;
 
-        // Scrolled Content Hover
         g_ehb.hDay = -1;
         g_ehb.hStH_Up=false; g_ehb.hStH_Dn=false; g_ehb.hStM_Up=false; g_ehb.hStM_Dn=false;
         g_ehb.hEnH_Up=false; g_ehb.hEnH_Dn=false; g_ehb.hEnM_Up=false; g_ehb.hEnM_Dn=false;
@@ -1267,34 +1249,37 @@ void ProcessScheduleBlocksMouseMove(float x, float y) {
         }
 
         if (g_ehb.scrollArea.Contains(x, y)) {
-            if(g_ehb.modeDrop.Contains(x, y)) hoverSchModeDropdown = true;
-            for(int d=0; d<7; d++) { if(g_ehb.days[d].Contains(x,y)) g_ehb.hDay = d; }
-            
-            if(g_ehb.stH_Up.Contains(x,y)) g_ehb.hStH_Up = true; if(g_ehb.stH_Dn.Contains(x,y)) g_ehb.hStH_Dn = true;
-            if(g_ehb.stM_Up.Contains(x,y)) g_ehb.hStM_Up = true; if(g_ehb.stM_Dn.Contains(x,y)) g_ehb.hStM_Dn = true;
-            if(g_ehb.enH_Up.Contains(x,y)) g_ehb.hEnH_Up = true; if(g_ehb.enH_Dn.Contains(x,y)) g_ehb.hEnH_Dn = true;
-            if(g_ehb.enM_Up.Contains(x,y)) g_ehb.hEnM_Up = true; if(g_ehb.enM_Dn.Contains(x,y)) g_ehb.hEnM_Dn = true;
+            if (s_activeSubTab == 0) {
+                if(g_ehb.modeDrop.Contains(x, y)) hoverSchModeDropdown = true;
+                for(int d=0; d<7; d++) { if(g_ehb.days[d].Contains(x,y)) g_ehb.hDay = d; }
+                
+                if(g_ehb.stH_Up.Contains(x,y)) g_ehb.hStH_Up = true; if(g_ehb.stH_Dn.Contains(x,y)) g_ehb.hStH_Dn = true;
+                if(g_ehb.stM_Up.Contains(x,y)) g_ehb.hStM_Up = true; if(g_ehb.stM_Dn.Contains(x,y)) g_ehb.hStM_Dn = true;
+                if(g_ehb.enH_Up.Contains(x,y)) g_ehb.hEnH_Up = true; if(g_ehb.enH_Dn.Contains(x,y)) g_ehb.hEnH_Dn = true;
+                if(g_ehb.enM_Up.Contains(x,y)) g_ehb.hEnM_Up = true; if(g_ehb.enM_Dn.Contains(x,y)) g_ehb.hEnM_Dn = true;
+            } 
+            else if (s_activeSubTab == 1) {
+                if(g_ehb.togInt.Contains(x,y)) g_ehb.hTogInt = true;
+                if(g_ehb.togAdt.Contains(x,y)) g_ehb.hTogAdt = true;
+                if(g_ehb.togUni.Contains(x,y)) g_ehb.hTogUni = true;
 
-            if(g_ehb.togInt.Contains(x,y)) g_ehb.hTogInt = true;
-            if(g_ehb.togAdt.Contains(x,y)) g_ehb.hTogAdt = true;
-            if(g_ehb.togUni.Contains(x,y)) g_ehb.hTogUni = true;
+                for (size_t qi = 0; qi < s_quickBlocks.size() && qi < s_quickBlockRects.size(); ++qi) {
+                    if (s_quickBlockRects[qi].Contains(x, y)) s_quickBlocks[qi].hovered = true;
+                }
+            } 
+            else if (s_activeSubTab == 2) {
+                if(g_ehb.webCombo.Contains(x,y)) hoverSchWebCombo = true;
+                if(g_ehb.appCombo.Contains(x,y)) hoverSchAppCombo = true;
 
-            if(g_ehb.webCombo.Contains(x,y)) hoverSchWebCombo = true;
-            if(g_ehb.appCombo.Contains(x,y)) hoverSchAppCombo = true;
+                if(g_ehb.addWeb.Contains(x,y)) g_ehb.hAddWeb = true;
+                if(g_ehb.addApp.Contains(x,y)) g_ehb.hAddApp = true;
+                if(g_ehb.addKey.Contains(x,y)) g_ehb.hAddKey = true;
 
-            if(g_ehb.addWeb.Contains(x,y)) g_ehb.hAddWeb = true;
-            if(g_ehb.addApp.Contains(x,y)) g_ehb.hAddApp = true;
-            if(g_ehb.addKey.Contains(x,y)) g_ehb.hAddKey = true;
-
-            // Quick block buttons
-            for (size_t qi = 0; qi < s_quickBlocks.size() && qi < s_quickBlockRects.size(); ++qi) {
-                if (s_quickBlockRects[qi].Contains(x, y)) s_quickBlocks[qi].hovered = true;
-            }
-
-            if (editingProfileIdx >= 0) {
-                for(size_t i=0; i<g_ehb.webDel.size(); i++) { if(g_ehb.webDel[i].Contains(x,y)) g_profiles[editingProfileIdx].blockedWebsites[i].isHoveredCross = true; }
-                for(size_t i=0; i<g_ehb.appDel.size(); i++) { if(g_ehb.appDel[i].Contains(x,y)) g_profiles[editingProfileIdx].blockedApps[i].isHoveredCross = true; }
-                for(size_t i=0; i<g_ehb.keyDel.size(); i++) { if(g_ehb.keyDel[i].Contains(x,y)) g_profiles[editingProfileIdx].blockedKeywords[i].isHoveredCross = true; }
+                if (editingProfileIdx >= 0) {
+                    for(size_t i=0; i<g_ehb.webDel.size(); i++) { if(g_ehb.webDel[i].Contains(x,y)) g_profiles[editingProfileIdx].blockedWebsites[i].isHoveredCross = true; }
+                    for(size_t i=0; i<g_ehb.appDel.size(); i++) { if(g_ehb.appDel[i].Contains(x,y)) g_profiles[editingProfileIdx].blockedApps[i].isHoveredCross = true; }
+                    for(size_t i=0; i<g_ehb.keyDel.size(); i++) { if(g_ehb.keyDel[i].Contains(x,y)) g_profiles[editingProfileIdx].blockedKeywords[i].isHoveredCross = true; }
+                }
             }
         }
         return;
@@ -1318,7 +1303,7 @@ void ProcessScheduleBlocksMouseMove(float x, float y) {
 }
 
 // ==========================================
-// --- MOUSE BUTTON DOWN (for scrollbar drag) ---
+// --- MOUSE BUTTON DOWN ---
 // ==========================================
 void ProcessScheduleBlocksMouseDown(float x, float y) {
     if (editingProfileIdx == -1) return;
@@ -1327,7 +1312,6 @@ void ProcessScheduleBlocksMouseDown(float x, float y) {
         s_scrollbarDragStartY = y;
         s_scrollbarDragStartScroll = edit_cScroll;
     } else if (g_ehb.scrollbarTrack.Contains(x, y)) {
-        // Click on track: jump to position
         float scrollAreaH = g_ehb.scrollbarTrack.Height;
         float totalContent = scrollAreaH + edit_maxScroll;
         float thumbRatio = (std::min)(1.0f, scrollAreaH / totalContent);
@@ -1386,6 +1370,7 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
                     g_profiles[activeActionProfileIdx].isActive = false;
                     ApplyProfileBlocking(activeActionProfileIdx, false);
                     LogHistoryToHiddenFolderSch(L"Unlocked (Parents) Schedule: " + g_profiles[activeActionProfileIdx].profileName);
+                    // No CMD open command here!
                 }
             }
             s_showPassOverlay = false; s_inputPassText = L""; 
@@ -1401,41 +1386,58 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
             s_showTextUnlockOverlay = false; s_currentTypingText = L"";
             LogHistoryToHiddenFolderSch(L"Unlocked (Long Text) Schedule: " + g_profiles[activeActionProfileIdx].profileName);
             SaveProfiles();
+            // No CMD open command here!
         }
         return;
     }
 
-    // Don't process clicks if we were just dragging the scrollbar
     if (s_scrollbarDragging) return;
 
     if (editingProfileIdx != -1) {
+        // Handle Sub-Tab Switching
+        for (int i = 0; i < 3; i++) {
+            if (g_ehb.subTabRects[i].Contains(x, y)) {
+                s_activeSubTab = i;
+                edit_tScroll = 0; edit_cScroll = 0; // Reset scroll on tab switch
+                activeInput = (i == 0) ? 1 : 0; // Set profile name input active if tab 0
+                isSchModeDropdownOpen = false;
+                isSchWebComboOpen = false;
+                isSchAppComboOpen = false;
+                return;
+            }
+        }
+
         bool dropdownClosed = false;
 
-        if (isSchModeDropdownOpen && !hoverSchModeDropdown && !g_ehb.hOptSelf && !g_ehb.hOptParents && !g_ehb.hOptLongText) {
-            isSchModeDropdownOpen = false; dropdownClosed = true;
-        } else if (isSchModeDropdownOpen) {
-            if (g_ehb.hOptSelf) tempLockMode = 0;
-            if (g_ehb.hOptParents) tempLockMode = 1;
-            if (g_ehb.hOptLongText) tempLockMode = 2;
-            isSchModeDropdownOpen = false; return;
+        if (s_activeSubTab == 0) {
+            if (isSchModeDropdownOpen && !hoverSchModeDropdown && !g_ehb.hOptSelf && !g_ehb.hOptParents && !g_ehb.hOptLongText) {
+                isSchModeDropdownOpen = false; dropdownClosed = true;
+            } else if (isSchModeDropdownOpen) {
+                if (g_ehb.hOptSelf) tempLockMode = 0;
+                if (g_ehb.hOptParents) tempLockMode = 1;
+                if (g_ehb.hOptLongText) tempLockMode = 2;
+                isSchModeDropdownOpen = false; return;
+            }
         }
 
-        if (isSchWebComboOpen && !hoverSchWebCombo && hoverSchWebOptIdx == -1) {
-            isSchWebComboOpen = false; dropdownClosed = true;
-        } else if (isSchWebComboOpen) {
-            if (hoverSchWebOptIdx != -1 && editingProfileIdx >= 0) {
-                g_profiles[editingProfileIdx].blockedWebsites.push_back({schCommonWebsites[hoverSchWebOptIdx], false});
+        if (s_activeSubTab == 2) {
+            if (isSchWebComboOpen && !hoverSchWebCombo && hoverSchWebOptIdx == -1) {
+                isSchWebComboOpen = false; dropdownClosed = true;
+            } else if (isSchWebComboOpen) {
+                if (hoverSchWebOptIdx != -1 && editingProfileIdx >= 0) {
+                    g_profiles[editingProfileIdx].blockedWebsites.push_back({schCommonWebsites[hoverSchWebOptIdx], false});
+                }
+                isSchWebComboOpen = false; return;
             }
-            isSchWebComboOpen = false; return;
-        }
 
-        if (isSchAppComboOpen && !hoverSchAppCombo && hoverSchAppOptIdx == -1) {
-            isSchAppComboOpen = false; dropdownClosed = true;
-        } else if (isSchAppComboOpen) {
-            if (hoverSchAppOptIdx != -1 && editingProfileIdx >= 0) {
-                g_profiles[editingProfileIdx].blockedApps.push_back({schCommonApps[hoverSchAppOptIdx], false});
+            if (isSchAppComboOpen && !hoverSchAppCombo && hoverSchAppOptIdx == -1) {
+                isSchAppComboOpen = false; dropdownClosed = true;
+            } else if (isSchAppComboOpen) {
+                if (hoverSchAppOptIdx != -1 && editingProfileIdx >= 0) {
+                    g_profiles[editingProfileIdx].blockedApps.push_back({schCommonApps[hoverSchAppOptIdx], false});
+                }
+                isSchAppComboOpen = false; return;
             }
-            isSchAppComboOpen = false; return;
         }
 
         if (dropdownClosed) return;
@@ -1462,92 +1464,95 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
             editingProfileIdx = -1; SaveProfiles(); return;
         }
 
-        // Scrollbar track click (already handled in MouseDown)
         if (g_ehb.scrollbarTrack.Contains(x, y)) return;
 
         if (g_ehb.scrollArea.Contains(x, y)) {
-            if (hoverSchModeDropdown) { isSchModeDropdownOpen = true; return; }
-            if (hoverSchWebCombo) { isSchWebComboOpen = true; return; }
-            if (hoverSchAppCombo) { isSchAppComboOpen = true; return; }
+            if (s_activeSubTab == 0) {
+                if (hoverSchModeDropdown) { isSchModeDropdownOpen = true; return; }
 
-            if(g_ehb.hDay != -1) editDays[g_ehb.hDay] = !editDays[g_ehb.hDay];
+                if(g_ehb.hDay != -1) editDays[g_ehb.hDay] = !editDays[g_ehb.hDay];
 
-            if(g_ehb.hStH_Up) { editStH = (editStH + 1) % 24; } if(g_ehb.hStH_Dn) { editStH = (editStH - 1 + 24) % 24; }
-            if(g_ehb.hStM_Up) { editStM = (editStM + 5) % 60; } if(g_ehb.hStM_Dn) { editStM = (editStM - 5 + 60) % 60; }
-            if(g_ehb.hEnH_Up) { editEnH = (editEnH + 1) % 24; } if(g_ehb.hEnH_Dn) { editEnH = (editEnH - 1 + 24) % 24; }
-            if(g_ehb.hEnM_Up) { editEnM = (editEnM + 5) % 60; } if(g_ehb.hEnM_Dn) { editEnM = (editEnM - 5 + 60) % 60; }
+                if(g_ehb.hStH_Up) { editStH = (editStH + 1) % 24; } if(g_ehb.hStH_Dn) { editStH = (editStH - 1 + 24) % 24; }
+                if(g_ehb.hStM_Up) { editStM = (editStM + 5) % 60; } if(g_ehb.hStM_Dn) { editStM = (editStM - 5 + 60) % 60; }
+                if(g_ehb.hEnH_Up) { editEnH = (editEnH + 1) % 24; } if(g_ehb.hEnH_Dn) { editEnH = (editEnH - 1 + 24) % 24; }
+                if(g_ehb.hEnM_Up) { editEnM = (editEnM + 5) % 60; } if(g_ehb.hEnM_Dn) { editEnM = (editEnM - 5 + 60) % 60; }
+                
+                activeInput = g_ehb.nameInp.Contains(x,y) ? 1 : 0;
+            } 
+            else if (s_activeSubTab == 1) {
+                if(g_ehb.hTogInt) editBlockInt = !editBlockInt;
+                if(g_ehb.hTogAdt) editBlockAdult = !editBlockAdult;
+                if(g_ehb.hTogUni) editBlockUninst = !editBlockUninst;
 
-            if(g_ehb.hTogInt) editBlockInt = !editBlockInt;
-            if(g_ehb.hTogAdt) editBlockAdult = !editBlockAdult;
-            if(g_ehb.hTogUni) editBlockUninst = !editBlockUninst;
+                if (editingProfileIdx >= 0) {
+                    for (size_t qi = 0; qi < s_quickBlocks.size() && qi < s_quickBlockRects.size(); ++qi) {
+                        if (!s_quickBlocks[qi].hovered) continue;
+                        auto& qb = s_quickBlocks[qi];
 
-            // Quick block buttons
-            if (editingProfileIdx >= 0) {
-                for (size_t qi = 0; qi < s_quickBlocks.size() && qi < s_quickBlockRects.size(); ++qi) {
-                    if (!s_quickBlocks[qi].hovered) continue;
-                    auto& qb = s_quickBlocks[qi];
-
-                    // Toggle: if already added, remove; else add
-                    bool found = false;
-                    if (!qb.websites.empty()) {
-                        auto& webs = g_profiles[editingProfileIdx].blockedWebsites;
-                        for (auto it = webs.begin(); it != webs.end(); ++it) {
-                            if (it->name == qb.websites[0]) { webs.erase(it); found = true; break; }
-                        }
-                    }
-                    if (!found) {
-                        if (!qb.keywords.empty()) {
-                            auto& keys = g_profiles[editingProfileIdx].blockedKeywords;
-                            for (auto it = keys.begin(); it != keys.end(); ++it) {
-                                if (it->name == qb.keywords[0]) { keys.erase(it); found = true; break; }
+                        bool found = false;
+                        if (!qb.websites.empty()) {
+                            auto& webs = g_profiles[editingProfileIdx].blockedWebsites;
+                            for (auto it = webs.begin(); it != webs.end(); ++it) {
+                                if (it->name == qb.websites[0]) { webs.erase(it); found = true; break; }
                             }
                         }
-                    }
-                    if (!found) {
-                        // Add all websites and keywords for this quick block
-                        for (const auto& ws : qb.websites)
-                            g_profiles[editingProfileIdx].blockedWebsites.push_back({ws, false});
-                        for (const auto& kw : qb.keywords)
-                            g_profiles[editingProfileIdx].blockedKeywords.push_back({kw, false});
+                        if (!found) {
+                            if (!qb.keywords.empty()) {
+                                auto& keys = g_profiles[editingProfileIdx].blockedKeywords;
+                                for (auto it = keys.begin(); it != keys.end(); ++it) {
+                                    if (it->name == qb.keywords[0]) { keys.erase(it); found = true; break; }
+                                }
+                            }
+                        }
+                        if (!found) {
+                            for (const auto& ws : qb.websites)
+                                g_profiles[editingProfileIdx].blockedWebsites.push_back({ws, false});
+                            for (const auto& kw : qb.keywords)
+                                g_profiles[editingProfileIdx].blockedKeywords.push_back({kw, false});
+                        }
                     }
                 }
             }
+            else if (s_activeSubTab == 2) {
+                if (hoverSchWebCombo) { isSchWebComboOpen = true; return; }
+                if (hoverSchAppCombo) { isSchAppComboOpen = true; return; }
 
-            activeInput = 0;
-            if (g_ehb.nameInp.Contains(x,y)) activeInput = 1;
-            if (g_ehb.webInp.Contains(x,y)) activeInput = 2;
-            if (g_ehb.appInp.Contains(x,y)) activeInput = 3;
-            if (g_ehb.keyInp.Contains(x,y)) activeInput = 4;
+                activeInput = 0;
+                if (g_ehb.webInp.Contains(x,y)) activeInput = 2;
+                if (g_ehb.appInp.Contains(x,y)) activeInput = 3;
+                if (g_ehb.keyInp.Contains(x,y)) activeInput = 4;
 
-            if (editingProfileIdx >= 0) {
-                if (g_ehb.hAddWeb && !inpWeb.empty()) { g_profiles[editingProfileIdx].blockedWebsites.push_back({inpWeb, false}); inpWeb = L""; }
-                if (g_ehb.hAddApp && !inpApp.empty()) { 
-                    if (inpApp.length() < 4 || inpApp.substr(inpApp.length() - 4) != L".exe") inpApp += L".exe";
-                    g_profiles[editingProfileIdx].blockedApps.push_back({inpApp, false}); inpApp = L""; 
+                if (editingProfileIdx >= 0) {
+                    if (g_ehb.hAddWeb && !inpWeb.empty()) { g_profiles[editingProfileIdx].blockedWebsites.push_back({inpWeb, false}); inpWeb = L""; }
+                    if (g_ehb.hAddApp && !inpApp.empty()) { 
+                        if (inpApp.length() < 4 || inpApp.substr(inpApp.length() - 4) != L".exe") inpApp += L".exe";
+                        g_profiles[editingProfileIdx].blockedApps.push_back({inpApp, false}); inpApp = L""; 
+                    }
+                    if (g_ehb.hAddKey && !inpKey.empty()) { g_profiles[editingProfileIdx].blockedKeywords.push_back({inpKey, false}); inpKey = L""; }
+                    
+                    auto& webs = g_profiles[editingProfileIdx].blockedWebsites;
+                    for(auto it = webs.begin(); it != webs.end();) { if(it->isHoveredCross) it = webs.erase(it); else ++it; }
+                    
+                    auto& apps = g_profiles[editingProfileIdx].blockedApps;
+                    for(auto it = apps.begin(); it != apps.end();) { if(it->isHoveredCross) it = apps.erase(it); else ++it; }
+                    
+                    auto& keys = g_profiles[editingProfileIdx].blockedKeywords;
+                    for(auto it = keys.begin(); it != keys.end();) { if(it->isHoveredCross) it = keys.erase(it); else ++it; }
                 }
-                if (g_ehb.hAddKey && !inpKey.empty()) { g_profiles[editingProfileIdx].blockedKeywords.push_back({inpKey, false}); inpKey = L""; }
-                
-                auto& webs = g_profiles[editingProfileIdx].blockedWebsites;
-                for(auto it = webs.begin(); it != webs.end();) { if(it->isHoveredCross) it = webs.erase(it); else ++it; }
-                
-                auto& apps = g_profiles[editingProfileIdx].blockedApps;
-                for(auto it = apps.begin(); it != apps.end();) { if(it->isHoveredCross) it = apps.erase(it); else ++it; }
-                
-                auto& keys = g_profiles[editingProfileIdx].blockedKeywords;
-                for(auto it = keys.begin(); it != keys.end();) { if(it->isHoveredCross) it = keys.erase(it); else ++it; }
             }
         }
         return;
     }
 
     if (hAddProfileBtn) {
-        editingProfileIdx = -2; // Create new
+        editingProfileIdx = -2; 
+        s_activeSubTab = 0; // Default open with Basic Tab
         inpProfileName = L""; inpWeb = L""; inpApp = L""; inpKey = L"";
         tempLockMode = 0;
         for(int d=0; d<7; d++) editDays[d] = false;
         editStH = 0; editStM = 0; editEnH = 23; editEnM = 59;
         editBlockInt = false; editBlockAdult = false; editBlockUninst = true;
-        edit_tScroll = 0.0f; edit_cScroll = 0.0f; // Reset Scroll
+        edit_tScroll = 0.0f; edit_cScroll = 0.0f; 
         
         FocusProfile np; np.profileName = L""; np.lockMode = 0;
         g_profiles.push_back(np);
@@ -1569,13 +1574,14 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
                     SaveProfiles(); 
                 }
             } else {
-                if (g_profiles[i].lockMode == 0) { /* Block premature stopping handled visually */ }
+                if (g_profiles[i].lockMode == 0) { /* Block premature stopping */ }
                 else if (g_profiles[i].lockMode == 1) { s_showPassOverlay = true; s_isStoppingFocus = true; s_inputPassText = L""; }
                 else if (g_profiles[i].lockMode == 2) { s_showTextUnlockOverlay = true; s_currentTypingText = L""; s_isTypingActive = true; }
             }
         }
         if (g_profiles[i].hEdit) {
             editingProfileIdx = i;
+            s_activeSubTab = 0; // Reset Tab
             inpProfileName = g_profiles[i].profileName;
             tempLockMode = g_profiles[i].lockMode;
             for(int d=0; d<7; d++) editDays[d] = g_profiles[i].activeDays[d];
@@ -1584,7 +1590,7 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
             editBlockInt = g_profiles[i].blockInternet;
             editBlockAdult = g_profiles[i].blockAdult;
             editBlockUninst = g_profiles[i].blockUninstall;
-            edit_tScroll = 0.0f; edit_cScroll = 0.0f; // Reset Scroll
+            edit_tScroll = 0.0f; edit_cScroll = 0.0f; 
 
             inpWeb = L""; inpApp = L""; inpKey = L"";
             activeInput = 1;
@@ -1648,16 +1654,21 @@ void ProcessScheduleBlocksKeyDown(WPARAM key) {
     }
 }
 
+// 100% Smooth Scrolling Update with System Integration
 void ProcessScheduleBlocksMouseWheel(float x, float y, int delta) {
+    UINT scrollLines = 3; // Default
+    SystemParametersInfoA(SPI_GETWHEELSCROLLLINES, 0, &scrollLines, 0);
+    float scrollStep = (float)scrollLines * 25.0f; 
     int steps = (delta > 0) ? 1 : -1;
+
     if (editingProfileIdx != -1) {
         isSchModeDropdownOpen = false; isSchWebComboOpen = false; isSchAppComboOpen = false;
-        edit_tScroll -= steps * 50.0f;
+        edit_tScroll -= steps * scrollStep;
         edit_tScroll = (std::max)(0.0f, (std::min)(edit_tScroll, edit_maxScroll));
         return;
     }
     
-    sch_tScroll -= steps * 50.0f;
+    sch_tScroll -= steps * scrollStep;
     float totalRows = ceil((float)g_profiles.size() / 2.0f);
     float maxScroll = (std::max)(0.0f, (totalRows * 190.0f) - (s_ch - 100.0f));
     sch_tScroll = (std::max)(0.0f, (std::min)(sch_tScroll, maxScroll));
