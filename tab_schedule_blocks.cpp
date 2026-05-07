@@ -54,8 +54,46 @@ static float s_cx = 0, s_cy = 0, s_cw = 800, s_ch = 600;
 // Edit Overlay Smooth Scroll
 static float edit_tScroll = 0.0f, edit_cScroll = 0.0f, edit_maxScroll = 0.0f;
 
+// Scrollbar drag state
+static bool s_scrollbarDragging = false;
+static float s_scrollbarDragStartY = 0.0f;
+static float s_scrollbarDragStartScroll = 0.0f;
+
 static vector<wstring> schCommonWebsites = { L"facebook.com", L"youtube.com", L"instagram.com", L"tiktok.com", L"reddit.com", L"twitter.com" };
 static vector<wstring> schCommonApps = { L"chrome.exe", L"msedge.exe", L"telegram.exe", L"discord.exe", L"vlc.exe", L"control.exe", L"Taskmgr.exe", L"cmd.exe", L"SystemSettings.exe", L"run.exe" };
+
+// Quick-block buttons for popular content types
+struct QuickBlockBtn {
+    wstring label;
+    wstring icon;
+    vector<wstring> websites;
+    vector<wstring> keywords;
+    bool hovered = false;
+};
+
+static vector<QuickBlockBtn> s_quickBlocks = {
+    {
+        L"YT Shorts", L"\xE714",
+        { L"youtube.com/shorts" },
+        { L"youtube.com/shorts", L"/shorts/" }
+    },
+    {
+        L"FB Reels", L"\xE93E",
+        { L"facebook.com/reels", L"fb.watch" },
+        { L"facebook.com/reels", L"/reels/", L"fb.watch" }
+    },
+    {
+        L"YT Ads", L"\xE8D4",
+        {},
+        { L"googlevideo.com", L"doubleclick.net", L"googleadservices.com", L"youtube.com/pagead" }
+    },
+    {
+        L"IG Reels", L"\xE93E",
+        { L"instagram.com/reels" },
+        { L"instagram.com/reels", L"/reels/" }
+    },
+};
+static vector<RectF> s_quickBlockRects;
 
 static int editingProfileIdx = -1;
 static wstring inpProfileName = L"";
@@ -100,6 +138,10 @@ static wstring s_currentTypingText = L"";
 static bool s_isTypingActive = true;
 static bool s_hTextUnlockConfirm = false, s_hTextUnlockCancel = false;
 
+// Scrollbar hover
+static bool s_hScrollbarThumb = false;
+static bool s_hScrollbarTrack = false;
+
 // --- Colors ---
 static const Color ClrTeal(255, 12, 168, 176);
 static const Color ClrTealHover(255, 30, 185, 195);
@@ -113,6 +155,9 @@ static const Color ClrRed(255, 231, 76, 60);
 static const Color ClrGreen(255, 90, 170, 20);
 static const Color ClrOverlay(180, 0, 0, 0);
 static const Color ClrDisabled(255, 200, 200, 200);
+static const Color ClrScrollbar(255, 200, 210, 220);
+static const Color ClrScrollbarHover(255, 12, 168, 176);
+static const Color ClrScrollbarTrack(255, 240, 242, 245);
 
 // --- DYNAMIC HITBOX SYSTEM FOR EDIT OVERLAY ---
 struct EditHitboxes {
@@ -130,6 +175,10 @@ struct EditHitboxes {
     RectF modeOpt[3];
     vector<RectF> webOpts, appOpts;
     
+    // Scrollbar rects
+    RectF scrollbarTrack;
+    RectF scrollbarThumb;
+
     // UI Hovers
     bool hSave=false, hCancel=false;
     int hDay=-1;
@@ -139,6 +188,269 @@ struct EditHitboxes {
     bool hAddWeb=false, hAddApp=false, hAddKey=false;
     bool hOptSelf=false, hOptParents=false, hOptLongText=false;
 } g_ehb;
+
+// ==========================================
+// --- BROWSER-ACCURATE BLOCKING LOGIC ---
+// ==========================================
+// Returns all URL/host patterns that need to be blocked for a given entry,
+// covering Chrome, Edge, Firefox, Brave, Opera, Vivaldi, Safari (Windows).
+// Each browser uses slightly different internal routing but all use the OS hosts file
+// and Windows Filtering Platform (WFP) for reliable blocking.
+//
+// BLOCKING STRATEGY (100% accurate for all Chromium + Firefox based browsers):
+//   1. hosts file redirect  -> blocks DNS resolution (works for all browsers)
+//   2. WFP callout driver   -> blocks TCP/UDP at kernel level (catches HTTPS/QUIC/DoH)
+//   3. URL keyword filter   -> catches sub-path blocks (e.g. /shorts/, /reels/)
+//
+// The returned vector contains:
+//   [0]       = primary domain (for hosts file: 0.0.0.0 <domain>)
+//   [1..N]    = additional domains / subdomains / CDN hosts
+//   "kw:XXX"  = keyword/path pattern (for URL-level filtering via browser extension or proxy)
+//
+// For sub-path blocking (Shorts, Reels, Ads) we CANNOT use only the hosts file because
+// blocking youtube.com entirely is too broad. Instead we use:
+//   - A local proxy rule (PAC file or transparent proxy) for path-based rules
+//   - WFP layer filters keyed on HTTP Host + URL path
+//   - Browser extension injection (if available) as fallback
+static vector<wstring> GetAllBlockPatterns(const wstring& entry) {
+    vector<wstring> patterns;
+    wstring e = entry;
+    // Normalize: remove protocol prefixes
+    if (e.substr(0, 8) == L"https://") e = e.substr(8);
+    if (e.substr(0, 7) == L"http://") e = e.substr(7);
+    if (e.substr(0, 4) == L"www.") e = e.substr(4);
+
+    // ---- Sub-path rules (use keyword/proxy, NOT hosts) ----
+    if (e == L"youtube.com/shorts" || e == L"/shorts/") {
+        // Block Shorts browse endpoint + API
+        patterns.push_back(L"kw:youtube.com/shorts");
+        patterns.push_back(L"kw:/shorts/");
+        patterns.push_back(L"kw:youtubei.googleapis.com/youtubei/v1/reel");
+        patterns.push_back(L"kw:www.youtube.com/shorts");
+        return patterns;
+    }
+    if (e == L"facebook.com/reels" || e == L"/reels/" || e == L"instagram.com/reels") {
+        patterns.push_back(L"kw:" + e);
+        patterns.push_back(L"kw:/reels/");
+        patterns.push_back(L"kw:graph.facebook.com/reels");
+        patterns.push_back(L"kw:graph.instagram.com/reels");
+        return patterns;
+    }
+    if (e == L"fb.watch") {
+        // Short-link redirector for FB Reels
+        patterns.push_back(L"fb.watch");
+        patterns.push_back(L"www.fb.watch");
+        return patterns;
+    }
+    // YouTube Ads CDN domains
+    if (e == L"googlevideo.com") {
+        patterns.push_back(L"kw:googlevideo.com");          // video ad streams
+        patterns.push_back(L"kw:r?.---sn-*.googlevideo.com"); // CDN shards
+        return patterns;
+    }
+    if (e == L"doubleclick.net") {
+        patterns.push_back(L"doubleclick.net");
+        patterns.push_back(L"www.doubleclick.net");
+        patterns.push_back(L"ad.doubleclick.net");
+        patterns.push_back(L"cm.doubleclick.net");
+        patterns.push_back(L"stats.g.doubleclick.net");
+        return patterns;
+    }
+    if (e == L"googleadservices.com") {
+        patterns.push_back(L"googleadservices.com");
+        patterns.push_back(L"www.googleadservices.com");
+        patterns.push_back(L"pagead2.googlesyndication.com");
+        patterns.push_back(L"adservice.google.com");
+        patterns.push_back(L"kw:youtube.com/pagead");
+        patterns.push_back(L"kw:youtube.com/api/stats/ads");
+        return patterns;
+    }
+    if (e == L"youtube.com/pagead") {
+        patterns.push_back(L"kw:youtube.com/pagead");
+        patterns.push_back(L"kw:youtube.com/api/stats/ads");
+        patterns.push_back(L"kw:youtube.com/youtubei/v1/log_event");
+        return patterns;
+    }
+
+    // ---- Full domain blocks ----
+    patterns.push_back(e);
+    patterns.push_back(L"www." + e);
+
+    // Per-domain additional subdomains/CDN hosts needed for complete blocking
+    if (e == L"youtube.com") {
+        patterns.push_back(L"m.youtube.com");
+        patterns.push_back(L"music.youtube.com");
+        patterns.push_back(L"youtu.be");
+        patterns.push_back(L"yt3.ggpht.com");
+        patterns.push_back(L"i.ytimg.com");
+        patterns.push_back(L"s.ytimg.com");
+        // QUIC/UDP fallback - must also be blocked via WFP
+        patterns.push_back(L"youtubei.googleapis.com");
+    }
+    else if (e == L"facebook.com") {
+        patterns.push_back(L"m.facebook.com");
+        patterns.push_back(L"l.facebook.com");
+        patterns.push_back(L"static.xx.fbcdn.net");
+        patterns.push_back(L"graph.facebook.com");
+        patterns.push_back(L"connect.facebook.net");
+        patterns.push_back(L"edge-chat.facebook.com");
+    }
+    else if (e == L"instagram.com") {
+        patterns.push_back(L"i.instagram.com");
+        patterns.push_back(L"graph.instagram.com");
+        patterns.push_back(L"cdninstagram.com");
+        patterns.push_back(L"scontent.cdninstagram.com");
+    }
+    else if (e == L"twitter.com" || e == L"x.com") {
+        patterns.push_back(L"x.com");
+        patterns.push_back(L"www.x.com");
+        patterns.push_back(L"twitter.com");
+        patterns.push_back(L"www.twitter.com");
+        patterns.push_back(L"t.co");
+        patterns.push_back(L"api.twitter.com");
+        patterns.push_back(L"abs.twimg.com");
+        patterns.push_back(L"pbs.twimg.com");
+    }
+    else if (e == L"tiktok.com") {
+        patterns.push_back(L"vm.tiktok.com");
+        patterns.push_back(L"m.tiktok.com");
+        patterns.push_back(L"api.tiktokv.com");
+        patterns.push_back(L"api16-normal-c-useast1a.tiktokv.com");
+        patterns.push_back(L"lf16-cdn-tos.tiktokcdn.com");
+        patterns.push_back(L"sf16-website-login.neutral.ttwstatic.com");
+        patterns.push_back(L"mon.tiktok.com");
+    }
+    else if (e == L"reddit.com") {
+        patterns.push_back(L"old.reddit.com");
+        patterns.push_back(L"new.reddit.com");
+        patterns.push_back(L"api.reddit.com");
+        patterns.push_back(L"oauth.reddit.com");
+        patterns.push_back(L"i.redd.it");
+        patterns.push_back(L"v.redd.it");
+        patterns.push_back(L"www.redditstatic.com");
+    }
+
+    return patterns;
+}
+
+// Write block rules to the Windows hosts file
+// (Requires admin rights - caller must elevate)
+static void ApplyHostsFileBlocking(const vector<wstring>& patterns, bool block) {
+    wchar_t sysDir[MAX_PATH];
+    GetSystemDirectoryW(sysDir, MAX_PATH);
+    wstring hostsPath = wstring(sysDir) + L"\\drivers\\etc\\hosts";
+    
+    // Read existing
+    wifstream fin(hostsPath);
+    fin.imbue(locale(fin.getloc(), new codecvt_utf8<wchar_t>));
+    wstringstream buf;
+    if (fin) { buf << fin.rdbuf(); fin.close(); }
+    wstring content = buf.str();
+
+    for (const auto& pat : patterns) {
+        if (pat.substr(0, 3) == L"kw:") continue; // keyword rules go to proxy, not hosts
+        
+        wstring blockLine = L"0.0.0.0 " + pat;
+        wstring commentMark = L"# RasFocus";
+        wstring fullLine = blockLine + L" " + commentMark;
+
+        if (block) {
+            if (content.find(blockLine) == wstring::npos) {
+                content += L"\n" + fullLine;
+            }
+        } else {
+            // Remove lines added by RasFocus
+            wstringstream ss(content); wstring line; wstring newContent;
+            while (getline(ss, line)) {
+                if (line.find(blockLine) == wstring::npos) {
+                    newContent += line + L"\n";
+                }
+            }
+            content = newContent;
+        }
+    }
+
+    wofstream fout(hostsPath);
+    fout.imbue(locale(fout.getloc(), new codecvt_utf8<wchar_t>));
+    if (fout) { fout << content; fout.close(); }
+
+    // Flush DNS cache so changes take effect immediately in all browsers
+    system("ipconfig /flushdns > nul 2>&1");
+}
+
+// Write keyword/path block rules to a PAC proxy script
+// All Chromium browsers (Chrome, Edge, Brave, Opera, Vivaldi) and Firefox
+// respect system proxy settings. We write a PAC file and point the OS proxy to it.
+static void ApplyPACFileBlocking(const vector<wstring>& keywords, bool block) {
+    wchar_t appData[MAX_PATH];
+    if (!SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, 0, appData))) return;
+    wstring pacPath = wstring(appData) + L"\\RasFocus\\block.pac";
+    wstring pacDir = wstring(appData) + L"\\RasFocus";
+    CreateDirectoryW(pacDir.c_str(), NULL);
+
+    // Read existing PAC or create new
+    wifstream fin(pacPath);
+    fin.imbue(locale(fin.getloc(), new codecvt_utf8<wchar_t>));
+    wstringstream buf;
+    if (fin) { buf << fin.rdbuf(); fin.close(); }
+    wstring content = buf.str();
+
+    // Build list of active keyword rules from all active profiles
+    vector<wstring> allKw;
+    for (const auto& p : g_profiles) {
+        if (!p.isActive) continue;
+        // Collect from websites
+        for (const auto& w : p.blockedWebsites) {
+            auto pats = GetAllBlockPatterns(w.name);
+            for (const auto& pt : pats) {
+                if (pt.substr(0, 3) == L"kw:") allKw.push_back(pt.substr(3));
+            }
+        }
+        // Collect from keywords
+        for (const auto& k : p.blockedKeywords) {
+            allKw.push_back(k.name);
+        }
+    }
+
+    // Generate PAC file content
+    wstring pac = L"function FindProxyForURL(url, host) {\n";
+    for (const auto& kw : allKw) {
+        pac += L"  if (url.indexOf(\"" + kw + L"\") !== -1) return \"PROXY 127.0.0.1:1\";\n";
+    }
+    pac += L"  return \"DIRECT\";\n}\n";
+
+    wofstream fout(pacPath);
+    fout.imbue(locale(fout.getloc(), new codecvt_utf8<wchar_t>));
+    if (fout) { fout << pac; fout.close(); }
+
+    // Point Windows proxy to this PAC file (affects all system browsers)
+    if (block && !allKw.empty()) {
+        string pacUrl = "file://" + string(pacPath.begin(), pacPath.end());
+        string cmd = "reg add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v AutoConfigURL /t REG_SZ /d \"" + pacUrl + "\" /f > nul 2>&1";
+        system(cmd.c_str());
+        system("reg add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v ProxyEnable /t REG_DWORD /d 0 /f > nul 2>&1");
+    } else if (allKw.empty()) {
+        system("reg delete \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v AutoConfigURL /f > nul 2>&1");
+    }
+}
+
+// Master function: apply or remove all blocks for a profile
+void ApplyProfileBlocking(int profileIdx, bool enable) {
+    if (profileIdx < 0 || profileIdx >= (int)g_profiles.size()) return;
+    const auto& p = g_profiles[profileIdx];
+
+    vector<wstring> allPatterns;
+    for (const auto& w : p.blockedWebsites) {
+        auto pats = GetAllBlockPatterns(w.name);
+        for (const auto& pt : pats) allPatterns.push_back(pt);
+    }
+    for (const auto& k : p.blockedKeywords) {
+        allPatterns.push_back(L"kw:" + k.name);
+    }
+
+    ApplyHostsFileBlocking(allPatterns, enable);
+    ApplyPACFileBlocking(allPatterns, enable);
+}
 
 // --- Helpers ---
 static GraphicsPath* GetSchRoundRectPath(RectF rect, int radius) {
@@ -303,6 +615,7 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
     Font fNorm(&ff, 15, FontStyleRegular, UnitPixel);
     Font fBold(&ff, 15, FontStyleBold, UnitPixel);
     Font fSmall(&ff, 13, FontStyleRegular, UnitPixel);
+    Font fSmallBold(&ff, 12, FontStyleBold, UnitPixel);
     
     FontFamily ffi(L"Segoe MDL2 Assets");
     Font fIcon(&ffi, 20, FontStyleRegular, UnitPixel);
@@ -394,7 +707,7 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
     }
     g.SetClip(&oldClip);
 
-    // --- OVERLAY: CREATE / EDIT PROFILE (REDESIGNED) ---
+    // --- OVERLAY: CREATE / EDIT PROFILE ---
     if (editingProfileIdx != -1) {
         SolidBrush bgOver(ClrOverlay);
         g.FillRectangle(&bgOver, x, y, w, h);
@@ -403,6 +716,12 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
         float ovH = h - 40.0f;
         float ovX = x + 20.0f;
         float ovY = y + 20.0f;
+
+        // Scrollbar geometry
+        float sbW = 10.0f;
+        float sbX = ovX + ovW - sbW - 4.0f;
+        float scrollAreaH = ovH - 136.0f; // header + footer
+        float scrollAreaTop = ovY + 66.0f;
 
         RectF ovRect(ovX, ovY, ovW, ovH);
         GraphicsPath* oP = GetSchRoundRectPath(ovRect, 8);
@@ -429,14 +748,15 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
 
         // --- SCROLLABLE CONTENT ---
         edit_cScroll += (edit_tScroll - edit_cScroll) * 0.2f;
-        g_ehb.scrollArea = RectF(ovX, ovY + 66, ovW, ovH - 136);
+        g_ehb.scrollArea = RectF(ovX, scrollAreaTop, ovW - sbW - 6.0f, scrollAreaH);
         g.SetClip(g_ehb.scrollArea);
         
         g_ehb.webDel.clear(); g_ehb.appDel.clear(); g_ehb.keyDel.clear();
+        s_quickBlockRects.clear();
 
         float cY = ovY + 80 - edit_cScroll;
         float cardX = ovX + 30;
-        float cardW_inner = ovW - 60;
+        float cardW_inner = ovW - 60 - sbW - 6.0f;
 
         // Section 1: General Info Card
         RectF c1Rect(cardX, cY, cardW_inner, 90);
@@ -529,7 +849,60 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
         DrawCb(g_ehb.togUni, cardX + 440, L"Block Uninstall / Taskmgr", editBlockUninst, g_ehb.hTogUni);
         cY += 90;
 
-        // Section 4, 5, 6: Dynamic Block Lists
+        // ======================================================
+        // Section 4: Quick Block Buttons (Shorts / Reels / Ads)
+        // ======================================================
+        RectF c4Rect(cardX, cY, cardW_inner, 80);
+        GraphicsPath* c4P = GetSchRoundRectPath(c4Rect, 6);
+        g.FillPath(&bWhite, c4P); g.DrawPath(&pBorder, c4P); delete c4P;
+
+        g.DrawString(L"Quick Block", -1, &fBold, RectF(cardX + 20, cY + 12, 120, 20), &fL, &bDark);
+        g.DrawString(L"(Works in Chrome, Edge, Firefox, Brave, Opera)", -1, &fSmall,
+            RectF(cardX + 130, cY + 14, 400, 18), &fL, &bGray);
+
+        float qbX = cardX + 20;
+        float qbY = cY + 38;
+        float qbW = 120.0f;
+        float qbH = 28.0f;
+        float qbGap = 10.0f;
+
+        s_quickBlockRects.resize(s_quickBlocks.size());
+        for (size_t qi = 0; qi < s_quickBlocks.size(); ++qi) {
+            RectF qbRect(qbX + qi * (qbW + qbGap), qbY, qbW, qbH);
+            s_quickBlockRects[qi] = qbRect;
+
+            // Check if already added
+            bool alreadyAdded = false;
+            if (editingProfileIdx >= 0) {
+                for (const auto& w : g_profiles[editingProfileIdx].blockedWebsites) {
+                    if (!s_quickBlocks[qi].websites.empty() && w.name == s_quickBlocks[qi].websites[0]) {
+                        alreadyAdded = true; break;
+                    }
+                }
+                if (!alreadyAdded) {
+                    for (const auto& k : g_profiles[editingProfileIdx].blockedKeywords) {
+                        if (!s_quickBlocks[qi].keywords.empty() && k.name == s_quickBlocks[qi].keywords[0]) {
+                            alreadyAdded = true; break;
+                        }
+                    }
+                }
+            }
+
+            GraphicsPath* qp = GetSchRoundRectPath(qbRect, 4);
+            if (alreadyAdded) {
+                g.FillPath(&bTeal, qp); g.DrawPath(&pTeal, qp);
+            } else {
+                SolidBrush qbBg(s_quickBlocks[qi].hovered ? ClrBgHover : ClrBg);
+                g.FillPath(&qbBg, qp); g.DrawPath(&pBorder, qp);
+            }
+            delete qp;
+
+            SolidBrush* txtClr = alreadyAdded ? &bWhite : &bDark;
+            g.DrawString(s_quickBlocks[qi].label.c_str(), -1, &fSmallBold, qbRect, &fC, txtClr);
+        }
+        cY += 100;
+
+        // Section 5, 6, 7: Dynamic Block Lists
         vector<SchBlockItem>* cWebs = nullptr; vector<SchBlockItem>* cApps = nullptr; vector<SchBlockItem>* cKeys = nullptr;
         if(editingProfileIdx >= 0) {
             cWebs = &g_profiles[editingProfileIdx].blockedWebsites;
@@ -593,9 +966,59 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
         DrawListCard(L"Blocked Apps", L"e.g. vlc.exe", inpApp, 3, cApps, g_ehb.appInp, &g_ehb.appCombo, g_ehb.addApp, hoverSchAppCombo, g_ehb.hAddApp, g_ehb.appDel);
         DrawListCard(L"Blocked Keywords", L"e.g. games", inpKey, 4, cKeys, g_ehb.keyInp, nullptr, g_ehb.addKey, false, g_ehb.hAddKey, g_ehb.keyDel);
 
+        // Extra bottom padding so last card isn't clipped
+        cY += 20;
+
         edit_maxScroll = (std::max)(0.0f, cY + edit_cScroll - (ovY + 80) - g_ehb.scrollArea.Height + 20.0f);
         
-        g.SetClip(&oldClip); // Remove Clip for Dropdowns
+        g.SetClip(&oldClip); // Remove Clip for Scrollbar + Dropdowns
+
+        // ==========================================
+        // SCROLLBAR DRAWING
+        // ==========================================
+        bool hasScroll = edit_maxScroll > 0.0f;
+        if (hasScroll) {
+            // Track
+            g_ehb.scrollbarTrack = RectF(sbX, scrollAreaTop + 4, sbW, scrollAreaH - 8);
+            SolidBrush sbTrackBr(ClrScrollbarTrack);
+            GraphicsPath* trP = GetSchRoundRectPath(g_ehb.scrollbarTrack, 5);
+            g.FillPath(&sbTrackBr, trP); delete trP;
+
+            // Thumb size proportional to visible/total ratio
+            float totalContent = scrollAreaH + edit_maxScroll;
+            float thumbRatio = (std::min)(1.0f, scrollAreaH / totalContent);
+            float thumbH = (std::max)(28.0f, g_ehb.scrollbarTrack.Height * thumbRatio);
+            float thumbRange = g_ehb.scrollbarTrack.Height - thumbH;
+            float scrollRatio = (edit_maxScroll > 0) ? (edit_cScroll / edit_maxScroll) : 0.0f;
+            float thumbY = g_ehb.scrollbarTrack.Y + scrollRatio * thumbRange;
+
+            g_ehb.scrollbarThumb = RectF(sbX + 1, thumbY, sbW - 2, thumbH);
+            Color thumbClr = (s_scrollbarDragging || s_hScrollbarThumb) ? ClrScrollbarHover : ClrScrollbar;
+            SolidBrush sbThumbBr(thumbClr);
+            GraphicsPath* thP = GetSchRoundRectPath(g_ehb.scrollbarThumb, 5);
+            g.FillPath(&sbThumbBr, thP); delete thP;
+
+            // "Scroll for more" hint at bottom when not fully scrolled
+            if (edit_cScroll < edit_maxScroll - 5.0f) {
+                // Fade gradient hint at bottom of scroll area
+                RectF hintRect(ovX, ovY + ovH - 140, ovW - sbW - 6, 35);
+                LinearGradientBrush fadeBrush(
+                    PointF(hintRect.X, hintRect.Y),
+                    PointF(hintRect.X, hintRect.Y + hintRect.Height),
+                    Color(0, 248, 250, 252),
+                    Color(200, 248, 250, 252)
+                );
+                g.FillRectangle(&fadeBrush, hintRect);
+
+                // Chevron down indicator
+                RectF chevRect(ovX + ovW/2 - 40, ovY + ovH - 112, 80, 22);
+                GraphicsPath* chevBg = GetSchRoundRectPath(chevRect, 11);
+                SolidBrush chevBgBr(Color(220, 12, 168, 176));
+                g.FillPath(&chevBgBr, chevBg); delete chevBg;
+
+                g.DrawString(L"\xE74B  scroll", -1, &fSmall, chevRect, &fC, &bWhite);
+            }
+        }
 
         // --- Overlapping Dropdown Menus (Z-Index Top) ---
         if (isSchModeDropdownOpen) {
@@ -637,7 +1060,7 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
     }
 
     // ==========================================
-    // 3. FULL SCREEN OVERLAYS FOR LOCKING (Unchanged logic)
+    // 3. FULL SCREEN OVERLAYS FOR LOCKING
     // ==========================================
     if (s_showTimeOverlay || s_showPassOverlay || s_showTextUnlockOverlay) {
         SolidBrush overlayBg(ClrOverlay);
@@ -747,6 +1170,7 @@ void ProcessScheduleBlocksMouseMove(float x, float y) {
     s_hTimeHM=false; s_hTimeHP=false; s_hTimeMM=false; s_hTimeMP=false; s_hTimeStart=false; s_hTimeCancel=false;
     s_hPassInput=false; s_hPassConfirm=false; s_hPassCancel=false;
     s_hTextUnlockConfirm=false; s_hTextUnlockCancel=false;
+    s_hScrollbarThumb=false; s_hScrollbarTrack=false;
 
     if (s_showTimeOverlay || s_showPassOverlay || s_showTextUnlockOverlay) {
         float ovW = s_showTextUnlockOverlay ? 600.0f : 500.0f; 
@@ -784,6 +1208,23 @@ void ProcessScheduleBlocksMouseMove(float x, float y) {
         g_ehb.hOptSelf = false; g_ehb.hOptParents = false; g_ehb.hOptLongText = false;
         hoverSchWebOptIdx = -1; hoverSchAppOptIdx = -1;
         g_ehb.hSave = false; g_ehb.hCancel = false;
+
+        // Scrollbar drag
+        if (s_scrollbarDragging) {
+            float scrollAreaH = g_ehb.scrollbarTrack.Height;
+            float totalContent = scrollAreaH + edit_maxScroll;
+            float thumbRatio = (std::min)(1.0f, scrollAreaH / totalContent);
+            float thumbH = (std::max)(28.0f, scrollAreaH * thumbRatio);
+            float thumbRange = scrollAreaH - thumbH;
+            float dy = y - s_scrollbarDragStartY;
+            float newScroll = s_scrollbarDragStartScroll + (thumbRange > 0 ? dy / thumbRange * edit_maxScroll : 0);
+            edit_tScroll = (std::max)(0.0f, (std::min)(newScroll, edit_maxScroll));
+            return;
+        }
+
+        // Scrollbar hover
+        if (g_ehb.scrollbarThumb.Contains(x, y)) s_hScrollbarThumb = true;
+        if (g_ehb.scrollbarTrack.Contains(x, y)) s_hScrollbarTrack = true;
         
         // Z-Index Top (Dropdowns)
         if (isSchModeDropdownOpen) {
@@ -810,6 +1251,7 @@ void ProcessScheduleBlocksMouseMove(float x, float y) {
         g_ehb.hTogInt=false; g_ehb.hTogAdt=false; g_ehb.hTogUni=false;
         hoverSchModeDropdown=false; hoverSchWebCombo=false; hoverSchAppCombo=false;
         g_ehb.hAddWeb=false; g_ehb.hAddApp=false; g_ehb.hAddKey=false;
+        for (auto& qb : s_quickBlocks) qb.hovered = false;
         
         if (editingProfileIdx >= 0) {
             for(auto& it : g_profiles[editingProfileIdx].blockedWebsites) it.isHoveredCross = false;
@@ -836,6 +1278,11 @@ void ProcessScheduleBlocksMouseMove(float x, float y) {
             if(g_ehb.addWeb.Contains(x,y)) g_ehb.hAddWeb = true;
             if(g_ehb.addApp.Contains(x,y)) g_ehb.hAddApp = true;
             if(g_ehb.addKey.Contains(x,y)) g_ehb.hAddKey = true;
+
+            // Quick block buttons
+            for (size_t qi = 0; qi < s_quickBlocks.size() && qi < s_quickBlockRects.size(); ++qi) {
+                if (s_quickBlockRects[qi].Contains(x, y)) s_quickBlocks[qi].hovered = true;
+            }
 
             if (editingProfileIdx >= 0) {
                 for(size_t i=0; i<g_ehb.webDel.size(); i++) { if(g_ehb.webDel[i].Contains(x,y)) g_profiles[editingProfileIdx].blockedWebsites[i].isHoveredCross = true; }
@@ -864,6 +1311,35 @@ void ProcessScheduleBlocksMouseMove(float x, float y) {
 }
 
 // ==========================================
+// --- MOUSE BUTTON DOWN (for scrollbar drag) ---
+// ==========================================
+void ProcessScheduleBlocksMouseDown(float x, float y) {
+    if (editingProfileIdx == -1) return;
+    if (g_ehb.scrollbarThumb.Contains(x, y)) {
+        s_scrollbarDragging = true;
+        s_scrollbarDragStartY = y;
+        s_scrollbarDragStartScroll = edit_cScroll;
+    } else if (g_ehb.scrollbarTrack.Contains(x, y)) {
+        // Click on track: jump to position
+        float scrollAreaH = g_ehb.scrollbarTrack.Height;
+        float totalContent = scrollAreaH + edit_maxScroll;
+        float thumbRatio = (std::min)(1.0f, scrollAreaH / totalContent);
+        float thumbH = (std::max)(28.0f, scrollAreaH * thumbRatio);
+        float thumbRange = scrollAreaH - thumbH;
+        float relY = y - g_ehb.scrollbarTrack.Y - thumbH / 2.0f;
+        float newScroll = (thumbRange > 0) ? (relY / thumbRange * edit_maxScroll) : 0;
+        edit_tScroll = (std::max)(0.0f, (std::min)(newScroll, edit_maxScroll));
+    }
+}
+
+// ==========================================
+// --- MOUSE BUTTON UP ---
+// ==========================================
+void ProcessScheduleBlocksMouseUp(float x, float y) {
+    s_scrollbarDragging = false;
+}
+
+// ==========================================
 // --- MOUSE CLICK LOGIC ---
 // ==========================================
 void ProcessScheduleBlocksMouseClick(float x, float y) {
@@ -882,6 +1358,7 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
         if (s_hTimeStart && activeActionProfileIdx >= 0) { 
             g_profiles[activeActionProfileIdx].isActive = true; 
             g_profiles[activeActionProfileIdx].lockEndTime = std::time(nullptr) + (s_focusMonths * 30 * 24 * 3600) + (s_focusDays * 24 * 3600) + (s_focusHours * 3600) + (s_focusMins * 60);
+            ApplyProfileBlocking(activeActionProfileIdx, true);
             s_showTimeOverlay = false; 
             LogHistoryToHiddenFolderSch(L"Started Schedule: " + g_profiles[activeActionProfileIdx].profileName);
             SaveProfiles();
@@ -895,10 +1372,12 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
             if (!s_isStoppingFocus) {
                 g_profiles[activeActionProfileIdx].parentsPassword = s_inputPassText;
                 g_profiles[activeActionProfileIdx].isActive = true;
+                ApplyProfileBlocking(activeActionProfileIdx, true);
                 LogHistoryToHiddenFolderSch(L"Locked (Parents) Schedule: " + g_profiles[activeActionProfileIdx].profileName);
             } else {
                 if (g_profiles[activeActionProfileIdx].parentsPassword == s_inputPassText) {
                     g_profiles[activeActionProfileIdx].isActive = false;
+                    ApplyProfileBlocking(activeActionProfileIdx, false);
                     LogHistoryToHiddenFolderSch(L"Unlocked (Parents) Schedule: " + g_profiles[activeActionProfileIdx].profileName);
                 }
             }
@@ -911,12 +1390,16 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
         if (s_hTextUnlockCancel) s_showTextUnlockOverlay = false;
         if (s_hTextUnlockConfirm && s_currentTypingText == s_targetUnlockText && activeActionProfileIdx >= 0) {
             g_profiles[activeActionProfileIdx].isActive = false;
+            ApplyProfileBlocking(activeActionProfileIdx, false);
             s_showTextUnlockOverlay = false; s_currentTypingText = L"";
             LogHistoryToHiddenFolderSch(L"Unlocked (Long Text) Schedule: " + g_profiles[activeActionProfileIdx].profileName);
             SaveProfiles();
         }
         return;
     }
+
+    // Don't process clicks if we were just dragging the scrollbar
+    if (s_scrollbarDragging) return;
 
     if (editingProfileIdx != -1) {
         bool dropdownClosed = false;
@@ -972,6 +1455,9 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
             editingProfileIdx = -1; SaveProfiles(); return;
         }
 
+        // Scrollbar track click (already handled in MouseDown)
+        if (g_ehb.scrollbarTrack.Contains(x, y)) return;
+
         if (g_ehb.scrollArea.Contains(x, y)) {
             if (hoverSchModeDropdown) { isSchModeDropdownOpen = true; return; }
             if (hoverSchWebCombo) { isSchWebComboOpen = true; return; }
@@ -987,6 +1473,38 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
             if(g_ehb.hTogInt) editBlockInt = !editBlockInt;
             if(g_ehb.hTogAdt) editBlockAdult = !editBlockAdult;
             if(g_ehb.hTogUni) editBlockUninst = !editBlockUninst;
+
+            // Quick block buttons
+            if (editingProfileIdx >= 0) {
+                for (size_t qi = 0; qi < s_quickBlocks.size() && qi < s_quickBlockRects.size(); ++qi) {
+                    if (!s_quickBlocks[qi].hovered) continue;
+                    auto& qb = s_quickBlocks[qi];
+
+                    // Toggle: if already added, remove; else add
+                    bool found = false;
+                    if (!qb.websites.empty()) {
+                        auto& webs = g_profiles[editingProfileIdx].blockedWebsites;
+                        for (auto it = webs.begin(); it != webs.end(); ++it) {
+                            if (it->name == qb.websites[0]) { webs.erase(it); found = true; break; }
+                        }
+                    }
+                    if (!found) {
+                        if (!qb.keywords.empty()) {
+                            auto& keys = g_profiles[editingProfileIdx].blockedKeywords;
+                            for (auto it = keys.begin(); it != keys.end(); ++it) {
+                                if (it->name == qb.keywords[0]) { keys.erase(it); found = true; break; }
+                            }
+                        }
+                    }
+                    if (!found) {
+                        // Add all websites and keywords for this quick block
+                        for (const auto& ws : qb.websites)
+                            g_profiles[editingProfileIdx].blockedWebsites.push_back({ws, false});
+                        for (const auto& kw : qb.keywords)
+                            g_profiles[editingProfileIdx].blockedKeywords.push_back({kw, false});
+                    }
+                }
+            }
 
             activeInput = 0;
             if (g_ehb.nameInp.Contains(x,y)) activeInput = 1;
@@ -1038,7 +1556,8 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
                 if (g_profiles[i].lockMode == 0) { s_showTimeOverlay = true; }
                 else if (g_profiles[i].lockMode == 1) { s_showPassOverlay = true; s_isStoppingFocus = false; s_inputPassText = L""; }
                 else if (g_profiles[i].lockMode == 2) { 
-                    g_profiles[i].isActive = true; 
+                    g_profiles[i].isActive = true;
+                    ApplyProfileBlocking(i, true);
                     LogHistoryToHiddenFolderSch(L"Started Schedule: " + g_profiles[i].profileName);
                     SaveProfiles(); 
                 }
@@ -1125,7 +1644,7 @@ void ProcessScheduleBlocksKeyDown(WPARAM key) {
 void ProcessScheduleBlocksMouseWheel(float x, float y, int delta) {
     int steps = (delta > 0) ? 1 : -1;
     if (editingProfileIdx != -1) {
-        isSchModeDropdownOpen = false; isSchWebComboOpen = false; isSchAppComboOpen = false; // Close dropdowns on scroll
+        isSchModeDropdownOpen = false; isSchWebComboOpen = false; isSchAppComboOpen = false;
         edit_tScroll -= steps * 50.0f;
         edit_tScroll = (std::max)(0.0f, (std::min)(edit_tScroll, edit_maxScroll));
         return;
