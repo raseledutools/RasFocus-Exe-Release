@@ -157,8 +157,9 @@ static const int D_BOOKMARK_H  = 32; // 🟢 Height for dynamic bookmark bar
 
 static const int D_TAB_W_MAX   = 240;
 static const int D_TAB_W_MIN   = 80;
+static const int D_TAB_PAD     = 10;
 static const int D_WIN_BTN_W   = 46;
-static const int D_LOGO_W      = 140; // Adjusted for reduced gap
+static const int D_LOGO_W      = 100; // Adjusted for reduced gap
 static const int D_NEW_TAB_BTN = 28;
 
 // ─────────────────────────────────────────────────────────────────────────────
