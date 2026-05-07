@@ -6,6 +6,7 @@
 #include <vector>
 #include <string>
 #include <fstream>
+#include <sstream>
 #include <shlobj.h>
 #include <codecvt>
 #include <locale>
@@ -340,31 +341,34 @@ static void ApplyHostsFileBlocking(const vector<wstring>& patterns, bool block) 
     GetSystemDirectoryW(sysDir, MAX_PATH);
     wstring hostsPath = wstring(sysDir) + L"\\drivers\\etc\\hosts";
     
-    // Read existing
+    // Read existing hosts file line-by-line (avoids wstringstream rdbuf issues on MSVC)
     wifstream fin(hostsPath);
     fin.imbue(locale(fin.getloc(), new codecvt_utf8<wchar_t>));
-    wstringstream buf;
-    if (fin) { buf << fin.rdbuf(); fin.close(); }
-    wstring content = buf.str();
+    wstring content;
+    if (fin) {
+        wstring ln;
+        while (getline(fin, ln)) content += ln + L"\n";
+        fin.close();
+    }
 
     for (const auto& pat : patterns) {
         if (pat.substr(0, 3) == L"kw:") continue; // keyword rules go to proxy, not hosts
-        
+
         wstring blockLine = L"0.0.0.0 " + pat;
-        wstring commentMark = L"# RasFocus";
-        wstring fullLine = blockLine + L" " + commentMark;
+        wstring fullLine = blockLine + L" # RasFocus";
 
         if (block) {
-            if (content.find(blockLine) == wstring::npos) {
-                content += L"\n" + fullLine;
-            }
+            if (content.find(blockLine) == wstring::npos)
+                content += fullLine + L"\n";
         } else {
-            // Remove lines added by RasFocus
-            wstringstream ss(content); wstring line; wstring newContent;
-            while (getline(ss, line)) {
-                if (line.find(blockLine) == wstring::npos) {
-                    newContent += line + L"\n";
-                }
+            wstring newContent;
+            size_t pos = 0;
+            while (pos <= content.size()) {
+                size_t nl = content.find(L'\n', pos);
+                wstring line = (nl == wstring::npos) ? content.substr(pos) : content.substr(pos, nl - pos);
+                if (line.find(blockLine) == wstring::npos) newContent += line + L"\n";
+                if (nl == wstring::npos) break;
+                pos = nl + 1;
             }
             content = newContent;
         }
@@ -388,12 +392,15 @@ static void ApplyPACFileBlocking(const vector<wstring>& keywords, bool block) {
     wstring pacDir = wstring(appData) + L"\\RasFocus";
     CreateDirectoryW(pacDir.c_str(), NULL);
 
-    // Read existing PAC or create new
+    // Read existing PAC or create new (line-by-line to avoid wstringstream rdbuf MSVC issues)
     wifstream fin(pacPath);
     fin.imbue(locale(fin.getloc(), new codecvt_utf8<wchar_t>));
-    wstringstream buf;
-    if (fin) { buf << fin.rdbuf(); fin.close(); }
-    wstring content = buf.str();
+    wstring content;
+    if (fin) {
+        wstring ln;
+        while (getline(fin, ln)) content += ln + L"\n";
+        fin.close();
+    }
 
     // Build list of active keyword rules from all active profiles
     vector<wstring> allKw;
