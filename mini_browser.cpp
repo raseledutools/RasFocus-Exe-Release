@@ -596,7 +596,7 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
                 SolidBrush hb(clr.NavHov);
                 g.FillEllipse(&hb, (float)(x+S(2,dpi)), (float)(toolY+S(5,dpi)), (float)S(30,dpi), (float)S(30,dpi));
             }
-            SolidBrush tCol = isActiveState ? SolidBrush(clr.BrandTeal) : brPrim;
+            SolidBrush tCol(isActiveState ? clr.BrandTeal : clr.TxtPrim);
             g.DrawString(ico, -1, &fIcon, RectF((float)x, (float)toolY, (float)btnSz, (float)toolH), &sfC, &tCol);
         };
         
