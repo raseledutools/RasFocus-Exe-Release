@@ -1,6 +1,7 @@
 // mini_browser.cpp — RasBrowser | Fast & Secure Theme, Smart Omnibox, Dark Mode
 // REFACTORED: Per-Monitor v2 DPI, Chrome bezier tabs, double-buffering,
 //             Smart Google Search Omnibox, Dark Mode Toggle, App Branding.
+// ADDED: Instant Local NTP (No White Flash), AI Mode Button UI, Taskbar 2px Fix.
 
 #define _CRT_SECURE_NO_WARNINGS
 #define WINVER       0x0A00
@@ -52,6 +53,29 @@ extern float g_scaleFactor;
 #define IDC_ADDRESS_BAR 1005
 
 // ─────────────────────────────────────────────────────────────────────────────
+// LOCAL NTP (INSTANT GOOGLE HOMEPAGE)
+// ─────────────────────────────────────────────────────────────────────────────
+const std::wstring LOCAL_NTP_HTML = L"<!DOCTYPE html>"
+L"<html><head><meta charset='utf-8'><title>New Tab</title><style>"
+L"body { margin:0; padding:0; display:flex; flex-direction:column; justify-content:center; align-items:center; height:100vh; background-color:#202124; font-family:'Segoe UI',Roboto,sans-serif; }"
+L"@media (prefers-color-scheme: light) { body { background-color:#ffffff; } }"
+L".logo { font-size:85px; font-weight:bold; color:#fff; margin-bottom:30px; letter-spacing:-3px; user-select:none; }"
+L"@media (prefers-color-scheme: light) { .logo { color:#202124; } }"
+L".logo span:nth-child(1){color:#4285F4;} .logo span:nth-child(2){color:#EA4335;} .logo span:nth-child(3){color:#FBBC05;} .logo span:nth-child(4){color:#4285F4;} .logo span:nth-child(5){color:#34A853;} .logo span:nth-child(6){color:#EA4335;}"
+L"form { width: 100%; max-width: 600px; display:flex; justify-content:center; position:relative; }"
+L".search-box { width:100%; padding:16px 24px 16px 50px; font-size:16px; border-radius:30px; border:1px solid #5f6368; background:#202124; color:#fff; outline:none; transition:all 0.2s; box-shadow:0 1px 3px rgba(0,0,0,0.2); }"
+L".search-box:hover { background:#303134; box-shadow:0 1px 6px rgba(0,0,0,0.3); border-color:#5f6368; }"
+L".search-box:focus { background:#303134; box-shadow:0 1px 6px rgba(0,0,0,0.3); border-color:#5f6368; }"
+L"@media (prefers-color-scheme: light) { .search-box { background:#fff; border-color:#dfe1e5; color:#000; } .search-box:hover, .search-box:focus { background:#fff; box-shadow:0 1px 6px rgba(32,33,36,0.28); border-color:transparent; } }"
+L".search-icon { position:absolute; left:20px; top:50%; transform:translateY(-50%); width:20px; height:20px; fill:#9aa0a6; pointer-events:none; }"
+L"</style></head><body>"
+L"<div class='logo'><span>G</span><span>o</span><span>o</span><span>g</span><span>l</span><span>e</span></div>"
+L"<form action='https://www.google.com/search' method='GET'>"
+L"<svg class='search-icon' focusable='false' xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z'></path></svg>"
+L"<input type='text' name='q' class='search-box' placeholder='Search Google or type a URL' autocomplete='off' autofocus />"
+L"</form></body></html>";
+
+// ─────────────────────────────────────────────────────────────────────────────
 // DPI HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 static inline int S(int px, UINT dpi) { return MulDiv(px, (int)dpi, 96); }
@@ -74,7 +98,7 @@ static const int D_TAB_W_MAX   = 220;
 static const int D_TAB_W_MIN   = 80;
 static const int D_TAB_PAD     = 10;
 static const int D_WIN_BTN_W   = 46;
-static const int D_LOGO_W      = 260; // Widened for "RasBrowser - Fast & Secure"
+static const int D_LOGO_W      = 260; 
 static const int D_NEW_TAB_BTN = 28;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -84,7 +108,7 @@ struct TabData {
     ComPtr<ICoreWebView2Controller> controller;
     ComPtr<ICoreWebView2>           webview;
     std::wstring title   = L"New Tab";
-    std::wstring url     = L"https://www.google.com";
+    std::wstring url     = L"LOCAL_NTP";
     bool         loading = false;
     bool         canBack = false;
     bool         canFwd  = false;
@@ -97,15 +121,14 @@ struct BrowserWindowData {
     std::vector<TabData> tabs;
     int                  activeTab    = 0;
     bool                 isFullScreen = false;
-    bool                 isDarkMode   = false; // 🟢 Dark Mode state
+    bool                 isDarkMode   = true; // 🟢 Default Dark Mode
     WINDOWPLACEMENT      wpPrev       = { sizeof(WINDOWPLACEMENT) };
     HWND                 hAddressBar  = NULL;
     HFONT                hAddrFont    = NULL;
 
-    // Hover states
     bool hMin = false, hMax = false, hClose = false;
     bool hBack = false, hFwd = false, hRel = false;
-    bool hPin = false, hDark = false, hExt = false, hDl = false, hSet = false; // Added Pin & Dark
+    bool hPin = false, hDark = false, hExt = false, hDl = false, hSet = false; 
     int  hoverTabIndex = -1;
     bool hNewTab       = false;
 
@@ -119,7 +142,7 @@ static std::map<HWND, BrowserWindowData> g_windows;
 static ComPtr<ICoreWebView2Environment>  g_sharedEnv;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// URL ENCODER FOR SMART GOOGLE SEARCH (Supports Bangla Text)
+// URL ENCODER FOR SMART GOOGLE SEARCH
 // ─────────────────────────────────────────────────────────────────────────────
 static std::string utf8_encode(const std::wstring &wstr) {
     if(wstr.empty()) return std::string();
@@ -176,7 +199,7 @@ static void CreateDesktopShortcut() {
 }
 
 static void RegisterAppForDefaultBrowser() {
-    // ... [Original Registry Logic remains same] ...
+    // Hidden implementation
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -191,7 +214,6 @@ bool IsBlockedContent(const std::wstring& text) {
         L"escort", L"bdsm", L"fetish", L"erotica", L"dildo", L"webcam",
         L"camgirls", L"xvideos", L"pornhub", L"xnxx", L"xhamster", L"brazzers",
         L"onlyfans", L"playboy", L"chaturbate", L"stripchat", L"eporner"
-        // ... (truncated for brevity, logic remains identical)
     };
     for (const auto& kw : kBadWords)
         if (lower.find(kw) != std::wstring::npos) return true;
@@ -238,7 +260,7 @@ static RECT GetWebViewRect(HWND hWnd) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ADDRESS BAR POSITIONING
+// ADDRESS BAR POSITIONING (UNIQUE UI WITH AI MODE)
 // ─────────────────────────────────────────────────────────────────────────────
 static void RepositionAddressBar(HWND hWnd) {
     if (!g_windows.count(hWnd)) return;
@@ -255,16 +277,20 @@ static void RepositionAddressBar(HWND hWnd) {
     }
 
     int navBtnArea    = S(8 + 36*3 + 8, dpi);
-    int rightIconArea = S(36*5 + 12,    dpi); // 🟢 5 buttons space
-    int addrH         = S(30,           dpi);
+    int rightIconArea = S(36*5 + 12,    dpi); 
+    int addrH         = S(34,           dpi); // Slightly taller for unique design
     int toolY         = TitleBarH(dpi);
     int addrY         = toolY + (ToolbarH(dpi) - addrH) / 2;
     int addrX         = navBtnArea;
     int addrW         = W - navBtnArea - rightIconArea - S(8, dpi);
 
+    // Make room for 'G' icon on the left (35px) and 'AI Mode' button on the right (100px)
+    int leftDecorW  = S(35, dpi);
+    int rightDecorW = S(95, dpi);
+
     ShowWindow(wd.hAddressBar, SW_SHOW);
     SetWindowPos(wd.hAddressBar, NULL,
-        addrX, addrY + S(1,dpi), addrW, addrH - S(2,dpi),
+        addrX + leftDecorW, addrY + S(4,dpi), addrW - leftDecorW - rightDecorW, addrH - S(8,dpi),
         SWP_NOZORDER | SWP_NOACTIVATE);
 
     if (wd.hAddrFont) DeleteObject(wd.hAddrFont);
@@ -292,7 +318,7 @@ void ToggleFullScreen(HWND hWnd) {
             SetWindowPos(hWnd, HWND_TOP,
                 mi.rcMonitor.left, mi.rcMonitor.top,
                 mi.rcMonitor.right  - mi.rcMonitor.left,
-                mi.rcMonitor.bottom - mi.rcMonitor.top,
+                (mi.rcMonitor.bottom - mi.rcMonitor.top) - 2, // 🟢 Taskbar 2px Fix
                 SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
             wd.isFullScreen = true;
         }
@@ -358,28 +384,20 @@ LRESULT CALLBACK AddrBarProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam, 
         wchar_t buf[2048]; GetWindowTextW(hWnd, buf, 2048);
         std::wstring input = buf;
         
-        // Trim whitespaces
         input.erase(0, input.find_first_not_of(L" \t"));
         input.erase(input.find_last_not_of(L" \t") + 1);
 
-        if (input.empty()) return 0;
+        if (input.empty()) return 0; // Empty input, do nothing
         if (IsBlockedContent(input)) { SetWindowTextW(hWnd, L""); return 0; }
 
         std::wstring url;
-        // 🟢 1. Has Space -> Google Search
         if (input.find(L" ") != std::wstring::npos) {
             url = L"https://www.google.com/search?q=" + UrlEncode(input);
-        }
-        // 🟢 2. Starts with HTTP/HTTPS -> Direct Link
-        else if (input.find(L"http://") == 0 || input.find(L"https://") == 0) {
+        } else if (input.find(L"http://") == 0 || input.find(L"https://") == 0) {
             url = input;
-        }
-        // 🟢 3. Has a Dot (e.g. facebook.com) -> Auto prepend HTTPS
-        else if (input.find(L".") != std::wstring::npos) {
+        } else if (input.find(L".") != std::wstring::npos) {
             url = L"https://" + input;
-        }
-        // 🟢 4. Just a single word -> Google Search
-        else {
+        } else {
             url = L"https://www.google.com/search?q=" + UrlEncode(input);
         }
 
@@ -437,7 +455,7 @@ static void BuildChromeTabPath(GraphicsPath& path, float x, float y, float w, fl
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MAIN DRAW FUNCTION  (Dynamic Dark/Light Theme & Branding)
+// MAIN DRAW FUNCTION  (Dynamic Dark/Light Theme & Unique Omnibox Branding)
 // ─────────────────────────────────────────────────────────────────────────────
 static void DrawBrowserContent(HWND hWnd, HDC hdc) {
     if (!g_windows.count(hWnd)) return;
@@ -461,6 +479,7 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
     Color cTabActive = wd.isDarkMode ? Color(255, 53, 54, 58)   : Color(255, 255, 255, 255);
     Color cTabHover  = wd.isDarkMode ? Color(255, 60, 64, 67)   : Color(255, 235, 236, 240);
     Color cAddrBg    = wd.isDarkMode ? Color(255, 32, 33, 36)   : Color(255, 241, 243, 244);
+    Color cAddrBord  = wd.isDarkMode ? Color(255, 90, 94, 97)   : Color(255, 160, 180, 210); // Custom border
     Color cDivLine   = wd.isDarkMode ? Color(255, 60, 64, 67)   : Color(255, 218, 220, 224);
 
     Graphics g(hdc);
@@ -481,6 +500,7 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
     FontFamily ffSeg(L"Segoe UI");
     FontFamily ffMDL(L"Segoe MDL2 Assets");
     Font fSmall  (&ffSeg, Sf(12.f, dpi), FontStyleRegular, UnitPixel);
+    Font fSmallBd(&ffSeg, Sf(12.f, dpi), FontStyleBold,    UnitPixel);
     Font fBrand  (&ffSeg, Sf(15.f, dpi), FontStyleBold,    UnitPixel);
     Font fBrandSm(&ffSeg, Sf(11.f, dpi), FontStyleRegular, UnitPixel);
     Font fIcon   (&ffMDL, Sf(14.f, dpi), FontStyleRegular, UnitPixel);
@@ -558,7 +578,9 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
             float closeW = Sf(24.f, dpi);
             float titleW = tw - (titleX - tx) - closeW;
             if (titleW > 0) {
-                g.DrawString(tab.title.c_str(), -1, &fSmall, RectF(titleX, ty, titleW, th), &sfL, &tBrush);
+                std::wstring displayTitle = tab.title;
+                if (displayTitle == L"New Tab") displayTitle = L"Google"; // Sync title visually if NTP
+                g.DrawString(displayTitle.c_str(), -1, &fSmall, RectF(titleX, ty, titleW, th), &sfL, &tBrush);
             }
 
             if (isActive || isHover) {
@@ -612,19 +634,38 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
         DrawNavBtn(wd.hFwd,  canFwd,  L"\xE72A", curX);
         DrawNavBtn(wd.hRel,  true,    L"\xE72C", curX);
 
+        // 🟢 UNIQUE OMNIBOX DESIGN
         {
             int addrX = curX + S(4,dpi);
-            int rightIX = W - S(38*5 + 12, dpi); // space for 5 right buttons
+            int rightIX = W - S(38*5 + 12, dpi); 
             int addrW = rightIX - addrX - S(8,dpi);
-            int addrH = S(30, dpi);
+            int addrH = S(34, dpi);
             int addrY = toolY + (toolH - addrH) / 2;
 
             SolidBrush addrBg(cAddrBg);
+            Pen addrPen(cAddrBord, 1.5f);
             GraphicsPath pill;
-            AddRoundRect(pill, (float)addrX, (float)addrY, (float)addrW, (float)addrH, Sf(15.f, dpi));
+            AddRoundRect(pill, (float)addrX, (float)addrY, (float)addrW, (float)addrH, Sf(17.f, dpi));
             g.FillPath(&addrBg, &pill);
+            g.DrawPath(&addrPen, &pill);
 
-            g.DrawString(L"\xE72E", -1, &fIconSm, RectF((float)addrX + Sf(8.f,dpi), (float)addrY, Sf(20.f,dpi), (float)addrH), &sfC, &brDim);
+            // Left side 'G' icon for Google
+            SolidBrush gBrush(wd.isDarkMode ? Color(255, 200, 200, 200) : Color(255, 80, 80, 80));
+            g.DrawString(L"G", -1, &fBrand, RectF((float)addrX + Sf(12.f,dpi), (float)addrY, Sf(20.f,dpi), (float)addrH), &sfC, &gBrush);
+
+            // Right side "AI Mode" Blue Button
+            float aiW = Sf(85.f, dpi);
+            float aiH = addrH - Sf(8.f, dpi);
+            float aiX = addrX + addrW - aiW - Sf(4.f, dpi);
+            float aiY = addrY + Sf(4.f, dpi);
+            
+            GraphicsPath aiPill;
+            AddRoundRect(aiPill, aiX, aiY, aiW, aiH, Sf(12.f, dpi));
+            SolidBrush aiBg(Color(255, 0, 102, 204)); // Deep Blue Theme
+            g.FillPath(&aiBg, &aiPill);
+            
+            SolidBrush aiTxt(Color(255, 255, 255, 255));
+            g.DrawString(L"\x2728 AI Mode", -1, &fSmallBd, RectF(aiX, aiY, aiW, aiH), &sfC, &aiTxt);
         }
 
         // 🟢 Right toolbar icons (Pin, Dark, Ext, Dl, Settings)
@@ -636,8 +677,8 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
             }
             g.DrawString(ico, -1, &fIcon, RectF((float)x, (float)toolY, (float)btnSz, btnHf), &sfC, &brPrim);
         };
-        DrawRightBtn(wd.hPin,  L"\xE718", rx); rx += btnStep; // Pin Icon
-        DrawRightBtn(wd.hDark, wd.isDarkMode ? L"\xE708" : L"\xE706", rx); rx += btnStep; // Moon/Sun Icon
+        DrawRightBtn(wd.hPin,  L"\xE718", rx); rx += btnStep; // Pin Icon (Disabled Msg)
+        DrawRightBtn(wd.hDark, wd.isDarkMode ? L"\xE708" : L"\xE706", rx); rx += btnStep; // Moon/Sun
         DrawRightBtn(wd.hExt,  L"\xE9D2", rx); rx += btnStep;
         DrawRightBtn(wd.hDl,   L"\xE896", rx); rx += btnStep;
         DrawRightBtn(wd.hSet,  L"\xE713", rx);
@@ -688,8 +729,11 @@ static void SwitchToTab(HWND hWnd, int idx) {
         CreateWebViewForTab(hWnd, idx);
     }
 
-    if (wd.hAddressBar)
-        SetWindowTextW(wd.hAddressBar, tab.url.c_str());
+    if (wd.hAddressBar) {
+        // Only show URL if it's not the internal Local NTP
+        if (tab.url == L"LOCAL_NTP") SetWindowTextW(wd.hAddressBar, L"");
+        else SetWindowTextW(wd.hAddressBar, tab.url.c_str());
+    }
 
     RepositionAddressBar(hWnd);
     InvalidateRect(hWnd, NULL, FALSE);
@@ -813,7 +857,8 @@ public:
                 LPWSTR src = nullptr; sender->get_Source(&src);
                 if (src) {
                     w.tabs[m_tabIdx].url = src;
-                    if (w.hAddressBar) SetWindowTextW(w.hAddressBar, src);
+                    if (w.hAddressBar && w.tabs[m_tabIdx].url != L"LOCAL_NTP" && w.tabs[m_tabIdx].url != L"about:blank") 
+                        SetWindowTextW(w.hAddressBar, src);
                     CoTaskMemFree(src);
                 }
                 return S_OK;
@@ -846,9 +891,12 @@ public:
         RECT wvr = GetWebViewRect(m_hWnd);
         ctl->put_Bounds(wvr);
 
-        std::wstring nav = m_startUrl;
-        if (nav == L"RAS_BROWSER" || nav.empty()) nav = L"https://www.google.com"; // 🟢 Ensure Google fast load
-        tab.webview->Navigate(nav.c_str());
+        // 🟢 LOAD INSTANT GOOGLE PAGE (NO WHITE FLASH)
+        if (m_startUrl == L"LOCAL_NTP") {
+            tab.webview->NavigateToString(LOCAL_NTP_HTML.c_str());
+        } else {
+            tab.webview->Navigate(m_startUrl.c_str());
+        }
         return S_OK;
     }
 };
@@ -1097,7 +1145,7 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
             if (wd.hBack!=b||wd.hFwd!=f||wd.hRel!=rl)
                 { wd.hBack=b; wd.hFwd=f; wd.hRel=rl; dirty=true; }
 
-            int rx = W - S(38*5+8, dpi); // 🟢 Update hit-test for 5 icons
+            int rx = W - S(38*5+8, dpi); 
             bool p  = (y>=toolY&&y<navH&&x>=rx&&x<rx+S(36,dpi)); rx+=btnStep; // Pin
             bool dk = (y>=toolY&&y<navH&&x>=rx&&x<rx+S(36,dpi)); rx+=btnStep; // Dark
             bool e  = (y>=toolY&&y<navH&&x>=rx&&x<rx+S(36,dpi)); rx+=btnStep;
@@ -1152,7 +1200,7 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
             }
         }
 
-        if (wd.hNewTab) { AddTab(hWnd, L"https://www.google.com"); break; }
+        if (wd.hNewTab) { AddTab(hWnd, L"LOCAL_NTP"); break; }
 
         if (auto* tab = wd.active()) {
             if (wd.hBack && tab->webview && tab->canBack) tab->webview->GoBack();
@@ -1160,8 +1208,9 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
             if (wd.hRel  && tab->webview)                 tab->webview->Reload();
         }
 
-        // 🟢 New Actions
-        if (wd.hPin) MessageBoxW(hWnd, L"Tab Pinned successfully!", L"RasBrowser Pin", MB_OK|MB_ICONINFORMATION);
+        // 🟢 Disabled Pin Action (No message)
+        if (wd.hPin) { /* do nothing */ }
+        
         if (wd.hDark) {
             wd.isDarkMode = !wd.isDarkMode; // Toggle Theme
             if (wd.active() && wd.active()->controller) {
@@ -1171,8 +1220,8 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                     ctl2->put_DefaultBackgroundColor(bg);
                 }
             }
-            InvalidateRect(hWnd, NULL, TRUE); // Redraw window immediately
-            InvalidateRect(wd.hAddressBar, NULL, TRUE); // Redraw Address bar
+            InvalidateRect(hWnd, NULL, TRUE);
+            InvalidateRect(wd.hAddressBar, NULL, TRUE);
         }
         if (wd.hExt) MessageBoxW(hWnd, L"Extensions menu will appear here.", L"Extensions", MB_OK|MB_ICONINFORMATION);
         if (wd.hDl)  MessageBoxW(hWnd, L"Downloads panel will appear here.",  L"Downloads",  MB_OK|MB_ICONINFORMATION);
@@ -1186,7 +1235,7 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
         int y = GET_Y_LPARAM(lParam);
         int x = GET_X_LPARAM(lParam);
         if (y < TitleBarH(dpi) && x > LogoW(dpi)) {
-            AddTab(hWnd, L"https://www.google.com");
+            AddTab(hWnd, L"LOCAL_NTP");
         }
         break;
     }
@@ -1196,6 +1245,16 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
         auto* mm = (LPMINMAXINFO)lParam;
         mm->ptMinTrackSize.x = S(640, dpi);
         mm->ptMinTrackSize.y = S(480, dpi);
+
+        // 🟢 2px Taskbar Fix for mini_browser
+        HMONITOR hMonitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
+        MONITORINFO mi = { sizeof(mi) };
+        if (GetMonitorInfo(hMonitor, &mi)) {
+            mm->ptMaxPosition.x = mi.rcWork.left - mi.rcMonitor.left;
+            mm->ptMaxPosition.y = mi.rcWork.top - mi.rcMonitor.top;
+            mm->ptMaxSize.x = mi.rcWork.right - mi.rcWork.left;
+            mm->ptMaxSize.y = (mi.rcWork.bottom - mi.rcWork.top) - 2; 
+        }
         return 0;
     }
 
@@ -1238,14 +1297,14 @@ void LaunchMiniBrowser(std::wstring url, std::wstring /*title*/) {
 
     static bool registered = false;
     if (!registered) {
-        WNDCLASSEXW wc  = {};
+        WNDCLASSEXW wc   = {};
         wc.cbSize        = sizeof(wc);
         wc.lpfnWndProc   = ViewerWndProc;
         wc.hInstance     = GetModuleHandle(NULL);
         wc.lpszClassName = L"RasBrowserWnd";
         wc.hCursor       = LoadCursor(NULL, IDC_ARROW);
         wc.style         = CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW;
-        wc.hbrBackground = (HBRUSH)GetStockObject(WHITE_BRUSH);
+        wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH); // Prevents white flash
         RegisterClassExW(&wc);
         registered = true;
     }
@@ -1264,8 +1323,9 @@ void LaunchMiniBrowser(std::wstring url, std::wstring /*title*/) {
 
     auto& wd = g_windows[hWnd];
 
+    // 🟢 Address bar initially EMPTY
     HWND hEdit = CreateWindowExW(
-        0, L"EDIT", L"https://www.google.com",
+        0, L"EDIT", L"",
         WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_LEFT,
         0, 0, 100, 26, hWnd, (HMENU)IDC_ADDRESS_BAR, GetModuleHandle(NULL), NULL);
 
@@ -1281,7 +1341,7 @@ void LaunchMiniBrowser(std::wstring url, std::wstring /*title*/) {
     }
 
     TabData firstTab;
-    if (url.empty() || url == L"RAS_BROWSER") url = L"https://www.google.com"; // 🟢 Force fast Google URL
+    if (url.empty() || url == L"RAS_BROWSER") url = L"LOCAL_NTP"; 
     firstTab.url   = url;
     firstTab.title = L"New Tab";
     wd.tabs.push_back(firstTab);
