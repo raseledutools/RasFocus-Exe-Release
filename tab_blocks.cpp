@@ -1,25 +1,3 @@
-// Import the functions you need from the SDKs you need
-import { initializeApp } from "firebase/app";
-import { getAnalytics } from "firebase/analytics";
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
-
-// Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
-/*
-const firebaseConfig = {
-  apiKey: "AIzaSyBVl3BuW6gfmp_K2IMYd1rbvLEA2l0yinA",
-  authDomain: "rasfocus-c746d.firebaseapp.com",
-  projectId: "rasfocus-c746d",
-  storageBucket: "rasfocus-c746d.firebasestorage.app",
-  messagingSenderId: "868329616276",
-  appId: "1:868329616276:web:2f1954de893f5d3f231581",
-  measurementId: "G-0WWESHH56M"
-};
-*/
-// Initialize Firebase
-// const app = initializeApp(firebaseConfig);
-// const analytics = getAnalytics(app);
 
 #include "tab_blocks.h"
 #include "tab_schedule_blocks.h"
