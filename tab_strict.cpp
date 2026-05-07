@@ -287,8 +287,11 @@ public:
             EventRegistrationToken token;
             strictWebView->add_WebMessageReceived(new StrictMessageReceivedHandler(), &token);
 
-            // --- ম্যাজিক: NavigateToString এর মাধ্যমে tab_strict.h থেকে HTML লোড হচ্ছে ---
-            strictWebView->NavigateToString(HTML_STRICT_TAB.c_str());
+            wchar_t path[MAX_PATH];
+            GetModuleFileNameW(NULL, path, MAX_PATH);
+            PathRemoveFileSpecW(path);
+            wcscat(path, L"\\tab_strict.html");
+            strictWebView->Navigate(path);
         }
         return S_OK;
     }
@@ -324,6 +327,7 @@ void DrawStrictProtocolsTab(Gdiplus::Graphics& g, float cx, float cy, float cw, 
 
     if (!isStrictWebViewRunning && hParentWnd != NULL) {
         CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+        // Persist session path: RasFocus_AppData
         CreateCoreWebView2EnvironmentWithOptions(nullptr, L"RasFocus_AppData", nullptr, new StrictEnvCompletedHandler());
         isStrictWebViewRunning = true;
     }
