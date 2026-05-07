@@ -134,7 +134,7 @@ static ComPtr<ICoreWebView2Environment>  g_sharedEnv;
 // ─────────────────────────────────────────────────────────────────────────────
 // AUTO SHORTCUT & DEFAULT BROWSER REGISTRY
 // ─────────────────────────────────────────────────────────────────────────────
-void CreateDesktopShortcut() {
+static void CreateDesktopShortcut() {
     wchar_t exePath[MAX_PATH];
     GetModuleFileNameW(NULL, exePath, MAX_PATH);
 
@@ -159,7 +159,7 @@ void CreateDesktopShortcut() {
     }
 }
 
-void RegisterAppForDefaultBrowser() {
+static void RegisterAppForDefaultBrowser() {
     wchar_t exePath[MAX_PATH];
     GetModuleFileNameW(NULL, exePath, MAX_PATH);
 
