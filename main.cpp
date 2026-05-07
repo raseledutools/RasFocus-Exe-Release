@@ -17,6 +17,8 @@ HWND hParentWnd = NULL; // গ্লোবাল উইন্ডো হ্যা
 #include <process.h> 
 #include <wininet.h>
 
+#pragma comment(lib, "wininet.lib") // Firebase REST API কল করার জন্য
+
 // 🟢 1. ফায়ারবেস হেডার ফাইল যুক্ত করা হলো
 #include "firebase/app.h"
 
@@ -97,6 +99,33 @@ const Color ColUpgradeBtn(255, 243, 156, 18);
 const Color ColUpgradeHover(255, 211, 84, 0);
 
 // ==========================================
+// 🔴 FIREBASE REMOTE KILL SWITCH (NEW)
+// ==========================================
+void CheckFirebaseKillSwitch() {
+    // ফায়ারবেস রিয়েলটাইম ডেটাবেস থেকে সরাসরি একটি JSON স্ট্যাটাস রিড করবে। 
+    // যদি আপনি ডেটাবেসে {"is_active": false} করে দেন, অ্যাপ আর রান হবে না!
+    string url = "https://rasfocus-c746d-default-rtdb.firebaseio.com/app_status.json";
+    char tempPath[MAX_PATH];
+    GetTempPathA(MAX_PATH, tempPath);
+    string savePath = string(tempPath) + "rf_status.json";
+
+    DeleteUrlCacheEntryA(url.c_str()); 
+    HRESULT hr = URLDownloadToFileA(NULL, url.c_str(), savePath.c_str(), 0, NULL);
+    if (hr == S_OK) {
+        ifstream inFile(savePath);
+        string content((istreambuf_iterator<char>(inFile)), istreambuf_iterator<char>());
+        inFile.close();
+        remove(savePath.c_str());
+
+        // যদি ডেটাবেসে is_active: false থাকে, তাহলে অ্যাপ জোরপূর্বক বন্ধ হয়ে যাবে।
+        if (content.find("\"is_active\":false") != string::npos || content.find("\"is_active\": false") != string::npos) {
+            MessageBoxA(NULL, "This application has been disabled by the server administrator.", "RasFocus Pro - Access Denied", MB_OK | MB_ICONERROR | MB_TOPMOST);
+            exit(0);
+        }
+    }
+}
+
+// ==========================================
 // 🔴 MAGIC FIX: TAB CHANGE LOGIC FOR WEBVIEW2
 // ==========================================
 void HideAllWebViews() {
@@ -127,7 +156,6 @@ string GetSecretDir() {
         secretPath = string(currentDir) + "\\rasfocus_data\\";
     }
     CreateDirectoryA(secretPath.c_str(), NULL);
-    // 🟢 4. ফোল্ডার হিডেন রাখা হচ্ছে, যাতে ইউজার সহজে ডাটা নষ্ট করতে না পারে
     SetFileAttributesA(secretPath.c_str(), FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM); 
     return secretPath;
 }
@@ -281,30 +309,51 @@ bool IsRunAsAdmin() {
     return isAdmin != FALSE;
 }
 
+// 🟢 UAC BYPASS SHORTCUT CREATION & MINI BROWSER SHORTCUT
 void CreateDesktopShortcut() {
     char desktopPath[MAX_PATH];
     if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_DESKTOPDIRECTORY, NULL, 0, desktopPath))) {
-        string shortcutPath = string(desktopPath) + "\\RasFocus Pro.lnk";
-        DWORD attrs = GetFileAttributesA(shortcutPath.c_str());
-        if (attrs != INVALID_FILE_ATTRIBUTES) return; 
+        string mainShortcutPath = string(desktopPath) + "\\RasFocus Pro.lnk";
+        string miniBrowserShortcutPath = string(desktopPath) + "\\RasFocus Mini Browser.lnk";
+        string exePath = GetExePath();
 
-        HRESULT hres; IShellLink* psl;
         CoInitialize(NULL);
-        hres = CoCreateInstance(CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER, IID_IShellLink, (LPVOID*)&psl);
-        if (SUCCEEDED(hres)) {
-            IPersistFile* ppf;
-            string exePath = GetExePath();
-            psl->SetPath(exePath.c_str());
-            psl->SetDescription("RasFocus Pro - Block Apps & Adult Content");
-            psl->SetIconLocation(exePath.c_str(), 0);
-            hres = psl->QueryInterface(IID_IPersistFile, (LPVOID*)&ppf);
-            if (SUCCEEDED(hres)) {
-                WCHAR wsz[MAX_PATH];
-                MultiByteToWideChar(CP_ACP, 0, shortcutPath.c_str(), -1, wsz, MAX_PATH);
-                ppf->Save(wsz, TRUE);
-                ppf->Release();
+        IShellLink* psl;
+
+        // 1. Main App Shortcut (UAC BYPASS VIA TASK SCHEDULER)
+        if (GetFileAttributesA(mainShortcutPath.c_str()) == INVALID_FILE_ATTRIBUTES) {
+            if (SUCCEEDED(CoCreateInstance(CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER, IID_IShellLink, (LPVOID*)&psl))) {
+                IPersistFile* ppf;
+                psl->SetPath("C:\\Windows\\System32\\schtasks.exe");
+                psl->SetArguments("/run /tn \"RasFocusPro_AutoStart\"");
+                psl->SetDescription("RasFocus Pro - Block Apps & Adult Content");
+                psl->SetIconLocation(exePath.c_str(), 0);
+                if (SUCCEEDED(psl->QueryInterface(IID_IPersistFile, (LPVOID*)&ppf))) {
+                    WCHAR wsz[MAX_PATH];
+                    MultiByteToWideChar(CP_ACP, 0, mainShortcutPath.c_str(), -1, wsz, MAX_PATH);
+                    ppf->Save(wsz, TRUE);
+                    ppf->Release();
+                }
+                psl->Release();
             }
-            psl->Release();
+        }
+
+        // 2. Mini Browser Shortcut
+        if (GetFileAttributesA(miniBrowserShortcutPath.c_str()) == INVALID_FILE_ATTRIBUTES) {
+            if (SUCCEEDED(CoCreateInstance(CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER, IID_IShellLink, (LPVOID*)&psl))) {
+                IPersistFile* ppf;
+                psl->SetPath(exePath.c_str());
+                psl->SetArguments("-minibrowser");
+                psl->SetDescription("RasFocus Safe Mini Browser");
+                psl->SetIconLocation(exePath.c_str(), 0);
+                if (SUCCEEDED(psl->QueryInterface(IID_IPersistFile, (LPVOID*)&ppf))) {
+                    WCHAR wsz[MAX_PATH];
+                    MultiByteToWideChar(CP_ACP, 0, miniBrowserShortcutPath.c_str(), -1, wsz, MAX_PATH);
+                    ppf->Save(wsz, TRUE);
+                    ppf->Release();
+                }
+                psl->Release();
+            }
         }
         CoUninitialize();
     }
@@ -559,7 +608,6 @@ void DrawMainArea(Graphics& g, int w, int h) {
     else if (selectedTab == 4) { DrawSpecialFeatureTab(g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 5) { DrawStatisticsTab(g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 6) { DrawSettingsTab(g, contentX, contentY, contentW, contentH); }
-    // 🟢 2. Accounts Tab Drawing
     else if (selectedTab == 7) { DrawAccountsTab(g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 8) { DrawPdfWorkspaceTab(g, contentX, contentY, contentW, contentH); }
 }
@@ -726,7 +774,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         else if (selectedTab == 4) { ProcessSpecialFeatureMouseMove(x, y); redraw = true; } 
         else if (selectedTab == 5) { ProcessStatisticsMouseMove(x, y); redraw = true; } 
         else if (selectedTab == 6) { ProcessSettingsMouseMove(x, y); redraw = true; }
-        // 🟢 2. Accounts Mouse Move
         else if (selectedTab == 7) { ProcessAccountsMouseMove(x, y); redraw = true; }
         else if (selectedTab == 8) { ProcessPdfWorkspaceMouseMove(x, y); redraw = true; }
 
@@ -784,7 +831,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         else if (selectedTab == 4) { ProcessSpecialFeatureMouseClick(x, y); } 
         else if (selectedTab == 5) { ProcessStatisticsMouseClick(x, y); } 
         else if (selectedTab == 6) { ProcessSettingsMouseClick(x, y); }
-        // 🟢 2. Accounts Mouse Click
         else if (selectedTab == 7) { ProcessAccountsMouseClick(x, y); }
         else if (selectedTab == 8) { ProcessPdfWorkspaceMouseClick(x, y); }
 
@@ -878,6 +924,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 }
 
 int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
+    // 🟢 1. অ্যাপ ওপেন হওয়ার সাথে সাথেই ফায়ারবেস কিল-সুইচ চেক করবে
+    CheckFirebaseKillSwitch();
+
     if (!IsRunAsAdmin()) {
         wchar_t szPath[MAX_PATH];
         GetModuleFileNameW(NULL, szPath, MAX_PATH);
@@ -892,7 +941,6 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
         return 0; 
     }
 
-    // 🟢 1. ফায়ারবেস কনফিগারেশন ও ইনিশিয়ালাইজেশন
     firebase::AppOptions options;
     options.set_project_id("rasfocus-c746d");
     options.set_app_id("1:868329616276:web:2f1954de893f5d3f231581");
@@ -907,7 +955,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
     }
 
     // =======================================================
-    // 🔍 ARGUMENT PARSING (File & Link Detection)
+    // 🔍 ARGUMENT PARSING (File, Link & MiniBrowser Detection)
     // =======================================================
     int argc;
     LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
@@ -921,7 +969,13 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
             std::wstring argLower = arg;
             for (size_t k = 0; k < argLower.length(); ++k) argLower[k] = towlower(argLower[k]);
 
-            if (argLower.length() > 4 && argLower.substr(argLower.length() - 4) == L".pdf") {
+            // 🟢 2. Mini Browser Argument Check
+            if (argLower == L"-minibrowser") {
+                g_isPureViewerMode = true; 
+                viewerUrl = L"https://www.google.com"; // Default to Google
+                viewerTitle = L"RasFocus Mini Browser"; 
+                break;
+            } else if (argLower.length() > 4 && argLower.substr(argLower.length() - 4) == L".pdf") {
                 g_isPureViewerMode = true; viewerUrl = arg; viewerTitle = L"RasFocus PDF Viewer"; break;
             } else if (argLower.length() > 4 && (argLower.substr(argLower.length() - 4) == L".jpg" || argLower.substr(argLower.length() - 4) == L".png" || argLower.substr(argLower.length() - 5) == L".jpeg")) {
                 g_isPureViewerMode = true; viewerUrl = arg; viewerTitle = L"RasFocus Photo Viewer"; break;
@@ -1031,7 +1085,6 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
         }
     } 
     else {
-        // 🟢 3. ডিফল্টভাবে অ্যাপ ওপেন করলেই ফুলস্ক্রিন (Maximized) ওপেন হবে
         ShowWindow(hWnd, SW_SHOWMAXIMIZED); 
     }
     
