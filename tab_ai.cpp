@@ -1,4 +1,5 @@
 #include "tab_adult.h" // Assuming shared headers/helpers are here, or you can create a tab_ai.h
+#include "prewindow.h" // Included for Password/Parental checks
 #include <vector>
 #include <string>
 #include <fstream>
@@ -10,8 +11,14 @@
 using namespace Gdiplus;
 using namespace std;
 
+// --- External Control Flags from Tab Adult/Strict ---
+extern bool isSafeBrowsingActive;
+extern bool isStrictActive;
+extern bool RequestParentalAccess(HWND hWnd);
+
 // --- AI Filter Global States ---
 static float ai_cX = 0.0f, ai_cY = 0.0f, ai_cW = 800.0f, ai_cH = 600.0f;
+static HWND ai_hWnd = NULL; // Store HWND for message boxes/password prompts
 
 // --- Colors (Matching Adult Tab Style) ---
 static const Color AiClrTeal(255, 12, 168, 176);
@@ -94,6 +101,15 @@ static GraphicsPath* GetAiRoundRectPath(RectF rect, int radius) {
     path->CloseFigure(); return path;
 }
 
+// Draw text with word wrap logic
+static void DrawLongTextAi(Graphics& g, const wstring& text, Font* font, SolidBrush* brush, float x, float y, float maxW) {
+    StringFormat sf;
+    sf.SetAlignment(StringAlignmentNear);
+    sf.SetLineAlignment(StringAlignmentNear);
+    g.DrawString(text.c_str(), -1, font, RectF(x, y, maxW, 500.0f), &sf, brush);
+}
+
+
 // --- SAVE & LOAD SETTINGS DATA FOR AI ---
 void SaveAiSettings() {
     std::wofstream out(L"rasfocus_ai_data.txt");
@@ -139,11 +155,16 @@ void LoadAiSettings() {
 static bool aiSettingsLoaded = false;
 
 // ==========================================
+// --- INITIALIZE HWND ---
+// ==========================================
+void InitAiFilterTab(HWND hWnd) {
+    ai_hWnd = hWnd;
+}
+
+
+// ==========================================
 // --- DRAWING FUNCTION FOR AI FILTER ---
 // ==========================================
-// Note: This function now ONLY draws the contents of the AI Filter tab. 
-// It assumes the main tab navigation (Safe Browsing, AI Filter, Strict Protocols) 
-// is drawn by the caller (e.g., in tab_adult.cpp).
 void DrawAiFilterTab(Graphics& g, float cx, float cy, float cw, float ch) {
     ai_cX = cx; ai_cY = cy; ai_cW = cw; ai_cH = ch;
 
@@ -171,11 +192,18 @@ void DrawAiFilterTab(Graphics& g, float cx, float cy, float cw, float ch) {
     float bX = cx + 40.0f;
     float bY = cy + 20.0f; 
 
+    // Determine if controls are locked based on external states
+    bool isLocked = isSafeBrowsingActive || isStrictActive;
+    SolidBrush activeTextBrush(isLocked ? AiClrGrayText : AiClrDark); 
+
     // --- HELPER: DRAW TOGGLE SWITCH ---
     auto drawToggle = [&](float x, float y, const wchar_t* txt, const wchar_t* desc, bool state) {
         RectF trackR(x, y + 2.0f, 36.0f, 18.0f);
         GraphicsPath* tp = GetAiRoundRectPath(trackR, 9);
-        SolidBrush tBg(state ? (isAiEngineActive ? AiClrTeal : AiClrGrayText) : Color(255, 220, 220, 220));
+        
+        // Visual indication of locked state
+        Color onColor = isLocked ? Color(255, 150, 150, 150) : AiClrTeal;
+        SolidBrush tBg(state ? onColor : Color(255, 220, 220, 220));
         g.FillPath(&tBg, tp); 
         if(!state) g.DrawPath(&pBorder, tp); 
         delete tp;
@@ -184,11 +212,11 @@ void DrawAiFilterTab(Graphics& g, float cx, float cy, float cw, float ch) {
         SolidBrush thBg(state ? AiClrWhite : AiClrGrayText);
         g.FillEllipse(&thBg, thumbX, y + 3.0f, 14.0f, 14.0f);
 
-        SolidBrush textBrush(isAiEngineActive ? AiClrDark : AiClrGrayText);
+        SolidBrush textBrush(state ? (isLocked ? AiClrGrayText : AiClrDark) : AiClrGrayText);
         g.DrawString(txt, -1, &fNorm, RectF(x + 45.0f, y-2.0f, 300.0f, 22.0f), &fL, &textBrush);
         
         if (desc && wcslen(desc) > 0) {
-             g.DrawString(desc, -1, &fTiny, RectF(x + 45.0f, y + 20.0f, 500.0f, 20.0f), &fL, &bGray);
+             DrawLongTextAi(g, desc, &fTiny, &bGray, x + 45.0f, y + 20.0f, cw - 100.0f);
         }
     };
 
@@ -198,19 +226,24 @@ void DrawAiFilterTab(Graphics& g, float cx, float cy, float cw, float ch) {
     if (currentAppBlockView == 0) {
         // --- 1. AI ENGINE MASTER CONTROL ---
         RectF startBtn(bX, bY, 180.0f, 40.0f);
-        SolidBrush sb(isAiEngineActive ? Color(255, 230, 50, 50) : AiClrGreen);
+        
+        // Button visual state handles lock
+        SolidBrush sb(isAiEngineActive ? (isLocked ? Color(255, 200, 100, 100) : Color(255, 230, 50, 50)) : (isLocked ? Color(255, 150, 200, 100) : AiClrGreen));
         GraphicsPath* sbp = GetAiRoundRectPath(startBtn, 4); g.FillPath(&sb, sbp); delete sbp;
         g.DrawString(isAiEngineActive ? L"Stop AI Engine" : L"Start AI Engine", -1, &fBold, startBtn, &fC, &bWhite);
 
-        SolidBrush activeTextBrush(isAiEngineActive ? AiClrDark : AiClrGrayText); 
-        
         g.DrawString(isAiEngineActive ? L"Status: AI Background Engine is ACTIVE" : L"Status: AI Engine is OFF", -1, &fBold, RectF(bX + 200.0f, bY, 400.0f, 40.0f), &fL, isAiEngineActive ? &bTeal : &bGray);
+
+        if (isLocked) {
+             g.DrawString(L"(Locked by Safe Browsing or Strict Protocol)", -1, &fSmallItalic, RectF(bX + 200.0f, bY + 20.0f, 400.0f, 40.0f), &fL, &bGray);
+        }
+
 
         bY += 60.0f; g.DrawLine(&pBorder, bX, bY, cx + cw - 40.0f, bY); bY += 15.0f;
 
         // --- 2. ADVANCED FEMALE DETECTION ---
         g.DrawString(L"Smart Female Detection (Strict Filter):", -1, &fSubTitle, RectF(bX, bY, 400.0f, 30.0f), &fL, &activeTextBrush);
-        g.DrawString(L"Dynamically detects and blurs females in real-time without blocking the site.", -1, &fSmallItalic, RectF(bX, bY+28.0f, 600.0f, 20.0f), &fL, &bGray);
+        DrawLongTextAi(g, L"Dynamically detects and blurs females in real-time without blocking the site.", &fSmallItalic, &bGray, bX, bY+28.0f, cw - 80.0f);
         bY += 60.0f;
         
         drawToggle(bX, bY, L"Detect & Blur Females in Browsing", L"Applies blur on images containing females across all websites.", cbFemaleDetectWeb);
@@ -224,9 +257,9 @@ void DrawAiFilterTab(Graphics& g, float cx, float cy, float cw, float ch) {
         
         auto drawBeautifulDropdown = [&](float x, float y, float w, float h, wstring text, bool hover) {
             RectF r(x, y, w, h); GraphicsPath* p = GetAiRoundRectPath(r, 4);
-            SolidBrush dBg(hover && !isAiEngineActive ? AiClrBgHover : AiClrWhite); 
+            SolidBrush dBg(hover && !isLocked ? AiClrBgHover : AiClrWhite); 
             g.FillPath(&dBg, p); g.DrawPath(&pBorder, p); delete p;
-            g.DrawString(text.c_str(), -1, &fNorm, RectF(x+10, y, w-35, h), &fL, isAiEngineActive ? &bGray : &bDark);
+            g.DrawString(text.c_str(), -1, &fNorm, RectF(x+10, y, w-35, h), &fL, isLocked ? &bGray : &bDark);
             g.DrawLine(&pBorder, x+w-30, y, x+w-30, y+h);
             g.DrawString(L"\xE70D", -1, &fSmallIcon, RectF(x+w-30, y, 30, h), &fC, &bGray);
         };
@@ -242,15 +275,15 @@ void DrawAiFilterTab(Graphics& g, float cx, float cy, float cw, float ch) {
         auto drawAppButton = [&](float y, const wchar_t* title, const wchar_t* desc, const wchar_t* iconCode, Color iconColor, bool hover) {
             RectF r(bX, y, cw - 80.0f, 60.0f);
             GraphicsPath* p = GetAiRoundRectPath(r, 6);
-            SolidBrush bBg(hover ? AiClrBgHover : AiClrBg);
+            SolidBrush bBg(hover && !isLocked ? AiClrBgHover : AiClrBg);
             g.FillPath(&bBg, p); g.DrawPath(&pBorder, p); delete p;
 
-            SolidBrush icBr(iconColor);
+            SolidBrush icBr(isLocked ? Color(150, iconColor.GetR(), iconColor.GetG(), iconColor.GetB()) : iconColor);
             g.FillRectangle(&icBr, bX + 15.0f, y + 15.0f, 30.0f, 30.0f);
             g.DrawString(iconCode, -1, &fIcon, RectF(bX + 15.0f, y + 15.0f, 30.0f, 30.0f), &fC, &bWhite);
 
             g.DrawString(title, -1, &fBold, RectF(bX + 60.0f, y + 10.0f, 300.0f, 20.0f), &fL, &activeTextBrush);
-            g.DrawString(desc, -1, &fNorm, RectF(bX + 60.0f, y + 30.0f, 500.0f, 20.0f), &fL, &bGray);
+            DrawLongTextAi(g, desc, &fNorm, &bGray, bX + 60.0f, y + 30.0f, cw - 150.0f);
             g.DrawString(L"\xE76C", -1, &fIcon, RectF(r.X + r.Width - 40.0f, y, 40.0f, 60.0f), &fC, &bGray); 
         };
 
@@ -261,7 +294,7 @@ void DrawAiFilterTab(Graphics& g, float cx, float cy, float cw, float ch) {
         drawAppButton(bY, L"Instagram", L"Block specific Instagram features like reels, comments, or more.", L"\xE7B3", Color(255, 190, 40, 140), hBtnInstagram); 
 
         // DRAW OPEN DROPDOWN ON TOP
-        if (isAiSensDropOpen && !isAiEngineActive) {
+        if (isAiSensDropOpen && !isLocked) {
             float dropY = cy + 20.0f + 60.0f + 15.0f + 30.0f + 20.0f + 60.0f + 45.0f + 40.0f + 15.0f;
             RectF dR(bX + 160.0f, dropY + 36.0f, 170.0f, 4 * 32.0f);
             GraphicsPath* dp = GetAiRoundRectPath(dR, 4);
@@ -281,7 +314,7 @@ void DrawAiFilterTab(Graphics& g, float cx, float cy, float cw, float ch) {
         g.DrawString(L"\xE76C", -1, &fSmallIcon, RectF(bX + 120.0f, bY, 20.0f, 30.0f), &fC, &bGray);
         g.DrawString(L"Youtube", -1, &fTitle, RectF(bX + 140.0f, bY, 200.0f, 30.0f), &fL, &bDark);
         bY += 40.0f;
-        g.DrawString(L"Block specific YouTube features like shorts, comments, or more.", -1, &fNorm, RectF(bX, bY, cw-80.0f, 20.0f), &fL, &bDark);
+        DrawLongTextAi(g, L"Block specific YouTube features like shorts, comments, or more.", &fNorm, &bDark, bX, bY, cw-80.0f);
         bY += 30.0f;
 
         // Clip Region for Scrolling
@@ -327,7 +360,7 @@ void DrawAiFilterTab(Graphics& g, float cx, float cy, float cw, float ch) {
         g.DrawString(L"\xE76C", -1, &fSmallIcon, RectF(bX + 120.0f, bY, 20.0f, 30.0f), &fC, &bGray);
         g.DrawString(L"TikTok", -1, &fTitle, RectF(bX + 140.0f, bY, 200.0f, 30.0f), &fL, &bDark);
         bY += 40.0f;
-        g.DrawString(L"Block specific TikTok features like comments, explore or more.", -1, &fNorm, RectF(bX, bY, cw-80.0f, 20.0f), &fL, &bDark);
+        DrawLongTextAi(g, L"Block specific TikTok features like comments, explore or more.", &fNorm, &bDark, bX, bY, cw-80.0f);
         bY += 40.0f;
 
         drawToggle(bX, bY, L"Hide Explore", L"", ttHideExplore); bY += 45.0f;
@@ -344,7 +377,7 @@ void DrawAiFilterTab(Graphics& g, float cx, float cy, float cw, float ch) {
         g.DrawString(L"\xE76C", -1, &fSmallIcon, RectF(bX + 120.0f, bY, 20.0f, 30.0f), &fC, &bGray);
         g.DrawString(L"Instagram", -1, &fTitle, RectF(bX + 140.0f, bY, 200.0f, 30.0f), &fL, &bDark);
         bY += 40.0f;
-        g.DrawString(L"Block specific Instagram features like reels, comments, or more.", -1, &fNorm, RectF(bX, bY, cw-80.0f, 20.0f), &fL, &bDark);
+        DrawLongTextAi(g, L"Block specific Instagram features like reels, comments, or more.", &fNorm, &bDark, bX, bY, cw-80.0f);
         bY += 40.0f;
 
         drawToggle(bX, bY, L"Hide Stories", L"", igHideStories); bY += 45.0f;
@@ -378,6 +411,9 @@ void ProcessAiFilterMouseMove(float x, float y) {
 
     // Instagram resets
     hIgHideStories = false; hIgHideReels = false; hIgHideExplore = false; hIgHideComments = false; hIgHideSuggested = false; hIgBlackWhiteMode = false;
+
+    bool isLocked = isSafeBrowsingActive || isStrictActive;
+    if (isLocked) return; // Prevent hover effects if locked
 
     if (currentAppBlockView == 0) {
         hoverAiEngineBtn = RectF(bX, bY, 180.0f, 40.0f).Contains(x,y);
@@ -441,8 +477,15 @@ void ProcessAiFilterMouseMove(float x, float y) {
 // --- MOUSE CLICK LOGIC ---
 // ==========================================
 void ProcessAiFilterMouseClick(float x, float y) {
+    bool isLocked = isSafeBrowsingActive || isStrictActive;
+
     if (currentAppBlockView == 0) {
         if (hoverAiEngineBtn) {
+            if (isLocked) {
+                if (!RequestParentalAccess(ai_hWnd)) {
+                    return; // Access denied
+                }
+            }
             isAiEngineActive = !isAiEngineActive;
             SaveAiSettings();
             return;
@@ -455,17 +498,17 @@ void ProcessAiFilterMouseClick(float x, float y) {
             return; 
         }
 
-        if (hoverAiSensDrop && !isAiEngineActive) {
+        if (hoverAiSensDrop && !isLocked) {
             isAiSensDropOpen = true;
             return;
         }
 
-        if (hBtnYoutube) { currentAppBlockView = 1; scrollOffsetYt = 0; return; }
-        if (hBtnTikTok) { currentAppBlockView = 2; return; }
-        if (hBtnInstagram) { currentAppBlockView = 3; return; }
+        if (hBtnYoutube && !isLocked) { currentAppBlockView = 1; scrollOffsetYt = 0; return; }
+        if (hBtnTikTok && !isLocked) { currentAppBlockView = 2; return; }
+        if (hBtnInstagram && !isLocked) { currentAppBlockView = 3; return; }
 
-        auto handleCb = [](bool& state, bool hover) {
-            if (hover && !isAiEngineActive) state = !state;
+        auto handleCb = [&](bool& state, bool hover) {
+            if (hover && !isLocked) state = !state;
         };
 
         handleCb(cbFemaleDetectWeb, hCbFemaleDetectWeb);
@@ -474,7 +517,7 @@ void ProcessAiFilterMouseClick(float x, float y) {
     else if (currentAppBlockView == 1) { // YouTube View
         if (hoverBackBtn) { currentAppBlockView = 0; return; }
         
-        auto handleCb = [](bool& state, bool hover) { if (hover && !isAiEngineActive) state = !state; };
+        auto handleCb = [&](bool& state, bool hover) { if (hover && !isLocked) state = !state; };
         handleCb(ytHideHome, hYtHideHome);
         handleCb(ytHideShorts, hYtHideShorts);
         handleCb(ytHideComments, hYtHideComments);
@@ -491,7 +534,7 @@ void ProcessAiFilterMouseClick(float x, float y) {
     else if (currentAppBlockView == 2) { // TikTok View
         if (hoverBackBtn) { currentAppBlockView = 0; return; }
         
-        auto handleCb = [](bool& state, bool hover) { if (hover && !isAiEngineActive) state = !state; };
+        auto handleCb = [&](bool& state, bool hover) { if (hover && !isLocked) state = !state; };
         handleCb(ttHideExplore, hTtHideExplore);
         handleCb(ttHideLive, hTtHideLive);
         handleCb(ttHideComments, hTtHideComments);
@@ -501,7 +544,7 @@ void ProcessAiFilterMouseClick(float x, float y) {
     else if (currentAppBlockView == 3) { // Instagram View
         if (hoverBackBtn) { currentAppBlockView = 0; return; }
         
-        auto handleCb = [](bool& state, bool hover) { if (hover && !isAiEngineActive) state = !state; };
+        auto handleCb = [&](bool& state, bool hover) { if (hover && !isLocked) state = !state; };
         handleCb(igHideStories, hIgHideStories);
         handleCb(igHideReels, hIgHideReels);
         handleCb(igHideExplore, hIgHideExplore);
