@@ -906,7 +906,7 @@ public:
             settings->put_IsStatusBarEnabled(TRUE);
             
             // 🟢 Fix for Gemini/Facebook Local Storage
-            settings->put_IsDomStorageEnabled(TRUE); 
+            //settings->put_IsDomStorageEnabled(TRUE); 
 
             ComPtr<ICoreWebView2Settings2> s2;
             if (SUCCEEDED(settings->QueryInterface(IID_PPV_ARGS(&s2)))) {
