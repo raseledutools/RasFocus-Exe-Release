@@ -15,6 +15,23 @@
 
 using namespace Gdiplus;
 using namespace std;
+// --- MISSING HELPERS & COLORS ---
+static void AddRoundedRectPath(GraphicsPath* path, float x, float y, float w, float h, float r) {
+    float d = r * 2.0f;
+    path->AddArc(x, y, d, d, 180.0f, 90.0f);
+    path->AddArc(x + w - d, y, d, d, 270.0f, 90.0f);
+    path->AddArc(x + w - d, y + h - d, d, d, 0.0f, 90.0f);
+    path->AddArc(x, y + h - d, d, d, 90.0f, 90.0f);
+    path->CloseFigure();
+}
+
+static void AddRoundedRectPath(GraphicsPath* path, RectF rect, float r) {
+    AddRoundedRectPath(path, rect.X, rect.Y, rect.Width, rect.Height, r);
+}
+
+// Scrollbar Colors
+#define s_hScrollbarThumb Color(255, 180, 180, 180)
+#define s_hScrollbarTrack Color(255, 240, 240, 240)
 
 // ==========================================
 // --- DATA STRUCTURES & GLOBALS ---
