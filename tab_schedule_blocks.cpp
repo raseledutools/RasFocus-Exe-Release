@@ -957,7 +957,7 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
                 cWebs = &g_profiles[editingProfileIdx].blockedWebsites;
                 cApps = &g_profiles[editingProfileIdx].blockedApps;
                 cKeys = &g_profiles[editingProfileIdx].blockedKeywords;
-                maxItems = max({cWebs->size(), cApps->size(), cKeys->size()});
+                maxItems = (std::max)(cWebs->size(), (std::max)(cApps->size(), cKeys->size()));
             }
 
             float listH = (maxItems * 35.0f);
