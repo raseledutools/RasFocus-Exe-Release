@@ -414,7 +414,7 @@ void ProcessDashboardMouseClick(float x, float y, int& selectedTab) {
         if (hoverNumBtn == 12) { showKillPrompt = false; killInput = L""; }
         else if (hoverNumBtn == 10) { killInput = L""; }
         else if (hoverNumBtn == 11) {
-            if (killInput == L"1111") {
+            if (killInput == L"591661") {
                 system("taskkill /F /IM RasObserve.exe /T >nul 2>&1");
                 PostQuitMessage(0); 
             } else { killInput = L""; }
