@@ -1,7 +1,7 @@
 // mini_browser.cpp — RasBrowser | Premium UI, Smart Omnibox, Dynamic Bookmarks
 // REFACTORED: Per-Monitor v2 DPI, Chrome bezier tabs, double-buffering,
 //             Smart Google Search, Dark Mode Toggle, App Branding.
-// ADDED: Dynamic Bookmark Bar, Motivational Block Page, Titlebar Icons.
+// ADDED: Gemini AppData Fix, Cursor Fix, Profile/3-Dot Menu, Logo Fix, Pure Local NTP.
 
 #define _CRT_SECURE_NO_WARNINGS
 #define WINVER       0x0A00
@@ -153,13 +153,13 @@ static UINT GetWndDpi(HWND hWnd) {
 // ─────────────────────────────────────────────────────────────────────────────
 static const int D_TITLEBAR_H  = 42; 
 static const int D_TOOLBAR_H   = 40;
-static const int D_BOOKMARK_H  = 32; // 🟢 Height for dynamic bookmark bar
+static const int D_BOOKMARK_H  = 32; 
 
 static const int D_TAB_W_MAX   = 240;
 static const int D_TAB_W_MIN   = 80;
 static const int D_TAB_PAD     = 10;
 static const int D_WIN_BTN_W   = 46;
-static const int D_LOGO_W      = 100; // Adjusted for reduced gap
+static const int D_LOGO_W      = 140; 
 static const int D_NEW_TAB_BTN = 28;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -169,7 +169,7 @@ struct TabData {
     ComPtr<ICoreWebView2Controller> controller;
     ComPtr<ICoreWebView2>           webview;
     std::wstring title   = L"New Tab";
-    std::wstring url     = L"LOCAL_NTP";
+    std::wstring url     = L"LOCAL_NTP"; 
     bool         loading = false;
     bool         canBack = false;
     bool         canFwd  = false;
@@ -188,9 +188,12 @@ struct BrowserWindowData {
     HFONT                hAddrFont    = NULL;
 
     bool hMin = false, hMax = false, hClose = false;
-    bool hPin = false, hDark = false; // 🟢 Moved to Titlebar
+    bool hPin = false, hDark = false; 
     bool hBack = false, hFwd = false, hRel = false;
-    bool hExt = false, hDl = false, hSet = false; 
+    
+    // Right Icons
+    bool hProfile = false, hExt = false, hMenu = false; 
+    
     int  hoverTabIndex = -1;
     bool hNewTab       = false;
 
@@ -203,14 +206,14 @@ struct BrowserWindowData {
 static std::map<HWND, BrowserWindowData> g_windows;
 static ComPtr<ICoreWebView2Environment>  g_sharedEnv;
 
-// 🟢 Dynamic Total Header Height Calculation
+// Dynamic Total Header Height Calculation
 static int NavTotalH(HWND hWnd) {
     UINT dpi = GetWndDpi(hWnd);
     int h = S(D_TITLEBAR_H + D_TOOLBAR_H, dpi);
     if (g_windows.count(hWnd)) {
         auto* tab = g_windows[hWnd].active();
-        // Show bookmark bar only on New Tab
-        if (tab && tab->url == L"LOCAL_NTP") h += S(D_BOOKMARK_H, dpi);
+        if (tab && (tab->url == L"LOCAL_NTP" || tab->url.find(L"blocked by rasfocus") != std::string::npos || tab->url == L"about:blank")) 
+            h += S(D_BOOKMARK_H, dpi);
     }
     return h;
 }
@@ -248,9 +251,6 @@ static std::wstring UrlEncode(const std::wstring& text) {
     return escaped.str();
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// AUTO SHORTCUT & DEFAULT BROWSER REGISTRY
-// ─────────────────────────────────────────────────────────────────────────────
 static void CreateDesktopShortcut() {
     wchar_t exePath[MAX_PATH];
     GetModuleFileNameW(NULL, exePath, MAX_PATH);
@@ -298,7 +298,7 @@ bool IsBlockedContent(const std::wstring& text) {
 // GEOMETRY HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 static int CalcTabWidth(int windowW, int tabCount, UINT dpi) {
-    int winBtnArea = WinBtnW(dpi) * 5; // 🟢 5 buttons now (Pin, Dark, Min, Max, Close)
+    int winBtnArea = WinBtnW(dpi) * 5; 
     int available  = windowW - winBtnArea - LogoW(dpi) - S(D_NEW_TAB_BTN + 16, dpi);
     int w = (tabCount > 0) ? available / tabCount : S(D_TAB_W_MAX, dpi);
     return max(S(D_TAB_W_MIN, dpi), min(S(D_TAB_W_MAX, dpi), w));
@@ -327,7 +327,7 @@ static RECT GetWebViewRect(HWND hWnd) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ADDRESS BAR POSITIONING 
+// ADDRESS BAR POSITIONING & CURSOR FIX
 // ─────────────────────────────────────────────────────────────────────────────
 static void RepositionAddressBar(HWND hWnd) {
     if (!g_windows.count(hWnd)) return;
@@ -344,7 +344,7 @@ static void RepositionAddressBar(HWND hWnd) {
     }
 
     int navBtnArea    = S(8 + 36*3 + 8, dpi);
-    int rightIconArea = S(38*3 + 12,    dpi); // 🟢 3 icons on right of toolbar
+    int rightIconArea = S(38*3 + 12,    dpi); 
     int addrH         = S(30,           dpi); 
     int toolY         = TitleBarH(dpi);
     int addrY         = toolY + (ToolbarH(dpi) - addrH) / 2;
@@ -354,9 +354,13 @@ static void RepositionAddressBar(HWND hWnd) {
     int leftDecorW  = S(35, dpi);
     int rightDecorW = S(95, dpi);
 
+    // FIX: Address bar typing cursor alignment fix (Native EDIT height matched to font)
+    int editH = S(18, dpi); 
+    int editY = addrY + (addrH - editH) / 2;
+
     ShowWindow(wd.hAddressBar, SW_SHOW);
     SetWindowPos(wd.hAddressBar, NULL,
-        addrX + leftDecorW, addrY + S(4,dpi), addrW - leftDecorW - rightDecorW, addrH - S(8,dpi),
+        addrX + leftDecorW, editY, addrW - leftDecorW - rightDecorW, editH,
         SWP_NOZORDER | SWP_NOACTIVATE);
 
     if (wd.hAddrFont) DeleteObject(wd.hAddrFont);
@@ -384,7 +388,7 @@ void ToggleFullScreen(HWND hWnd) {
             SetWindowPos(hWnd, HWND_TOP,
                 mi.rcMonitor.left, mi.rcMonitor.top,
                 mi.rcMonitor.right  - mi.rcMonitor.left,
-                (mi.rcMonitor.bottom - mi.rcMonitor.top) - 2, // 🟢 Taskbar 2px Fix
+                (mi.rcMonitor.bottom - mi.rcMonitor.top) - 2, 
                 SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
             wd.isFullScreen = true;
         }
@@ -437,7 +441,7 @@ public:
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ADDRESS BAR SUBCLASS  (Smart Google Search Chrome Logic)
+// ADDRESS BAR SUBCLASS 
 // ─────────────────────────────────────────────────────────────────────────────
 LRESULT CALLBACK AddrBarProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR, DWORD_PTR) {
     if (msg == WM_KEYDOWN && wParam == VK_RETURN) {
@@ -455,7 +459,6 @@ LRESULT CALLBACK AddrBarProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam, 
 
         if (input.empty()) return 0; 
         
-        // 🟢 BLOCKED CONTENT LOGIC
         if (IsBlockedContent(input)) { 
             SetWindowTextW(hWnd, L"blocked by rasfocus"); 
             tab->url = L"blocked by rasfocus";
@@ -528,7 +531,7 @@ static void BuildChromeTabPath(GraphicsPath& path, float x, float y, float w, fl
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MAIN DRAW FUNCTION  (Dynamic Dark/Light Theme & Unique Omnibox Branding)
+// MAIN DRAW FUNCTION 
 // ─────────────────────────────────────────────────────────────────────────────
 static void DrawBrowserContent(HWND hWnd, HDC hdc) {
     if (!g_windows.count(hWnd)) return;
@@ -544,7 +547,7 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
     int navH    = NavTotalH(hWnd);
     int winBtnW = WinBtnW(dpi);
 
-    // 🟢 Dynamic Theme Colors
+    // Dynamic Theme Colors
     Color cBgFrame   = wd.isDarkMode ? Color(255, 30, 30, 30)   : Color(255, 230, 230, 235);
     Color cBgTool    = wd.isDarkMode ? Color(255, 43, 43, 43)   : Color(255, 255, 255, 255);
     Color cTxtPrim   = wd.isDarkMode ? Color(255, 255, 255, 255): Color(255, 32, 33, 36);
@@ -559,7 +562,7 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
     g.SetSmoothingMode(SmoothingModeAntiAlias);
     g.SetTextRenderingHint(TextRenderingHintClearTypeGridFit);
 
-    // ── Background strips ──────────────────────────────────────────────────
+    // Background strips
     {
         SolidBrush bFrame(cBgFrame);
         SolidBrush bTool (cBgTool);
@@ -567,8 +570,7 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
         g.FillRectangle(&bTool,  0, titleH, W, toolH);
 
         Pen sepPen(cDivLine, 1.0f);
-        // Only draw border under toolbar if bookmark bar is NOT showing
-        if (!(wd.active() && wd.active()->url == L"LOCAL_NTP")) {
+        if (!(wd.active() && (wd.active()->url == L"LOCAL_NTP" || wd.active()->url == L"about:blank"))) {
             g.DrawLine(&sepPen, 0, navH - 1, W, navH - 1);
         }
     }
@@ -588,26 +590,23 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
     SolidBrush brPrim(cTxtPrim);
     SolidBrush brDim (cTxtDim);
 
-    // ── Title bar: Branding & Reduced Gap ──────────────────────────────────
+    // Title bar: Branding
     {
         int iconX  = S(15, dpi);
-        
         SolidBrush brTeal(Color(255, 12, 168, 176)); 
         SolidBrush brWhite(Color(255, 255, 255, 255));
         SolidBrush brDark(Color(255, 32, 33, 36));
 
-        // Draw "Ras" in Teal
-        RectF rRas((float)iconX, 0.f, S(30, dpi), (float)titleH);
+        RectF rRas((float)iconX, 0.f, S(40, dpi), (float)titleH); // Width fixed to 40
         g.DrawString(L"Ras", -1, &fBrand, rRas, &sfL, &brTeal);
 
-        // Draw "Browser" in White/Dark
-        RectF rBrowser((float)iconX + S(26, dpi), 0.f, S(100, dpi), (float)titleH);
+        RectF rBrowser((float)iconX + S(32, dpi), 0.f, S(100, dpi), (float)titleH);
         g.DrawString(L"Browser", -1, &fBrand, rBrowser, &sfL, wd.isDarkMode ? &brWhite : &brDark);
     }
 
-    // ── Window controls & Titlebar Icons (Pin & Dark) ──────────────────────
+    // Window controls & Titlebar Icons
     {
-        int bx = W - winBtnW * 5; // 🟢 5 buttons now
+        int bx = W - winBtnW * 5; 
         auto DrawWinBtn = [&](int x, bool hover, bool isClose, const wchar_t* ico) {
             if (hover) {
                 SolidBrush hb(isClose ? Color(255, 232, 17, 35) : (wd.isDarkMode ? Color(50, 255,255,255) : Color(20, 0,0,0)));
@@ -617,7 +616,6 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
             g.DrawString(ico, -1, &fIconSm, RectF((float)x, 0.f, (float)winBtnW, (float)titleH), &sfC, &txtClr);
         };
 
-        // Added Pin and Dark Mode to Titlebar
         DrawWinBtn(bx,               wd.hPin,   false, L"\xE718"); 
         DrawWinBtn(bx + winBtnW,     wd.hDark,  false, wd.isDarkMode ? L"\xE708" : L"\xE706"); 
         DrawWinBtn(bx + winBtnW * 2, wd.hMin,   false, L"\xE921");
@@ -625,7 +623,7 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
         DrawWinBtn(bx + winBtnW * 4, wd.hClose, true,  L"\xE8BB");
     }
 
-    // ── Tab strip ──────────────────────────────────────────────────────────
+    // Tab strip
     {
         int tc = (int)wd.tabs.size();
         float cornerR = Sf(8.f, dpi);
@@ -648,16 +646,22 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
             float iconX  = tx + Sf((float)D_TAB_PAD + 4, dpi);
             float iconY  = ty + (th - iconSz) * 0.5f;
             SolidBrush fvBrush(isActive ? Color(255,12,168,176) : cTxtDim);
-            g.FillEllipse(&fvBrush, iconX, iconY, iconSz, iconSz); // Default dot if no real favicon
+            g.FillEllipse(&fvBrush, iconX, iconY, iconSz, iconSz); 
 
             const auto& tab = wd.tabs[i];
             SolidBrush tBrush(isActive ? cTxtPrim : cTxtDim);
             float titleX = iconX + iconSz + Sf(6.f, dpi);
             float closeW = Sf(24.f, dpi);
             float titleW = tw - (titleX - tx) - closeW;
+            
             if (titleW > 0) {
                 std::wstring displayTitle = tab.title;
-                if (displayTitle == L"New Tab") displayTitle = L"Google"; 
+                // 🟢 Force 'New Tab' instead of 'Google' for NTP
+                if (displayTitle.empty() || tab.url == L"LOCAL_NTP" || tab.url == L"about:blank") 
+                    displayTitle = L"New Tab"; 
+                if (tab.url.find(L"blocked by rasfocus") != std::string::npos) 
+                    displayTitle = L"Blocked by RasFocus";
+                
                 g.DrawString(displayTitle.c_str(), -1, &fSmall, RectF(titleX, ty, titleW, th), &sfL, &tBrush);
             }
 
@@ -681,7 +685,7 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
         g.DrawString(L"\xE710", -1, &fIconSm, RectF((float)ntr.left, (float)ntr.top, (float)(ntr.right-ntr.left), (float)(ntr.bottom-ntr.top)), &sfC, &brDim);
     }
 
-    // ── Toolbar ────────────────────────────────────────────────────────────
+    // Toolbar
     {
         int toolY = titleH;
         int curX  = S(8, dpi);
@@ -707,10 +711,9 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
         DrawNavBtn(wd.hFwd,  canFwd,  L"\xE72A", curX);
         DrawNavBtn(wd.hRel,  true,    L"\xE72C", curX);
 
-        // 🟢 UNIQUE OMNIBOX DESIGN
         {
             int addrX = curX + S(4,dpi);
-            int rightIX = W - S(38*3 + 12, dpi); // Only 3 icons on right now
+            int rightIX = W - S(38*3 + 12, dpi); 
             int addrW = rightIX - addrX - S(8,dpi);
             int addrH = S(30, dpi);
             int addrY = toolY + (toolH - addrH) / 2;
@@ -722,11 +725,9 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
             g.FillPath(&addrBg, &pill);
             g.DrawPath(&addrPen, &pill);
 
-            // Left side 'G' icon
             SolidBrush gBrush(wd.isDarkMode ? Color(255, 200, 200, 200) : Color(255, 80, 80, 80));
             g.DrawString(L"G", -1, &fBrand, RectF((float)addrX + Sf(12.f,dpi), (float)addrY, Sf(20.f,dpi), (float)addrH), &sfC, &gBrush);
 
-            // Right side "AI Mode" Blue Gradient Button
             float aiW = Sf(85.f, dpi);
             float aiH = addrH - Sf(6.f, dpi);
             float aiX = addrX + addrW - aiW - Sf(3.f, dpi);
@@ -735,20 +736,14 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
             GraphicsPath aiPill;
             AddRoundRect(aiPill, aiX, aiY, aiW, aiH, Sf(10.f, dpi));
             
-            // Linear Gradient
-            LinearGradientBrush aiBg(
-                PointF(aiX, aiY), 
-                PointF(aiX + aiW, aiY), 
-                Color(255, 12, 168, 176), // Teal
-                Color(255, 0, 92, 230)    // Deep Blue
-            );
+            LinearGradientBrush aiBg(PointF(aiX, aiY), PointF(aiX + aiW, aiY), Color(255, 12, 168, 176), Color(255, 0, 92, 230));
             g.FillPath(&aiBg, &aiPill);
             
             SolidBrush aiTxt(Color(255, 255, 255, 255));
             g.DrawString(L"\x2728 AI Mode", -1, &fSmallBd, RectF(aiX, aiY, aiW, aiH), &sfC, &aiTxt);
         }
 
-        // 🟢 Right toolbar icons (Ext, Dl, Settings)
+        // Right Toolbar Icons
         int rx = W - S(36*3 + 8, dpi);
         auto DrawRightBtn = [&](bool hover, const wchar_t* ico, int x) {
             if (hover) {
@@ -757,17 +752,17 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
             }
             g.DrawString(ico, -1, &fIcon, RectF((float)x, (float)toolY, (float)btnSz, btnHf), &sfC, &brPrim);
         };
-        DrawRightBtn(wd.hExt, L"\xE9D2", rx); rx += btnStep;
-        DrawRightBtn(wd.hDl,  L"\xE896", rx); rx += btnStep;
-        DrawRightBtn(wd.hSet, L"\xE713", rx);
+        DrawRightBtn(wd.hProfile, L"\xE77B", rx); rx += btnStep; 
+        DrawRightBtn(wd.hExt,     L"\xE9D2", rx); rx += btnStep; 
+        DrawRightBtn(wd.hMenu,    L"\xE712", rx); rx += btnStep; 
     }
 
-    // ── 🟢 Dynamic Bookmark Bar (ONLY shows on LOCAL_NTP) ──────────────────
-    if (wd.active() && wd.active()->url == L"LOCAL_NTP") {
+    // ── 🟢 Dynamic Bookmark Bar with Fixed MDL2 Icons ──────────────────
+    if (wd.active() && (wd.active()->url == L"LOCAL_NTP" || wd.active()->url == L"about:blank" || wd.active()->url.find(L"blocked by rasfocus") != std::string::npos)) {
         int bmkY = titleH + toolH;
         int bmkH = S(D_BOOKMARK_H, dpi);
         
-        SolidBrush bmkBg(cBgTool); // Seamless match with toolbar
+        SolidBrush bmkBg(cBgTool); 
         g.FillRectangle(&bmkBg, 0, bmkY, W, bmkH);
 
         Pen sepPen(cDivLine, 1.0f);
@@ -775,11 +770,14 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
 
         SolidBrush brTxt(cTxtDim);
         
-        // Example Bookmarks
-        g.DrawString(L"\xE8A4   Web Store", -1, &fSmall, RectF(S(15,dpi), (float)bmkY, S(150,dpi), (float)bmkH), &sfL, &brTxt);
-        g.DrawString(L"\xE8A4   RasFocus Admin", -1, &fSmall, RectF(S(120,dpi), (float)bmkY, S(150,dpi), (float)bmkH), &sfL, &brTxt);
+        g.DrawString(L"\xE8A4", -1, &fIconSm, RectF(S(15,dpi), (float)bmkY, S(20,dpi), (float)bmkH), &sfC, &brTxt);
+        g.DrawString(L"Web Store", -1, &fSmall, RectF(S(35,dpi), (float)bmkY, S(100,dpi), (float)bmkH), &sfL, &brTxt);
         
-        g.DrawString(L"\xE838   All Bookmarks", -1, &fSmall, RectF(W - S(140,dpi), (float)bmkY, S(120,dpi), (float)bmkH), &sfL, &brTxt);
+        g.DrawString(L"\xE8A4", -1, &fIconSm, RectF(S(120,dpi), (float)bmkY, S(20,dpi), (float)bmkH), &sfC, &brTxt);
+        g.DrawString(L"RasFocus Admin", -1, &fSmall, RectF(S(140,dpi), (float)bmkY, S(120,dpi), (float)bmkH), &sfL, &brTxt);
+        
+        g.DrawString(L"\xE838", -1, &fIconSm, RectF(W - S(130,dpi), (float)bmkY, S(20,dpi), (float)bmkH), &sfC, &brTxt);
+        g.DrawString(L"All Bookmarks", -1, &fSmall, RectF(W - S(110,dpi), (float)bmkY, S(100,dpi), (float)bmkH), &sfL, &brTxt);
     }
 }
 
@@ -828,12 +826,14 @@ static void SwitchToTab(HWND hWnd, int idx) {
     }
 
     if (wd.hAddressBar) {
-        if (tab.url == L"LOCAL_NTP") SetWindowTextW(wd.hAddressBar, L"");
-        else SetWindowTextW(wd.hAddressBar, tab.url.c_str());
+        if (tab.url == L"LOCAL_NTP" || tab.url == L"about:blank" || tab.url.find(L"blocked by rasfocus") != std::string::npos) 
+            SetWindowTextW(wd.hAddressBar, L"");
+        else 
+            SetWindowTextW(wd.hAddressBar, tab.url.c_str());
     }
 
     RepositionAddressBar(hWnd);
-    InvalidateRect(hWnd, NULL, TRUE); // Full repaint to toggle bookmark bar
+    InvalidateRect(hWnd, NULL, TRUE); 
 }
 
 static void CloseTab(HWND hWnd, int idx) {
@@ -898,17 +898,33 @@ public:
         }
 
         ICoreWebView2Settings* settings = nullptr;
-        tab.webview->get_Settings(&settings);
-        ComPtr<ICoreWebView2Settings2> s2;
-        if (settings && SUCCEEDED(settings->QueryInterface(IID_PPV_ARGS(&s2)))) {
-            s2->put_UserAgent(L"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
+        if (SUCCEEDED(tab.webview->get_Settings(&settings)) && settings) {
+            settings->put_IsScriptEnabled(TRUE);
+            settings->put_AreDefaultScriptDialogsEnabled(TRUE);
+            settings->put_IsWebMessageEnabled(TRUE);
+            settings->put_AreDefaultContextMenusEnabled(TRUE);
+            settings->put_IsStatusBarEnabled(TRUE);
+            
+            // 🟢 Fix for Gemini/Facebook Local Storage
+            settings->put_IsDomStorageEnabled(TRUE); 
+
+            ComPtr<ICoreWebView2Settings2> s2;
+            if (SUCCEEDED(settings->QueryInterface(IID_PPV_ARGS(&s2)))) {
+                s2->put_UserAgent(L"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36");
+            }
         }
+
+        // 🟢 MAGIC FIX: Hide WebView2 identity to bypass Google Anti-Bot
+        tab.webview->AddScriptToExecuteOnDocumentCreated(
+            L"Object.defineProperty(navigator, 'webdriver', {get: () => undefined}); window.chrome = { runtime: {} };",
+            nullptr);
 
         tab.webview->add_NavigationStarting(Callback<ICoreWebView2NavigationStartingEventHandler>(
             [this](ICoreWebView2*, ICoreWebView2NavigationStartingEventArgs* args) -> HRESULT {
                 LPWSTR uri = nullptr; args->get_Uri(&uri);
                 if (uri) {
-                    if (IsBlockedContent(uri)) {
+                    std::wstring urlStr(uri);
+                    if (IsBlockedContent(urlStr)) {
                         args->put_Cancel(TRUE);
                         if (g_windows.count(m_hWnd)) {
                             auto& w = g_windows[m_hWnd];
@@ -924,11 +940,9 @@ public:
                 return S_OK;
             }).Get(), nullptr);
 
+        // 🟢 FIX FOR GOOGLE LOGIN: Allow popups natively
         tab.webview->add_NewWindowRequested(Callback<ICoreWebView2NewWindowRequestedEventHandler>(
             [](ICoreWebView2* sender, ICoreWebView2NewWindowRequestedEventArgs* args) -> HRESULT {
-                args->put_Handled(TRUE);
-                LPWSTR uri = nullptr; args->get_Uri(&uri);
-                if (uri) { sender->Navigate(uri); CoTaskMemFree(uri); }
                 return S_OK;
             }).Get(), nullptr);
 
@@ -954,13 +968,19 @@ public:
                 if (m_tabIdx != w.activeTab) return S_OK;
                 LPWSTR src = nullptr; sender->get_Source(&src);
                 if (src) {
-                    w.tabs[m_tabIdx].url = src;
-                    if (w.hAddressBar && w.tabs[m_tabIdx].url != L"LOCAL_NTP" && w.tabs[m_tabIdx].url != L"about:blank") 
-                        SetWindowTextW(w.hAddressBar, src);
+                    std::wstring urlStr(src);
+                    w.tabs[m_tabIdx].url = urlStr;
+                    
+                    if (w.hAddressBar) {
+                        if (urlStr == L"LOCAL_NTP" || urlStr == L"about:blank" || urlStr.find(L"blocked by rasfocus") != std::string::npos) {
+                            SetWindowTextW(w.hAddressBar, L"");
+                        } else {
+                            SetWindowTextW(w.hAddressBar, src);
+                        }
+                    }
                     CoTaskMemFree(src);
                 }
                 
-                // 🟢 Update Bounds & Repaint if navigating from/to NTP (Toggle Bookmark Bar)
                 if (m_tabIdx == w.activeTab) {
                     RECT wvr = GetWebViewRect(m_hWnd);
                     w.tabs[m_tabIdx].controller->put_Bounds(wvr);
@@ -994,8 +1014,9 @@ public:
         RECT wvr = GetWebViewRect(m_hWnd);
         ctl->put_Bounds(wvr);
 
+        // 🟢 DIRECT LOCAL NTP LOAD ON STARTUP
         std::wstring nav = m_startUrl;
-        if (nav == L"RAS_BROWSER" || nav.empty()) nav = L"LOCAL_NTP"; 
+        if (nav == L"RAS_BROWSER" || nav.empty() || nav == L"about:blank") nav = L"LOCAL_NTP"; 
         
         if (nav == L"LOCAL_NTP") {
             tab.webview->NavigateToString(GetLocalNTP_HTML(wd.isDarkMode).c_str());
@@ -1048,13 +1069,14 @@ static void CreateWebViewForTab(HWND hWnd, int tabIdx) {
             L"--enable-zero-copy "
             L"--disable-features=Translate");
 
-        const wchar_t* udDir = L"C:\\ProgramData\\RasFocus\\.BrowserData";
-        CreateDirectoryW(L"C:\\ProgramData\\RasFocus", NULL);
-        CreateDirectoryW(udDir, NULL);
-        SetFileAttributesW(udDir, FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM);
+        // 🟢 FIX: Local AppData for proper Folder Permission (Gemini/FB Storage Fix)
+        wchar_t appDataPath[MAX_PATH];
+        SHGetFolderPathW(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, appDataPath);
+        std::wstring udDir = std::wstring(appDataPath) + L"\\RasBrowserData";
+        CreateDirectoryW(udDir.c_str(), NULL);
 
         HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(
-            nullptr, udDir, options.Get(), new EnvCompletedHandler(hWnd, tabIdx));
+            nullptr, udDir.c_str(), options.Get(), new EnvCompletedHandler(hWnd, tabIdx));
 
         if (FAILED(hr)) {
             CreateCoreWebView2EnvironmentWithOptions(nullptr, nullptr, nullptr, new EnvCompletedHandler(hWnd, tabIdx));
@@ -1102,7 +1124,7 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                 if (pt.x >= cr.right-border)      return HTRIGHT;
 
                 if (pt.y < TitleBarH(dpi)) {
-                    int winBtnX = cr.right - WinBtnW(dpi) * 5; // 🟢 5 buttons hit test
+                    int winBtnX = cr.right - WinBtnW(dpi) * 5; 
                     if (pt.x >= winBtnX) return HTCLIENT; 
                     
                     bool onTab = false;
@@ -1158,7 +1180,7 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
             bool isDark = g_windows[hWnd].isDarkMode;
             if (isDark) {
                 SetTextColor(hEdit, RGB(255, 255, 255));
-                SetBkColor  (hEdit, RGB(26, 26, 26)); // Matches new omnibox bg
+                SetBkColor  (hEdit, RGB(26, 26, 26)); 
                 static HBRUSH hBrDark = CreateSolidBrush(RGB(26, 26, 26));
                 return (LRESULT)hBrDark;
             } else {
@@ -1216,7 +1238,7 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
         int toolY   = titleH;
 
         {
-            int bx = W - winBtnW*5; // 🟢 5 buttons
+            int bx = W - winBtnW*5; 
             bool p  = (y < titleH && x >= bx             && x < bx + winBtnW);
             bool dk = (y < titleH && x >= bx + winBtnW   && x < bx + winBtnW*2);
             bool nm = (y < titleH && x >= bx + winBtnW*2 && x < bx + winBtnW*3);
@@ -1252,12 +1274,12 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
             if (wd.hBack!=b||wd.hFwd!=f||wd.hRel!=rl)
                 { wd.hBack=b; wd.hFwd=f; wd.hRel=rl; dirty=true; }
 
-            int rx = W - S(36*3+8, dpi); // Only 3 buttons on right Toolbar
+            int rx = W - S(36*3+8, dpi); 
+            bool pr = (y>=toolY&&y<toolY+ToolbarH(dpi)&&x>=rx&&x<rx+S(34,dpi)); rx+=btnStep;
             bool e  = (y>=toolY&&y<toolY+ToolbarH(dpi)&&x>=rx&&x<rx+S(34,dpi)); rx+=btnStep;
-            bool dl = (y>=toolY&&y<toolY+ToolbarH(dpi)&&x>=rx&&x<rx+S(34,dpi)); rx+=btnStep;
-            bool st = (y>=toolY&&y<toolY+ToolbarH(dpi)&&x>=rx&&x<rx+S(34,dpi));
-            if (wd.hExt!=e||wd.hDl!=dl||wd.hSet!=st)
-                { wd.hExt=e; wd.hDl=dl; wd.hSet=st; dirty=true; }
+            bool m  = (y>=toolY&&y<toolY+ToolbarH(dpi)&&x>=rx&&x<rx+S(34,dpi));
+            if (wd.hProfile!=pr||wd.hExt!=e||wd.hMenu!=m)
+                { wd.hProfile=pr; wd.hExt=e; wd.hMenu=m; dirty=true; }
         }
 
         if (dirty) {
@@ -1272,7 +1294,7 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
             auto& wd = g_windows[hWnd];
             wd.hMin=wd.hMax=wd.hClose=false;
             wd.hBack=wd.hFwd=wd.hRel=false;
-            wd.hPin=wd.hDark=wd.hExt=wd.hDl=wd.hSet=false;
+            wd.hPin=wd.hDark=wd.hProfile=wd.hExt=wd.hMenu=false;
             wd.hNewTab=false; wd.hoverTabIndex=-1;
             RECT cr; GetClientRect(hWnd, &cr);
             cr.bottom = NavTotalH(hWnd);
@@ -1314,7 +1336,7 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 
         if (wd.hPin) { /* do nothing */ }
         if (wd.hDark) {
-            wd.isDarkMode = !wd.isDarkMode; // Toggle Theme
+            wd.isDarkMode = !wd.isDarkMode; 
             if (wd.active() && wd.active()->controller) {
                 ComPtr<ICoreWebView2Controller2> ctl2;
                 if (SUCCEEDED(wd.active()->controller->QueryInterface(IID_PPV_ARGS(&ctl2)))) {
@@ -1322,18 +1344,19 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                     ctl2->put_DefaultBackgroundColor(bg);
                 }
                 
-                if (wd.active()->url == L"LOCAL_NTP" && wd.active()->webview) {
+                std::wstring url = wd.active()->url;
+                if ((url == L"LOCAL_NTP" || url == L"about:blank") && wd.active()->webview) {
                     wd.active()->webview->NavigateToString(GetLocalNTP_HTML(wd.isDarkMode).c_str());
-                } else if (wd.active()->url == L"blocked by rasfocus" && wd.active()->webview) {
+                } else if (url.find(L"blocked by rasfocus") != std::string::npos && wd.active()->webview) {
                     wd.active()->webview->NavigateToString(GetBlocked_HTML(wd.isDarkMode).c_str());
                 }
             }
             InvalidateRect(hWnd, NULL, TRUE);
             InvalidateRect(wd.hAddressBar, NULL, TRUE);
         }
-        if (wd.hExt) MessageBoxW(hWnd, L"Extensions menu will appear here.", L"Extensions", MB_OK|MB_ICONINFORMATION);
-        if (wd.hDl)  MessageBoxW(hWnd, L"Downloads panel will appear here.",  L"Downloads",  MB_OK|MB_ICONINFORMATION);
-        if (wd.hSet) ShellExecuteW(NULL, L"open", L"ms-settings:defaultapps", NULL, NULL, SW_SHOWNORMAL);
+        if (wd.hProfile) MessageBoxW(hWnd, L"Profile menu will appear here.", L"Profile", MB_OK|MB_ICONINFORMATION);
+        if (wd.hExt)     MessageBoxW(hWnd, L"Extensions menu will appear here.", L"Extensions", MB_OK|MB_ICONINFORMATION);
+        if (wd.hMenu)    MessageBoxW(hWnd, L"Settings & Menu will appear here.",  L"Menu",  MB_OK|MB_ICONINFORMATION);
         break;
     }
 
@@ -1354,7 +1377,6 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
         mm->ptMinTrackSize.x = S(640, dpi);
         mm->ptMinTrackSize.y = S(480, dpi);
 
-        // 🟢 Taskbar 2px Fix
         HMONITOR hMonitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
         MONITORINFO mi = { sizeof(mi) };
         if (GetMonitorInfo(hMonitor, &mi)) {
@@ -1447,8 +1469,9 @@ void LaunchMiniBrowser(std::wstring url, std::wstring /*title*/) {
         SendMessage(hWnd, WM_SETICON, ICON_SMALL, (LPARAM)hIco);
     }
 
+    // 🟢 ALWAYS START WITH LOCAL NTP BY DEFAULT
     TabData firstTab;
-    if (url.empty() || url == L"RAS_BROWSER") url = L"LOCAL_NTP"; 
+    if (url.empty() || url == L"RAS_BROWSER" || url == L"about:blank") url = L"LOCAL_NTP"; 
     firstTab.url   = url;
     firstTab.title = L"New Tab";
     wd.tabs.push_back(firstTab);
@@ -1460,3 +1483,4 @@ void LaunchMiniBrowser(std::wstring url, std::wstring /*title*/) {
     RepositionAddressBar(hWnd);
     CreateWebViewForTab(hWnd, 0);
 }
+// COMPLETE FILE END ───────────────────────────────────────────────────────────
