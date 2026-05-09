@@ -290,7 +290,7 @@ public:
             wchar_t path[MAX_PATH];
             GetModuleFileNameW(NULL, path, MAX_PATH);
             PathRemoveFileSpecW(path);
-            wcscat(path, L"\\tab_strict.html");
+            wcscat_s(path, MAX_PATH, L"\\tab_strict.html");
             strictWebView->Navigate(path);
         }
         return S_OK;
@@ -321,22 +321,21 @@ public:
 void DrawStrictProtocolsTab(Gdiplus::Graphics& g, float cx, float cy, float cw, float ch) {
     if (!strictSettingsLoaded) {
         LoadStrictSettings();
-        thread t(StrictBackgroundThread); t.detach();
+        std::thread t(StrictBackgroundThread); t.detach();
         strictSettingsLoaded = true;
     }
 
     if (!isStrictWebViewRunning && hParentWnd != NULL) {
         CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
-        // Persist session path: RasFocus_AppData
         CreateCoreWebView2EnvironmentWithOptions(nullptr, L"RasFocus_AppData", nullptr, new StrictEnvCompletedHandler());
         isStrictWebViewRunning = true;
     }
 
     if (strictWebViewController != nullptr) {
         RECT bounds;
-        bounds.left = (LONG)(cx * g_scaleFactor);
-        bounds.top = (LONG)(cy * g_scaleFactor);
-        bounds.right = (LONG)((cx + cw) * g_scaleFactor);
+        bounds.left   = (LONG)(cx * g_scaleFactor);
+        bounds.top    = (LONG)(cy * g_scaleFactor);
+        bounds.right  = (LONG)((cx + cw) * g_scaleFactor);
         bounds.bottom = (LONG)((cy + ch) * g_scaleFactor);
         strictWebViewController->put_Bounds(bounds);
         strictWebViewController->put_IsVisible(TRUE); 
@@ -354,3 +353,18 @@ void HideStrictProtocolsTab() {
 
 void ProcessStrictProtocolsMouseMove(float x, float y) {}
 void ProcessStrictProtocolsMouseClick(float x, float y) {}
+
+// ==========================================
+// 🔴 FIX: RequestParentalAccess
+// tab_ai.cpp এ extern হিসেবে declare করা —
+// এখানে define করা হলো
+// ==========================================
+bool RequestParentalAccess(HWND hWnd) {
+    int result = MessageBoxW(
+        hWnd,
+        L"This action is protected by Parental Control.\n\nAre you the parent/guardian?\nClick YES to confirm and proceed.",
+        L"RasFocus Pro \x2014 Parental Access Required",
+        MB_YESNO | MB_ICONWARNING | MB_TOPMOST
+    );
+    return (result == IDYES);
+}
