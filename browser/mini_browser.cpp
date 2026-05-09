@@ -1456,7 +1456,7 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
             if (wd.isMenuOpen) {
                 float menuW = S(320, dpi);
                 float mX = W - menuW - S(10, dpi);
-                float mY = titleH + toolH - S(5, dpi);
+                float btnHf = (float)ToolbarH(dpi);
                 int itemH = S(34, dpi);
                 float currY = mY + S(10, dpi);
                 int hoverIdx = -1;
