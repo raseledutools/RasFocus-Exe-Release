@@ -1,4 +1,4 @@
-#include "tab_adult.h" // Assuming shared headers/helpers are here, or you can create a tab_ai.h
+#include "tab_adult.h" // Assuming shared headers/helpers are here
 #include "prewindow.h" // Included for Password/Parental checks
 #include <vector>
 #include <string>
@@ -37,7 +37,7 @@ static bool isAiEngineActive = false;
 static bool hoverAiEngineBtn = false;
 
 // Standard AI Features
-static bool cbAiImageBlur = true;   static bool hCbAiImageBlur = false;
+static bool cbAiImageBlur = true;       static bool hCbAiImageBlur = false;
 static bool cbFemaleDetectWeb = false;   static bool hCbFemaleDetectWeb = false;
 static bool cbFemaleDetectVideo = false; static bool hCbFemaleDetectVideo = false;
 
@@ -259,9 +259,9 @@ void DrawAiFilterTab(Graphics& g, float cx, float cy, float cw, float ch) {
             RectF r(x, y, w, h); GraphicsPath* p = GetAiRoundRectPath(r, 4);
             SolidBrush dBg(hover && !isLocked ? AiClrBgHover : AiClrWhite); 
             g.FillPath(&dBg, p); g.DrawPath(&pBorder, p); delete p;
-            g.DrawString(text.c_str(), -1, &fNorm, RectF(x+10, y, w-35, h), &fL, isLocked ? &bGray : &bDark);
-            g.DrawLine(&pBorder, x+w-30, y, x+w-30, y+h);
-            g.DrawString(L"\xE70D", -1, &fSmallIcon, RectF(x+w-30, y, 30, h), &fC, &bGray);
+            g.DrawString(text.c_str(), -1, &fNorm, RectF(x+10.0f, y, w-35.0f, h), &fL, isLocked ? &bGray : &bDark);
+            g.DrawLine(&pBorder, x+w-30.0f, y, x+w-30.0f, y+h);
+            g.DrawString(L"\xE70D", -1, &fSmallIcon, RectF(x+w-30.0f, y, 30.0f, h), &fC, &bGray);
         };
 
         drawBeautifulDropdown(bX + 160.0f, bY+2.0f, 170.0f, 32.0f, aiSensitivityModes[aiSensitivityIdx], hoverAiSensDrop);
@@ -296,13 +296,13 @@ void DrawAiFilterTab(Graphics& g, float cx, float cy, float cw, float ch) {
         // DRAW OPEN DROPDOWN ON TOP
         if (isAiSensDropOpen && !isLocked) {
             float dropY = cy + 20.0f + 60.0f + 15.0f + 30.0f + 20.0f + 60.0f + 45.0f + 40.0f + 15.0f;
-            RectF dR(bX + 160.0f, dropY + 36.0f, 170.0f, 4 * 32.0f);
+            RectF dR(bX + 160.0f, dropY + 36.0f, 170.0f, 4.0f * 32.0f);
             GraphicsPath* dp = GetAiRoundRectPath(dR, 4);
             g.FillPath(&bWhite, dp); g.DrawPath(&pBorder, dp); delete dp;
             for(int i=0; i<4; i++) {
                 SolidBrush hB(hoverAiSensOptIdx == i ? AiClrBgHover : AiClrWhite);
-                g.FillRectangle(&hB, dR.X+1, dR.Y + (i*32.0f)+1, dR.Width-2, 30.0f);
-                g.DrawString(aiSensitivityModes[i].c_str(), -1, &fNorm, RectF(dR.X+10, dR.Y+(i*32), dR.Width-10, 32), &fL, &bDark);
+                g.FillRectangle(&hB, dR.X+1.0f, dR.Y + (i*32.0f)+1.0f, dR.Width-2.0f, 30.0f);
+                g.DrawString(aiSensitivityModes[i].c_str(), -1, &fNorm, RectF(dR.X+10.0f, dR.Y+(i*32.0f), dR.Width-10.0f, 32.0f), &fL, &bDark);
             }
         }
     }
@@ -323,7 +323,7 @@ void DrawAiFilterTab(Graphics& g, float cx, float cy, float cw, float ch) {
         Region orgRegion; g.GetClip(&orgRegion);
         g.SetClip(RectF(cx, listStartY, cw, viewH));
 
-        float itemY = listStartY - scrollOffsetYt;
+        float itemY = listStartY - (float)scrollOffsetYt;
         
         drawToggle(bX, itemY, L"Hide Home Page", L"", ytHideHome); itemY += 40.0f;
         drawToggle(bX, itemY, L"Hide Shorts", L"", ytHideShorts); itemY += 40.0f;
@@ -339,15 +339,16 @@ void DrawAiFilterTab(Graphics& g, float cx, float cy, float cw, float ch) {
         drawToggle(bX, itemY, L"Disable Autoplay", L"Disabling autoplaying the next video at the end of the previous video", ytDisableAutoplay); itemY += 55.0f;
         
         // Calculate max scroll
-        float totalListHeight = itemY + scrollOffsetYt - listStartY;
-        maxScrollYt = max(0, (int)(totalListHeight - viewH));
+        float totalListHeight = itemY + (float)scrollOffsetYt - listStartY;
+        maxScrollYt = (int)(totalListHeight - viewH);
+        if (maxScrollYt < 0) maxScrollYt = 0;
 
         g.SetClip(&orgRegion);
 
         // Draw Scrollbar if needed
         if (maxScrollYt > 0) {
             float sbH = viewH * (viewH / totalListHeight);
-            float sbY = listStartY + ((float)scrollOffsetYt / maxScrollYt) * (viewH - sbH);
+            float sbY = listStartY + ((float)scrollOffsetYt / (float)maxScrollYt) * (viewH - sbH);
             SolidBrush sbBrush(Color(255, 200, 200, 200));
             g.FillRectangle(&sbBrush, cx + cw - 15.0f, sbY, 6.0f, sbH);
         }
@@ -425,7 +426,7 @@ void ProcessAiFilterMouseMove(float x, float y) {
 
         float dropY = midY + 40.0f + 15.0f;
         if (isAiSensDropOpen) {
-            hoverAiSensOptIdx = -1; RectF dR(bX + 160.0f, dropY + 36.0f, 170.0f, 4 * 32.0f);
+            hoverAiSensOptIdx = -1; RectF dR(bX + 160.0f, dropY + 36.0f, 170.0f, 4.0f * 32.0f);
             for(int i=0; i<4; i++) if(RectF(dR.X, dR.Y + (i*32.0f), dR.Width, 32.0f).Contains(x,y)) hoverAiSensOptIdx = i; return;
         }
         hoverAiSensDrop = RectF(bX + 160.0f, dropY+2.0f, 170.0f, 32.0f).Contains(x,y);
@@ -437,7 +438,7 @@ void ProcessAiFilterMouseMove(float x, float y) {
     }
     else if (currentAppBlockView == 1) {
         hoverBackBtn = RectF(bX, bY, 120.0f, 30.0f).Contains(x,y);
-        float itemY = bY + 70.0f - scrollOffsetYt;
+        float itemY = bY + 70.0f - (float)scrollOffsetYt;
         
         hYtHideHome = RectF(bX, itemY, 300.0f, 22.0f).Contains(x,y); itemY += 40.0f;
         hYtHideShorts = RectF(bX, itemY, 300.0f, 22.0f).Contains(x,y); itemY += 40.0f;
