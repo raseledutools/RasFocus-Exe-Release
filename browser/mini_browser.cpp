@@ -269,7 +269,7 @@ struct BrowserWindowData {
 };
 
 static std::map<HWND, BrowserWindowData> g_windows;
-static ComPtr<ICoreWebView2Environment>  g_sharedEnv;
+ComPtr<ICoreWebView2Environment>  g_sharedEnv;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FIX: Helper to compute menu Y position consistently across all handlers
