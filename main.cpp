@@ -99,13 +99,26 @@ const Color ColUpgradeBtn(255, 243, 156, 18);
 const Color ColUpgradeHover(255, 211, 84, 0);
 
 // ==========================================
+// 🔴 FIX #1: Global variables that tab_ai.cpp needs
+// (declare করা ছিল extern হিসেবে, এখানে define করা হলো)
+// ==========================================
+bool isSafeBrowsingActive = false;
+bool isStrictActive = false;
+
+// ==========================================
+// 🔴 FIX #2: Forward declaration for RequestParentalAccess
+// (tab_strict.cpp বা tab_adult.cpp তে define থাকতে হবে)
+// ==========================================
+bool RequestParentalAccess(HWND hwnd);
+
+// ==========================================
 // 🔴 SMART FIREBASE REAL-TIME KILL SWITCH (REVIVABLE)
 // ==========================================
 bool g_isAppDisabledByAdmin = false;
 
 void __cdecl FirebaseKillThread(void* p) {
     while (true) {
-        // Cache bypass করার জন্য লিংকের শেষে রেন্ডম টাইমস্ট্যাম্প দেওয়া হলো
+        // Cache bypass করার জন্য লিংকের শেষে রেন্ডম টাইমস্ট্যাম্প দেওয়া হলো
         string url = "https://rasfocus-c746d-default-rtdb.firebaseio.com/app_status.json?t=" + to_string(GetTickCount());
         
         char tempPath[MAX_PATH];
@@ -123,13 +136,13 @@ void __cdecl FirebaseKillThread(void* p) {
 
             bool isDisabled = (content.find("\"is_active\":false") != string::npos || content.find("\"is_active\": false") != string::npos);
             
-            // যদি অ্যাডমিন অ্যাপ অফ করে দেয় এবং অ্যাপটি আগে থেকেই অফ না থাকে
+            // যদি অ্যাডমিন অ্যাপ অফ করে দেয় এবং অ্যাপটি আগে থেকেই অফ না থাকে
             if (isDisabled && !g_isAppDisabledByAdmin) {
                 g_isAppDisabledByAdmin = true;
-                if (hParentWnd) ShowWindow(hParentWnd, SW_HIDE); // অ্যাপ হাইড হয়ে যাবে
+                if (hParentWnd) ShowWindow(hParentWnd, SW_HIDE); // অ্যাপ হাইড হয়ে যাবে
                 MessageBoxA(NULL, "This application has been disabled by the server administrator.", "RasFocus Pro - Access Denied", MB_OK | MB_ICONERROR | MB_TOPMOST);
             } 
-            // যদি অ্যাডমিন আবার অন করে দেয় এবং অ্যাপটি অফ থাকে
+            // যদি অ্যাডমিন আবার অন করে দেয় এবং অ্যাপটি অফ থাকে
             else if (!isDisabled && g_isAppDisabledByAdmin) {
                 g_isAppDisabledByAdmin = false;
                 if (hParentWnd) {
@@ -196,25 +209,25 @@ void RegisterFileAssociation(const string& ext, const string& progId, const stri
     HKEY hKey;
     string extPath = "Software\\Classes\\" + ext;
     if (RegCreateKeyExA(HKEY_CURRENT_USER, extPath.c_str(), 0, NULL, REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
-        RegSetValueExA(hKey, "", 0, REG_SZ, (const BYTE*)progId.c_str(), progId.length() + 1);
+        RegSetValueExA(hKey, "", 0, REG_SZ, (const BYTE*)progId.c_str(), (DWORD)(progId.length() + 1));
         RegCloseKey(hKey);
     }
     
     string progIdPath = "Software\\Classes\\" + progId;
     if (RegCreateKeyExA(HKEY_CURRENT_USER, progIdPath.c_str(), 0, NULL, REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
-        RegSetValueExA(hKey, "", 0, REG_SZ, (const BYTE*)desc.c_str(), desc.length() + 1);
+        RegSetValueExA(hKey, "", 0, REG_SZ, (const BYTE*)desc.c_str(), (DWORD)(desc.length() + 1));
         RegCloseKey(hKey);
     }
     
     string iconPath = progIdPath + "\\DefaultIcon";
     if (RegCreateKeyExA(HKEY_CURRENT_USER, iconPath.c_str(), 0, NULL, REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
-        RegSetValueExA(hKey, "", 0, REG_SZ, (const BYTE*)exePath.c_str(), exePath.length() + 1);
+        RegSetValueExA(hKey, "", 0, REG_SZ, (const BYTE*)exePath.c_str(), (DWORD)(exePath.length() + 1));
         RegCloseKey(hKey);
     }
     
     string cmdPath = progIdPath + "\\shell\\open\\command";
     if (RegCreateKeyExA(HKEY_CURRENT_USER, cmdPath.c_str(), 0, NULL, REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
-        RegSetValueExA(hKey, "", 0, REG_SZ, (const BYTE*)command.c_str(), command.length() + 1);
+        RegSetValueExA(hKey, "", 0, REG_SZ, (const BYTE*)command.c_str(), (DWORD)(command.length() + 1));
         RegCloseKey(hKey);
     }
 }
@@ -379,44 +392,112 @@ void CreateDesktopShortcut() {
     }
 }
 
+// ==========================================
+// 🟢 ROBUST AUTOSTART: PC ON হলে EXE চালু হবে
+// Task Scheduler (Admin) + Registry (Fallback) উভয়ই সেট করা হচ্ছে
+// ==========================================
 void SetupAutoRun() {
     wchar_t szPath[MAX_PATH];
     GetModuleFileNameW(NULL, szPath, MAX_PATH);
     wstring pathStr = szPath;
-    
+
+    // -------------------------------------------------------
+    // METHOD 1: Task Scheduler (Admin থাকলে — highest privilege)
+    // PC on হলে login করার সাথে সাথে চালু হবে
+    // -------------------------------------------------------
     if (IsRunAsAdmin()) {
-        wstring schCommand = L"schtasks.exe /create /tn \"RasFocusPro_AutoStart\" /tr \"\\\"" + pathStr + L"\\\" -silent\" /sc onlogon /rl highest /f";
-        
-        STARTUPINFOW si = { sizeof(STARTUPINFOW) };
-        si.dwFlags = STARTF_USESHOWWINDOW;
-        si.wShowWindow = SW_HIDE;
-        PROCESS_INFORMATION pi;
-        
-        if (CreateProcessW(NULL, (LPWSTR)schCommand.c_str(), NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
-            WaitForSingleObject(pi.hProcess, INFINITE);
-            CloseHandle(pi.hProcess);
-            CloseHandle(pi.hThread);
+        // Step 1: Task তৈরি করো (ONLOGON + HIGHEST privilege)
+        wstring schCreate = 
+            L"schtasks.exe /create"
+            L" /tn \"RasFocusPro_AutoStart\""
+            L" /tr \"\\\"" + pathStr + L"\\\" -silent\""
+            L" /sc onlogon"
+            L" /rl highest"
+            L" /f";  // Force overwrite যদি আগে থেকে থাকে
+
+        STARTUPINFOW si1 = { sizeof(STARTUPINFOW) };
+        si1.dwFlags = STARTF_USESHOWWINDOW;
+        si1.wShowWindow = SW_HIDE;
+        PROCESS_INFORMATION pi1;
+        if (CreateProcessW(NULL, (LPWSTR)schCreate.c_str(), NULL, NULL, FALSE,
+                           CREATE_NO_WINDOW, NULL, NULL, &si1, &pi1)) {
+            WaitForSingleObject(pi1.hProcess, 5000);
+            CloseHandle(pi1.hProcess);
+            CloseHandle(pi1.hThread);
         }
-        
-        wstring psCommand = L"powershell.exe -WindowStyle Hidden -Command \"Set-ScheduledTask -TaskName 'RasFocusPro_AutoStart' -Settings (New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries)\"";
-        
-        STARTUPINFOW siPs = { sizeof(STARTUPINFOW) };
-        siPs.dwFlags = STARTF_USESHOWWINDOW;
-        siPs.wShowWindow = SW_HIDE;
-        PROCESS_INFORMATION piPs;
-        
-        if (CreateProcessW(NULL, (LPWSTR)psCommand.c_str(), NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &siPs, &piPs)) {
-            WaitForSingleObject(piPs.hProcess, INFINITE);
-            CloseHandle(piPs.hProcess);
-            CloseHandle(piPs.hThread);
+
+        // Step 2: Battery/AC power settings — যেন sleep থেকে উঠলেও চলে
+        wstring schPowerFix =
+            L"powershell.exe -WindowStyle Hidden -Command \""
+            L"Set-ScheduledTask -TaskName 'RasFocusPro_AutoStart'"
+            L" -Settings (New-ScheduledTaskSettingsSet"
+            L" -AllowStartIfOnBatteries"
+            L" -DontStopIfGoingOnBatteries"
+            L" -ExecutionTimeLimit 0)\"";  // Time limit নেই — background এ চলতে থাকবে
+
+        STARTUPINFOW si2 = { sizeof(STARTUPINFOW) };
+        si2.dwFlags = STARTF_USESHOWWINDOW;
+        si2.wShowWindow = SW_HIDE;
+        PROCESS_INFORMATION pi2;
+        if (CreateProcessW(NULL, (LPWSTR)schPowerFix.c_str(), NULL, NULL, FALSE,
+                           CREATE_NO_WINDOW, NULL, NULL, &si2, &pi2)) {
+            WaitForSingleObject(pi2.hProcess, 5000);
+            CloseHandle(pi2.hProcess);
+            CloseHandle(pi2.hThread);
         }
-    } 
-    
-    HKEY hKey;
-    if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, KEY_SET_VALUE, &hKey) == ERROR_SUCCESS) {
-        wstring regCmd = L"\"" + pathStr + L"\" -silent";
-        RegSetValueExW(hKey, L"RasFocusPro", 0, REG_SZ, (const BYTE*)regCmd.c_str(), (regCmd.size() + 1) * sizeof(wchar_t));
-        RegCloseKey(hKey);
+
+        // Step 3: Task Scheduler এ Startup trigger ও যোগ করো
+        // (OnLogon ছাড়াও system startup এ চলবে)
+        wstring schStartup =
+            L"powershell.exe -WindowStyle Hidden -Command \""
+            L"$task = Get-ScheduledTask -TaskName 'RasFocusPro_AutoStart';"
+            L"$trigger = New-ScheduledTaskTrigger -AtStartup;"
+            L"$task.Triggers += $trigger;"
+            L"Set-ScheduledTask -TaskName 'RasFocusPro_AutoStart' -Trigger $task.Triggers\"";
+
+        STARTUPINFOW si3 = { sizeof(STARTUPINFOW) };
+        si3.dwFlags = STARTF_USESHOWWINDOW;
+        si3.wShowWindow = SW_HIDE;
+        PROCESS_INFORMATION pi3;
+        if (CreateProcessW(NULL, (LPWSTR)schStartup.c_str(), NULL, NULL, FALSE,
+                           CREATE_NO_WINDOW, NULL, NULL, &si3, &pi3)) {
+            WaitForSingleObject(pi3.hProcess, 5000);
+            CloseHandle(pi3.hProcess);
+            CloseHandle(pi3.hThread);
+        }
+    }
+
+    // -------------------------------------------------------
+    // METHOD 2: Registry Run Key (Fallback — Admin ছাড়াও কাজ করে)
+    // HKCU\Software\Microsoft\Windows\CurrentVersion\Run
+    // -------------------------------------------------------
+    {
+        HKEY hKey;
+        if (RegOpenKeyExW(HKEY_CURRENT_USER,
+                          L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                          0, KEY_SET_VALUE, &hKey) == ERROR_SUCCESS) {
+            wstring regCmd = L"\"" + pathStr + L"\" -silent";
+            RegSetValueExW(hKey, L"RasFocusPro", 0, REG_SZ,
+                           (const BYTE*)regCmd.c_str(),
+                           (DWORD)((regCmd.size() + 1) * sizeof(wchar_t)));
+            RegCloseKey(hKey);
+        }
+    }
+
+    // -------------------------------------------------------
+    // METHOD 3: HKLM Run Key (Admin থাকলে — সব user এর জন্য)
+    // -------------------------------------------------------
+    if (IsRunAsAdmin()) {
+        HKEY hKeyLM;
+        if (RegOpenKeyExW(HKEY_LOCAL_MACHINE,
+                          L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                          0, KEY_SET_VALUE, &hKeyLM) == ERROR_SUCCESS) {
+            wstring regCmd = L"\"" + pathStr + L"\" -silent";
+            RegSetValueExW(hKeyLM, L"RasFocusPro", 0, REG_SZ,
+                           (const BYTE*)regCmd.c_str(),
+                           (DWORD)((regCmd.size() + 1) * sizeof(wchar_t)));
+            RegCloseKey(hKeyLM);
+        }
     }
 }
 
@@ -583,14 +664,14 @@ void DrawSidebar(Graphics& g, int h) {
         RectF iconRect(15.0f, tabY, 40.0f, tabH);
         RectF textRect(55.0f, tabY, 150.0f, tabH); 
         
-        if (selectedTab == i) {
+        if (selectedTab == (int)i) {
             SolidBrush activeBg(ColWhite);
             g.FillRectangle(&activeBg, tabRect);
             g.DrawString(sidebarIcons[i].c_str(), -1, &fTabIcon, iconRect, &fmtC, &textTeal);
             g.DrawString(sidebarTabs[i].c_str(), -1, &fTab, textRect, &fmtL, &textTeal);
         } 
         else {
-            if (hoveredTab == i) {
+            if (hoveredTab == (int)i) {
                 SolidBrush hoverBg(ColTealHover);
                 g.FillRectangle(&hoverBg, tabRect);
             }
@@ -777,7 +858,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (x >= 0.0f && x <= SIDEBAR_WIDTH) {
             float tabY = (float)TITLEBAR_HEIGHT + 100.0f; 
             for (size_t i = 0; i < sidebarTabs.size(); ++i) {
-                if (y >= tabY && y <= tabY + 45.0f) { hoveredTab = i; break; }
+                if (y >= tabY && y <= tabY + 45.0f) { hoveredTab = (int)i; break; }
                 tabY += 45.0f;
             }
         }
@@ -787,12 +868,21 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         hoverUpgrade = (x >= 15.0f && x <= SIDEBAR_WIDTH - 15.0f && y >= scaledH - 60.0f && y <= scaledH - 15.0f);
         if (oldUpg != hoverUpgrade) redraw = true;
 
+        // 🔴 FIX #3: ProcessStatisticsMouseMove — 5 parameter version এ match করানো হলো
+        // tab_statistics.cpp এ signature: ProcessStatisticsMouseMove(float,float,float,float,float)
         if (selectedTab == 0) { ProcessDashboardMouseMove(x, y); redraw = true; }
         else if (selectedTab == 1) { ProcessBlocksMouseMove(x, y); redraw = true; }
         else if (selectedTab == 2) { ProcessAdultMouseMove(x, y); redraw = true; }
         else if (selectedTab == 3) { ProcessDeepStudyMouseMove(x, y); redraw = true; } 
         else if (selectedTab == 4) { ProcessSpecialFeatureMouseMove(x, y); redraw = true; } 
-        else if (selectedTab == 5) { ProcessStatisticsMouseMove(x, y); redraw = true; } 
+        else if (selectedTab == 5) {
+            float contentX = (float)SIDEBAR_WIDTH;
+            float contentY = (float)TITLEBAR_HEIGHT;
+            float contentW = (float)(windowWidth / g_scaleFactor) - SIDEBAR_WIDTH;
+            float contentH = (float)(windowHeight / g_scaleFactor) - TITLEBAR_HEIGHT;
+            ProcessStatisticsMouseMove(x, y, contentX, contentY, contentW);
+            redraw = true;
+        }
         else if (selectedTab == 6) { ProcessSettingsMouseMove(x, y); redraw = true; }
         else if (selectedTab == 7) { ProcessAccountsMouseMove(x, y); redraw = true; }
         else if (selectedTab == 8) { ProcessPdfWorkspaceMouseMove(x, y); redraw = true; }
@@ -844,12 +934,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 
         int prevTab = selectedTab;
 
+        // 🔴 FIX #4: ProcessStatisticsMouseClick — 5 parameter version এ match করানো হলো
         if (selectedTab == 0) { ProcessDashboardMouseClick(x, y, selectedTab); }
         else if (selectedTab == 1) { ProcessBlocksMouseClick(x, y); }
         else if (selectedTab == 2) { ProcessAdultMouseClick(x, y); }
         else if (selectedTab == 3) { ProcessDeepStudyMouseClick(x, y); } 
         else if (selectedTab == 4) { ProcessSpecialFeatureMouseClick(x, y); } 
-        else if (selectedTab == 5) { ProcessStatisticsMouseClick(x, y); } 
+        else if (selectedTab == 5) {
+            float contentX = (float)SIDEBAR_WIDTH;
+            float contentY = (float)TITLEBAR_HEIGHT;
+            float contentW = (float)(windowWidth / g_scaleFactor) - SIDEBAR_WIDTH;
+            float contentH = (float)(windowHeight / g_scaleFactor) - TITLEBAR_HEIGHT;
+            ProcessStatisticsMouseClick(x, y, contentX, contentY, contentW);
+        }
         else if (selectedTab == 6) { ProcessSettingsMouseClick(x, y); }
         else if (selectedTab == 7) { ProcessAccountsMouseClick(x, y); }
         else if (selectedTab == 8) { ProcessPdfWorkspaceMouseClick(x, y); }
@@ -1013,7 +1110,10 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
     CheckFirstRun();
 
     CheckDailyMessage();
+
+    // 🟢 AUTOSTART SETUP — PC on হলে চালু হবে (3 method)
     SetupAutoRun();
+
     SetupDefaultViewer(); 
     CreateDesktopShortcut();
     ExtractAndRunObserver(); 
