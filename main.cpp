@@ -23,7 +23,7 @@ HWND hParentWnd = NULL; // গ্লোবাল উইন্ডো হ্যা
 #include "firebase/app.h"
 
 // --- Custom Includes ---
-#include "mini_browser.h" 
+#include "browser/mini_browser.h"
 #include "tab_blocks.h"
 #include "tab_adult.h" 
 #include "tab_settings.h" 
