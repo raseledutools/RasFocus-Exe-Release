@@ -5,7 +5,7 @@
 #include <gdiplus.h>
 
 void DrawStatisticsTab(Gdiplus::Graphics& g, float cx, float cy, float cw, float ch);
-void ProcessStatisticsMouseMove(float x, float y);
-void ProcessStatisticsMouseClick(float x, float y);
+void ProcessStatisticsMouseMove(float x, float y, float cx, float cw, float cy);
+void ProcessStatisticsMouseClick(float x, float y, float cx, float cw, float cy);
 
 #endif // TAB_STATISTICS_H
