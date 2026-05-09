@@ -1,5 +1,8 @@
-#include "tab_adult.h" // Assuming shared headers/helpers are here
-#include "prewindow.h" // Included for Password/Parental checks
+// tab_ai.cpp
+
+#include "tab_adult.h"
+#include "tab_strict.h"  // 🔴 FIX: extern এর বদলে header include — RequestParentalAccess এখানে declare আছে
+#include "prewindow.h"
 #include <vector>
 #include <string>
 #include <fstream>
@@ -14,11 +17,12 @@ using namespace std;
 // --- External Control Flags from Tab Adult/Strict ---
 extern bool isSafeBrowsingActive;
 extern bool isStrictActive;
-extern bool RequestParentalAccess(HWND hWnd);
+// 🔴 FIX: extern bool RequestParentalAccess(HWND hWnd) সরানো হয়েছে
+//         এখন tab_strict.h থেকে declaration আসছে
 
 // --- AI Filter Global States ---
 static float ai_cX = 0.0f, ai_cY = 0.0f, ai_cW = 800.0f, ai_cH = 600.0f;
-static HWND ai_hWnd = NULL; // Store HWND for message boxes/password prompts
+static HWND ai_hWnd = NULL;
 
 // --- Colors (Matching Adult Tab Style) ---
 static const Color AiClrTeal(255, 12, 168, 176);
@@ -42,13 +46,13 @@ static bool cbFemaleDetectWeb = false;   static bool hCbFemaleDetectWeb = false;
 static bool cbFemaleDetectVideo = false; static bool hCbFemaleDetectVideo = false;
 
 // AI Sensitivity Level
-static int aiSensitivityIdx = 2; // 0=Low, 1=Medium, 2=High, 3=Strict
+static int aiSensitivityIdx = 2;
 static bool hoverAiSensDrop = false; static bool isAiSensDropOpen = false;
 static int hoverAiSensOptIdx = -1;
 wstring aiSensitivityModes[] = { L"Low (Fast)", L"Medium", L"High (Accurate)", L"Strict (Max Blur)" };
 
 // --- App Blocking Navigation States ---
-static int currentAppBlockView = 0; // 0 = Main List, 1 = YouTube, 2 = TikTok, 3 = Instagram
+static int currentAppBlockView = 0;
 static bool hoverBackBtn = false;
 
 // --- Scroll States ---
@@ -101,7 +105,6 @@ static GraphicsPath* GetAiRoundRectPath(RectF rect, int radius) {
     path->CloseFigure(); return path;
 }
 
-// Draw text with word wrap logic
 static void DrawLongTextAi(Graphics& g, const wstring& text, Font* font, SolidBrush* brush, float x, float y, float maxW) {
     StringFormat sf;
     sf.SetAlignment(StringAlignmentNear);
@@ -110,7 +113,7 @@ static void DrawLongTextAi(Graphics& g, const wstring& text, Font* font, SolidBr
 }
 
 
-// --- SAVE & LOAD SETTINGS DATA FOR AI ---
+// --- SAVE & LOAD SETTINGS ---
 void SaveAiSettings() {
     std::wofstream out(L"rasfocus_ai_data.txt");
     out.imbue(std::locale(out.getloc(), new std::codecvt_utf8<wchar_t>));
@@ -151,7 +154,6 @@ void LoadAiSettings() {
     }
 }
 
-// Ensure settings are loaded once
 static bool aiSettingsLoaded = false;
 
 // ==========================================
@@ -163,7 +165,7 @@ void InitAiFilterTab(HWND hWnd) {
 
 
 // ==========================================
-// --- DRAWING FUNCTION FOR AI FILTER ---
+// --- DRAWING FUNCTION ---
 // ==========================================
 void DrawAiFilterTab(Graphics& g, float cx, float cy, float cw, float ch) {
     ai_cX = cx; ai_cY = cy; ai_cW = cw; ai_cH = ch;
@@ -192,16 +194,12 @@ void DrawAiFilterTab(Graphics& g, float cx, float cy, float cw, float ch) {
     float bX = cx + 40.0f;
     float bY = cy + 20.0f; 
 
-    // Determine if controls are locked based on external states
     bool isLocked = isSafeBrowsingActive || isStrictActive;
     SolidBrush activeTextBrush(isLocked ? AiClrGrayText : AiClrDark); 
 
-    // --- HELPER: DRAW TOGGLE SWITCH ---
     auto drawToggle = [&](float x, float y, const wchar_t* txt, const wchar_t* desc, bool state) {
         RectF trackR(x, y + 2.0f, 36.0f, 18.0f);
         GraphicsPath* tp = GetAiRoundRectPath(trackR, 9);
-        
-        // Visual indication of locked state
         Color onColor = isLocked ? Color(255, 150, 150, 150) : AiClrTeal;
         SolidBrush tBg(state ? onColor : Color(255, 220, 220, 220));
         g.FillPath(&tBg, tp); 
@@ -224,10 +222,7 @@ void DrawAiFilterTab(Graphics& g, float cx, float cy, float cw, float ch) {
     // --- VIEW 0: MAIN DASHBOARD ---
     // ==========================================
     if (currentAppBlockView == 0) {
-        // --- 1. AI ENGINE MASTER CONTROL ---
         RectF startBtn(bX, bY, 180.0f, 40.0f);
-        
-        // Button visual state handles lock
         SolidBrush sb(isAiEngineActive ? (isLocked ? Color(255, 200, 100, 100) : Color(255, 230, 50, 50)) : (isLocked ? Color(255, 150, 200, 100) : AiClrGreen));
         GraphicsPath* sbp = GetAiRoundRectPath(startBtn, 4); g.FillPath(&sb, sbp); delete sbp;
         g.DrawString(isAiEngineActive ? L"Stop AI Engine" : L"Start AI Engine", -1, &fBold, startBtn, &fC, &bWhite);
@@ -238,10 +233,8 @@ void DrawAiFilterTab(Graphics& g, float cx, float cy, float cw, float ch) {
              g.DrawString(L"(Locked by Safe Browsing or Strict Protocol)", -1, &fSmallItalic, RectF(bX + 200.0f, bY + 20.0f, 400.0f, 40.0f), &fL, &bGray);
         }
 
-
         bY += 60.0f; g.DrawLine(&pBorder, bX, bY, cx + cw - 40.0f, bY); bY += 15.0f;
 
-        // --- 2. ADVANCED FEMALE DETECTION ---
         g.DrawString(L"Smart Female Detection (Strict Filter):", -1, &fSubTitle, RectF(bX, bY, 400.0f, 30.0f), &fL, &activeTextBrush);
         DrawLongTextAi(g, L"Dynamically detects and blurs females in real-time without blocking the site.", &fSmallItalic, &bGray, bX, bY+28.0f, cw - 80.0f);
         bY += 60.0f;
@@ -252,7 +245,6 @@ void DrawAiFilterTab(Graphics& g, float cx, float cy, float cw, float ch) {
 
         bY += 40.0f; g.DrawLine(&pBorder, bX, bY, cx + cw - 40.0f, bY); bY += 15.0f;
 
-        // --- 3. SENSITIVITY DROPDOWN ---
         g.DrawString(L"AI Sensitivity Level:", -1, &fBold, RectF(bX, bY, 150.0f, 35.0f), &fL, &activeTextBrush);
         
         auto drawBeautifulDropdown = [&](float x, float y, float w, float h, wstring text, bool hover) {
@@ -268,7 +260,6 @@ void DrawAiFilterTab(Graphics& g, float cx, float cy, float cw, float ch) {
 
         bY += 50.0f; g.DrawLine(&pBorder, bX, bY, cx + cw - 40.0f, bY); bY += 15.0f;
 
-        // --- 4. IN APP BLOCKING BUTTONS ---
         g.DrawString(L"In App Blocking", -1, &fSubTitle, RectF(bX, bY, 400.0f, 30.0f), &fL, &activeTextBrush);
         bY += 40.0f;
 
@@ -293,7 +284,6 @@ void DrawAiFilterTab(Graphics& g, float cx, float cy, float cw, float ch) {
         bY += 70.0f;
         drawAppButton(bY, L"Instagram", L"Block specific Instagram features like reels, comments, or more.", L"\xE7B3", Color(255, 190, 40, 140), hBtnInstagram); 
 
-        // DRAW OPEN DROPDOWN ON TOP
         if (isAiSensDropOpen && !isLocked) {
             float dropY = cy + 20.0f + 60.0f + 15.0f + 30.0f + 20.0f + 60.0f + 45.0f + 40.0f + 15.0f;
             RectF dR(bX + 160.0f, dropY + 36.0f, 170.0f, 4.0f * 32.0f);
@@ -317,7 +307,6 @@ void DrawAiFilterTab(Graphics& g, float cx, float cy, float cw, float ch) {
         DrawLongTextAi(g, L"Block specific YouTube features like shorts, comments, or more.", &fNorm, &bDark, bX, bY, cw-80.0f);
         bY += 30.0f;
 
-        // Clip Region for Scrolling
         float listStartY = bY;
         float viewH = ch - listStartY - 20.0f;
         Region orgRegion; g.GetClip(&orgRegion);
@@ -338,14 +327,12 @@ void DrawAiFilterTab(Graphics& g, float cx, float cy, float cw, float ch) {
         drawToggle(bX, itemY, L"Black & White Mode", L"Use only black and white colors for any YouTube pages", ytBlackWhiteMode); itemY += 55.0f;
         drawToggle(bX, itemY, L"Disable Autoplay", L"Disabling autoplaying the next video at the end of the previous video", ytDisableAutoplay); itemY += 55.0f;
         
-        // Calculate max scroll
         float totalListHeight = itemY + (float)scrollOffsetYt - listStartY;
         maxScrollYt = (int)(totalListHeight - viewH);
         if (maxScrollYt < 0) maxScrollYt = 0;
 
         g.SetClip(&orgRegion);
 
-        // Draw Scrollbar if needed
         if (maxScrollYt > 0) {
             float sbH = viewH * (viewH / totalListHeight);
             float sbY = listStartY + ((float)scrollOffsetYt / (float)maxScrollYt) * (viewH - sbH);
@@ -397,24 +384,20 @@ void ProcessAiFilterMouseMove(float x, float y) {
     float bX = ai_cX + 40.0f; 
     float bY = ai_cY + 20.0f;
 
-    // Reset Hitboxes
     hoverAiEngineBtn = false; hoverAiSensDrop = false; 
     hCbFemaleDetectWeb = false; hCbFemaleDetectVideo = false;
     hBtnYoutube = false; hBtnTikTok = false; hBtnInstagram = false; hoverBackBtn = false;
 
-    // YouTube resets
     hYtHideHome = false; hYtHideShorts = false; hYtHideComments = false; hYtHideRecVideos = false;
     hYtHideThumbnails = false; hYtBlurThumbnails = false; hYtHideSubs = false; hYtHideExplore = false;
     hYtHideTopBar = false; hYtDisableEndCards = false; hYtBlackWhiteMode = false; hYtDisableAutoplay = false;
 
-    // TikTok resets
     hTtHideExplore = false; hTtHideLive = false; hTtHideComments = false; hTtHideSearch = false; hTtBlackWhiteMode = false;
 
-    // Instagram resets
     hIgHideStories = false; hIgHideReels = false; hIgHideExplore = false; hIgHideComments = false; hIgHideSuggested = false; hIgBlackWhiteMode = false;
 
     bool isLocked = isSafeBrowsingActive || isStrictActive;
-    if (isLocked) return; // Prevent hover effects if locked
+    if (isLocked) return;
 
     if (currentAppBlockView == 0) {
         hoverAiEngineBtn = RectF(bX, bY, 180.0f, 40.0f).Contains(x,y);
@@ -484,7 +467,7 @@ void ProcessAiFilterMouseClick(float x, float y) {
         if (hoverAiEngineBtn) {
             if (isLocked) {
                 if (!RequestParentalAccess(ai_hWnd)) {
-                    return; // Access denied
+                    return;
                 }
             }
             isAiEngineActive = !isAiEngineActive;
@@ -499,10 +482,7 @@ void ProcessAiFilterMouseClick(float x, float y) {
             return; 
         }
 
-        if (hoverAiSensDrop && !isLocked) {
-            isAiSensDropOpen = true;
-            return;
-        }
+        if (hoverAiSensDrop && !isLocked) { isAiSensDropOpen = true; return; }
 
         if (hBtnYoutube && !isLocked) { currentAppBlockView = 1; scrollOffsetYt = 0; return; }
         if (hBtnTikTok && !isLocked) { currentAppBlockView = 2; return; }
@@ -511,13 +491,11 @@ void ProcessAiFilterMouseClick(float x, float y) {
         auto handleCb = [&](bool& state, bool hover) {
             if (hover && !isLocked) state = !state;
         };
-
         handleCb(cbFemaleDetectWeb, hCbFemaleDetectWeb);
         handleCb(cbFemaleDetectVideo, hCbFemaleDetectVideo);
     } 
-    else if (currentAppBlockView == 1) { // YouTube View
+    else if (currentAppBlockView == 1) {
         if (hoverBackBtn) { currentAppBlockView = 0; return; }
-        
         auto handleCb = [&](bool& state, bool hover) { if (hover && !isLocked) state = !state; };
         handleCb(ytHideHome, hYtHideHome);
         handleCb(ytHideShorts, hYtHideShorts);
@@ -532,9 +510,8 @@ void ProcessAiFilterMouseClick(float x, float y) {
         handleCb(ytBlackWhiteMode, hYtBlackWhiteMode);
         handleCb(ytDisableAutoplay, hYtDisableAutoplay);
     }
-    else if (currentAppBlockView == 2) { // TikTok View
+    else if (currentAppBlockView == 2) {
         if (hoverBackBtn) { currentAppBlockView = 0; return; }
-        
         auto handleCb = [&](bool& state, bool hover) { if (hover && !isLocked) state = !state; };
         handleCb(ttHideExplore, hTtHideExplore);
         handleCb(ttHideLive, hTtHideLive);
@@ -542,9 +519,8 @@ void ProcessAiFilterMouseClick(float x, float y) {
         handleCb(ttHideSearch, hTtHideSearch);
         handleCb(ttBlackWhiteMode, hTtBlackWhiteMode);
     }
-    else if (currentAppBlockView == 3) { // Instagram View
+    else if (currentAppBlockView == 3) {
         if (hoverBackBtn) { currentAppBlockView = 0; return; }
-        
         auto handleCb = [&](bool& state, bool hover) { if (hover && !isLocked) state = !state; };
         handleCb(igHideStories, hIgHideStories);
         handleCb(igHideReels, hIgHideReels);
@@ -561,12 +537,12 @@ void ProcessAiFilterMouseClick(float x, float y) {
 // --- SCROLL LOGIC ---
 // ==========================================
 void ProcessAiFilterMouseWheel(float x, float y, int delta) {
-    if (currentAppBlockView == 1) { // YouTube view scrolling
-        int scrollSpeed = 30; // pixels per scroll notch
-        if (delta > 0) { // scroll up
+    if (currentAppBlockView == 1) {
+        int scrollSpeed = 30;
+        if (delta > 0) {
             scrollOffsetYt -= scrollSpeed;
             if (scrollOffsetYt < 0) scrollOffsetYt = 0;
-        } else { // scroll down
+        } else {
             scrollOffsetYt += scrollSpeed;
             if (scrollOffsetYt > maxScrollYt) scrollOffsetYt = maxScrollYt;
         }
