@@ -2,6 +2,7 @@
 // FIXED: Build error (ICoreWebView2Settings2), Local NTP on startup, Gemini support,
 //        Desktop shortcut creation DISABLED, Chrome-like Profile/Extensions/Settings menus,
 //        Gemini Developer Mode, NewWindowRequested properly handled.
+// LINKED: advanced_feature.h (Privacy Shield, Download Manager) & feature_browser.h
 
 #define _CRT_SECURE_NO_WARNINGS
 #define WINVER       0x0A00
@@ -12,6 +13,10 @@
 #include "html_tools.h"
 #include "WebView2.h"
 #include "WebView2EnvironmentOptions.h"
+
+// 🟢 LINKING NEW MODULES
+#include "advanced_feature.h"
+#include "feature_browser.h"
 
 #include <windows.h>
 #include <windowsx.h>
@@ -467,7 +472,7 @@ LRESULT CALLBACK AddrBarProc(HWND hWnd,UINT msg,WPARAM wParam,LPARAM lParam,UINT
         if      (input.find(L" ")!=std::wstring::npos)                            url=L"https://www.google.com/search?q="+UrlEncode(input);
         else if (input.find(L"http://")==0||input.find(L"https://")==0)            url=input;
         else if (input.find(L".")!=std::wstring::npos)                             url=L"https://"+input;
-        else                                                                        url=L"https://www.google.com/search?q="+UrlEncode(input);
+        else                                                                       url=L"https://www.google.com/search?q="+UrlEncode(input);
 
         tab->webview->Navigate(url.c_str());
         return 0;
@@ -521,7 +526,6 @@ static void BuildChromeTabPath(GraphicsPath& path,float x,float y,float w,float 
 static void ShowProfileMenu(HWND hWnd) {
     if (!g_windows.count(hWnd)) return;
     auto& wd = g_windows[hWnd];
-    // Show a context menu mimicking Chrome-like profile menu
     HMENU hMenu = CreatePopupMenu();
     AppendMenuW(hMenu, MF_STRING|MF_GRAYED, 0, L"RasBrowser User");
     AppendMenuW(hMenu, MF_SEPARATOR, 0, NULL);
@@ -602,10 +606,7 @@ static void ShowMainMenu(HWND hWnd) {
     switch (cmd) {
     case 3001: AddTab(hWnd, L"LOCAL_NTP"); break;
     case 3002: {
-        // Open new browser window
         std::wstring newUrl = L"LOCAL_NTP";
-        // We call LaunchMiniBrowser via a simple new window approach
-        // (just add a tab in this window for now)
         AddTab(hWnd, L"LOCAL_NTP");
         break;
     }
@@ -623,9 +624,7 @@ static void ShowMainMenu(HWND hWnd) {
             L"RasBrowser Settings", MB_OK|MB_ICONINFORMATION);
         break;
     case 3010:
-        // Gemini Developer Mode: open with special user agent for full API access
         if (tab && tab->webview) {
-            // Set developer-grade UA then navigate to Gemini
             ComPtr<ICoreWebView2Settings> s;
             if (SUCCEEDED(tab->webview->get_Settings(&s)) && s) {
                 ComPtr<ICoreWebView2Settings2> s2;
@@ -652,7 +651,7 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
     if (wd.isFullScreen) return;
 
     UINT dpi=GetWndDpi(hWnd);
-    RECT cr; GetClientRect(hWnd,&cr); int W=cr.right;
+    RECT cr; GetClientRect(hWnd,&cr); int W=cr.right; int H=cr.bottom;
     int titleH=TitleBarH(dpi),toolH=ToolbarH(dpi),navH=NavTotalH(hWnd),winBtnW=WinBtnW(dpi);
 
     Color cBgFrame  =wd.isDarkMode?Color(255,30,30,30)   :Color(255,230,230,235);
@@ -814,12 +813,13 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
             SolidBrush bmkBg(cBgTool); g.FillRectangle(&bmkBg,0,bmkY,W,bmkH);
             Pen sepPen2(cDivLine,1.0f); g.DrawLine(&sepPen2,0,bmkY+bmkH-1,W,bmkY+bmkH-1);
             SolidBrush brTxt(cTxtDim);
+            
             // Bookmark items
             struct BMK { const wchar_t* icon; const wchar_t* label; int x; };
             BMK items[] = {
                 {L"\xE8A4", L"Web Store",       15},
                 {L"\xE8A4", L"RasFocus Admin", 120},
-                {L"\uE7AD", L"Gemini AI",       270}, // Star icon for Gemini
+                {L"\uE7AD", L"Gemini AI",       270},
             };
             for (auto& bm : items) {
                 g.DrawString(bm.icon,-1,&fIconSm,RectF((float)S(bm.x,dpi),(float)bmkY,(float)S(20,dpi),(float)bmkH),&sfC,&brTxt);
@@ -828,6 +828,10 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
             g.DrawString(L"\xE838",-1,&fIconSm,RectF((float)(W-S(130,dpi)),(float)bmkY,(float)S(20,dpi),(float)bmkH),&sfC,&brTxt);
             g.DrawString(L"All Bookmarks",-1,&fSmall,RectF((float)(W-S(110,dpi)),(float)bmkY,(float)S(100,dpi),(float)bmkH),&sfL,&brTxt);
         }
+
+        // ── 🟢 DRAW DOWNLOAD PANEL ──────────────────
+        // (Called from advanced_feature.h)
+        DrawDownloadPanel(g, W, H, wd.isDarkMode);
     }
 }
 
@@ -929,17 +933,16 @@ public:
             settings->put_AreDefaultContextMenusEnabled(TRUE);
             settings->put_IsStatusBarEnabled(TRUE);
 
-            // FIX: DOM Storage via Settings2 (fixes Gemini & Facebook storage)
+            // Chrome-compatible UserAgent
             ComPtr<ICoreWebView2Settings2> s2;
             if (SUCCEEDED(settings->QueryInterface(IID_PPV_ARGS(&s2)))) {
-                // UserAgent: Chrome-compatible for Gemini login
                 s2->put_UserAgent(
                     L"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                     L"AppleWebKit/537.36 (KHTML, like Gecko) "
                     L"Chrome/124.0.0.0 Safari/537.36");
             }
 
-            // FIX BUILD ERROR: IsDomStorageEnabled is on Settings3, not Settings
+            // FIX: IsDomStorageEnabled is on Settings3, not Settings
             ComPtr<ICoreWebView2Settings3> s3;
             if (SUCCEEDED(settings->QueryInterface(IID_PPV_ARGS(&s3)))) {
                 s3->put_IsDomStorageEnabled(TRUE);
@@ -984,7 +987,6 @@ public:
                 LPWSTR uri=nullptr; args->get_Uri(&uri);
                 std::wstring newUrl = uri ? std::wstring(uri) : L"LOCAL_NTP";
                 if (uri) CoTaskMemFree(uri);
-                // Open in new tab
                 if (g_windows.count(m_hWnd)) {
                     args->put_Handled(TRUE);
                     AddTab(m_hWnd, newUrl);
@@ -1068,6 +1070,9 @@ public:
         ctl->put_IsVisible(isActive?TRUE:FALSE);
         RECT wvr=GetWebViewRect(m_hWnd);
         ctl->put_Bounds(wvr);
+
+        // 🟢 ACTIVATE ADVANCED FEATURES (Download Manager, Context Menu, Privacy Shield)
+        SetupAdvancedFeatures(m_hWnd, tab.webview);
 
         // ── NAVIGATE ─────────────────────────────────────────────────────────
         // FIX: Always show Local NTP on startup, never navigate to google.com
