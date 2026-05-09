@@ -2,6 +2,8 @@
 // REFACTORED: Per-Monitor v2 DPI, Chrome bezier tabs, double-buffering,
 //             Smart Google Search, Dark Mode Toggle, App Branding.
 // ADDED: Google Login Bypass, Pure Popup Mode, AI Filter Integration, Chrome 3-Dot Menu.
+// FIXED: mY undeclared identifier, C4267 size_t conversions, C4244 type conversions,
+//        C4996 deprecated functions, wchar_t->char string construction warnings.
 
 #define _CRT_SECURE_NO_WARNINGS
 #define WINVER       0x0A00
@@ -57,13 +59,13 @@ extern float g_scaleFactor;
 // 1. DYNAMIC LOCAL NTP (APP THEMED NEW TAB PAGE)
 // ─────────────────────────────────────────────────────────────────────────────
 std::wstring GetLocalNTP_HTML(bool isDark) {
-    std::wstring bg = isDark ? L"#1e1e24" : L"#f8fafc";
-    std::wstring text = isDark ? L"#ffffff" : L"#323232";
+    std::wstring bg      = isDark ? L"#1e1e24" : L"#f8fafc";
+    std::wstring text    = isDark ? L"#ffffff" : L"#323232";
     std::wstring subText = isDark ? L"#a0a0b0" : L"#666666";
-    std::wstring boxBg = isDark ? L"#2b2b36" : L"#ffffff";
+    std::wstring boxBg   = isDark ? L"#2b2b36" : L"#ffffff";
     std::wstring boxBorder = isDark ? L"#444444" : L"#dcdfe6";
-    std::wstring shadow = isDark ? L"0 4px 12px rgba(0,0,0,0.3)" : L"0 4px 12px rgba(0,0,0,0.05)";
-    std::wstring teal = L"#0ca8b0"; 
+    std::wstring shadow  = isDark ? L"0 4px 12px rgba(0,0,0,0.3)" : L"0 4px 12px rgba(0,0,0,0.05)";
+    std::wstring teal    = L"#0ca8b0"; 
 
     return L"<!DOCTYPE html>"
     L"<html><head><meta charset='utf-8'><title>New Tab</title><style>"
@@ -82,13 +84,13 @@ std::wstring GetLocalNTP_HTML(bool isDark) {
     L".link-item:hover .link-icon { background:" + teal + L"; color:#fff; border-color:" + teal + L"; box-shadow:0 8px 15px rgba(12,168,176,0.3); }"
     L"</style></head><body>"
     L"<div class='logo'><span>Ras</span>Browser</div>"
-    L"<div class='subtitle'>A Powerful & Safe Browsing Experience</div>"
+    L"<div class='subtitle'>A Powerful &amp; Safe Browsing Experience</div>"
     L"<form action='https://www.google.com/search' method='GET'>"
     L"<svg class='icon-search' viewBox='0 0 24 24'><path d='M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z'></path></svg>"
     L"<input type='text' name='q' class='search-box' placeholder='Search securely or type a URL' autocomplete='off' autofocus />"
     L"</form>"
     L"<div class='quick-links'>"
-    L"<a href='https://www.youtube.com' class='link-item'><div class='link-icon'>▶</div>YouTube</a>"
+    L"<a href='https://www.youtube.com' class='link-item'><div class='link-icon'>&#9654;</div>YouTube</a>"
     L"<a href='https://www.facebook.com' class='link-item'><div class='link-icon'>f</div>Facebook</a>"
     L"<a href='https://chatgpt.com' class='link-item'><div class='link-icon'>AI</div>ChatGPT</a>"
     L"<a href='https://github.com' class='link-item'><div class='link-icon'>&lt;/&gt;</div>GitHub</a>"
@@ -101,10 +103,10 @@ std::wstring GetLocalNTP_HTML(bool isDark) {
 // 2. DYNAMIC BLOCKED PAGE (MOTIVATIONAL QUOTES)
 // ─────────────────────────────────────────────────────────────────────────────
 std::wstring GetBlocked_HTML(bool isDark) {
-    std::wstring bg = isDark ? L"#1a1a1f" : L"#f4f6f8";
-    std::wstring text = isDark ? L"#ffffff" : L"#323232";
-    std::wstring boxBg = isDark ? L"#2b2b36" : L"#ffffff";
-    std::wstring red = L"#e74c3c";
+    std::wstring bg     = isDark ? L"#1a1a1f" : L"#f4f6f8";
+    std::wstring text   = isDark ? L"#ffffff" : L"#323232";
+    std::wstring boxBg  = isDark ? L"#2b2b36" : L"#ffffff";
+    std::wstring red    = L"#e74c3c";
     std::wstring border = isDark ? L"#444444" : L"#e2e8f0";
 
     return L"<!DOCTYPE html>"
@@ -119,20 +121,20 @@ std::wstring GetBlocked_HTML(bool isDark) {
     L".quote-text { font-size:18px; font-style:italic; line-height:1.6; font-weight:500; }"
     L"</style></head><body>"
     L"<div class='container'>"
-    L"<div class='icon'>🚫</div>"
+    L"<div class='icon'>&#x1F6AB;</div>"
     L"<h1>Access Denied</h1>"
     L"<p>This content has been blocked by <b>RasFocus</b> to protect your mind and productivity. Stay strong and keep your focus on what truly matters.</p>"
     L"<div class='quote-box'>"
-    L"<div class='quote-title'>💡 মনীষীদের উক্তি</div>"
-    L"<div class='quote-text' id='quote'>\"যে ব্যক্তি নিজের প্রবৃত্তি ও ইচ্ছাকে নিয়ন্ত্রণ করতে পারে, সেই হলো সত্যিকারের বিজয়ী।\"</div>"
+    L"<div class='quote-title'>&#x1F4A1; \u09AE\u09A8\u09C0\u09B7\u09C0\u09A6\u09C7\u09B0 \u09C1\u0995\u09CD\u09A4\u09BF</div>"
+    L"<div class='quote-text' id='quote'>\"\u09AF\u09C7 \u09AC\u09CD\u09AF\u0995\u09CD\u09A4\u09BF \u09A8\u09BF\u099C\u09C7\u09B0 \u09AA\u09CD\u09B0\u09AC\u09C3\u09A4\u09CD\u09A4\u09BF \u0993 \u0987\u099A\u09CD\u099B\u09BE\u0995\u09C7 \u09A8\u09BF\u09AF\u09BC\u09A8\u09CD\u09A4\u09CD\u09B0\u09A3 \u0995\u09B0\u09A4\u09C7 \u09AA\u09BE\u09B0\u09C7, \u09B8\u09C7\u0987 \u09B9\u09B2\u09CB \u09B8\u09A4\u09CD\u09AF\u09BF\u0995\u09BE\u09B0\u09C7\u09B0 \u09AC\u09BF\u099C\u09AF\u09BC\u09C0\u0964\"</div>"
     L"</div></div>"
     L"<script>"
     L"const quotes = ["
-    L"  '\"চরিত্রহীনতার চেয়ে বড় কোনো দারিদ্র্য নেই।\" - হযরত আলী (রাঃ)',"
-    L"  '\"যে নিজেকে নিয়ন্ত্রণ করতে পারে না, সে অন্যকেও নিয়ন্ত্রণ করতে পারে না।\" - সেনেকা',"
-    L"  '\"ক্ষণিকের আনন্দের জন্য নিজের ভবিষ্যৎ নষ্ট করোভূ না।\" - সংগৃহীত',"
-    L"  '\"মনকে যদি তুমি নিয়ন্ত্রণ না করো, তবে মন তোমাকে নিয়ন্ত্রণ করবে।\" - হোরেস',"
-    L"  '\"শুদ্ধ মন এবং সুন্দর চরিত্রই হলো মানুষের আসল সৌন্দর্য।\" - স্বামী বিবেকানন্দ'"
+    L"  '\"\\u099A\u09B0\u09BF\u09A4\u09CD\u09B0\u09B9\u09C0\u09A8\u09A4\u09BE\u09B0 \u099A\u09C7\u09AF\u09BC\u09C7 \u09AC\u09DC \u0995\u09CB\u09A8\u09CB \u09A6\u09BE\u09B0\u09BF\u09A6\u09CD\u09B0\u09CD\u09AF \u09A8\u09C7\u0987\u0964\" - \u09B9\u09AF\u09B0\u09A4 \u0986\u09B2\u09C0 (\u09B0\u09BE\u0983)',"
+    L"  '\"\\u09AF\u09C7 \u09A8\u09BF\u099C\u09C7\u0995\u09C7 \u09A8\u09BF\u09AF\u09BC\u09A8\u09CD\u09A4\u09CD\u09B0\u09A3 \u0995\u09B0\u09A4\u09C7 \u09AA\u09BE\u09B0\u09C7 \u09A8\u09BE, \u09B8\u09C7 \u0985\u09A8\u09CD\u09AF\u0995\u09C7\u0993 \u09A8\u09BF\u09AF\u09BC\u09A8\u09CD\u09A4\u09CD\u09B0\u09A3 \u0995\u09B0\u09A4\u09C7 \u09AA\u09BE\u09B0\u09C7 \u09A8\u09BE\u0964\" - \u09B8\u09C7\u09A8\u09C7\u0995\u09BE',"
+    L"  '\"\\u0995\u09CD\u09B7\u09A3\u09BF\u0995\u09C7\u09B0 \u0986\u09A8\u09A8\u09CD\u09A6\u09C7\u09B0 \u099C\u09A8\u09CD\u09AF \u09A8\u09BF\u099C\u09C7\u09B0 \u09AD\u09AC\u09BF\u09B7\u09CD\u09AF\u09CE \u09A8\u09B7\u09CD\u099F \u0995\u09B0\u09CB\u09A8\u09BE\u0964\" - \u09B8\u0982\u0997\u09C3\u09B9\u09C0\u09A4',"
+    L"  '\"\\u09AE\u09A8\u0995\u09C7 \u09AF\u09A6\u09BF \u09A4\u09C1\u09AE\u09BF \u09A8\u09BF\u09AF\u09BC\u09A8\u09CD\u09A4\u09CD\u09B0\u09A3 \u09A8\u09BE \u0995\u09B0\u09CB, \u09A4\u09AC\u09C7 \u09AE\u09A8 \u09A4\u09CB\u09AE\u09BE\u0995\u09C7 \u09A8\u09BF\u09AF\u09BC\u09A8\u09CD\u09A4\u09CD\u09B0\u09A3 \u0995\u09B0\u09AC\u09C7\u0964\" - \u09B9\u09CB\u09B0\u09C7\u09B8',"
+    L"  '\"\\u09B6\u09C1\u09A6\u09CD\u09A7 \u09AE\u09A8 \u098F\u09AC\u0982 \u09B8\u09C1\u09A8\u09CD\u09A6\u09B0 \u099A\u09B0\u09BF\u09A4\u09CD\u09B0\u0987 \u09B9\u09B2\u09CB \u09AE\u09BE\u09A8\u09C1\u09B7\u09C7\u09B0 \u0986\u09B8\u09B2 \u09B8\u09CC\u09A8\u09CD\u09A6\u09B0\u09CD\u09AF\u0964\" - \u09B8\u09CD\u09AC\u09BE\u09AE\u09C0 \u09AC\u09BF\u09AC\u09C7\u0995\u09BE\u09A8\u09A8\u09CD\u09A6'"
     L"];"
     L"document.getElementById('quote').innerText = quotes[Math.floor(Math.random() * quotes.length)];"
     L"</script></body></html>";
@@ -147,12 +149,17 @@ std::wstring GetAiInjectScript(const std::wstring& currentUrl) {
 
     bool isAiEngineActive = false, cbAiImageBlur = false, cbFemaleDetectWeb = false, cbFemaleDetectVideo = false;
     int aiSensitivityIdx = 0;
-    bool ytHideHome = false, ytHideShorts = false, ytHideComments = false, ytHideRecVideos = false, ytHideThumbnails = false, ytBlurThumbnails = false, ytHideSubs = false, ytHideExplore = false, ytHideTopBar = false, ytDisableEndCards = false, ytBlackWhiteMode = false, ytDisableAutoplay = false;
+    bool ytHideHome = false, ytHideShorts = false, ytHideComments = false, ytHideRecVideos = false;
+    bool ytHideThumbnails = false, ytBlurThumbnails = false, ytHideSubs = false, ytHideExplore = false;
+    bool ytHideTopBar = false, ytDisableEndCards = false, ytBlackWhiteMode = false, ytDisableAutoplay = false;
     bool ttHideExplore = false, ttHideLive = false, ttHideComments = false, ttHideSearch = false, ttBlackWhiteMode = false;
-    bool igHideStories = false, igHideReels = false, igHideExplore = false, igHideComments = false, igHideSuggested = false, igBlackWhiteMode = false;
+    bool igHideStories = false, igHideReels = false, igHideExplore = false, igHideComments = false;
+    bool igHideSuggested = false, igBlackWhiteMode = false;
 
     in >> isAiEngineActive >> cbAiImageBlur >> cbFemaleDetectWeb >> cbFemaleDetectVideo >> aiSensitivityIdx;
-    in >> ytHideHome >> ytHideShorts >> ytHideComments >> ytHideRecVideos >> ytHideThumbnails >> ytBlurThumbnails >> ytHideSubs >> ytHideExplore >> ytHideTopBar >> ytDisableEndCards >> ytBlackWhiteMode >> ytDisableAutoplay;
+    in >> ytHideHome >> ytHideShorts >> ytHideComments >> ytHideRecVideos >> ytHideThumbnails
+       >> ytBlurThumbnails >> ytHideSubs >> ytHideExplore >> ytHideTopBar >> ytDisableEndCards
+       >> ytBlackWhiteMode >> ytDisableAutoplay;
     in >> ttHideExplore >> ttHideLive >> ttHideComments >> ttHideSearch >> ttBlackWhiteMode;
     in >> igHideStories >> igHideReels >> igHideExplore >> igHideComments >> igHideSuggested >> igBlackWhiteMode;
     in.close();
@@ -160,27 +167,27 @@ std::wstring GetAiInjectScript(const std::wstring& currentUrl) {
     std::wstring css = L"";
 
     if (currentUrl.find(L"youtube.com") != std::wstring::npos) {
-        if (ytHideHome) css += L"ytd-browse[page-subtype='home'] { display: none !important; } ";
-        if (ytHideShorts) css += L"ytd-reel-shelf-renderer, ytd-rich-shelf-renderer[is-shorts], a[title='Shorts'], ytd-mini-guide-entry-renderer[aria-label='Shorts'] { display: none !important; } ";
-        if (ytHideComments) css += L"ytd-comments { display: none !important; } ";
-        if (ytHideRecVideos) css += L"ytd-watch-next-secondary-results-renderer { display: none !important; } ";
-        if (ytHideThumbnails) css += L"ytd-thumbnail { display: none !important; } ";
-        if (ytBlurThumbnails) css += L"ytd-thumbnail img { filter: blur(15px) !important; } ";
-        if (ytHideSubs) css += L"a[title='Subscriptions'], ytd-mini-guide-entry-renderer[aria-label='Subscriptions'] { display: none !important; } ";
-        if (ytHideExplore) css += L"ytd-guide-section-renderer:nth-child(3) { display: none !important; } ";
-        if (ytHideTopBar) css += L"ytd-masthead { display: none !important; } #page-manager { margin-top: 0 !important; } ";
+        if (ytHideHome)        css += L"ytd-browse[page-subtype='home'] { display: none !important; } ";
+        if (ytHideShorts)      css += L"ytd-reel-shelf-renderer, ytd-rich-shelf-renderer[is-shorts], a[title='Shorts'], ytd-mini-guide-entry-renderer[aria-label='Shorts'] { display: none !important; } ";
+        if (ytHideComments)    css += L"ytd-comments { display: none !important; } ";
+        if (ytHideRecVideos)   css += L"ytd-watch-next-secondary-results-renderer { display: none !important; } ";
+        if (ytHideThumbnails)  css += L"ytd-thumbnail { display: none !important; } ";
+        if (ytBlurThumbnails)  css += L"ytd-thumbnail img { filter: blur(15px) !important; } ";
+        if (ytHideSubs)        css += L"a[title='Subscriptions'], ytd-mini-guide-entry-renderer[aria-label='Subscriptions'] { display: none !important; } ";
+        if (ytHideExplore)     css += L"ytd-guide-section-renderer:nth-child(3) { display: none !important; } ";
+        if (ytHideTopBar)      css += L"ytd-masthead { display: none !important; } #page-manager { margin-top: 0 !important; } ";
         if (ytDisableEndCards) css += L".ytp-ce-element { display: none !important; } ";
-        if (ytBlackWhiteMode) css += L"html { filter: grayscale(100%) !important; } ";
+        if (ytBlackWhiteMode)  css += L"html { filter: grayscale(100%) !important; } ";
     } 
     else if (currentUrl.find(L"tiktok.com") != std::wstring::npos) {
-        if (ttHideExplore) css += L"[data-e2e='nav-explore'] { display: none !important; } ";
-        if (ttHideLive) css += L"[data-e2e='nav-live'] { display: none !important; } ";
+        if (ttHideExplore)  css += L"[data-e2e='nav-explore'] { display: none !important; } ";
+        if (ttHideLive)     css += L"[data-e2e='nav-live'] { display: none !important; } ";
         if (ttHideComments) css += L".comment-container, [data-e2e='comment-icon'] { display: none !important; } ";
         if (ttBlackWhiteMode) css += L"html { filter: grayscale(100%) !important; } ";
     } 
     else if (currentUrl.find(L"instagram.com") != std::wstring::npos) {
-        if (igHideReels) css += L"a[href*='/reels/'] { display: none !important; } ";
-        if (igHideExplore) css += L"a[href*='/explore/'] { display: none !important; } ";
+        if (igHideReels)    css += L"a[href*='/reels/'] { display: none !important; } ";
+        if (igHideExplore)  css += L"a[href*='/explore/'] { display: none !important; } ";
         if (igBlackWhiteMode) css += L"html { filter: grayscale(100%) !important; } ";
     }
 
@@ -249,8 +256,8 @@ struct BrowserWindowData {
     bool hProfile = false, hExt = false, hMenu = false; 
     
     // 🟢 Menu State Tracking
-    bool isMenuOpen = false;
-    int hoverMenuIdx = -1;
+    bool isMenuOpen    = false;
+    int  hoverMenuIdx  = -1;
 
     int  hoverTabIndex = -1;
     bool hNewTab       = false;
@@ -264,6 +271,15 @@ struct BrowserWindowData {
 static std::map<HWND, BrowserWindowData> g_windows;
 static ComPtr<ICoreWebView2Environment>  g_sharedEnv;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// FIX: Helper to compute menu Y position consistently across all handlers
+// This was the root cause of the 'mY undeclared identifier' errors at
+// mini_browser.cpp(1461) and mini_browser.cpp(1477).
+// ─────────────────────────────────────────────────────────────────────────────
+static float GetMenuY(HWND hWnd, UINT dpi) {
+    return (float)(S(D_TITLEBAR_H, dpi) + S(D_TOOLBAR_H, dpi) - S(5, dpi));
+}
+
 // Dynamic Total Header Height Calculation
 static int NavTotalH(HWND hWnd) {
     UINT dpi = GetWndDpi(hWnd);
@@ -272,39 +288,41 @@ static int NavTotalH(HWND hWnd) {
     int h = S(D_TITLEBAR_H + D_TOOLBAR_H, dpi);
     if (g_windows.count(hWnd)) {
         auto* tab = g_windows[hWnd].active();
-        if (tab && (tab->url == L"LOCAL_NTP" || tab->url.find(L"blocked by rasfocus") != std::string::npos || tab->url == L"about:blank")) 
+        if (tab && (tab->url == L"LOCAL_NTP" ||
+                    tab->url.find(L"blocked by rasfocus") != std::wstring::npos ||
+                    tab->url == L"about:blank")) 
             h += S(D_BOOKMARK_H, dpi);
     }
     return h;
 }
 
-static int TitleBarH(UINT dpi)  { return S(D_TITLEBAR_H, dpi); }
-static int ToolbarH (UINT dpi)  { return S(D_TOOLBAR_H,  dpi); }
-static int WinBtnW  (UINT dpi)  { return S(D_WIN_BTN_W,  dpi); }
-static int LogoW    (UINT dpi)  { return S(D_LOGO_W,     dpi); } 
+static int TitleBarH(UINT dpi) { return S(D_TITLEBAR_H, dpi); }
+static int ToolbarH (UINT dpi) { return S(D_TOOLBAR_H,  dpi); }
+static int WinBtnW  (UINT dpi) { return S(D_WIN_BTN_W,  dpi); }
+static int LogoW    (UINT dpi) { return S(D_LOGO_W,     dpi); } 
 
 // ─────────────────────────────────────────────────────────────────────────────
 // URL ENCODER
 // ─────────────────────────────────────────────────────────────────────────────
-static std::string utf8_encode(const std::wstring &wstr) {
-    if(wstr.empty()) return std::string();
-    int size_needed = WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), NULL, 0, NULL, NULL);
+static std::string utf8_encode(const std::wstring& wstr) {
+    if (wstr.empty()) return std::string();
+    int size_needed = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.size(), NULL, 0, NULL, NULL);
     std::string strTo(size_needed, 0);
-    WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(), &strTo[0], size_needed, NULL, NULL);
+    WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), (int)wstr.size(), &strTo[0], size_needed, NULL, NULL);
     return strTo;
 }
 
 static std::wstring UrlEncode(const std::wstring& text) {
     std::string utf8 = utf8_encode(text);
     std::wstringstream escaped;
-    for (char c : utf8) {
-        if (isalnum((unsigned char)c) || c == '-' || c == '_' || c == '.' || c == '~') {
+    for (unsigned char c : utf8) {
+        if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
             escaped << (wchar_t)c;
         } else if (c == ' ') {
             escaped << L"+";
         } else {
             wchar_t buf[10];
-            swprintf(buf, 10, L"%%%02X", (unsigned char)c);
+            swprintf(buf, 10, L"%%%02X", c);
             escaped << buf;
         }
     }
@@ -570,8 +588,8 @@ static void AddRoundRect(GraphicsPath& path, float x, float y, float w, float h,
     if (r <= 0.f) { path.AddRectangle(RectF(x,y,w,h)); return; }
     path.AddArc(x,         y,         r*2, r*2, 180, 90);
     path.AddArc(x+w-r*2,   y,         r*2, r*2, 270, 90);
-    path.AddArc(x+w-r*2,   y+h-r*2,   r*2, r*2,  0, 90);
-    path.AddArc(x,         y+h-r*2,   r*2, r*2, 90, 90);
+    path.AddArc(x+w-r*2,   y+h-r*2,   r*2, r*2,   0, 90);
+    path.AddArc(x,         y+h-r*2,   r*2, r*2,  90, 90);
     path.CloseFigure();
 }
 
@@ -590,6 +608,13 @@ static void BuildChromeTabPath(GraphicsPath& path, float x, float y, float w, fl
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// MENU ITEM TYPES SHARED TABLE
+// Used consistently in DrawBrowserContent, WM_MOUSEMOVE, WM_LBUTTONDOWN
+// ─────────────────────────────────────────────────────────────────────────────
+static const int kMenuTypes[] = { 2, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0 }; // 13 items total
+static const int kMenuTypeCount = 13;
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MAIN DRAW FUNCTION 
 // ─────────────────────────────────────────────────────────────────────────────
 static void DrawBrowserContent(HWND hWnd, HDC hdc) {
@@ -606,15 +631,15 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
     int navH    = NavTotalH(hWnd);
     int winBtnW = WinBtnW(dpi);
 
-    Color cBgFrame   = wd.isDarkMode ? Color(255, 30, 30, 30)   : Color(255, 230, 230, 235);
-    Color cBgTool    = wd.isDarkMode ? Color(255, 43, 43, 43)   : Color(255, 255, 255, 255);
-    Color cTxtPrim   = wd.isDarkMode ? Color(255, 255, 255, 255): Color(255, 32, 33, 36);
-    Color cTxtDim    = wd.isDarkMode ? Color(255, 154, 156, 160): Color(255, 95, 99, 104);
-    Color cTabActive = wd.isDarkMode ? Color(255, 43, 43, 43)   : Color(255, 255, 255, 255);
-    Color cTabHover  = wd.isDarkMode ? Color(255, 45, 45, 45)   : Color(255, 235, 236, 240);
-    Color cAddrBg    = wd.isDarkMode ? Color(255, 26, 26, 26)   : Color(255, 241, 243, 244);
-    Color cAddrBord  = wd.isDarkMode ? Color(255, 68, 68, 68)   : Color(255, 160, 180, 210);
-    Color cDivLine   = wd.isDarkMode ? Color(255, 45, 45, 45)   : Color(255, 218, 220, 224);
+    Color cBgFrame   = wd.isDarkMode ? Color(255, 30, 30, 30)    : Color(255, 230, 230, 235);
+    Color cBgTool    = wd.isDarkMode ? Color(255, 43, 43, 43)    : Color(255, 255, 255, 255);
+    Color cTxtPrim   = wd.isDarkMode ? Color(255, 255, 255, 255) : Color(255, 32, 33, 36);
+    Color cTxtDim    = wd.isDarkMode ? Color(255, 154, 156, 160) : Color(255, 95, 99, 104);
+    Color cTabActive = wd.isDarkMode ? Color(255, 43, 43, 43)    : Color(255, 255, 255, 255);
+    Color cTabHover  = wd.isDarkMode ? Color(255, 45, 45, 45)    : Color(255, 235, 236, 240);
+    Color cAddrBg    = wd.isDarkMode ? Color(255, 26, 26, 26)    : Color(255, 241, 243, 244);
+    Color cAddrBord  = wd.isDarkMode ? Color(255, 68, 68, 68)    : Color(255, 160, 180, 210);
+    Color cDivLine   = wd.isDarkMode ? Color(255, 45, 45, 45)    : Color(255, 218, 220, 224);
 
     Graphics g(hdc);
     g.SetSmoothingMode(SmoothingModeAntiAlias);
@@ -624,8 +649,8 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
     g.FillRectangle(&bFrame, 0, 0, W, titleH);
     
     if (!g_isPureViewerMode) {
-        SolidBrush bTool (cBgTool);
-        g.FillRectangle(&bTool,  0, titleH, W, toolH);
+        SolidBrush bTool(cBgTool);
+        g.FillRectangle(&bTool, 0, titleH, W, toolH);
 
         Pen sepPen(cDivLine, 1.0f);
         if (!(wd.active() && (wd.active()->url == L"LOCAL_NTP" || wd.active()->url == L"about:blank"))) {
@@ -651,15 +676,15 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
 
     // Title bar: Branding
     {
-        int iconX  = S(15, dpi);
-        SolidBrush brTeal(Color(255, 12, 168, 176)); 
+        int iconX = S(15, dpi);
+        SolidBrush brTeal (Color(255, 12, 168, 176)); 
         SolidBrush brWhite(Color(255, 255, 255, 255));
-        SolidBrush brDark(Color(255, 32, 33, 36));
+        SolidBrush brDark (Color(255, 32, 33, 36));
 
-        RectF rRas((float)iconX, 0.f, S(40, dpi), (float)titleH); 
+        RectF rRas((float)iconX, 0.f, (float)S(40, dpi), (float)titleH); 
         g.DrawString(L"Ras", -1, &fBrand, rRas, &sfL, &brTeal);
 
-        RectF rBrowser((float)iconX + S(32, dpi), 0.f, S(100, dpi), (float)titleH);
+        RectF rBrowser((float)(iconX + S(32, dpi)), 0.f, (float)S(100, dpi), (float)titleH);
         g.DrawString(L"Browser", -1, &fBrand, rBrowser, &sfL, wd.isDarkMode ? &brWhite : &brDark);
     }
 
@@ -690,7 +715,8 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
 
             for (int i = 0; i < tc; i++) {
                 RECT tr = GetTabRect(W, i, tc, dpi);
-                float tx = (float)tr.left, ty = (float)tr.top, tw = (float)(tr.right - tr.left), th = (float)(tr.bottom - tr.top);
+                float tx = (float)tr.left, ty = (float)tr.top;
+                float tw = (float)(tr.right - tr.left), th = (float)(tr.bottom - tr.top);
                 bool isActive = (i == wd.activeTab);
                 bool isHover  = (i == wd.hoverTabIndex);
 
@@ -718,7 +744,7 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
                     std::wstring displayTitle = tab.title;
                     if (displayTitle.empty() || tab.url == L"LOCAL_NTP" || tab.url == L"about:blank") 
                         displayTitle = L"New Tab"; 
-                    if (tab.url.find(L"blocked by rasfocus") != std::string::npos) 
+                    if (tab.url.find(L"blocked by rasfocus") != std::wstring::npos) 
                         displayTitle = L"Blocked by RasFocus";
                     
                     g.DrawString(displayTitle.c_str(), -1, &fSmall, RectF(titleX, ty, titleW, th), &sfL, &tBrush);
@@ -739,26 +765,31 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
             RECT ntr = GetNewTabBtnRect(W, tc, dpi);
             if (wd.hNewTab) {
                 SolidBrush hb(wd.isDarkMode ? Color(50,255,255,255) : Color(20,0,0,0));
-                g.FillEllipse(&hb, (float)ntr.left, (float)ntr.top, (float)(ntr.right-ntr.left), (float)(ntr.bottom-ntr.top));
+                g.FillEllipse(&hb, (float)ntr.left, (float)ntr.top,
+                    (float)(ntr.right - ntr.left), (float)(ntr.bottom - ntr.top));
             }
-            g.DrawString(L"\xE710", -1, &fIconSm, RectF((float)ntr.left, (float)ntr.top, (float)(ntr.right-ntr.left), (float)(ntr.bottom-ntr.top)), &sfC, &brDim);
+            g.DrawString(L"\xE710", -1, &fIconSm,
+                RectF((float)ntr.left, (float)ntr.top,
+                      (float)(ntr.right-ntr.left), (float)(ntr.bottom-ntr.top)), &sfC, &brDim);
         }
 
         // Toolbar
         {
-            int toolY = titleH;
-            int curX  = S(8, dpi);
-            int btnSz = S(32, dpi);
+            int toolY   = titleH;
+            int curX    = S(8, dpi);
+            int btnSz   = S(32, dpi);
             int btnStep = S(36, dpi);
             float btnHf = (float)toolH;
 
             auto DrawNavBtn = [&](bool hover, bool enabled, const wchar_t* ico, int& x) {
                 if (hover && enabled) {
                     SolidBrush hb(wd.isDarkMode ? Color(50,255,255,255) : Color(20,0,0,0));
-                    g.FillEllipse(&hb, (float)(x+S(2,dpi)), (float)(toolY+S(4,dpi)), (float)S(28,dpi), (float)S(28,dpi));
+                    g.FillEllipse(&hb, (float)(x+S(2,dpi)), (float)(toolY+S(4,dpi)),
+                                  (float)S(28,dpi), (float)S(28,dpi));
                 }
                 SolidBrush ic(enabled ? cTxtPrim : cDivLine);
-                g.DrawString(ico, -1, &fIcon, RectF((float)x, (float)toolY, (float)btnSz, btnHf), &sfC, &ic);
+                g.DrawString(ico, -1, &fIcon,
+                    RectF((float)x, (float)toolY, (float)btnSz, btnHf), &sfC, &ic);
                 x += btnStep;
             };
 
@@ -771,11 +802,11 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
             DrawNavBtn(wd.hRel,  true,    L"\xE72C", curX);
 
             {
-                int addrX = curX + S(4,dpi);
+                int addrX  = curX + S(4, dpi);
                 int rightIX = W - S(38*3 + 12, dpi); 
-                int addrW = rightIX - addrX - S(8,dpi);
-                int addrH = S(30, dpi);
-                int addrY = toolY + (toolH - addrH) / 2;
+                int addrW  = rightIX - addrX - S(8, dpi);
+                int addrH  = S(30, dpi);
+                int addrY  = toolY + (toolH - addrH) / 2;
 
                 SolidBrush addrBg(cAddrBg);
                 Pen addrPen(cAddrBord, 1.0f);
@@ -784,22 +815,27 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
                 g.FillPath(&addrBg, &pill);
                 g.DrawPath(&addrPen, &pill);
 
-                SolidBrush gBrush(wd.isDarkMode ? Color(255, 200, 200, 200) : Color(255, 80, 80, 80));
-                g.DrawString(L"G", -1, &fBrand, RectF((float)addrX + Sf(12.f,dpi), (float)addrY, Sf(20.f,dpi), (float)addrH), &sfC, &gBrush);
+                SolidBrush gBrush(wd.isDarkMode ? Color(255,200,200,200) : Color(255,80,80,80));
+                g.DrawString(L"G", -1, &fBrand,
+                    RectF((float)addrX + Sf(12.f,dpi), (float)addrY, Sf(20.f,dpi), (float)addrH),
+                    &sfC, &gBrush);
 
                 float aiW = Sf(85.f, dpi);
-                float aiH = addrH - Sf(6.f, dpi);
-                float aiX = addrX + addrW - aiW - Sf(3.f, dpi);
-                float aiY = addrY + Sf(3.f, dpi);
+                float aiH = (float)addrH - Sf(6.f, dpi);
+                float aiX = (float)addrX + (float)addrW - aiW - Sf(3.f, dpi);
+                float aiY = (float)addrY + Sf(3.f, dpi);
                 
                 GraphicsPath aiPill;
                 AddRoundRect(aiPill, aiX, aiY, aiW, aiH, Sf(10.f, dpi));
                 
-                LinearGradientBrush aiBg(PointF(aiX, aiY), PointF(aiX + aiW, aiY), Color(255, 12, 168, 176), Color(255, 0, 92, 230));
+                LinearGradientBrush aiBg(
+                    PointF(aiX, aiY), PointF(aiX + aiW, aiY),
+                    Color(255, 12, 168, 176), Color(255, 0, 92, 230));
                 g.FillPath(&aiBg, &aiPill);
                 
                 SolidBrush aiTxt(Color(255, 255, 255, 255));
-                g.DrawString(L"\x2728 AI Mode", -1, &fSmallBd, RectF(aiX, aiY, aiW, aiH), &sfC, &aiTxt);
+                g.DrawString(L"\x2728 AI Mode", -1, &fSmallBd,
+                    RectF(aiX, aiY, aiW, aiH), &sfC, &aiTxt);
             }
 
             // Right Toolbar Icons
@@ -807,17 +843,22 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
             auto DrawRightBtn = [&](bool hover, const wchar_t* ico, int x) {
                 if (hover) {
                     SolidBrush hb(wd.isDarkMode ? Color(50,255,255,255) : Color(20,0,0,0));
-                    g.FillEllipse(&hb, (float)(x+S(2,dpi)), (float)(toolY+S(4,dpi)), (float)S(28,dpi), (float)S(28,dpi));
+                    g.FillEllipse(&hb, (float)(x+S(2,dpi)), (float)(toolY+S(4,dpi)),
+                                  (float)S(28,dpi), (float)S(28,dpi));
                 }
-                g.DrawString(ico, -1, &fIcon, RectF((float)x, (float)toolY, (float)btnSz, btnHf), &sfC, &brPrim);
+                g.DrawString(ico, -1, &fIcon,
+                    RectF((float)x, (float)toolY, (float)btnSz, btnHf), &sfC, &brPrim);
             };
             DrawRightBtn(wd.hProfile, L"\xE77B", rx); rx += btnStep; 
             DrawRightBtn(wd.hExt,     L"\xE9D2", rx); rx += btnStep; 
-            DrawRightBtn(wd.hMenu,    L"\xE712", rx); rx += btnStep; 
+            DrawRightBtn(wd.hMenu,    L"\xE712", rx); 
         }
 
         // Bookmark Bar
-        if (wd.active() && (wd.active()->url == L"LOCAL_NTP" || wd.active()->url == L"about:blank" || wd.active()->url.find(L"blocked by rasfocus") != std::string::npos)) {
+        if (wd.active() && (wd.active()->url == L"LOCAL_NTP" ||
+            wd.active()->url == L"about:blank" ||
+            wd.active()->url.find(L"blocked by rasfocus") != std::wstring::npos))
+        {
             int bmkY = titleH + toolH;
             int bmkH = S(D_BOOKMARK_H, dpi);
             
@@ -829,96 +870,109 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
 
             SolidBrush brTxt(cTxtDim);
             
-            g.DrawString(L"\xE8A4", -1, &fIconSm, RectF(S(15,dpi), (float)bmkY, S(20,dpi), (float)bmkH), &sfC, &brTxt);
-            g.DrawString(L"Web Store", -1, &fSmall, RectF(S(35,dpi), (float)bmkY, S(100,dpi), (float)bmkH), &sfL, &brTxt);
+            g.DrawString(L"\xE8A4", -1, &fIconSm,
+                RectF((float)S(15,dpi), (float)bmkY, (float)S(20,dpi), (float)bmkH), &sfC, &brTxt);
+            g.DrawString(L"Web Store", -1, &fSmall,
+                RectF((float)S(35,dpi), (float)bmkY, (float)S(100,dpi), (float)bmkH), &sfL, &brTxt);
             
-            g.DrawString(L"\xE8A4", -1, &fIconSm, RectF(S(120,dpi), (float)bmkY, S(20,dpi), (float)bmkH), &sfC, &brTxt);
-            g.DrawString(L"RasFocus Admin", -1, &fSmall, RectF(S(140,dpi), (float)bmkY, S(120,dpi), (float)bmkH), &sfL, &brTxt);
+            g.DrawString(L"\xE8A4", -1, &fIconSm,
+                RectF((float)S(120,dpi), (float)bmkY, (float)S(20,dpi), (float)bmkH), &sfC, &brTxt);
+            g.DrawString(L"RasFocus Admin", -1, &fSmall,
+                RectF((float)S(140,dpi), (float)bmkY, (float)S(120,dpi), (float)bmkH), &sfL, &brTxt);
             
-            g.DrawString(L"\xE838", -1, &fIconSm, RectF(W - S(130,dpi), (float)bmkY, S(20,dpi), (float)bmkH), &sfC, &brTxt);
-            g.DrawString(L"All Bookmarks", -1, &fSmall, RectF(W - S(110,dpi), (float)bmkY, S(100,dpi), (float)bmkH), &sfL, &brTxt);
+            g.DrawString(L"\xE838", -1, &fIconSm,
+                RectF((float)(W - S(130,dpi)), (float)bmkY, (float)S(20,dpi), (float)bmkH), &sfC, &brTxt);
+            g.DrawString(L"All Bookmarks", -1, &fSmall,
+                RectF((float)(W - S(110,dpi)), (float)bmkY, (float)S(100,dpi), (float)bmkH), &sfL, &brTxt);
         }
-    } // End of !g_isPureViewerMode check
+    } // End of !g_isPureViewerMode
 
     // ── 🟢 3-DOT MENU OVERLAY (CHROME STYLE) ──────────────────
     if (wd.isMenuOpen && !g_isPureViewerMode) {
-        float menuW = S(320, dpi);
-        int itemH = S(34, dpi);
-        float mX = W - menuW - S(10, dpi);
-        float mY = titleH + toolH - S(5, dpi);
+        float menuW = (float)S(320, dpi);
+        int   itemH = S(34, dpi);
+        float mX    = (float)W - menuW - (float)S(10, dpi);
+        float mY    = GetMenuY(hWnd, dpi);   // ← FIX: use shared helper
 
         struct MenuItem { int type; const wchar_t* icon; const wchar_t* text; const wchar_t* shortcut; };
-        // type 0: normal item, type 1: divider line, type 2: profile block
         std::vector<MenuItem> menuItems = {
-            { 2, L"\xE77B", L"Rasel Mia", L"Signed in" },  // 0
-            { 1, L"", L"", L"" },
-            { 0, L"\xE710", L"New tab", L"Ctrl+T" },       // 1
-            { 0, L"\xE727", L"New window", L"Ctrl+N" },    // 2
-            { 1, L"", L"", L"" },
-            { 0, L"\xE81C", L"History", L"Ctrl+H" },       // 3
-            { 0, L"\xE896", L"Downloads", L"Ctrl+J" },     // 4
-            { 0, L"\xE8A4", L"Bookmarks and lists", L"" }, // 5
-            { 0, L"\xE9D2", L"Extensions", L"" },          // 6
-            { 1, L"", L"", L"" },
-            { 0, L"\x2728", L"Open Gemini AI", L"" },      // 7
-            { 0, L"\xE713", L"Settings", L"" },            // 8
-            { 0, L"\xE7E8", L"Exit", L"Alt+F4" }           // 9
+            { 2, L"\xE77B", L"Rasel Mia",            L"Signed in"  },
+            { 1, L"",       L"",                      L""           },
+            { 0, L"\xE710", L"New tab",               L"Ctrl+T"     },
+            { 0, L"\xE727", L"New window",            L"Ctrl+N"     },
+            { 1, L"",       L"",                      L""           },
+            { 0, L"\xE81C", L"History",               L"Ctrl+H"     },
+            { 0, L"\xE896", L"Downloads",             L"Ctrl+J"     },
+            { 0, L"\xE8A4", L"Bookmarks and lists",   L""           },
+            { 0, L"\xE9D2", L"Extensions",            L""           },
+            { 1, L"",       L"",                      L""           },
+            { 0, L"\x2728", L"Open Gemini AI",        L""           },
+            { 0, L"\xE713", L"Settings",              L""           },
+            { 0, L"\xE7E8", L"Exit",                  L"Alt+F4"     }
         };
 
-        float totalH = S(10, dpi); 
+        float totalH = (float)S(10, dpi); 
         for (const auto& mi : menuItems) {
-            if (mi.type == 2) totalH += S(54, dpi);
-            else if (mi.type == 1) totalH += S(11, dpi);
-            else totalH += itemH;
+            if      (mi.type == 2) totalH += (float)S(54, dpi);
+            else if (mi.type == 1) totalH += (float)S(11, dpi);
+            else                   totalH += (float)itemH;
         }
-        totalH += S(10, dpi);
+        totalH += (float)S(10, dpi);
 
         GraphicsPath mPath;
         AddRoundRect(mPath, mX, mY, menuW, totalH, Sf(10.f, dpi));
         
-        // Menu Shadow
         SolidBrush shadowBr(Color(60, 0, 0, 0));
-        g.FillRectangle(&shadowBr, mX+4, mY+4, menuW, totalH);
+        g.FillRectangle(&shadowBr, mX + 4, mY + 4, menuW, totalH);
 
-        // Menu Background
         SolidBrush mBg(wd.isDarkMode ? Color(255, 41, 42, 45) : Color(255, 255, 255, 255));
         g.FillPath(&mBg, &mPath);
         Pen mBorder(wd.isDarkMode ? Color(255, 80, 80, 80) : Color(255, 200, 200, 200), 1.0f);
         g.DrawPath(&mBorder, &mPath);
 
         SolidBrush hHover(wd.isDarkMode ? Color(255, 65, 66, 70) : Color(255, 240, 240, 240));
-        SolidBrush txtBr(wd.isDarkMode ? Color(255, 230, 230, 230) : Color(255, 40, 40, 40));
-        SolidBrush dimBr(wd.isDarkMode ? Color(255, 150, 150, 150) : Color(255, 120, 120, 120));
+        SolidBrush txtBr (wd.isDarkMode ? Color(255, 230, 230, 230) : Color(255, 40, 40, 40));
+        SolidBrush dimBr (wd.isDarkMode ? Color(255, 150, 150, 150) : Color(255, 120, 120, 120));
         SolidBrush accentBr(Color(255, 0, 102, 204));
         
-        float currY = mY + S(10, dpi);
+        float currY  = mY + (float)S(10, dpi);
         int itemIndex = 0;
 
         for (const auto& mi : menuItems) {
             if (mi.type == 2) {
-                // Draw Profile Area
-                if (itemIndex == wd.hoverMenuIdx) g.FillRectangle(&hHover, mX + 2, currY, menuW - 4, (float)S(54, dpi));
-                g.FillEllipse(&accentBr, mX + S(15, dpi), currY + S(10, dpi), (float)S(34, dpi), (float)S(34, dpi));
+                if (itemIndex == wd.hoverMenuIdx)
+                    g.FillRectangle(&hHover, mX + 2, currY, menuW - 4, (float)S(54, dpi));
+                g.FillEllipse(&accentBr, mX + (float)S(15, dpi), currY + (float)S(10, dpi),
+                              (float)S(34, dpi), (float)S(34, dpi));
                 SolidBrush wBr(Color(255,255,255,255));
-                g.DrawString(mi.icon, -1, &fIcon, RectF(mX + S(15, dpi), currY + S(10, dpi), S(34, dpi), S(34, dpi)), &sfC, &wBr);
-                g.DrawString(mi.text, -1, &fSmallBd, RectF(mX + S(65, dpi), currY, menuW - S(75, dpi), S(30, dpi)), &sfL, &txtBr);
-                g.DrawString(mi.shortcut, -1, &fSmall, RectF(mX + S(65, dpi), currY + S(22, dpi), menuW - S(75, dpi), S(20, dpi)), &sfL, &dimBr);
-                currY += S(54, dpi);
+                g.DrawString(mi.icon, -1, &fIcon,
+                    RectF(mX + (float)S(15,dpi), currY + (float)S(10,dpi),
+                          (float)S(34,dpi), (float)S(34,dpi)), &sfC, &wBr);
+                g.DrawString(mi.text, -1, &fSmallBd,
+                    RectF(mX + (float)S(65,dpi), currY, menuW - (float)S(75,dpi), (float)S(30,dpi)),
+                    &sfL, &txtBr);
+                g.DrawString(mi.shortcut, -1, &fSmall,
+                    RectF(mX + (float)S(65,dpi), currY + (float)S(22,dpi),
+                          menuW - (float)S(75,dpi), (float)S(20,dpi)), &sfL, &dimBr);
+                currY += (float)S(54, dpi);
                 itemIndex++;
             } 
             else if (mi.type == 1) {
-                // Draw Divider
-                currY += S(5, dpi);
+                currY += (float)S(5, dpi);
                 g.DrawLine(&mBorder, mX, currY, mX + menuW, currY);
-                currY += S(6, dpi);
+                currY += (float)S(6, dpi);
             } 
             else {
-                // Draw Menu Action Items
-                if (itemIndex == wd.hoverMenuIdx) g.FillRectangle(&hHover, mX + 2, currY, menuW - 4, (float)itemH);
-                g.DrawString(mi.icon, -1, &fIconSm, RectF(mX + S(15, dpi), currY, S(25, dpi), itemH), &sfL, &txtBr);
-                g.DrawString(mi.text, -1, &fSmall, RectF(mX + S(55, dpi), currY, menuW - S(100, dpi), itemH), &sfL, &txtBr);
-                g.DrawString(mi.shortcut, -1, &fSmall, RectF(mX, currY, menuW - S(20, dpi), itemH), &sfR, &dimBr);
-                currY += itemH;
+                if (itemIndex == wd.hoverMenuIdx)
+                    g.FillRectangle(&hHover, mX + 2, currY, menuW - 4, (float)itemH);
+                g.DrawString(mi.icon, -1, &fIconSm,
+                    RectF(mX + (float)S(15,dpi), currY, (float)S(25,dpi), (float)itemH), &sfL, &txtBr);
+                g.DrawString(mi.text, -1, &fSmall,
+                    RectF(mX + (float)S(55,dpi), currY, menuW - (float)S(100,dpi), (float)itemH),
+                    &sfL, &txtBr);
+                g.DrawString(mi.shortcut, -1, &fSmall,
+                    RectF(mX, currY, menuW - (float)S(20,dpi), (float)itemH), &sfR, &dimBr);
+                currY += (float)itemH;
                 itemIndex++;
             }
         }
@@ -931,7 +985,7 @@ void DrawBrowser(HWND hWnd, HDC hdc) {
 
     DoubleBufferedPaint(hWnd, hdc, [&](HDC memDC, int W, int H) {
         bool dark = g_windows[hWnd].isDarkMode;
-        HBRUSH hbg = CreateSolidBrush(dark ? RGB(30, 30, 30) : RGB(230, 230, 235)); 
+        HBRUSH hbg = CreateSolidBrush(dark ? RGB(30,30,30) : RGB(230,230,235)); 
         RECT fr = { 0, 0, W, H };
         FillRect(memDC, &fr, hbg);
         DeleteObject(hbg);
@@ -970,7 +1024,8 @@ static void SwitchToTab(HWND hWnd, int idx) {
     }
 
     if (wd.hAddressBar) {
-        if (tab.url == L"LOCAL_NTP" || tab.url == L"about:blank" || tab.url.find(L"blocked by rasfocus") != std::string::npos) 
+        if (tab.url == L"LOCAL_NTP" || tab.url == L"about:blank" ||
+            tab.url.find(L"blocked by rasfocus") != std::wstring::npos) 
             SetWindowTextW(wd.hAddressBar, L"");
         else 
             SetWindowTextW(wd.hAddressBar, tab.url.c_str());
@@ -1016,11 +1071,12 @@ class TabControllerHandler : public ICoreWebView2CreateCoreWebView2ControllerCom
     ULONG        m_ref = 1;
 
 public:
-    TabControllerHandler(HWND h, int idx, std::wstring url) : m_hWnd(h), m_tabIdx(idx), m_startUrl(std::move(url)) {}
+    TabControllerHandler(HWND h, int idx, std::wstring url)
+        : m_hWnd(h), m_tabIdx(idx), m_startUrl(std::move(url)) {}
 
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override { *ppv = this; return S_OK; }
-    ULONG STDMETHODCALLTYPE AddRef()  override { return InterlockedIncrement(&m_ref); }
-    ULONG STDMETHODCALLTYPE Release() override {
+    ULONG   STDMETHODCALLTYPE AddRef()  override { return InterlockedIncrement(&m_ref); }
+    ULONG   STDMETHODCALLTYPE Release() override {
         ULONG r = InterlockedDecrement(&m_ref);
         if (!r) delete this; return r;
     }
@@ -1037,7 +1093,9 @@ public:
 
         ComPtr<ICoreWebView2Controller2> ctl2;
         if (SUCCEEDED(ctl->QueryInterface(IID_PPV_ARGS(&ctl2)))) {
-            COREWEBVIEW2_COLOR bg = wd.isDarkMode ? COREWEBVIEW2_COLOR{255, 30, 30, 30} : COREWEBVIEW2_COLOR{255, 255, 255, 255};
+            COREWEBVIEW2_COLOR bg = wd.isDarkMode
+                ? COREWEBVIEW2_COLOR{255, 30, 30, 30}
+                : COREWEBVIEW2_COLOR{255, 255, 255, 255};
             ctl2->put_DefaultBackgroundColor(bg);
         }
 
@@ -1048,23 +1106,23 @@ public:
             settings->put_IsWebMessageEnabled(TRUE);
             settings->put_AreDefaultContextMenusEnabled(TRUE);
             settings->put_IsStatusBarEnabled(TRUE);
-            
-            // Fix for Gemini/Facebook Local Storage
-           
 
-            // 🟢 Fix for Google Login: Update UserAgent cleanly
             ComPtr<ICoreWebView2Settings2> s2;
             if (SUCCEEDED(settings->QueryInterface(IID_PPV_ARGS(&s2)))) {
-                s2->put_UserAgent(L"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
+                s2->put_UserAgent(
+                    L"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    L"AppleWebKit/537.36 (KHTML, like Gecko) "
+                    L"Chrome/124.0.0.0 Safari/537.36");
             }
         }
 
-        // 🟢 MAGIC FIX: Hide WebView2 identity to bypass Google Anti-Bot
         tab.webview->AddScriptToExecuteOnDocumentCreated(
-            L"Object.defineProperty(navigator, 'webdriver', {get: () => false}); window.chrome = { runtime: {} };",
+            L"Object.defineProperty(navigator, 'webdriver', {get: () => false});"
+            L"window.chrome = { runtime: {} };",
             nullptr);
 
-        tab.webview->add_NavigationStarting(Callback<ICoreWebView2NavigationStartingEventHandler>(
+        tab.webview->add_NavigationStarting(
+            Callback<ICoreWebView2NavigationStartingEventHandler>(
             [this](ICoreWebView2*, ICoreWebView2NavigationStartingEventArgs* args) -> HRESULT {
                 LPWSTR uri = nullptr; args->get_Uri(&uri);
                 if (uri) {
@@ -1074,9 +1132,10 @@ public:
                         if (g_windows.count(m_hWnd)) {
                             auto& w = g_windows[m_hWnd];
                             if (w.hAddressBar) SetWindowTextW(w.hAddressBar, L"blocked by rasfocus");
-                            if (m_tabIdx >= 0 && m_tabIdx < w.tabs.size()) {
+                            if (m_tabIdx >= 0 && m_tabIdx < (int)w.tabs.size()) {
                                 w.tabs[m_tabIdx].url = L"blocked by rasfocus";
-                                w.tabs[m_tabIdx].webview->NavigateToString(GetBlocked_HTML(w.isDarkMode).c_str());
+                                w.tabs[m_tabIdx].webview->NavigateToString(
+                                    GetBlocked_HTML(w.isDarkMode).c_str());
                             }
                         }
                     }
@@ -1085,12 +1144,14 @@ public:
                 return S_OK;
             }).Get(), nullptr);
 
-        tab.webview->add_NewWindowRequested(Callback<ICoreWebView2NewWindowRequestedEventHandler>(
-            [](ICoreWebView2* sender, ICoreWebView2NewWindowRequestedEventArgs* args) -> HRESULT {
+        tab.webview->add_NewWindowRequested(
+            Callback<ICoreWebView2NewWindowRequestedEventHandler>(
+            [](ICoreWebView2*, ICoreWebView2NewWindowRequestedEventArgs*) -> HRESULT {
                 return S_OK;
             }).Get(), nullptr);
 
-        tab.webview->add_DocumentTitleChanged(Callback<ICoreWebView2DocumentTitleChangedEventHandler>(
+        tab.webview->add_DocumentTitleChanged(
+            Callback<ICoreWebView2DocumentTitleChangedEventHandler>(
             [this](ICoreWebView2* sender, IUnknown*) -> HRESULT {
                 if (!g_windows.count(m_hWnd)) return S_OK;
                 auto& w = g_windows[m_hWnd];
@@ -1105,7 +1166,8 @@ public:
                 return S_OK;
             }).Get(), nullptr);
 
-        tab.webview->add_SourceChanged(Callback<ICoreWebView2SourceChangedEventHandler>(
+        tab.webview->add_SourceChanged(
+            Callback<ICoreWebView2SourceChangedEventHandler>(
             [this](ICoreWebView2* sender, ICoreWebView2SourceChangedEventArgs*) -> HRESULT {
                 if (!g_windows.count(m_hWnd)) return S_OK;
                 auto& w = g_windows[m_hWnd];
@@ -1116,7 +1178,8 @@ public:
                     w.tabs[m_tabIdx].url = urlStr;
                     
                     if (w.hAddressBar) {
-                        if (urlStr == L"LOCAL_NTP" || urlStr == L"about:blank" || urlStr.find(L"blocked by rasfocus") != std::string::npos) {
+                        if (urlStr == L"LOCAL_NTP" || urlStr == L"about:blank" ||
+                            urlStr.find(L"blocked by rasfocus") != std::wstring::npos) {
                             SetWindowTextW(w.hAddressBar, L"");
                         } else {
                             SetWindowTextW(w.hAddressBar, src);
@@ -1133,9 +1196,9 @@ public:
                 return S_OK;
             }).Get(), nullptr);
 
-        // 🟢 INJECT AI FILTER SETTINGS INTO WEBVIEW (Runs smoothly without visual glitch)
-        tab.webview->add_NavigationCompleted(Callback<ICoreWebView2NavigationCompletedEventHandler>(
-            [this](ICoreWebView2* sender, ICoreWebView2NavigationCompletedEventArgs* args) -> HRESULT {
+        tab.webview->add_NavigationCompleted(
+            Callback<ICoreWebView2NavigationCompletedEventHandler>(
+            [this](ICoreWebView2* sender, ICoreWebView2NavigationCompletedEventArgs*) -> HRESULT {
                 if (!g_windows.count(m_hWnd)) return S_OK;
                 auto& w = g_windows[m_hWnd];
                 if (m_tabIdx >= (int)w.tabs.size()) return S_OK;
@@ -1147,7 +1210,8 @@ public:
                 return S_OK;
             }).Get(), nullptr);
 
-        tab.webview->add_HistoryChanged(Callback<ICoreWebView2HistoryChangedEventHandler>(
+        tab.webview->add_HistoryChanged(
+            Callback<ICoreWebView2HistoryChangedEventHandler>(
             [this](ICoreWebView2* sender, IUnknown*) -> HRESULT {
                 if (!g_windows.count(m_hWnd)) return S_OK;
                 auto& w = g_windows[m_hWnd];
@@ -1190,15 +1254,15 @@ public:
 // WEBVIEW2 ENVIRONMENT HANDLER
 // ─────────────────────────────────────────────────────────────────────────────
 class EnvCompletedHandler : public ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler {
-    HWND m_hWnd;
-    int  m_tabIdx;
+    HWND  m_hWnd;
+    int   m_tabIdx;
     ULONG m_ref = 1;
 
 public:
     EnvCompletedHandler(HWND h, int idx) : m_hWnd(h), m_tabIdx(idx) {}
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID, void** ppv) override { *ppv = this; return S_OK; }
-    ULONG STDMETHODCALLTYPE AddRef()  override { return InterlockedIncrement(&m_ref); }
-    ULONG STDMETHODCALLTYPE Release() override {
+    ULONG   STDMETHODCALLTYPE AddRef()  override { return InterlockedIncrement(&m_ref); }
+    ULONG   STDMETHODCALLTYPE Release() override {
         ULONG r = InterlockedDecrement(&m_ref);
         if (!r) delete this; return r;
     }
@@ -1208,7 +1272,8 @@ public:
         if (!g_windows.count(m_hWnd)) return S_OK;
         auto& wd  = g_windows[m_hWnd];
         auto& tab = wd.tabs[m_tabIdx];
-        g_sharedEnv->CreateCoreWebView2Controller(m_hWnd, new TabControllerHandler(m_hWnd, m_tabIdx, tab.url));
+        g_sharedEnv->CreateCoreWebView2Controller(
+            m_hWnd, new TabControllerHandler(m_hWnd, m_tabIdx, tab.url));
         return S_OK;
     }
 };
@@ -1219,7 +1284,8 @@ static void CreateWebViewForTab(HWND hWnd, int tabIdx) {
     auto& tab = wd.tabs[tabIdx];
 
     if (g_sharedEnv) {
-        g_sharedEnv->CreateCoreWebView2Controller(hWnd, new TabControllerHandler(hWnd, tabIdx, tab.url));
+        g_sharedEnv->CreateCoreWebView2Controller(
+            hWnd, new TabControllerHandler(hWnd, tabIdx, tab.url));
     } else {
         auto options = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
         options->put_AdditionalBrowserArguments(
@@ -1227,7 +1293,7 @@ static void CreateWebViewForTab(HWND hWnd, int tabIdx) {
             L"--enable-gpu-rasterization "
             L"--enable-zero-copy "
             L"--disable-features=Translate "
-            L"--disable-blink-features=AutomationControlled" // 🟢 CRITICAL: Fixes Google Login Block!
+            L"--disable-blink-features=AutomationControlled"
         );
 
         wchar_t appDataPath[MAX_PATH];
@@ -1239,7 +1305,8 @@ static void CreateWebViewForTab(HWND hWnd, int tabIdx) {
             nullptr, udDir.c_str(), options.Get(), new EnvCompletedHandler(hWnd, tabIdx));
 
         if (FAILED(hr)) {
-            CreateCoreWebView2EnvironmentWithOptions(nullptr, nullptr, nullptr, new EnvCompletedHandler(hWnd, tabIdx));
+            CreateCoreWebView2EnvironmentWithOptions(
+                nullptr, nullptr, nullptr, new EnvCompletedHandler(hWnd, tabIdx));
         }
     }
 }
@@ -1270,18 +1337,18 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
             POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
             ScreenToClient(hWnd, &pt);
             RECT cr; GetClientRect(hWnd, &cr);
-            UINT dpi = GetWndDpi(hWnd);
-            int border = S(8, dpi);
+            UINT dpi    = GetWndDpi(hWnd);
+            int  border = S(8, dpi);
 
             if (!g_windows.count(hWnd) || !g_windows[hWnd].isFullScreen) {
-                if (pt.y < border && pt.x < border)                  return HTTOPLEFT;
-                if (pt.y < border && pt.x >= cr.right-border)         return HTTOPRIGHT;
-                if (pt.y >= cr.bottom-border && pt.x < border)        return HTBOTTOMLEFT;
-                if (pt.y >= cr.bottom-border && pt.x >= cr.right-border) return HTBOTTOMRIGHT;
-                if (pt.y < border)                return HTTOP;
-                if (pt.y >= cr.bottom-border)     return HTBOTTOM;
-                if (pt.x < border)                return HTLEFT;
-                if (pt.x >= cr.right-border)      return HTRIGHT;
+                if (pt.y < border && pt.x < border)                          return HTTOPLEFT;
+                if (pt.y < border && pt.x >= cr.right - border)              return HTTOPRIGHT;
+                if (pt.y >= cr.bottom - border && pt.x < border)             return HTBOTTOMLEFT;
+                if (pt.y >= cr.bottom - border && pt.x >= cr.right - border) return HTBOTTOMRIGHT;
+                if (pt.y < border)              return HTTOP;
+                if (pt.y >= cr.bottom - border) return HTBOTTOM;
+                if (pt.x < border)              return HTLEFT;
+                if (pt.x >= cr.right - border)  return HTRIGHT;
 
                 if (g_isPureViewerMode) {
                     int winBtnX = cr.right - WinBtnW(dpi) * 5; 
@@ -1299,9 +1366,9 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                     bool onTab = false;
                     auto& wd = g_windows[hWnd];
                     int tc = (int)wd.tabs.size();
-                    for(int i=0; i<tc; i++) {
+                    for (int i = 0; i < tc; i++) {
                         RECT tr = GetTabRect(cr.right, i, tc, dpi);
-                        if(pt.x >= tr.left && pt.x < tr.right) { onTab = true; break; }
+                        if (pt.x >= tr.left && pt.x < tr.right) { onTab = true; break; }
                     }
                     if (onTab || pt.x < LogoW(dpi)) return HTCLIENT; 
                     
@@ -1368,9 +1435,8 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
         RepositionAddressBar(hWnd);
         RECT wvr = GetWebViewRect(hWnd);
         for (int i = 0; i < (int)wd.tabs.size(); i++)
-            if (wd.tabs[i].controller)
-                if (i == wd.activeTab)
-                    wd.tabs[i].controller->put_Bounds(wvr);
+            if (wd.tabs[i].controller && i == wd.activeTab)
+                wd.tabs[i].controller->put_Bounds(wvr);
         InvalidateRect(hWnd, NULL, FALSE);
         break;
     }
@@ -1407,7 +1473,7 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
         int toolY   = titleH;
 
         {
-            int bx = W - winBtnW*5; 
+            int bx = W - winBtnW * 5; 
             bool p  = (y < titleH && x >= bx             && x < bx + winBtnW);
             bool dk = (y < titleH && x >= bx + winBtnW   && x < bx + winBtnW*2);
             bool nm = (y < titleH && x >= bx + winBtnW*2 && x < bx + winBtnW*3);
@@ -1423,7 +1489,7 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                 int prev = wd.hoverTabIndex; wd.hoverTabIndex = -1;
                 for (int i = 0; i < tc; i++) {
                     RECT tr = GetTabRect(W, i, tc, dpi);
-                    if (x >= tr.left && x < tr.right && y >= tr.top  && y < tr.bottom)
+                    if (x >= tr.left && x < tr.right && y >= tr.top && y < tr.bottom)
                     { wd.hoverTabIndex = i; break; }
                 }
                 if (prev != wd.hoverTabIndex) dirty = true;
@@ -1452,29 +1518,30 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                     { wd.hProfile=pr; wd.hExt=e; wd.hMenu=m; dirty=true; }
             }
             
-            // 🟢 Menu Overlay Hover Logic
+            // 🟢 Menu Overlay Hover Logic — FIX: mY now computed via GetMenuY()
             if (wd.isMenuOpen) {
-                float menuW = S(320, dpi);
-                float mX = W - menuW - S(10, dpi);
-                float btnHf = (float)ToolbarH(dpi);
-                int itemH = S(34, dpi);
-                float currY = mY + S(10, dpi);
-                int hoverIdx = -1;
-                int itemIndex = 0;
+                float menuW  = (float)S(320, dpi);
+                float mX     = (float)W - menuW - (float)S(10, dpi);
+                float mY     = GetMenuY(hWnd, dpi);   // ← WAS UNDECLARED
+                int   itemH  = S(34, dpi);
+                float currY  = mY + (float)S(10, dpi);
+                int   hoverIdx   = -1;
+                int   itemIndex  = 0;
                 
-                int types[] = { 2, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0 }; // 13 items total
-                
-                for (int t : types) {
-                    float h = (t == 2) ? S(54, dpi) : (t == 1) ? S(11, dpi) : itemH;
+                for (int i = 0; i < kMenuTypeCount; i++) {
+                    int t = kMenuTypes[i];
+                    float h = (t == 2) ? (float)S(54,dpi) : (t == 1) ? (float)S(11,dpi) : (float)itemH;
                     if (t != 1) {
-                        if (x >= mX && x <= mX + menuW && y >= currY && y <= currY + h) {
+                        if ((float)x >= mX && (float)x <= mX + menuW &&
+                            (float)y >= currY && (float)y <= currY + h)
                             hoverIdx = itemIndex;
-                        }
                         itemIndex++;
                     }
                     currY += h;
                 }
-                if (x < mX || x > mX + menuW || y < mY || y > currY) hoverIdx = -1;
+                // Dismiss hover if outside menu
+                if ((float)x < mX || (float)x > mX + menuW || (float)y < mY || (float)y > currY)
+                    hoverIdx = -1;
 
                 if (wd.hoverMenuIdx != hoverIdx) {
                     wd.hoverMenuIdx = hoverIdx;
@@ -1486,7 +1553,7 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
         if (dirty) {
             RECT r = { 0, 0, W, navH };
             InvalidateRect(hWnd, &r, FALSE);
-            if(wd.isMenuOpen) InvalidateRect(hWnd, NULL, FALSE);
+            if (wd.isMenuOpen) InvalidateRect(hWnd, NULL, FALSE);
         }
         break;
     }
@@ -1501,7 +1568,7 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
             RECT cr; GetClientRect(hWnd, &cr);
             cr.bottom = NavTotalH(hWnd);
             InvalidateRect(hWnd, &cr, FALSE);
-            if(wd.isMenuOpen) InvalidateRect(hWnd, NULL, FALSE);
+            if (wd.isMenuOpen) InvalidateRect(hWnd, NULL, FALSE);
         }
         break;
     }
@@ -1514,50 +1581,50 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
         RECT cr; GetClientRect(hWnd, &cr); int W = cr.right;
 
         if (wd.hMin)   { ShowWindow(hWnd, SW_MINIMIZE); break; }
-        if (wd.hMax)   { ShowWindow(hWnd, IsZoomed(hWnd)?SW_RESTORE:SW_MAXIMIZE); break; }
+        if (wd.hMax)   { ShowWindow(hWnd, IsZoomed(hWnd) ? SW_RESTORE : SW_MAXIMIZE); break; }
         if (wd.hClose) { DestroyWindow(hWnd); break; }
 
         if (!g_isPureViewerMode) {
             
             // 🟢 Handle Menu Open/Click interactions
             if (wd.isMenuOpen) {
-                float menuW = S(320, dpi);
-                float mX = W - menuW - S(10, dpi);
-                float mY = TitleBarH(dpi) + ToolbarH(dpi) - S(5, dpi);
+                float menuW = (float)S(320, dpi);
+                float mX    = (float)W - menuW - (float)S(10, dpi);
+                float mY    = GetMenuY(hWnd, dpi);   // ← WAS UNDECLARED
                 
-                int itemH = S(34, dpi);
-                float currY = mY + S(10, dpi);
-                int clickIdx = -1;
-                int itemIndex = 0;
-                int types[] = { 2, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0 }; 
+                int   itemH     = S(34, dpi);
+                float currY     = mY + (float)S(10, dpi);
+                int   clickIdx  = -1;
+                int   itemIndex = 0;
                 
-                for (int t : types) {
-                    float h = (t == 2) ? S(54, dpi) : (t == 1) ? S(11, dpi) : itemH;
+                for (int i = 0; i < kMenuTypeCount; i++) {
+                    int t = kMenuTypes[i];
+                    float h = (t == 2) ? (float)S(54,dpi) : (t == 1) ? (float)S(11,dpi) : (float)itemH;
                     if (t != 1) {
-                        if (x >= mX && x <= mX + menuW && y >= currY && y <= currY + h) clickIdx = itemIndex;
+                        if ((float)x >= mX && (float)x <= mX + menuW &&
+                            (float)y >= currY && (float)y <= currY + h)
+                            clickIdx = itemIndex;
                         itemIndex++;
                     }
                     currY += h;
                 }
 
-                // Any click closes the menu
-                wd.isMenuOpen = false;
+                wd.isMenuOpen   = false;
                 wd.hoverMenuIdx = -1;
                 InvalidateRect(hWnd, NULL, TRUE);
 
-                // Execute Menu Option
                 if (clickIdx != -1) {
-                    if (clickIdx == 1) AddTab(hWnd, L"LOCAL_NTP"); // New Tab
-                    else if (clickIdx == 2) LaunchMiniBrowser(L"LOCAL_NTP", L"New Window"); // New Window
-                    else if (clickIdx == 3) MessageBoxW(hWnd, L"History Panel will appear here.", L"History", MB_OK);
-                    else if (clickIdx == 4) MessageBoxW(hWnd, L"Downloads Panel will appear here.", L"Downloads", MB_OK);
-                    else if (clickIdx == 5) MessageBoxW(hWnd, L"Bookmarks Panel will appear here.", L"Bookmarks", MB_OK);
-                    else if (clickIdx == 6) MessageBoxW(hWnd, L"Extensions Panel will appear here.", L"Extensions", MB_OK);
-                    else if (clickIdx == 7) AddTab(hWnd, L"https://gemini.google.com/app"); // 🟢 Open Gemini AI
-                    else if (clickIdx == 8) ShellExecuteW(NULL, L"open", L"ms-settings:defaultapps", NULL, NULL, SW_SHOWNORMAL); // Settings
-                    else if (clickIdx == 9) DestroyWindow(hWnd); // Exit
+                    if      (clickIdx == 1) AddTab(hWnd, L"LOCAL_NTP");
+                    else if (clickIdx == 2) LaunchMiniBrowser(L"LOCAL_NTP", L"New Window");
+                    else if (clickIdx == 3) MessageBoxW(hWnd, L"History Panel will appear here.",    L"History",     MB_OK);
+                    else if (clickIdx == 4) MessageBoxW(hWnd, L"Downloads Panel will appear here.", L"Downloads",   MB_OK);
+                    else if (clickIdx == 5) MessageBoxW(hWnd, L"Bookmarks Panel will appear here.", L"Bookmarks",   MB_OK);
+                    else if (clickIdx == 6) MessageBoxW(hWnd, L"Extensions Panel will appear here.",L"Extensions",  MB_OK);
+                    else if (clickIdx == 7) AddTab(hWnd, L"https://gemini.google.com/app");
+                    else if (clickIdx == 8) ShellExecuteW(NULL, L"open", L"ms-settings:defaultapps", NULL, NULL, SW_SHOWNORMAL);
+                    else if (clickIdx == 9) DestroyWindow(hWnd);
                     
-                    return 0; // Click consumed by menu
+                    return 0;
                 }
             }
 
@@ -1581,10 +1648,9 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                 if (wd.hRel  && tab->webview)                 tab->webview->Reload();
             }
 
-            if (wd.hProfile) MessageBoxW(hWnd, L"Profile menu will appear here.", L"Profile", MB_OK|MB_ICONINFORMATION);
+            if (wd.hProfile) MessageBoxW(hWnd, L"Profile menu will appear here.",    L"Profile",    MB_OK|MB_ICONINFORMATION);
             if (wd.hExt)     MessageBoxW(hWnd, L"Extensions menu will appear here.", L"Extensions", MB_OK|MB_ICONINFORMATION);
             
-            // 🟢 Handle 3-Dot Toggle
             if (wd.hMenu) { 
                 wd.isMenuOpen = !wd.isMenuOpen;
                 InvalidateRect(hWnd, NULL, TRUE);
@@ -1594,7 +1660,8 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 
         if (wd.hPin) { 
             wd.isPinned = !wd.isPinned;
-            SetWindowPos(hWnd, wd.isPinned ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+            SetWindowPos(hWnd, wd.isPinned ? HWND_TOPMOST : HWND_NOTOPMOST,
+                0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
             InvalidateRect(hWnd, NULL, TRUE);
         }
         
@@ -1603,14 +1670,16 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
             if (wd.active() && wd.active()->controller) {
                 ComPtr<ICoreWebView2Controller2> ctl2;
                 if (SUCCEEDED(wd.active()->controller->QueryInterface(IID_PPV_ARGS(&ctl2)))) {
-                    COREWEBVIEW2_COLOR bg = wd.isDarkMode ? COREWEBVIEW2_COLOR{255, 30, 30, 30} : COREWEBVIEW2_COLOR{255, 255, 255, 255};
+                    COREWEBVIEW2_COLOR bg = wd.isDarkMode
+                        ? COREWEBVIEW2_COLOR{255, 30, 30, 30}
+                        : COREWEBVIEW2_COLOR{255, 255, 255, 255};
                     ctl2->put_DefaultBackgroundColor(bg);
                 }
                 
                 std::wstring url = wd.active()->url;
                 if ((url == L"LOCAL_NTP" || url == L"about:blank") && wd.active()->webview) {
                     wd.active()->webview->NavigateToString(GetLocalNTP_HTML(wd.isDarkMode).c_str());
-                } else if (url.find(L"blocked by rasfocus") != std::string::npos && wd.active()->webview) {
+                } else if (url.find(L"blocked by rasfocus") != std::wstring::npos && wd.active()->webview) {
                     wd.active()->webview->NavigateToString(GetBlocked_HTML(wd.isDarkMode).c_str());
                 }
             }
@@ -1642,9 +1711,9 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
         MONITORINFO mi = { sizeof(mi) };
         if (GetMonitorInfo(hMonitor, &mi)) {
             mm->ptMaxPosition.x = mi.rcWork.left - mi.rcMonitor.left;
-            mm->ptMaxPosition.y = mi.rcWork.top - mi.rcMonitor.top;
-            mm->ptMaxSize.x = mi.rcWork.right - mi.rcWork.left;
-            mm->ptMaxSize.y = (mi.rcWork.bottom - mi.rcWork.top) - 2; 
+            mm->ptMaxPosition.y = mi.rcWork.top  - mi.rcMonitor.top;
+            mm->ptMaxSize.x     = mi.rcWork.right  - mi.rcWork.left;
+            mm->ptMaxSize.y     = (mi.rcWork.bottom - mi.rcWork.top) - 2; 
         }
         return 0;
     }
