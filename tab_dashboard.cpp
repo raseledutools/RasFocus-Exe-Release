@@ -5,7 +5,7 @@
 #pragma warning(disable : 4267)
 
 #include "tab_dashboard.h"
-#include "mini_browser.h" // 🟢 FIX: লিংকার এরর এড়াতে এটি অবশ্যই থাকতে হবে
+#include "browser/mini_browser.h" // 🟢 FIX: লিংকার এরর এড়াতে এটি অবশ্যই থাকতে হবে
 #include <string>
 #include <vector>
 #include <ctime>
