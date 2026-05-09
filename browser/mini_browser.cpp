@@ -1050,7 +1050,7 @@ public:
             settings->put_IsStatusBarEnabled(TRUE);
             
             // Fix for Gemini/Facebook Local Storage
-            settings->put_IsDomStorageEnabled(TRUE); 
+           
 
             // 🟢 Fix for Google Login: Update UserAgent cleanly
             ComPtr<ICoreWebView2Settings2> s2;
