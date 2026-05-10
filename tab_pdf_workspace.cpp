@@ -1,23 +1,49 @@
 // ============================================================
-//  AcrobatHTML_Full.cpp
-//  Replace GetAcrobatHTML() in tab_pdf_workspace.cpp with this.
-//  All HTML/CSS/JS is split into wstringstream parts to avoid
-//  MSVC C2026 (string literal > 16380 chars).
-//  Features: Multi-tab, Pan/Zoom, Pen, Highlight, Eraser,
-//  Text Box, Shapes, Sticky Notes, Signatures, Stamp,
-//  Bookmark, Find/Search, Page Organizer (drag-reorder/delete),
-//  Merge, Split, Extract, Delete Pages, Rotate, Compress,
-//  Watermark, PDF→Image ZIP, PDF→TXT, OCR, Night/Read mode,
-//  Undo/Redo, Colour picker, Line-width picker, Crop,
-//  Header/Footer, Bates Numbering, Password Protect,
-//  Print, Fullscreen, Presentation mode, Ruler overlay,
-//  Snap-to-grid, Word count, Property panel, Redaction.
+//  tab_pdf_workspace.cpp
+//  Professional PDF Workspace Architecture
 // ============================================================
 
-#pragma once
-#include <sstream>
+#define _CRT_SECURE_NO_WARNINGS
+#include "tab_pdf_workspace.h"
+#include "mini_browser.h"
+#include <windows.h>
+#include <windowsx.h>
+#include <gdiplus.h>
 #include <string>
+#include <vector>
+#include <fstream>
+#include <sstream>
+#include <Shlwapi.h>
+#include <WebView2.h>
+#include <wrl.h>
+#include <wrl/event.h>
 
+#pragma comment(lib, "Shlwapi.lib")
+
+using namespace Gdiplus;
+using namespace Microsoft::WRL;
+using namespace std;
+
+extern HWND hParentWnd;
+extern float g_scaleFactor;
+extern wstring currentWorkspacePdf;
+
+// --- WebView2 Global Variables ---
+HWND g_hAcrobatWnd = NULL;
+HWND g_hWebViewWnd = NULL;
+ComPtr<ICoreWebView2Environment> g_webViewEnv = nullptr;
+ComPtr<ICoreWebView2Controller> g_webViewController = nullptr;
+ComPtr<ICoreWebView2> g_webView = nullptr;
+wstring g_acrobatPdfPath = L"";
+bool g_webViewInitialized = false;
+
+// Forward Declarations
+HRESULT InitializeWebView2(HWND hWnd, HWND hHostWnd);
+LRESULT CALLBACK AcrobatViewerWndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp);
+
+// ==========================================
+// HTML/CSS/JS - Split into parts to avoid MSVC C2026
+// ==========================================
 static std::wstring GetAcrobatHTML()
 {
     std::wstringstream ss;
@@ -1398,6 +1424,13 @@ function renderTabStrip() {
 
 ss << LR"JS(
 async function switchTab(id) {
+  // Fix for the error when opening a second file: Make sure to reset rendering state.
+  if (g_renderTimer) clearTimeout(g_renderTimer);
+  g_drawing = false;
+  g_shapeDrawing = false;
+  g_sigDrawing = false;
+  g_panning = false;
+
   g_activeId = id;
   renderTabStrip();
   const t = activeTab(); if (!t) return;
@@ -3290,25 +3323,161 @@ updateStatusBar();
 
     return ss.str();
 }
-// --- Missing C++ Function Implementations ---
-#include <string>
 
-// Forward declaration for Gdiplus
-namespace Gdiplus { class Graphics; }
-
-void ProcessPdfWorkspaceMouseClick(float x, float y) {
-    // TODO: Implement native mouse click handling
+// ==========================================
+// WINDOW PROCEDURE
+// ==========================================
+LRESULT CALLBACK AcrobatViewerWndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
+    switch (msg) {
+    case WM_CREATE: {
+        RECT r; GetClientRect(hWnd, &r);
+        g_hWebViewWnd = CreateWindowExW(0, L"STATIC", NULL, WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS,
+            0, 0, r.right, r.bottom, hWnd, (HMENU)1001, GetModuleHandle(NULL), NULL);
+        InitializeWebView2(hWnd, g_hWebViewWnd);
+        break;
+    }
+    case WM_SIZE: {
+        if (g_hWebViewWnd && g_webViewController) {
+            RECT r; GetClientRect(hWnd, &r);
+            SetWindowPos(g_hWebViewWnd, NULL, 0, 0, r.right, r.bottom, SWP_NOZORDER);
+            g_webViewController->put_Bounds(RECT{ 0, 0, r.right, r.bottom });
+        }
+        break;
+    }
+    case WM_CLOSE:
+        ShowWindow(hWnd, SW_HIDE);
+        return 0;
+    case WM_DESTROY: {
+        if (g_webViewController) { g_webViewController->Close(); g_webViewController = nullptr; }
+        g_webView = nullptr; g_webViewEnv = nullptr; g_webViewInitialized = false;
+        if (g_hWebViewWnd) { DestroyWindow(g_hWebViewWnd); g_hWebViewWnd = NULL; }
+        g_hAcrobatWnd = NULL;
+        break;
+    }
+    default: return DefWindowProcW(hWnd, msg, wp, lp);
+    }
+    return 0;
 }
 
-void ProcessPdfWorkspaceMouseMove(float x, float y) {
-    // TODO: Implement native mouse hover handling
+// ==========================================
+// WEBVIEW2 INITIALIZATION
+// ==========================================
+HRESULT InitializeWebView2(HWND hWnd, HWND hHostWnd) {
+    auto envHandler = Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
+        [hWnd, hHostWnd](HRESULT result, ICoreWebView2Environment* env) -> HRESULT {
+            if (FAILED(result)) return result;
+            g_webViewEnv = env;
+
+            auto ctrlHandler = Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
+                [hWnd](HRESULT result, ICoreWebView2Controller* controller) -> HRESULT {
+                    if (FAILED(result)) return result;
+                    g_webViewController = controller;
+                    g_webViewController->get_CoreWebView2(&g_webView);
+
+                    ICoreWebView2Settings* settings;
+                    g_webView->get_Settings(&settings);
+                    settings->put_IsScriptEnabled(TRUE);
+                    settings->put_IsWebMessageEnabled(TRUE);
+
+                    RECT r; GetClientRect(hWnd, &r);
+                    g_webViewController->put_Bounds(RECT{ 0, 0, r.right, r.bottom });
+
+                    g_webView->NavigateToString(GetAcrobatHTML().c_str());
+
+                    auto navHandler = Callback<ICoreWebView2NavigationCompletedEventHandler>(
+                        [](ICoreWebView2* sender, ICoreWebView2NavigationCompletedEventArgs* args) -> HRESULT {
+                            BOOL success; args->get_IsSuccess(&success);
+                            if (success) {
+                                g_webViewInitialized = true;
+                                if (!g_acrobatPdfPath.empty()) {
+                                    std::wstring escaped = g_acrobatPdfPath;
+                                    size_t pos = 0;
+                                    while ((pos = escaped.find(L"\\", pos)) != std::wstring::npos) {
+                                        escaped.replace(pos, 1, L"\\\\");
+                                        pos += 2;
+                                    }
+                                    std::wstring script = L"loadPdfFromPath('" + escaped + L"');";
+                                    sender->ExecuteScript(script.c_str(), nullptr);
+                                }
+                            }
+                            return S_OK;
+                        }
+                    );
+                    g_webView->add_NavigationCompleted(navHandler.Get(), nullptr);
+                    return S_OK;
+                }
+            );
+            env->CreateCoreWebView2Controller(hHostWnd, ctrlHandler.Get());
+            return S_OK;
+        }
+    );
+    return CreateCoreWebView2EnvironmentWithOptions(nullptr, nullptr, nullptr, envHandler.Get());
 }
 
-void DrawPdfWorkspaceTab(Gdiplus::Graphics& g, float x, float y, float w, float h) {
-    // TODO: Implement native tab drawing
+// ==========================================
+// LAUNCH PDF VIEWER
+// ==========================================
+void LaunchFoxitStylePdfReader(std::wstring pdfPath) {
+    g_acrobatPdfPath = pdfPath;
+
+    if (g_hAcrobatWnd != NULL) {
+        ShowWindow(g_hAcrobatWnd, SW_RESTORE);
+        SetForegroundWindow(g_hAcrobatWnd);
+        if (g_webViewInitialized && g_webView && !pdfPath.empty()) {
+            std::wstring escaped = pdfPath;
+            size_t pos = 0;
+            while ((pos = escaped.find(L"\\", pos)) != std::wstring::npos) {
+                escaped.replace(pos, 1, L"\\\\");
+                pos += 2;
+            }
+            std::wstring script = L"loadPdfFromPath('" + escaped + L"');";
+            g_webView->ExecuteScript(script.c_str(), nullptr);
+        }
+        return;
+    }
+
+    static bool registered = false;
+    if (!registered) {
+        WNDCLASSW wc = { 0 };
+        wc.lpfnWndProc = AcrobatViewerWndProc;
+        wc.hInstance = GetModuleHandle(NULL);
+        wc.lpszClassName = L"AcrobatWorkspaceClass";
+        wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+        wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+        RegisterClassW(&wc);
+        registered = true;
+    }
+
+    g_hAcrobatWnd = CreateWindowExW(
+        0, L"AcrobatWorkspaceClass", L"RasFocus — PDF Pro",
+        WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
+        CW_USEDEFAULT, CW_USEDEFAULT,
+        (int)(1280 * g_scaleFactor), (int)(820 * g_scaleFactor),
+        NULL, NULL, GetModuleHandle(NULL), NULL
+    );
+
+    HICON hIcon = LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(101));
+    if (hIcon) {
+        SendMessage(g_hAcrobatWnd, WM_SETICON, ICON_BIG, (LPARAM)hIcon);
+        SendMessage(g_hAcrobatWnd, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
+    }
+
+    ShowWindow(g_hAcrobatWnd, SW_SHOWMAXIMIZED);
+    SetForegroundWindow(g_hAcrobatWnd);
+    UpdateWindow(g_hAcrobatWnd);
 }
 
-void LaunchFoxitStylePdfReader(std::wstring path) {
-    // TODO: Implement native window launch for the reader
+// ==========================================
+// LEGACY STUBS
+// ==========================================
+void DrawPdfWorkspaceTab(Gdiplus::Graphics& g, float cx, float cy, float cw, float ch) {
+    FontFamily ff(L"Segoe UI");
+    Font fText(&ff, 18 * g_scaleFactor, FontStyleRegular, UnitPixel);
+    SolidBrush textBrush(Color(255, 120, 120, 120));
+    StringFormat fmt;
+    fmt.SetAlignment(StringAlignmentCenter);
+    fmt.SetLineAlignment(StringAlignmentCenter);
+    g.DrawString(L"PDF Workspace — double-click a PDF to open.", -1, &fText, RectF(cx, cy, cw, ch), &fmt, &textBrush);
 }
-// --------------------------------------------
+void ProcessPdfWorkspaceMouseMove(float x, float y) {}
+void ProcessPdfWorkspaceMouseClick(float x, float y) {}
