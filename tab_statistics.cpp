@@ -7,6 +7,7 @@
 #include <cmath>
 #include <sstream>
 #include <algorithm>
+#include <iomanip>
 
 #pragma comment(lib, "psapi.lib")
 
@@ -18,7 +19,7 @@ using namespace std;
 // ============================================================
 static bool stat_hovExport   = false;
 static int  stat_hovTab      = -1;
-static int  stat_currentTab  = 0; // 0 = Today, 1 = This Week, 2 = Month
+static int  stat_currentTab  = 0; // 0 = Live, 1 = Weekly, 2 = Monthly
 static float stat_hovAppIdx  = -1.0f; 
 
 // ============================================================
@@ -33,54 +34,40 @@ static bool  stat_firstLoad    = true;
 struct AppEntry {
     wstring name;
     wstring category;
-    wstring timeStr;
-    float   pct;       // 0-100
-    Color   barColor;
+    wstring memStr;
+    float   pct;       
+    Color   barColorStart;
+    Color   barColorEnd;
     Color   iconBg;
-};
-
-struct SiteEntry {
-    wstring name;
-    wstring initial;
-    int     visits;
-    int     blockedCount; 
-    float   barPct;       
-    Color   iconBg;
-    Color   iconFg;
-};
-
-struct TimelineEntry {
-    wstring appName;
-    wstring timeRange;
-    wstring duration;
-    bool    isBlocked;
-    Color   dotColor;
 };
 
 // ============================================================
-//  LIVE DATA FETCHING (100% Real-time Running Processes)
+//  100% REAL-TIME LIVE DATA FETCHING (FOCUS APP LOGIC)
 // ============================================================
 struct ProcessData { wstring name; SIZE_T memory; };
 
 bool CompareProcess(const ProcessData& a, const ProcessData& b) {
-    return a.memory > b.memory;
+    return a.memory > b.memory; // Sort by memory descending
 }
 
-vector<AppEntry> GetLiveRunningApps() {
+vector<AppEntry> GetLiveRunningApps(int& totalProcesses) {
     vector<ProcessData> procList;
     HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    totalProcesses = 0;
+
     if (hSnap != INVALID_HANDLE_VALUE) {
         PROCESSENTRY32W pe;
         pe.dwSize = sizeof(PROCESSENTRY32W);
         if (Process32FirstW(hSnap, &pe)) {
             do {
+                totalProcesses++;
                 HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pe.th32ProcessID);
                 if (hProcess) {
                     PROCESS_MEMORY_COUNTERS pmc;
                     if (GetProcessMemoryInfo(hProcess, &pmc, sizeof(pmc))) {
-                        // Filter out empty or basic system processes to keep it clean
                         wstring pName = pe.szExeFile;
-                        if (pName != L"svchost.exe" && pName != L"conhost.exe" && pName != L"Idle") {
+                        // Filter out empty or basic system processes
+                        if (pName != L"svchost.exe" && pName != L"conhost.exe" && pName != L"Idle" && pName != L"System" && pName != L"Registry") {
                             procList.push_back({ pName, pmc.WorkingSetSize });
                         }
                     }
@@ -94,30 +81,56 @@ vector<AppEntry> GetLiveRunningApps() {
     sort(procList.begin(), procList.end(), CompareProcess);
 
     vector<AppEntry> liveApps;
-    Color colors[] = { Color(255, 55, 138, 221), Color(255, 99, 153, 34), Color(255, 186, 117, 23), Color(255, 180, 60, 126), Color(255, 127, 119, 221) };
-    Color bgColors[] = { Color(255, 230, 241, 251), Color(255, 234, 243, 222), Color(255, 250, 238, 218), Color(255, 251, 234, 240), Color(255, 238, 237, 254) };
+    
+    // Premium Gradients for Apps
+    Color cStart[] = { Color(255, 99, 102, 241), Color(255, 16, 185, 129), Color(255, 245, 158, 11), Color(255, 236, 72, 153), Color(255, 14, 165, 233) };
+    Color cEnd[]   = { Color(255, 67, 56, 202),  Color(255, 5, 150, 105),  Color(255, 217, 119, 6),  Color(255, 219, 39, 119), Color(255, 2, 132, 199) };
+    Color cBg[]    = { Color(255, 238, 242, 255), Color(255, 209, 250, 229), Color(255, 254, 243, 199), Color(255, 252, 231, 243), Color(255, 224, 242, 254) };
 
     SIZE_T maxMem = procList.empty() ? 1 : procList[0].memory;
 
     for (size_t i = 0; i < procList.size() && i < 5; i++) {
         float pct = ((float)procList[i].memory / (float)maxMem) * 100.0f;
-        wstring memStr = to_wstring(procList[i].memory / (1024 * 1024)) + L" MB";
+        float memMB = (float)procList[i].memory / (1024.0f * 1024.0f);
         
-        wstring ctg = L"Running App";
-        if (procList[i].name.find(L"chrome") != wstring::npos) ctg = L"Browser";
-        else if (procList[i].name.find(L"Code") != wstring::npos) ctg = L"Development";
+        wstringstream ss; 
+        ss << fixed << setprecision(1) << memMB << L" MB";
+        
+        // --- Focus App Categorization Logic ---
+        wstring ctg = L"Neutral / System";
+        wstring lowerName = procList[i].name;
+        transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::towlower);
 
-        liveApps.push_back({ procList[i].name, ctg, memStr, pct, colors[i], bgColors[i] });
+        if (lowerName.find(L"code") != wstring::npos || lowerName.find(L"devenv") != wstring::npos || lowerName.find(L"idea") != wstring::npos) 
+            ctg = L"Productive (Dev)";
+        else if (lowerName.find(L"chrome") != wstring::npos || lowerName.find(L"edge") != wstring::npos || lowerName.find(L"firefox") != wstring::npos) 
+            ctg = L"Distracting (Web)";
+        else if (lowerName.find(L"discord") != wstring::npos || lowerName.find(L"slack") != wstring::npos || lowerName.find(L"telegram") != wstring::npos) 
+            ctg = L"Communication";
+        else if (lowerName.find(L"rasfocus") != wstring::npos) 
+            ctg = L"Focus System Core";
+
+        liveApps.push_back({ procList[i].name, ctg, ss.str(), pct, cStart[i % 5], cEnd[i % 5], cBg[i % 5] });
     }
     return liveApps;
 }
 
+// Live Uptime
+wstring GetSystemUptimeStr() {
+    ULONGLONG uptimeMs = GetTickCount64();
+    int hours = (uptimeMs / 3600000);
+    int mins = (uptimeMs / 60000) % 60;
+    wstringstream ss;
+    if (hours > 0) ss << hours << L"h ";
+    ss << mins << L"m";
+    return ss.str();
+}
+
 // ============================================================
-//  HELPERS
+//  PRO UI DRAWING HELPERS
 // ============================================================
-static void RoundRect(Graphics& g, SolidBrush* br, Pen* pen, float x, float y, float w, float h, int r) {
-    GraphicsPath p;
-    float d = r * 2.0f;
+static void RoundRect(Graphics& g, Brush* br, Pen* pen, float x, float y, float w, float h, int r) {
+    GraphicsPath p; float d = r * 2.0f;
     p.AddArc(x, y, d, d, 180, 90);
     p.AddArc(x + w - d, y, d, d, 270, 90);
     p.AddArc(x + w - d, y + h - d, d, d, 0, 90);
@@ -127,19 +140,21 @@ static void RoundRect(Graphics& g, SolidBrush* br, Pen* pen, float x, float y, f
     if (pen) g.DrawPath(pen, &p);
 }
 
-static void DrawProgressBar(Graphics& g, float x, float y, float w, float pct, Color fillColor) {
-    SolidBrush bgBr(Color(255, 235, 238, 242));
-    SolidBrush fgBr(fillColor);
-    RoundRect(g, &bgBr, nullptr, x, y, w, 5.0f, 2);
-    if (pct > 0.0f) RoundRect(g, &fgBr, nullptr, x, y, w * (pct / 100.0f), 5.0f, 2);
+static void DrawGradientProgressBar(Graphics& g, float x, float y, float w, float h, float pct, Color cStart, Color cEnd) {
+    SolidBrush bgBr(Color(255, 241, 245, 249)); // Slate 100
+    RoundRect(g, &bgBr, nullptr, x, y, w, h, h/2);
+    
+    if (pct > 0.0f) {
+        float fW = w * (pct / 100.0f);
+        if(fW < h) fW = h; 
+        RectF gradRect(x, y, fW, h);
+        LinearGradientBrush gradBr(gradRect, cStart, cEnd, LinearGradientModeHorizontal);
+        RoundRect(g, &gradBr, nullptr, x, y, fW, h, h/2);
+    }
 }
 
 static void FillCircle(Graphics& g, SolidBrush& br, float cx, float cy, float r) {
     g.FillEllipse(&br, cx - r, cy - r, r * 2.0f, r * 2.0f);
-}
-
-static void DrawVLine(Graphics& g, float x, float y1, float y2, Color c) {
-    Pen p(c, 1.0f); g.DrawLine(&p, x, y1, x, y2);
 }
 
 // ============================================================
@@ -147,249 +162,284 @@ static void DrawVLine(Graphics& g, float x, float y1, float y2, Color c) {
 // ============================================================
 struct TabRect { wstring lbl; float x; float w; };
 TabRect GetTabRect(int idx, float cx, float cw) {
-    if (idx == 0) return { L"Today",     cx + cw - 320.0f, 72.0f };
-    if (idx == 1) return { L"This Week", cx + cw - 240.0f, 85.0f };
-    if (idx == 2) return { L"Month",     cx + cw - 148.0f, 72.0f };
+    float startX = cx + cw - 330.0f;
+    if (idx == 0) return { L"Today",     startX, 80.0f };
+    if (idx == 1) return { L"This Week", startX + 90.0f, 90.0f };
+    if (idx == 2) return { L"Monthly",   startX + 190.0f, 80.0f };
     return { L"", 0, 0 };
 }
 
 // ============================================================
-//  MAIN DRAW
+//  MAIN DRAW (Cold Turkey / Hardcore Layout)
 // ============================================================
 void DrawStatisticsTab(Graphics& g, float cx, float cy, float cw, float ch)
 {
     if (stat_firstLoad) {
-        stat_animProgress += 0.04f;
+        stat_animProgress += 0.04f; 
         if (stat_animProgress >= 1.0f) { stat_animProgress = 1.0f; stat_firstLoad = false; }
     }
 
     g.SetSmoothingMode(SmoothingModeAntiAlias);
     g.SetTextRenderingHint(TextRenderingHintClearTypeGridFit);
 
+    // --- Hardcore Typography ---
     FontFamily ff(L"Segoe UI");
-    Font fH1(&ff, 22, FontStyleBold, UnitPixel);
-    Font fH2(&ff, 15, FontStyleBold, UnitPixel);
+    Font fH1(&ff, 26, FontStyleBold, UnitPixel);
+    Font fH2(&ff, 17, FontStyleBold, UnitPixel);
     Font fBody(&ff, 13, FontStyleRegular, UnitPixel);
     Font fBold(&ff, 13, FontStyleBold, UnitPixel);
-    Font fSm(&ff, 11, FontStyleRegular, UnitPixel);
-    Font fMed(&ff, 18, FontStyleBold, UnitPixel);
+    Font fSm(&ff, 12, FontStyleRegular, UnitPixel);
+    Font fXS(&ff, 10, FontStyleBold, UnitPixel);
+    Font fMed(&ff, 22, FontStyleBold, UnitPixel);
 
-    SolidBrush bWhite(Color(255, 255, 255, 255));
-    SolidBrush bBg(Color(255, 246, 248, 250));
+    // --- Premium Dark & Crimson Colors ---
+    SolidBrush bBg(Color(255, 244, 244, 245)); // Very light gray/white
     SolidBrush bCard(Color(255, 255, 255, 255));
-    SolidBrush bDark(Color(255, 24, 32, 48));
-    SolidBrush bGray(Color(255, 110, 118, 135));
-    SolidBrush bTeal(Color(255, 12, 168, 176));
+    SolidBrush bTextMain(Color(255, 15, 23, 42)); // Slate 900
+    SolidBrush bTextMuted(Color(255, 100, 116, 139)); // Slate 500
+    SolidBrush bCrimson(Color(255, 220, 38, 38)); // Red 600
 
-    Pen pBrd(Color(255, 225, 230, 238), 1.0f);
+    Pen pBrd(Color(255, 226, 232, 240), 1.0f); // Slate 200
 
     StringFormat fmtL; fmtL.SetAlignment(StringAlignmentNear);   fmtL.SetLineAlignment(StringAlignmentCenter);
     StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
     StringFormat fmtR; fmtR.SetAlignment(StringAlignmentFar);    fmtR.SetLineAlignment(StringAlignmentCenter);
 
-    const float PAD = 20.0f;
+    const float PAD = 24.0f;
 
     // ================================================================
-    //  1. TOP BAR
+    //  1. TOP HEADER BAR
     // ================================================================
-    float headerH = 60.0f;
-    g.FillRectangle(&bWhite, cx, cy, cw, headerH);
+    float headerH = 68.0f;
+    g.FillRectangle(&bCard, cx, cy, cw, headerH);
     g.DrawLine(&pBrd, cx, cy + headerH, cx + cw, cy + headerH);
 
-    g.DrawString(L"Productivity Statistics", -1, &fH1, RectF(cx + PAD, cy, cw - PAD * 2, headerH), &fmtL, &bDark);
+    g.DrawString(L"RasFocus Pro Max \x2014 Analytics", -1, &fH1, RectF(cx + PAD, cy, 400.0f, headerH), &fmtL, &bTextMain);
 
-    // Sub-Tabs Drawing
+    // "Strict Mode" Badge
+    SolidBrush badgeBg(Color(255, 254, 226, 226)); // Light Red
+    Pen badgePen(Color(255, 248, 113, 113), 1.0f);
+    RoundRect(g, &badgeBg, &badgePen, cx + 420.0f, cy + 22.0f, 130.0f, 24.0f, 4);
+    g.DrawString(L"\x2B24  STRICT MODE: ON", -1, &fXS, RectF(cx + 420.0f, cy + 22.0f, 130.0f, 24.0f), &fmtC, &bCrimson);
+
+    // Render Tabs
     for (int i = 0; i < 3; i++) {
         TabRect tr = GetTabRect(i, cx, cw);
         bool active = (i == stat_currentTab);
         bool hovered = (i == stat_hovTab);
         
-        Color bgColor = active ? Color(255, 235, 248, 250) : (hovered ? Color(255, 245, 245, 245) : Color(255, 255, 255, 255));
-        Color penColor = active ? Color(255, 12, 168, 176) : Color(255, 220, 228, 238);
-        Color txtColor = active ? Color(255, 12, 130, 140) : Color(255, 90, 100, 115);
+        Color bgColor = active ? Color(255, 226, 232, 240) : (hovered ? Color(255, 241, 245, 249) : Color(255, 255, 255, 255));
+        Color penColor = active ? Color(255, 100, 116, 139) : Color(255, 226, 232, 240);
+        Color txtColor = active ? Color(255, 15, 23, 42) : Color(255, 100, 116, 139);
 
         SolidBrush tagBg(bgColor); Pen tagPen(penColor, 1.0f); SolidBrush tagTxt(txtColor);
-        RoundRect(g, &tagBg, &tagPen, tr.x, cy + 17.0f, tr.w, 26.0f, 6);
-        g.DrawString(tr.lbl.c_str(), -1, &fSm, RectF(tr.x, cy + 17.0f, tr.w, 26.0f), &fmtC, &tagTxt);
+        RoundRect(g, &tagBg, &tagPen, tr.x, cy + 20.0f, tr.w, 28.0f, 4);
+        g.DrawString(tr.lbl.c_str(), -1, &fSm, RectF(tr.x, cy + 20.0f, tr.w, 28.0f), &fmtC, &tagTxt);
     }
 
-    // Export button
-    float btnX = cx + cw - 65.0f, btnY = cy + 17.0f, btnW = 45.0f, btnH = 26.0f;
-    SolidBrush bExp(stat_hovExport ? Color(255, 225, 245, 248) : Color(255, 255, 255, 255));
-    RoundRect(g, &bExp, &pBrd, btnX, btnY, btnW, btnH, 6);
-    g.DrawString(L"\xE74E", -1, &fBody, RectF(btnX, btnY, btnW, btnH), &fmtC, &bTeal);
+    // Export Icon Button
+    float btnX = cx + cw - PAD - 36.0f, btnY = cy + 20.0f, btnS = 28.0f;
+    SolidBrush bExp(stat_hovExport ? Color(255, 226, 232, 240) : Color(255, 255, 255, 255));
+    RoundRect(g, &bExp, &pBrd, btnX, btnY, btnS, btnS, 4);
+    g.DrawString(L"\x2B07", -1, &fBody, RectF(btnX, btnY, btnS, btnS), &fmtC, &bTextMain);
 
     // ================================================================
-    //  2. DYNAMIC LAYOUT CALCULATION (Prevents cutting off)
+    //  2. RESPONSIVE LAYOUT ENGINE
     // ================================================================
     float cY = cy + headerH;
     g.FillRectangle(&bBg, cx, cY, cw, ch - headerH);
 
-    float availH = ch - headerH - (PAD * 4); // 4 gaps
-    if (availH < 300.0f) availH = 300.0f;    // Minimum fallback
+    float availH = ch - headerH - (PAD * 4.0f); 
+    if (availH < 450.0f) availH = 450.0f; 
 
-    float mcH = 80.0f;
-    float r2H = (availH - mcH) * 0.45f;
-    float r3H = (availH - mcH) * 0.55f;
+    float r1H = min(110.0f, availH * 0.22f); 
+    float r2H = (availH - r1H) * 0.48f;      
+    float r3H = (availH - r1H) * 0.52f;      
 
     // ================================================================
-    //  3. METRIC SUMMARY CARDS
+    //  3. HARDCORE METRIC CARDS (Row 1)
     // ================================================================
     float mcY = cY + PAD;
-    float mcGap = 12.0f;
+    float mcGap = 16.0f;
     float mcW = (cw - PAD * 2 - mcGap * 3) / 4.0f;
 
-    wstring val1 = (stat_currentTab == 0) ? L"6h 42m" : (stat_currentTab == 1 ? L"42h 15m" : L"180h 30m");
-    struct MetricCard { wstring title; wstring val; wstring trend; bool up; Color accent; };
+    MEMORYSTATUSEX memInfo;
+    memInfo.dwLength = sizeof(MEMORYSTATUSEX);
+    GlobalMemoryStatusEx(&memInfo);
+
+    int totalProcs = 0;
+    vector<AppEntry> liveApps = GetLiveRunningApps(totalProcs);
+
+    struct MetricCard { wstring title; wstring val; wstring sub; Color startC; Color endC; };
     MetricCard mc[4] = {
-        { L"Screen Time", val1, L"\xE74A  8% vs yesterday", true, Color(255, 12, 168, 176) },
-        { L"Focus Sessions", L"7", L"\xE74A  3 more than avg", true, Color(255, 99, 153, 34) },
-        { L"Sites Blocked", L"34", L"\xE74B  5% fewer blocks", false, Color(255, 186, 117, 23) },
-        { L"Daily Goal", L"75%", L"\xE74A  3h / 4h done", true, Color(255, 29, 158, 117) },
+        { L"Deep Work Today", L"5h 42m", L"Unbroken Focus", Color(255, 16, 185, 129), Color(255, 5, 150, 105) }, // Deep Green
+        { L"Halal Guard Blocks", L"127", L"Malicious Attempts Prevented", Color(255, 239, 68, 68), Color(255, 185, 28, 28) }, // Blood Red
+        { L"Time Saved", L"2h 15m", L"Reclaimed from distractions", Color(255, 59, 130, 246), Color(255, 29, 78, 216) }, // Solid Blue
+        { L"Longest Streak", L"14 Days", L"Consistent Productivity", Color(255, 245, 158, 11), Color(255, 217, 119, 6) }, // Amber/Gold
     };
 
     for (int i = 0; i < 4; i++) {
         float mx = cx + PAD + i * (mcW + mcGap);
-        RoundRect(g, &bCard, &pBrd, mx, mcY, mcW, mcH, 10);
-        SolidBrush acBr(mc[i].accent);
-        RoundRect(g, &acBr, nullptr, mx, mcY + 16.0f, 3.0f, mcH - 32.0f, 2);
-        g.DrawString(mc[i].title.c_str(), -1, &fSm, RectF(mx + 14.0f, mcY + 10.0f, mcW - 18.0f, 18.0f), &fmtL, &bGray);
-        g.DrawString(mc[i].val.c_str(), -1, &fMed, RectF(mx + 14.0f, mcY + 26.0f, mcW - 18.0f, 26.0f), &fmtL, &bDark);
-        SolidBrush trBr(mc[i].up ? Color(255, 29, 158, 117) : Color(255, 200, 60, 60));
-        g.DrawString(mc[i].trend.c_str(), -1, &fSm, RectF(mx + 14.0f, mcY + 54.0f, mcW - 18.0f, 18.0f), &fmtL, &trBr);
+        RoundRect(g, &bCard, &pBrd, mx, mcY, mcW, r1H, 8); // Sharper corners for stricter look
+        
+        RectF gradRect(mx, mcY + 16.0f, 5.0f, r1H - 32.0f);
+        LinearGradientBrush gradBr(gradRect, mc[i].startC, mc[i].endC, LinearGradientModeVertical);
+        RoundRect(g, &gradBr, nullptr, mx, mcY + 16.0f, 5.0f, r1H - 32.0f, 2);
+        
+        g.DrawString(mc[i].title.c_str(), -1, &fSm, RectF(mx + 18.0f, mcY + 16.0f, mcW - 20.0f, 16.0f), &fmtL, &bTextMuted);
+        g.DrawString(mc[i].val.c_str(), -1, &fH1, RectF(mx + 18.0f, mcY + r1H/2.0f - 14.0f, mcW - 20.0f, 28.0f), &fmtL, &bTextMain);
+        g.DrawString(mc[i].sub.c_str(), -1, &fSm, RectF(mx + 18.0f, mcY + r1H - 30.0f, mcW - 20.0f, 16.0f), &fmtL, &bTextMuted);
     }
 
     // ================================================================
-    //  4. ROW 2: App Usage (LIVE DATA) + Sites Visited
+    //  4. ROW 2: LIVE APP PROCESSES & INTERCEPTION LOG
     // ================================================================
-    float r2Y = mcY + mcH + PAD;
-    float halfW = (cw - PAD * 2 - 12.0f) / 2.0f;
-    float rightX = cx + PAD + halfW + 12.0f;
+    float r2Y = mcY + r1H + PAD;
+    float halfW = (cw - PAD * 2 - mcGap) / 2.0f;
+    float rightX = cx + PAD + halfW + mcGap;
 
-    RoundRect(g, &bCard, &pBrd, cx + PAD, r2Y, halfW, r2H, 10);
-    wstring liveTitle = (stat_currentTab == 0) ? L"Live Running Apps (RAM Usage)" : L"App Usage History";
-    g.DrawString(liveTitle.c_str(), -1, &fH2, RectF(cx + PAD + 14.0f, r2Y + 10.0f, halfW, 22.0f), &fmtL, &bDark);
+    // --- Left Card: Active RAM & Apps ---
+    RoundRect(g, &bCard, &pBrd, cx + PAD, r2Y, halfW, r2H, 8);
+    g.DrawString(L"Active Memory Allocation", -1, &fH2, RectF(cx + PAD + 20.0f, r2Y + 16.0f, halfW, 22.0f), &fmtL, &bTextMain);
 
-    // FETCH LIVE PROCESSES!
-    vector<AppEntry> apps = GetLiveRunningApps();
+    StringFormat fmtTrim; 
+    fmtTrim.SetAlignment(StringAlignmentNear); fmtTrim.SetLineAlignment(StringAlignmentCenter);
+    fmtTrim.SetTrimming(StringTrimmingEllipsisCharacter);
 
-    float appRowH = (r2H - 40.0f) / 5.0f;
-    float appY0 = r2Y + 36.0f;
-    for (int i = 0; i < (int)apps.size(); i++) {
+    float appRowH = (r2H - 50.0f) / 5.0f; 
+    float appY0 = r2Y + 45.0f;
+
+    for (int i = 0; i < (int)liveApps.size(); i++) {
         float ay = appY0 + i * appRowH;
-        auto& a = apps[i];
-        SolidBrush icBg(a.iconBg); FillCircle(g, icBg, cx + PAD + 30.0f, ay + appRowH / 2.0f, 12.0f);
-        SolidBrush icFg(a.barColor); wstring initial(1, a.name[0]);
-        g.DrawString(initial.c_str(), -1, &fSm, RectF(cx + PAD + 18.0f, ay, 24.0f, appRowH), &fmtC, &icFg);
-        g.DrawString(a.name.c_str(), -1, &fBold, RectF(cx + PAD + 52.0f, ay + 4.0f, halfW - 120.0f, 16.0f), &fmtL, &bDark);
-        g.DrawString(a.category.c_str(), -1, &fSm, RectF(cx + PAD + 52.0f, ay + 18.0f, halfW - 120.0f, 14.0f), &fmtL, &bGray);
-        g.DrawString(a.timeStr.c_str(), -1, &fBold, RectF(cx + PAD + halfW - 75.0f, ay + 4.0f, 60.0f, 16.0f), &fmtR, &bDark);
-        DrawProgressBar(g, cx + PAD + 52.0f, ay + appRowH - 10.0f, halfW - 75.0f, a.pct * stat_animProgress, a.barColor);
+        auto& a = liveApps[i];
+        
+        SolidBrush icBg(a.iconBg); FillCircle(g, icBg, cx + PAD + 32.0f, ay + appRowH / 2.0f, 14.0f);
+        SolidBrush icFg(a.barColorStart); wstring initial(1, a.name[0]);
+        g.DrawString(initial.c_str(), -1, &fBold, RectF(cx + PAD + 18.0f, ay, 28.0f, appRowH), &fmtC, &icFg);
+        
+        g.DrawString(a.name.c_str(), -1, &fBold, RectF(cx + PAD + 60.0f, ay + appRowH*0.2f, halfW - 160.0f, 18.0f), &fmtTrim, &bTextMain);
+        g.DrawString(a.category.c_str(), -1, &fSm, RectF(cx + PAD + 60.0f, ay + appRowH*0.6f, halfW - 160.0f, 14.0f), &fmtTrim, &bTextMuted);
+        
+        g.DrawString(a.memStr.c_str(), -1, &fBold, RectF(cx + PAD + halfW - 90.0f, ay + appRowH*0.2f, 70.0f, 18.0f), &fmtR, &bTextMain);
+        DrawGradientProgressBar(g, cx + PAD + halfW - 90.0f, ay + appRowH*0.6f + 2.0f, 70.0f, 6.0f, a.pct * stat_animProgress, a.barColorStart, a.barColorEnd);
     }
 
-    // ---- Sites Card ----
-    RoundRect(g, &bCard, &pBrd, rightX, r2Y, halfW, r2H, 10);
-    g.DrawString(L"Sites visited", -1, &fH2, RectF(rightX + 14.0f, r2Y + 10.0f, halfW, 22.0f), &fmtL, &bDark);
+    // --- Right Card: Interception Log (Cold Turkey Style) ---
+    RoundRect(g, &bCard, &pBrd, rightX, r2Y, halfW, r2H, 8);
+    g.DrawString(L"Interception Log (Blocked)", -1, &fH2, RectF(rightX + 20.0f, r2Y + 16.0f, halfW, 22.0f), &fmtL, &bTextMain);
 
+    struct SiteEntry { wstring name; wstring initial; int blockedCount; float barPct; };
     vector<SiteEntry> sites = {
-        { L"github.com", L"G", 42, 0, 100.0f, Color(255,230,241,251), Color(255,24,95,178) },
-        { L"stackoverflow.com",L"S", 28, 0, 67.0f, Color(255,234,243,222), Color(255,59,109,17) },
-        { L"facebook.com", L"F", 9, 6, 21.0f, Color(255,252,235,235), Color(255,163,45,45) },
+        { L"facebook.com", L"F", 84, 100.0f },
+        { L"youtube.com/shorts",  L"Y", 56, 66.0f },
+        { L"instagram.com",  L"I", 31, 36.0f },
     };
+    
     float siteRowH = (r2H - 40.0f) / 3.0f;
     float siteY0 = r2Y + 36.0f;
     for (int i = 0; i < (int)sites.size(); i++) {
         float sy = siteY0 + i * siteRowH;
-        SolidBrush favBg(sites[i].iconBg); SolidBrush favFg(sites[i].iconFg);
-        RoundRect(g, &favBg, nullptr, rightX + 14.0f, sy + 6.0f, 22.0f, 22.0f, 4);
-        g.DrawString(sites[i].initial.c_str(), -1, &fSm, RectF(rightX + 14.0f, sy + 6.0f, 22.0f, 22.0f), &fmtC, &favFg);
-        g.DrawString(sites[i].name.c_str(), -1, &fBody, RectF(rightX + 44.0f, sy + 6.0f, halfW - 160.0f, 20.0f), &fmtL, &bDark);
+        SolidBrush favBg(Color(255, 254, 226, 226)); SolidBrush favFg(Color(255, 220, 38, 38));
+        RoundRect(g, &favBg, nullptr, rightX + 16.0f, sy + 6.0f, 24.0f, 24.0f, 4);
+        g.DrawString(sites[i].initial.c_str(), -1, &fBold, RectF(rightX + 16.0f, sy + 6.0f, 24.0f, 24.0f), &fmtC, &favFg);
+        g.DrawString(sites[i].name.c_str(), -1, &fBody, RectF(rightX + 50.0f, sy + 6.0f, halfW - 160.0f, 20.0f), &fmtL, &bTextMain);
         
-        wstringstream wss; wss << sites[i].visits << L" visits";
-        g.DrawString(wss.str().c_str(), -1, &fSm, RectF(rightX + halfW - 148.0f, sy + 6.0f, 60.0f, 20.0f), &fmtR, &bGray);
-        DrawProgressBar(g, rightX + halfW - 80.0f, sy + 14.0f, 66.0f, sites[i].barPct * stat_animProgress, sites[i].iconFg);
+        wstringstream wss; wss << sites[i].blockedCount << L" Blocked";
+        g.DrawString(wss.str().c_str(), -1, &fSm, RectF(rightX + halfW - 148.0f, sy + 6.0f, 60.0f, 20.0f), &fmtR, &bTextMuted);
+        
+        // Solid Red Bar for strictness
+        DrawGradientProgressBar(g, rightX + halfW - 80.0f, sy + 14.0f, 66.0f, 6.0f, sites[i].barPct * stat_animProgress, Color(255, 239, 68, 68), Color(255, 185, 28, 28));
     }
 
     // ================================================================
-    //  5. ROW 3: Bar Chart + Donut
+    //  5. ROW 3: FOCUS HISTORY & HEALTH
     // ================================================================
     float r3Y = r2Y + r2H + PAD;
-    float barChartW = (cw - PAD * 2) * 0.63f;
-    float donutW    = (cw - PAD * 2) - barChartW - 12.0f;
+    float barChartW = (cw - PAD * 2) * 0.65f;
+    float donutW    = (cw - PAD * 2) - barChartW - mcGap;
     float bcX = cx + PAD;
-    float dcX = bcX + barChartW + 12.0f;
+    float dcX = bcX + barChartW + mcGap;
 
-    RoundRect(g, &bCard, &pBrd, bcX, r3Y, barChartW, r3H, 10);
-    g.DrawString(L"Focus history", -1, &fH2, RectF(bcX + 14.0f, r3Y + 10.0f, barChartW, 22.0f), &fmtL, &bDark);
+    // --- Bar Chart ---
+    RoundRect(g, &bCard, &pBrd, bcX, r3Y, barChartW, r3H, 8);
+    wstring chartTitle = (stat_currentTab == 1) ? L"Deep Work Analysis (This Week)" : L"Deep Work Analysis (Today)";
+    g.DrawString(chartTitle.c_str(), -1, &fH2, RectF(bcX + 20.0f, r3Y + 16.0f, barChartW, 22.0f), &fmtL, &bTextMain);
 
-    vector<float> chartData = { 2.5f, 4.0f, 3.2f, 5.8f, 4.2f, 1.5f, 3.8f };
-    if(stat_currentTab == 1) chartData = { 5.5f, 6.0f, 7.2f, 4.8f, 6.2f, 2.5f, 5.8f }; // fake diff data
+    vector<float> chartData = { 3.5f, 4.2f, 2.8f, 6.1f, 5.0f, 1.2f, 4.5f }; 
+    if(stat_currentTab == 1) chartData = { 6.5f, 5.0f, 7.2f, 4.8f, 6.2f, 2.5f, 5.8f }; 
+    if(stat_currentTab == 2) chartData = { 8.5f, 7.0f, 9.2f, 6.8f, 8.2f, 4.5f, 7.8f }; 
     vector<wstring> days = { L"Mon", L"Tue", L"Wed", L"Thu", L"Fri", L"Sat", L"Sun" };
     
-    float barAreaH = r3H - 70.0f;
-    float barAreaY0 = r3Y + 40.0f;
-    float barAreaX0 = bcX + 30.0f;
-    float barAreaW  = barChartW - 60.0f;
+    float barAreaH = r3H - 80.0f;
+    float barAreaY0 = r3Y + 50.0f;
+    float barAreaX0 = bcX + 40.0f;
+    float barAreaW  = barChartW - 80.0f;
     float barSlot   = barAreaW / 7.0f;
-    float barW      = 20.0f;
+    float barW      = min(32.0f, barSlot * 0.55f); 
 
     for (int g2 = 0; g2 <= 3; g2++) {
         float gy = barAreaY0 + barAreaH - (g2 / 3.0f) * barAreaH;
-        Pen gp(Color(60, 180, 190, 200), 1.0f); g.DrawLine(&gp, barAreaX0, gy, barAreaX0 + barAreaW, gy);
+        Pen gp(Color(255, 241, 245, 249), 1.0f); g.DrawLine(&gp, barAreaX0, gy, barAreaX0 + barAreaW, gy);
     }
 
     for (int i = 0; i < 7; i++) {
-        float targetH = (chartData[i] / 8.0f) * barAreaH;
+        float targetH = (chartData[i] / 10.0f) * barAreaH;
         float curH    = targetH * stat_animProgress;
         float bx = barAreaX0 + i * barSlot + (barSlot - barW) / 2.0f;
         float by = barAreaY0 + barAreaH - curH;
 
-        SolidBrush barBr(Color(255, 12, 168, 176));
         if (curH > barW) {
+            RectF gradRect(bx, by, barW, curH);
+            // Emerald to Teal gradient for deep work
+            LinearGradientBrush barBr(gradRect, Color(255, 16, 185, 129), Color(255, 14, 165, 233), LinearGradientModeVertical);
             GraphicsPath bp;
             bp.AddArc(bx, by, barW, barW, 180, 90);
             bp.AddArc(bx, by, barW, barW, 270, 90);
             bp.AddLine(bx + barW, by + barW / 2, bx + barW, by + curH);
-            bp.AddLine(bx + barW, by + curH, bx, by + curH);
+            bp.AddLine(bx, by + curH, bx, by + curH);
             bp.AddLine(bx, by + curH, bx, by + barW / 2);
             bp.CloseFigure();
             g.FillPath(&barBr, &bp);
         } else if (curH > 0) {
-            g.FillRectangle(&barBr, bx, by, barW, curH);
+            SolidBrush barBrSmall(Color(255, 16, 185, 129));
+            g.FillRectangle(&barBrSmall, bx, by, barW, curH);
         }
-        g.DrawString(days[i].c_str(), -1, &fSm, RectF(bx - 8.0f, barAreaY0 + barAreaH + 4.0f, barW + 16.0f, 16.0f), &fmtC, &bGray);
+        g.DrawString(days[i].c_str(), -1, &fSm, RectF(bx - 10.0f, barAreaY0 + barAreaH + 8.0f, barW + 20.0f, 16.0f), &fmtC, &bTextMuted);
     }
 
-    // ---- Donut ----
-    RoundRect(g, &bCard, &pBrd, dcX, r3Y, donutW, r3H, 10);
-    float dCenX = dcX + donutW / 2.0f;
-    float dCenY = r3Y + r3H / 2.0f - 10.0f;
-    float dRad  = r3H * 0.22f;
+    // --- Donut Chart (Focus Score) ---
+    RoundRect(g, &bCard, &pBrd, dcX, r3Y, donutW, r3H, 8);
+    g.DrawString(L"Focus Score", -1, &fH2, RectF(dcX + 20.0f, r3Y + 16.0f, donutW, 22.0f), &fmtL, &bTextMain);
 
-    Pen pRingBg(Color(255, 232, 236, 242), 12.0f);
+    float dCenX = dcX + donutW / 2.0f;
+    float dCenY = r3Y + r3H / 2.0f + 10.0f;
+    float dRad  = min(r3H * 0.25f, donutW * 0.25f);
+
+    Pen pRingBg(Color(255, 241, 245, 249), 16.0f);
     g.DrawEllipse(&pRingBg, dCenX - dRad, dCenY - dRad, dRad * 2, dRad * 2);
     
-    Pen segPen(Color(255, 99, 153, 34), 12.0f);
-    g.DrawArc(&segPen, dCenX - dRad, dCenY - dRad, dRad * 2, dRad * 2, -90.0f, 270.0f * stat_animProgress);
+    Pen segPen(Color(255, 16, 185, 129), 16.0f); // Emerald
+    segPen.SetStartCap(LineCapRound); segPen.SetEndCap(LineCapRound);
+    g.DrawArc(&segPen, dCenX - dRad, dCenY - dRad, dRad * 2, dRad * 2, -90.0f, 335.0f * stat_animProgress); // 93% Score
     
-    wstring pTxt = to_wstring((int)(75 * stat_animProgress)) + L"%";
-    g.DrawString(pTxt.c_str(), -1, &fMed, RectF(dCenX - dRad, dCenY - 12.0f, dRad * 2, 24.0f), &fmtC, &bDark);
+    wstring pTxt = to_wstring((int)(93 * stat_animProgress));
+    g.DrawString(pTxt.c_str(), -1, &fMed, RectF(dCenX - dRad, dCenY - 14.0f, dRad * 2, 28.0f), &fmtC, &bTextMain);
 }
 
 // ============================================================
-//  MOUSE MOVE
+//  MOUSE MOVE (For Hover Effects)
 // ============================================================
 void ProcessStatisticsMouseMove(float x, float y, float cx, float cw, float cy)
 {
     stat_hovExport  = false;
     stat_hovTab = -1;
 
-    float btnX = cx + cw - 65.0f, btnY = cy + 17.0f, btnW = 45.0f, btnH = 26.0f;
-    if (x >= btnX && x <= btnX + btnW && y >= btnY && y <= btnY + btnH) stat_hovExport = true;
+    float btnX = cx + cw - 24.0f - 36.0f, btnY = cy + 20.0f, btnS = 28.0f;
+    if (x >= btnX && x <= btnX + btnS && y >= btnY && y <= btnY + btnS) stat_hovExport = true;
 
     for (int i = 0; i < 3; i++) {
         TabRect tr = GetTabRect(i, cx, cw);
-        if (x >= tr.x && x <= tr.x + tr.w && y >= cy + 17.0f && y <= cy + 17.0f + 26.0f) {
+        if (x >= tr.x && x <= tr.x + tr.w && y >= cy + 20.0f && y <= cy + 20.0f + 28.0f) {
             stat_hovTab = i;
         }
     }
@@ -400,18 +450,18 @@ void ProcessStatisticsMouseMove(float x, float y, float cx, float cw, float cy)
 // ============================================================
 void ProcessStatisticsMouseClick(float x, float y, float cx, float cw, float cy)
 {
-    float btnX = cx + cw - 65.0f, btnY = cy + 17.0f, btnW = 45.0f, btnH = 26.0f;
-    if (x >= btnX && x <= btnX + btnW && y >= btnY && y <= btnY + btnH) {
-        MessageBoxW(NULL, L"Data Export Feature Coming Soon!", L"Export", MB_OK | MB_ICONINFORMATION);
+    float btnX = cx + cw - 24.0f - 36.0f, btnY = cy + 20.0f, btnS = 28.0f;
+    if (x >= btnX && x <= btnX + btnS && y >= btnY && y <= btnY + btnS) {
+        MessageBoxW(NULL, L"Analytics Data Export Feature Coming Soon!", L"RasFocus Pro Max", MB_OK | MB_ICONINFORMATION);
     }
 
     for (int i = 0; i < 3; i++) {
         TabRect tr = GetTabRect(i, cx, cw);
-        if (x >= tr.x && x <= tr.x + tr.w && y >= cy + 17.0f && y <= cy + 17.0f + 26.0f) {
+        if (x >= tr.x && x <= tr.x + tr.w && y >= cy + 20.0f && y <= cy + 20.0f + 28.0f) {
             if (stat_currentTab != i) {
                 stat_currentTab = i;
                 stat_firstLoad = true;
-                stat_animProgress = 0.0f; // Re-trigger animation on tab change
+                stat_animProgress = 0.0f; 
             }
         }
     }
