@@ -3290,3 +3290,25 @@ updateStatusBar();
 
     return ss.str();
 }
+// --- Missing C++ Function Implementations ---
+#include <string>
+
+// Forward declaration for Gdiplus
+namespace Gdiplus { class Graphics; }
+
+void ProcessPdfWorkspaceMouseClick(float x, float y) {
+    // TODO: Implement native mouse click handling
+}
+
+void ProcessPdfWorkspaceMouseMove(float x, float y) {
+    // TODO: Implement native mouse hover handling
+}
+
+void DrawPdfWorkspaceTab(Gdiplus::Graphics& g, float x, float y, float w, float h) {
+    // TODO: Implement native tab drawing
+}
+
+void LaunchFoxitStylePdfReader(std::wstring path) {
+    // TODO: Implement native window launch for the reader
+}
+// --------------------------------------------
