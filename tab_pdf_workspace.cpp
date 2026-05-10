@@ -34,6 +34,9 @@ ss << LR"XHTML(<!DOCTYPE html>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+)XHTML";
+
+ss << LR"XHTML(
 <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
 </head>
@@ -61,6 +64,9 @@ ss << LR"CSS(
   --c-muted:#666;
   --c-light:#ccc;
   --c-border:#e0e0e0;
+)CSS";
+
+ss << LR"CSS(
   --c-highlight:rgba(255,220,0,0.45);
   --c-pen:#e53935;
   --c-page:#fff;
@@ -101,6 +107,9 @@ ss << LR"CSS(
 .top-menu:hover,.top-menu.open{background:rgba(255,255,255,.12);color:#fff;}
 .top-sep{width:1px;height:14px;background:#444;margin:0 4px;}
 .top-right{margin-left:auto;display:flex;align-items:center;gap:3px;}
+)CSS";
+
+ss << LR"CSS(
 .top-icon{
   color:var(--c-light);cursor:pointer;padding:2px 6px;border-radius:2px;
   font-size:14px;line-height:1;transition:background .1s;
@@ -145,6 +154,9 @@ ss << LR"CSS(
   flex-shrink:0;
 }
 .pdf-tab:hover{background:#4a4a4a;color:#ddd;}
+)CSS";
+
+ss << LR"CSS(
 .pdf-tab.active{background:var(--c-toolbar);color:var(--c-text);font-weight:600;}
 .pdf-tab .tab-icon{font-size:12px;opacity:.7;}
 .tab-name{overflow:hidden;text-overflow:ellipsis;max-width:130px;}
@@ -164,7 +176,7 @@ ss << LR"CSS(
 )CSS";
 
 // ─────────────────────────────────────────────────────────────
-// PART 05 · Ribbon Toolbar CSS (Acrobat-style tabbed ribbon)
+// PART 05 · Ribbon Toolbar CSS
 // ─────────────────────────────────────────────────────────────
 ss << LR"CSS(
 <style>
@@ -186,6 +198,9 @@ ss << LR"CSS(
 .ribbon-group:last-child{border-right:none;}
 .rg-label{font-size:9px;color:var(--c-muted);text-align:center;margin-top:auto;}
 .rg-row{display:flex;gap:2px;}
+)CSS";
+
+ss << LR"CSS(
 /* Ribbon buttons */
 .rbtn{
   display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -197,7 +212,7 @@ ss << LR"CSS(
 .rbtn.active,.rbtn.pressed{background:#fce4e4;border-color:#f5b8b8;color:var(--c-accent);}
 .rbtn svg{width:18px;height:18px;fill:currentColor;flex-shrink:0;}
 .rbtn-lbl{font-size:9px;line-height:1;text-align:center;white-space:nowrap;}
-/* Small ribbon buttons (2-per-row) */
+/* Small ribbon buttons */
 .rbtn-sm{
   display:flex;align-items:center;gap:4px;cursor:pointer;border-radius:var(--radius);
   border:1px solid transparent;padding:2px 5px;transition:background .1s;
@@ -205,6 +220,9 @@ ss << LR"CSS(
 }
 .rbtn-sm:hover{background:#e0e0e0;border-color:var(--c-border);}
 .rbtn-sm svg{width:13px;height:13px;fill:currentColor;flex-shrink:0;}
+)CSS";
+
+ss << LR"CSS(
 /* Color swatch */
 .color-swatch{
   width:16px;height:16px;border-radius:2px;border:1px solid #bbb;
@@ -229,7 +247,7 @@ select.ribbon-sel{
 ss << LR"CSS(
 <style>
 .workspace{flex:1;display:flex;overflow:hidden;position:relative;}
-/* Left panel (thumbs / bookmarks / layers) */
+/* Left panel */
 .left-panel{
   width:var(--left-panel-w);background:#e8e8e8;border-right:1px solid var(--c-border);
   display:flex;flex-direction:column;flex-shrink:0;overflow:hidden;
@@ -246,6 +264,9 @@ ss << LR"CSS(
 .lp-tab:hover{background:#ccc;}
 .lp-tab.active{background:var(--c-toolbar);color:var(--c-text);font-weight:700;}
 .lp-body{flex:1;overflow-y:auto;overflow-x:hidden;}
+)CSS";
+
+ss << LR"CSS(
 /* Thumbnails */
 .thumb-list{padding:6px;display:flex;flex-direction:column;gap:5px;}
 .thumb-item{
@@ -311,6 +332,9 @@ ss << LR"CSS(
 }
 .ruler-h{top:0;left:0;right:0;height:16px;}
 .ruler-v{top:0;left:0;bottom:0;width:16px;}
+)CSS";
+
+ss << LR"CSS(
 /* Grid overlay */
 .grid-overlay{
   position:absolute;inset:0;pointer-events:none;z-index:19;
@@ -340,6 +364,9 @@ ss << LR"CSS(
   position:absolute;background:#000;z-index:22;cursor:pointer;
   border:2px solid var(--c-accent);
 }
+)CSS";
+
+ss << LR"CSS(
 /* Stamp */
 .stamp-el{
   position:absolute;z-index:18;pointer-events:auto;cursor:move;
@@ -393,6 +420,9 @@ ss << LR"CSS(
   font-size:11px;outline:none;min-width:50px;background:#fff;
 }
 .rp-input:focus{border-color:var(--c-accent2);}
+)CSS";
+
+ss << LR"CSS(
 /* Action buttons in panel */
 .rp-btn{
   width:100%;padding:5px 0;border:1px solid var(--c-border);border-radius:var(--radius);
@@ -446,6 +476,9 @@ ss << LR"CSS(
   font-size:11.5px;outline:none;width:180px;
 }
 .findbar input:focus{border-color:var(--c-accent2);}
+)CSS";
+
+ss << LR"CSS(
 .find-btn{
   padding:3px 8px;border:1px solid var(--c-border);border-radius:var(--radius);
   background:#f0f0f0;cursor:pointer;font-size:11px;
@@ -477,6 +510,9 @@ ss << LR"CSS(
 }
 @keyframes spin{to{transform:rotate(360deg)}}
 #loading-txt{font-size:12px;font-weight:600;}
+)CSS";
+
+ss << LR"CSS(
 /* Modal */
 .modal-overlay{
   display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);
@@ -628,6 +664,9 @@ ss << LR"HTML(
   <div class="dd-sep"></div>
   <div class="dd-item danger" onclick="closeActiveTab()">&#10006; Close Tab</div>
 </div>
+)HTML";
+
+ss << LR"HTML(
 <div class="dropdown" id="m-edit">
   <div class="dd-item" onclick="histUndo()">&#8592; Undo<span class="dd-shortcut">Ctrl+Z</span></div>
   <div class="dd-item" onclick="histRedo()">&#8594; Redo<span class="dd-shortcut">Ctrl+Y</span></div>
@@ -655,6 +694,9 @@ ss << LR"HTML(
   <div class="dd-item" onclick="enterReadMode()">&#9634; Read Mode</div>
   <div class="dd-item" onclick="enterPresentation()">&#9654; Presentation Mode</div>
 </div>
+)HTML";
+
+ss << LR"HTML(
 <div class="dropdown" id="m-tools">
   <div class="dd-item" onclick="setTool('hand');closeAllMenus()">&#9995; Hand Tool</div>
   <div class="dd-item" onclick="setTool('pen');closeAllMenus()">&#9998; Pen (Draw)</div>
@@ -675,6 +717,9 @@ ss << LR"HTML(
   <div class="dd-item" onclick="openSignatureModal()">&#9998; Signature</div>
   <div class="dd-item" onclick="actionPerformOCR()">&#128065; OCR Scanner</div>
 </div>
+)HTML";
+
+ss << LR"HTML(
 <div class="dropdown" id="m-doc">
   <div class="dd-item" onclick="rotatePDFAll()">&#8635; Rotate All Pages</div>
   <div class="dd-item" onclick="modalDeletePages()">&#128465; Delete Pages...</div>
@@ -736,6 +781,9 @@ ss << LR"HTML(
     </div>
     <div class="rg-label">Navigate</div>
   </div>
+)HTML";
+
+ss << LR"HTML(
   <div class="ribbon-group">
     <div class="rg-row">
       <div class="rbtn" id="rb-pen" onclick="setTool('pen')" title="Pen (3)">
@@ -753,6 +801,9 @@ ss << LR"HTML(
     </div>
     <div class="rg-label">Draw</div>
   </div>
+)HTML";
+
+ss << LR"HTML(
   <div class="ribbon-group">
     <div class="rg-row">
       <div class="rbtn" id="rb-note" onclick="setTool('note')" title="Note (6)">
@@ -776,6 +827,9 @@ ss << LR"HTML(
     </div>
     <div class="rg-label">Insert</div>
   </div>
+)HTML";
+
+ss << LR"HTML(
   <div class="ribbon-group">
     <div class="rg-row">
       <div class="rbtn" id="rb-rect" onclick="setTool('rect')">
@@ -797,6 +851,9 @@ ss << LR"HTML(
     </div>
     <div class="rg-label">Shapes</div>
   </div>
+)HTML";
+
+ss << LR"HTML(
   <div class="ribbon-group">
     <div class="rg-row">
       <div style="display:flex;flex-direction:column;gap:3px;">
@@ -820,6 +877,9 @@ ss << LR"HTML(
     </div>
     <div class="rg-label">Style</div>
   </div>
+)HTML";
+
+ss << LR"HTML(
   <div class="ribbon-group">
     <div class="rg-row">
       <div class="rbtn" onclick="zoomBy(-0.15)" title="Zoom Out">
@@ -838,6 +898,9 @@ ss << LR"HTML(
     <div class="rg-label">Zoom</div>
   </div>
 </div>
+)HTML";
+
+ss << LR"HTML(
 <!-- ANNOTATE ribbon -->
 <div class="ribbon-panel" id="r-annotate">
   <div class="ribbon-group">
@@ -863,6 +926,9 @@ ss << LR"HTML(
     <div class="rg-label">Comments</div>
   </div>
 </div>
+)HTML";
+
+ss << LR"HTML(
 <!-- EDIT PDF ribbon -->
 <div class="ribbon-panel" id="r-edit">
   <div class="ribbon-group">
@@ -880,6 +946,9 @@ ss << LR"HTML(
     <div class="rg-label">Overlays</div>
   </div>
 </div>
+)HTML";
+
+ss << LR"HTML(
 <!-- PAGES ribbon -->
 <div class="ribbon-panel" id="r-pages">
   <div class="ribbon-group">
@@ -897,6 +966,9 @@ ss << LR"HTML(
     <div class="rg-label">PDF Operations</div>
   </div>
 </div>
+)HTML";
+
+ss << LR"HTML(
 <!-- PROTECT ribbon -->
 <div class="ribbon-panel" id="r-protect">
   <div class="ribbon-group">
@@ -956,6 +1028,9 @@ ss << LR"HTML(
       <button class="find-btn" onclick="toggleFindBar()">&#10005;</button>
     </div>
   </div>
+)HTML";
+
+ss << LR"HTML(
   <!-- Right Properties Panel -->
   <div class="right-panel" id="right-panel">
     <!-- Document Info -->
@@ -998,6 +1073,9 @@ ss << LR"HTML(
         </div>
       </div>
     </div>
+)HTML";
+
+ss << LR"HTML(
     <!-- Quick Actions -->
     <div class="rp-section">
       <div class="rp-header" onclick="toggleRPSection(this)">&#9889; Quick Actions <span class="toggle">&#9660;</span></div>
@@ -1041,6 +1119,9 @@ ss << LR"HTML(
     </div>
   </div>
 </div><!-- end workspace -->
+)HTML";
+
+ss << LR"HTML(
 <!-- Status bar -->
 <div class="statusbar">
   <span class="sb-item" id="sb-tool">Tool: Hand</span>
@@ -1085,6 +1166,9 @@ ss << LR"HTML(
   <div class="ctx-item" onclick="rotatePDFAll();closeCtx()">&#8635; Rotate Page</div>
   <div class="ctx-item danger" onclick="ctxDeletePage()">&#128465; Delete This Page</div>
 </div>
+)HTML";
+
+ss << LR"HTML(
 <!-- Signature modal -->
 <div class="modal-overlay" id="sig-modal-overlay">
   <div class="modal">
@@ -1154,7 +1238,9 @@ let g_panning = false, g_panX0 = 0, g_panY0 = 0, g_scrollX0 = 0, g_scrollY0 = 0;
 
 // Undo/redo
 const MAX_HIST = 60;
+)JS";
 
+ss << LR"JS(
 // ── Helpers ───────────────────────────────────────────────────
 function activeTab() { return g_tabs.find(t => t.id === g_activeId); }
 
@@ -1191,7 +1277,9 @@ function closeModal() {
 document.getElementById('modal-overlay').addEventListener('mousedown', e => {
   if (e.target.id === 'modal-overlay') closeModal();
 });
+)JS";
 
+ss << LR"JS(
 async function saveBytesToFile(blob, name, ext='pdf', mime='application/pdf') {
   try {
     if (window.showSaveFilePicker) {
@@ -1258,7 +1346,9 @@ async function loadPdfFromPath(path) {
     showToast('Failed to load: ' + e.message);
   }
 }
+)JS";
 
+ss << LR"JS(
 async function createTab(name, bytes) {
   try {
     document.getElementById('empty-hint').style.display = 'none';
@@ -1304,7 +1394,9 @@ function renderTabStrip() {
   add.onclick = () => openFileDialog(true);
   strip.appendChild(add);
 }
+)JS";
 
+ss << LR"JS(
 async function switchTab(id) {
   g_activeId = id;
   renderTabStrip();
@@ -1364,7 +1456,9 @@ async function renderViewer() {
     wrapper.dataset.pdfPage = pNum;
     wrapper.style.width = vp.width + 'px';
     wrapper.style.height = vp.height + 'px';
+)JS";
 
+ss << LR"JS(
     // PDF canvas
     const pdfCanvas = document.createElement('canvas');
     pdfCanvas.className = 'pdf-canvas';
@@ -1438,7 +1532,9 @@ document.getElementById('viewer-area').addEventListener('wheel', e => {
   t.zoom = Math.min(5, Math.max(0.1, t.zoom + (e.deltaY > 0 ? -0.07 : 0.07)));
   updateStatusBar(); scheduleRender(40);
 }, { passive: false });
+)JS";
 
+ss << LR"JS(
 // Mouse‑position in statusbar
 document.getElementById('viewer-area').addEventListener('mousemove', e => {
   const wrapper = e.target.closest('.page-wrapper');
@@ -1520,7 +1616,9 @@ function setTool(tool) {
   document.getElementById('sb-tool').textContent = 'Tool: ' + (TOOL_LABELS[tool] || tool);
   closeAllMenus();
 }
+)JS";
 
+ss << LR"JS(
 // ── Hand (pan) ──────────────────────────────────────────────
 const viewerArea = document.getElementById('viewer-area');
 viewerArea.addEventListener('mousedown', e => {
@@ -1593,7 +1691,9 @@ document.getElementById('pdf-container').addEventListener('mousedown', e => {
   g_drawCtx.moveTo(pos.x, pos.y);
   e.preventDefault();
 });
+)JS";
 
+ss << LR"JS(
 window.addEventListener('mousemove', e => {
   if (!g_drawing || !g_drawCtx || !g_drawCanvas) return;
   const pos = getCanvasXY(g_drawCanvas, e);
@@ -1639,7 +1739,9 @@ function restoreDrawAnnotations(pageIndex, canvas, w, h) {
     ctx.stroke(); ctx.restore();
   });
 }
+)JS";
 
+ss << LR"JS(
 // ── Eraser ───────────────────────────────────────────────────
 function eraseAt(canvas, e) {
   const pos = getCanvasXY(canvas, e);
@@ -1722,7 +1824,9 @@ window.addEventListener('mousemove', e => {
   ctx.stroke();
   ctx.restore();
 });
+)JS";
 
+ss << LR"JS(
 window.addEventListener('mouseup', e => {
   if (!g_shapeDrawing) return;
   g_shapeDrawing = false;
@@ -1823,7 +1927,9 @@ function createNoteEl(data, wrapper) {
   makeDraggable(note, wrapper, data);
   wrapper.appendChild(note);
 }
+)JS";
 
+ss << LR"JS(
 document.getElementById('pdf-container').addEventListener('click', e => {
   if (g_tool !== 'note') return;
   const wrapper = e.target.closest('.page-wrapper'); if (!wrapper) return;
@@ -1892,7 +1998,9 @@ function createTextBoxEl(data, wrapper) {
   makeDraggable(tb, wrapper, data);
   wrapper.appendChild(tb);
 }
+)JS";
 
+ss << LR"JS(
 document.getElementById('pdf-container').addEventListener('click', e => {
   if (g_tool !== 'textbox') return;
   const wrapper = e.target.closest('.page-wrapper'); if (!wrapper) return;
@@ -1943,7 +2051,9 @@ function createStampEl(data, wrapper) {
   makeDraggable(el, wrapper, data);
   wrapper.appendChild(el);
 }
+)JS";
 
+ss << LR"JS(
 document.getElementById('pdf-container').addEventListener('click', e => {
   if (g_tool !== 'stamp') return;
   const wrapper = e.target.closest('.page-wrapper'); if (!wrapper) return;
@@ -1992,7 +2102,9 @@ function createImgOverlay(data, wrapper) {
   });
   wrapper.appendChild(div);
 }
+)JS";
 
+ss << LR"JS(
 function startImgResize(e, el, data, wrapper) {
   e.stopPropagation(); e.preventDefault();
   const sx=e.clientX, sy=e.clientY, sw=el.offsetWidth, sh=el.offsetHeight;
@@ -2110,7 +2222,9 @@ async function buildThumbs() {
     list.appendChild(item);
   }
 }
+)JS";
 
+ss << LR"JS(
 function deletePageByOrder(idx) {
   const t = activeTab(); if (!t) return;
   if (t.pageOrder.length<=1) { showToast('Cannot delete the only page.'); return; }
@@ -2158,7 +2272,9 @@ function switchLPanel(which, btn) {
   if (which==='thumb') buildThumbs();
   if (which==='bm') renderBookmarkPanel();
 }
+)JS";
 
+ss << LR"JS(
 function addBookmark() {
   const t = activeTab(); if (!t) { showToast('No file open.'); return; }
   const label = prompt('Bookmark label:', 'Page 1'); if (!label) return;
@@ -2236,7 +2352,9 @@ sigCanvas.addEventListener('mousemove', e=>{
   g_sigCtx.beginPath(); g_sigCtx.moveTo(e.clientX-r.left, e.clientY-r.top);
 });
 window.addEventListener('mouseup', ()=>{ g_sigDrawing=false; });
+)JS";
 
+ss << LR"JS(
 function applySigToPage() {
   const t=activeTab(); if (!t) { closeSigModal(); return; }
   const src=document.getElementById('sig-modal-canvas').toDataURL('image/png');
@@ -2299,7 +2417,9 @@ function applyCustomColor(c) {
   }
   document.getElementById('color-picker-popup').classList.remove('show');
 }
+)JS";
 
+ss << LR"JS(
 document.addEventListener('click', e=>{
   const pp=document.getElementById('color-picker-popup');
   if (pp.classList.contains('show') && !pp.contains(e.target) && !e.target.classList.contains('color-swatch')) {
@@ -2346,7 +2466,9 @@ function histRedo() {
   t.pageOrder=[...snap.pageOrder];
   scheduleRender(); buildThumbs(); showToast('Redo.');
 }
+)JS";
 
+ss << LR"JS(
 // ── Menus ─────────────────────────────────────────────────────
 function toggleMenu(id, btn) {
   const m=document.getElementById(id);
@@ -2527,7 +2649,9 @@ async function downloadCurrentPDF(saveAs2=false) {
       }
     }
     setProgress(60);
+)JS";
 
+ss << LR"JS(
     // Bake redactions
     for (const r of t.redactions) {
       if (r.pageIndex>=pages.length) continue;
@@ -2641,7 +2765,9 @@ async function doSplit() {
   } catch(e){ showToast('Split failed.'); }
   showLoading(false);
 }
+)JS";
 
+ss << LR"JS(
 function modalExtract() {
   const t=activeTab(); if (!t) { showToast('Open a PDF.'); return; }
   showModal('Extract Pages',`
@@ -2715,7 +2841,9 @@ function doDeletePages() {
   t.modified=true; closeModal(); renderViewer(); buildThumbs();
   showToast('Page(s) deleted.','success');
 }
+)JS";
 
+ss << LR"JS(
 function modalInsertBlank() {
   const t=activeTab(); if (!t) { showToast('Open a PDF.'); return; }
   showModal('Insert Blank Page',`
@@ -2815,7 +2943,9 @@ async function doWatermark() {
   } catch(e){ showToast('Watermark failed.'); }
   showLoading(false);
 }
+)JS";
 
+ss << LR"JS(
 function modalHeaderFooter() {
   showModal('Header & Footer',`
     <label>Header text (use {page}, {total}, {date}):</label>
@@ -2898,7 +3028,9 @@ async function doBates() {
   } catch(e){ showToast('Bates numbering failed.'); }
   showLoading(false);
 }
+)JS";
 
+ss << LR"JS(
 function modalPassword() {
   showModal('Encrypt PDF',`
     <p style="font-size:11px;color:var(--c-muted);margin-bottom:10px;">Note: PDF-lib 1.x does not support AES-256; output will have owner/user password set at PDF level.</p>
@@ -2975,7 +3107,9 @@ async function actionPDFtoText() {
   } catch(e){ showToast('Text export failed.'); }
   showLoading(false);
 }
+)JS";
 
+ss << LR"JS(
 async function actionPerformOCR() {
   const t=activeTab(); if (!t){ showToast('Open a PDF.'); return; }
   showLoading(true,'Running OCR (page 1)…',10);
@@ -3017,7 +3151,9 @@ async function refreshStats() {
 function toggleLeftPanel() { document.getElementById('left-panel').classList.toggle('collapsed'); }
 function toggleRightPanel() { document.getElementById('right-panel').classList.toggle('collapsed'); }
 function toggleBothPanels() { toggleLeftPanel(); toggleRightPanel(); }
+)JS";
 
+ss << LR"JS(
 // ── View modes ────────────────────────────────────────────────
 function cycleViewMode() {
   g_viewMode=(g_viewMode+1)%3;
@@ -3080,7 +3216,9 @@ async function showDocProperties() {
     </table>
     <div class="modal-actions"><button class="btn btn-secondary" onclick="closeModal()">Close</button></div>`);
 }
+)JS";
 
+ss << LR"JS(
 // ── Keyboard shortcuts reference ───────────────────────────────
 function showShortcutModal() {
   showModal('Keyboard Shortcuts',`
