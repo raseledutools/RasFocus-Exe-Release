@@ -70,7 +70,7 @@ NOTIFYICONDATA nid = {};
 // ==========================================
 extern const int SIDEBAR_WIDTH      = 170;  
 extern const int TITLEBAR_HEIGHT    = 26;   // উপরের সাদা বার আরও চিকন করা হয়েছে
-extern const int SUBHEADER_HEIGHT   = 56;   // ফুল উইডথ সাব-হেডার
+extern const int SUBHEADER_HEIGHT   = 46;   // ফুল উইডথ সাব-হেডার
 
 // UI State
 int selectedTab  = 0;
@@ -628,7 +628,7 @@ void DrawSubHeader(Graphics& g, int w) {
     HICON hIconLg = (HICON)LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APP_ICON), IMAGE_ICON, 32, 32, LR_SHARED);
     if (hIconLg) {
         HDC hdcG = g.GetHDC();
-        int iconY = (int)(subY + (subH - 32.0f) / 2.0f);
+        int iconY = (int)(subY + (subH - 32.0f) / 2.0f+6);
         DrawIconEx(hdcG, 12, iconY, hIconLg, 32, 32, 0, NULL, DI_NORMAL);
         g.ReleaseHDC(hdcG);
     }
