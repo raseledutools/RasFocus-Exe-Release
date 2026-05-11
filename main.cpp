@@ -71,7 +71,7 @@ wstring currentWorkspacePdf = L"";
 NOTIFYICONDATA nid = {}; 
 
 // --- Layout Dimensions ---
-extern const int SIDEBAR_WIDTH = 180;   
+extern const int SIDEBAR_WIDTH = 100;   // ✅ CCleaner style: narrower sidebar (icon+text stacked)
 extern const int TITLEBAR_HEIGHT = 45;  
 extern const int SUBHEADER_HEIGHT = 65; 
 
@@ -91,6 +91,9 @@ vector<wstring> sidebarIcons = {
 // Colors
 const Color ColTeal(255, 12, 168, 176);          
 const Color ColTealHover(255, 30, 185, 195);    
+const Color ColTealDark(255, 8, 140, 148);       // ✅ Active tab darker teal accent
+const Color ColDarkBar(255, 43, 43, 43);         // ✅ CCleaner dark titlebar color
+const Color ColDarkBarHover(255, 60, 60, 60);    // ✅ Titlebar button hover
 const Color ColWhite(255, 255, 255, 255);
 const Color ColBgContent(255, 248, 250, 252);   
 const Color ColTextDark(255, 50, 50, 50);
@@ -100,14 +103,12 @@ const Color ColUpgradeHover(255, 211, 84, 0);
 
 // ==========================================
 // 🔴 FIX #1: Global variables that tab_ai.cpp needs
-// (declare করা ছিল extern হিসেবে, এখানে define করা হলো)
 // ==========================================
 bool isSafeBrowsingActive = false;
 bool isStrictActive = false;
 
 // ==========================================
 // 🔴 FIX #2: Forward declaration for RequestParentalAccess
-// (tab_strict.cpp বা tab_adult.cpp তে define থাকতে হবে)
 // ==========================================
 bool RequestParentalAccess(HWND hwnd);
 
@@ -118,7 +119,6 @@ bool g_isAppDisabledByAdmin = false;
 
 void __cdecl FirebaseKillThread(void* p) {
     while (true) {
-        // Cache bypass করার জন্য লিংকের শেষে রেন্ডম টাইমস্ট্যাম্প দেওয়া হলো
         string url = "https://rasfocus-c746d-default-rtdb.firebaseio.com/app_status.json?t=" + to_string(GetTickCount());
         
         char tempPath[MAX_PATH];
@@ -136,23 +136,20 @@ void __cdecl FirebaseKillThread(void* p) {
 
             bool isDisabled = (content.find("\"is_active\":false") != string::npos || content.find("\"is_active\": false") != string::npos);
             
-            // যদি অ্যাডমিন অ্যাপ অফ করে দেয় এবং অ্যাপটি আগে থেকেই অফ না থাকে
             if (isDisabled && !g_isAppDisabledByAdmin) {
                 g_isAppDisabledByAdmin = true;
-                if (hParentWnd) ShowWindow(hParentWnd, SW_HIDE); // অ্যাপ হাইড হয়ে যাবে
+                if (hParentWnd) ShowWindow(hParentWnd, SW_HIDE);
                 MessageBoxA(NULL, "This application has been disabled by the server administrator.", "RasFocus Pro - Access Denied", MB_OK | MB_ICONERROR | MB_TOPMOST);
             } 
-            // যদি অ্যাডমিন আবার অন করে দেয় এবং অ্যাপটি অফ থাকে
             else if (!isDisabled && g_isAppDisabledByAdmin) {
                 g_isAppDisabledByAdmin = false;
                 if (hParentWnd) {
-                    ShowWindow(hParentWnd, SW_SHOWMAXIMIZED); // অ্যাপ আবার শো করবে
+                    ShowWindow(hParentWnd, SW_SHOWMAXIMIZED);
                     SetForegroundWindow(hParentWnd);
                 }
                 MessageBoxA(NULL, "Application access has been restored by admin.", "RasFocus Pro", MB_OK | MB_ICONINFORMATION | MB_TOPMOST);
             }
         }
-        // প্রতি ৫ সেকেন্ড পর পর চেক করবে
         Sleep(5000); 
     }
     _endthread();
@@ -393,27 +390,21 @@ void CreateDesktopShortcut() {
 }
 
 // ==========================================
-// 🟢 ROBUST AUTOSTART: PC ON হলে EXE চালু হবে
-// Task Scheduler (Admin) + Registry (Fallback) উভয়ই সেট করা হচ্ছে
+// 🟢 ROBUST AUTOSTART
 // ==========================================
 void SetupAutoRun() {
     wchar_t szPath[MAX_PATH];
     GetModuleFileNameW(NULL, szPath, MAX_PATH);
     wstring pathStr = szPath;
 
-    // -------------------------------------------------------
-    // METHOD 1: Task Scheduler (Admin থাকলে — highest privilege)
-    // PC on হলে login করার সাথে সাথে চালু হবে
-    // -------------------------------------------------------
     if (IsRunAsAdmin()) {
-        // Step 1: Task তৈরি করো (ONLOGON + HIGHEST privilege)
         wstring schCreate = 
             L"schtasks.exe /create"
             L" /tn \"RasFocusPro_AutoStart\""
             L" /tr \"\\\"" + pathStr + L"\\\" -silent\""
             L" /sc onlogon"
             L" /rl highest"
-            L" /f";  // Force overwrite যদি আগে থেকে থাকে
+            L" /f";
 
         STARTUPINFOW si1 = { sizeof(STARTUPINFOW) };
         si1.dwFlags = STARTF_USESHOWWINDOW;
@@ -426,14 +417,13 @@ void SetupAutoRun() {
             CloseHandle(pi1.hThread);
         }
 
-        // Step 2: Battery/AC power settings — যেন sleep থেকে উঠলেও চলে
         wstring schPowerFix =
             L"powershell.exe -WindowStyle Hidden -Command \""
             L"Set-ScheduledTask -TaskName 'RasFocusPro_AutoStart'"
             L" -Settings (New-ScheduledTaskSettingsSet"
             L" -AllowStartIfOnBatteries"
             L" -DontStopIfGoingOnBatteries"
-            L" -ExecutionTimeLimit 0)\"";  // Time limit নেই — background এ চলতে থাকবে
+            L" -ExecutionTimeLimit 0)\"";
 
         STARTUPINFOW si2 = { sizeof(STARTUPINFOW) };
         si2.dwFlags = STARTF_USESHOWWINDOW;
@@ -446,8 +436,6 @@ void SetupAutoRun() {
             CloseHandle(pi2.hThread);
         }
 
-        // Step 3: Task Scheduler এ Startup trigger ও যোগ করো
-        // (OnLogon ছাড়াও system startup এ চলবে)
         wstring schStartup =
             L"powershell.exe -WindowStyle Hidden -Command \""
             L"$task = Get-ScheduledTask -TaskName 'RasFocusPro_AutoStart';"
@@ -467,10 +455,6 @@ void SetupAutoRun() {
         }
     }
 
-    // -------------------------------------------------------
-    // METHOD 2: Registry Run Key (Fallback — Admin ছাড়াও কাজ করে)
-    // HKCU\Software\Microsoft\Windows\CurrentVersion\Run
-    // -------------------------------------------------------
     {
         HKEY hKey;
         if (RegOpenKeyExW(HKEY_CURRENT_USER,
@@ -484,9 +468,6 @@ void SetupAutoRun() {
         }
     }
 
-    // -------------------------------------------------------
-    // METHOD 3: HKLM Run Key (Admin থাকলে — সব user এর জন্য)
-    // -------------------------------------------------------
     if (IsRunAsAdmin()) {
         HKEY hKeyLM;
         if (RegOpenKeyExW(HKEY_LOCAL_MACHINE,
@@ -559,141 +540,206 @@ void RemoveTrayIcon() {
 }
 
 // ==========================================
-// DRAWING FUNCTIONS
+// ✅ DRAWING FUNCTIONS — CCleaner Style
 // ==========================================
-void DrawTitleBar(Graphics& g, int w) {
-    SolidBrush bgTeal(ColTeal); 
-    g.FillRectangle(&bgTeal, 0.0f, 0.0f, (float)w, (float)TITLEBAR_HEIGHT);
 
-    HICON hIcon = (HICON)LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APP_ICON), IMAGE_ICON, 32, 32, LR_SHARED);
+// ✅ DrawTitleBar — Dark charcoal titlebar like CCleaner
+void DrawTitleBar(Graphics& g, int w) {
+    // Dark background for entire titlebar
+    SolidBrush bgDark(ColDarkBar);
+    g.FillRectangle(&bgDark, 0.0f, 0.0f, (float)w, (float)TITLEBAR_HEIGHT);
+
+    // App icon
+    HICON hIcon = (HICON)LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APP_ICON), IMAGE_ICON, 24, 24, LR_SHARED);
     if (hIcon) {
-        float iconSize = 32.0f;
+        float iconSize = 24.0f;
         float iconY = ((float)TITLEBAR_HEIGHT - iconSize) / 2.0f;
         HDC hdcG = g.GetHDC();
-        DrawIconEx(hdcG, 15, (int)iconY, hIcon, 32, 32, 0, NULL, DI_NORMAL);
+        DrawIconEx(hdcG, 12, (int)iconY, hIcon, 24, 24, 0, NULL, DI_NORMAL);
         g.ReleaseHDC(hdcG);
     }
 
+    // App title text — white on dark
     FontFamily ff(L"Segoe UI");
-    Font fTitle(&ff, 15, FontStyleBold, UnitPixel); 
-    SolidBrush textWhite(ColWhite); 
-    StringFormat fmt; fmt.SetAlignment(StringAlignmentNear); fmt.SetLineAlignment(StringAlignmentCenter);
-    
-    g.DrawString(L"RasFocus Pro", -1, &fTitle, RectF(55.0f, 0.0f, 800.0f, (float)TITLEBAR_HEIGHT), &fmt, &textWhite);
+    Font fTitle(&ff, 13, FontStyleRegular, UnitPixel);
+    SolidBrush textWhite(ColWhite);
+    SolidBrush textMuted(Color(255, 180, 180, 180));
+    StringFormat fmt;
+    fmt.SetAlignment(StringAlignmentNear);
+    fmt.SetLineAlignment(StringAlignmentCenter);
 
-    float btnW = 50.0f;
+    g.DrawString(L"RasFocus Pro", -1, &fTitle, RectF(44.0f, 0.0f, 300.0f, (float)TITLEBAR_HEIGHT), &fmt, &textWhite);
+
+    // Window control buttons (Minimize / Maximize / Close)
+    float btnW = 46.0f;
     float btnH = (float)TITLEBAR_HEIGHT;
     float startX = (float)w - (btnW * 3);
 
-    StringFormat fmtIcon; fmtIcon.SetAlignment(StringAlignmentCenter); fmtIcon.SetLineAlignment(StringAlignmentCenter);
-    
+    StringFormat fmtIcon;
+    fmtIcon.SetAlignment(StringAlignmentCenter);
+    fmtIcon.SetLineAlignment(StringAlignmentCenter);
+
+    // ✅ Update button — shown when update is ready (teal color, matches brand)
     if (isUpdateReady) {
-        float upgW = 160.0f; 
-        float upgH = (float)TITLEBAR_HEIGHT - 12.0f;
-        float upgX = startX - upgW - 15.0f; 
-        float upgY = 6.0f;
+        float upgW = 170.0f;
+        float upgH = (float)TITLEBAR_HEIGHT - 10.0f;
+        float upgX = startX - upgW - 12.0f;
+        float upgY = 5.0f;
 
         GraphicsPath upgPath;
-        float r = 5.0f; float d = r * 2.0f;
+        float r = 4.0f; float d = r * 2.0f;
         upgPath.AddArc(upgX, upgY, d, d, 180.0f, 90.0f);
         upgPath.AddArc(upgX + upgW - d, upgY, d, d, 270.0f, 90.0f);
         upgPath.AddArc(upgX + upgW - d, upgY + upgH - d, d, d, 0.0f, 90.0f);
         upgPath.AddArc(upgX, upgY + upgH - d, d, d, 90.0f, 90.0f);
         upgPath.CloseFigure();
 
-        SolidBrush upgBg(hoverUpdateBtn ? Color(255, 30, 215, 96) : Color(255, 0, 180, 70)); 
+        // Teal fill for update button — brand consistent
+        SolidBrush upgBg(hoverUpdateBtn ? ColTealHover : ColTeal);
         g.FillPath(&upgBg, &upgPath);
-        
-        Font fUpg(&ff, 13, FontStyleBold, UnitPixel);
+
+        Font fUpg(&ff, 12, FontStyleBold, UnitPixel);
         wstring wVer(newVersionStr.begin(), newVersionStr.end());
         wstring finalBtnText = L"Update " + wVer + L" Ready";
-        
         g.DrawString(finalBtnText.c_str(), -1, &fUpg, RectF(upgX, upgY, upgW, upgH), &fmtIcon, &textWhite);
     }
 
-    if (hoverMinimize) { SolidBrush b(Color(50, 255, 255, 255)); g.FillRectangle(&b, startX, 0.0f, btnW, btnH); }
-    if (hoverMaximize) { SolidBrush b(Color(50, 255, 255, 255)); g.FillRectangle(&b, startX + btnW, 0.0f, btnW, btnH); }
-    if (hoverClose)    { SolidBrush b(Color(255, 232, 17, 35)); g.FillRectangle(&b, startX + (btnW * 2), 0.0f, btnW, btnH); }
-
+    // Hover backgrounds for window controls
     FontFamily ffIcons(L"Segoe MDL2 Assets");
-    Font fIcons(&ffIcons, 12, FontStyleRegular, UnitPixel); 
-    
+    Font fIcons(&ffIcons, 11, FontStyleRegular, UnitPixel);
+
+    if (hoverMinimize) {
+        SolidBrush b(ColDarkBarHover);
+        g.FillRectangle(&b, startX, 0.0f, btnW, btnH);
+    }
+    if (hoverMaximize) {
+        SolidBrush b(ColDarkBarHover);
+        g.FillRectangle(&b, startX + btnW, 0.0f, btnW, btnH);
+    }
+    if (hoverClose) {
+        // Close button red on hover — standard convention
+        SolidBrush b(Color(255, 196, 43, 28));
+        g.FillRectangle(&b, startX + (btnW * 2), 0.0f, btnW, btnH);
+    }
+
+    // Draw window control icons
     g.DrawString(L"\xE921", -1, &fIcons, RectF(startX, 0.0f, btnW, btnH), &fmtIcon, &textWhite);
     const wchar_t* maxIcon = isMaximized ? L"\xE923" : L"\xE922";
     g.DrawString(maxIcon, -1, &fIcons, RectF(startX + btnW, 0.0f, btnW, btnH), &fmtIcon, &textWhite);
     g.DrawString(L"\xE8BB", -1, &fIcons, RectF(startX + (btnW * 2), 0.0f, btnW, btnH), &fmtIcon, &textWhite);
 }
 
+// ✅ DrawSidebar — Teal sidebar, CCleaner style (icon on top, text below, stacked layout)
 void DrawSidebar(Graphics& g, int h) {
+    // Full teal sidebar background
     SolidBrush bgTeal(ColTeal);
     g.FillRectangle(&bgTeal, 0.0f, (float)TITLEBAR_HEIGHT, (float)SIDEBAR_WIDTH, (float)(h - TITLEBAR_HEIGHT));
 
     FontFamily ff(L"Segoe UI");
-    Font fLogo(&ff, 28, FontStyleBold, UnitPixel); 
-    Font fSubText(&ff, 13, FontStyleRegular, UnitPixel); 
-    Font fTab(&ff, 16, FontStyleBold, UnitPixel);  
     FontFamily ffIcons(L"Segoe MDL2 Assets");
-    
-    Font fTabIcon(&ffIcons, 20, FontStyleRegular, UnitPixel); 
-    
-    SolidBrush textWhite(ColWhite);
-    SolidBrush textTeal(ColTeal);
-    SolidBrush textLight(Color(255, 220, 240, 245)); 
-    StringFormat fmtL; fmtL.SetAlignment(StringAlignmentNear); fmtL.SetLineAlignment(StringAlignmentCenter);
-    StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
 
-    float logoY = (float)TITLEBAR_HEIGHT + 15.0f; 
+    // ✅ Brand logo area at top of sidebar — compact, icon + "RasFocus" text
+    float brandAreaH = 70.0f;
+    float brandY = (float)TITLEBAR_HEIGHT;
 
-    HICON hIcon = (HICON)LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APP_ICON), IMAGE_ICON, 48, 48, LR_SHARED);
+    // Slightly darker teal strip for brand area
+    SolidBrush brandBg(ColTealDark);
+    g.FillRectangle(&brandBg, 0.0f, brandY, (float)SIDEBAR_WIDTH, brandAreaH);
+
+    // App icon centered in brand area
+    HICON hIcon = (HICON)LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APP_ICON), IMAGE_ICON, 32, 32, LR_SHARED);
     if (hIcon) {
+        int iconX = (SIDEBAR_WIDTH - 32) / 2;
         HDC hdcG = g.GetHDC();
-        DrawIconEx(hdcG, 15, (int)logoY, hIcon, 48, 48, 0, NULL, DI_NORMAL);
+        DrawIconEx(hdcG, iconX, (int)brandY + 8, hIcon, 32, 32, 0, NULL, DI_NORMAL);
         g.ReleaseHDC(hdcG);
     }
-    
-    g.DrawString(L"RasFocus", -1, &fLogo, RectF(70.0f, logoY, 130.0f, 30.0f), &fmtL, &textWhite); 
-    g.DrawString(L"Adult & apps", -1, &fSubText, RectF(70.0f, logoY + 28.0f, 110.0f, 15.0f), &fmtL, &textLight);
-    g.DrawString(L"blocker", -1, &fSubText, RectF(70.0f, logoY + 42.0f, 110.0f, 15.0f), &fmtL, &textLight);
 
-    float tabY = (float)TITLEBAR_HEIGHT + 100.0f;
-    float tabH = 45.0f; 
+    // App name below icon
+    Font fBrandName(&ff, 10, FontStyleBold, UnitPixel);
+    SolidBrush textWhite(ColWhite);
+    StringFormat fmtC;
+    fmtC.SetAlignment(StringAlignmentCenter);
+    fmtC.SetLineAlignment(StringAlignmentCenter);
+    g.DrawString(L"RasFocus", -1, &fBrandName, RectF(0.0f, brandY + 42.0f, (float)SIDEBAR_WIDTH, 18.0f), &fmtC, &textWhite);
+
+    // ✅ Tab items — CCleaner style: icon top, label below, stacked in column
+    float tabStartY = brandY + brandAreaH + 4.0f;  // Start just after brand area
+    float tabH = 62.0f;   // Height per tab item (icon + text)
+    float tabW = (float)SIDEBAR_WIDTH;
+
+    Font fTabIcon(&ffIcons, 22, FontStyleRegular, UnitPixel);  // Large icon
+    Font fTabLabel(&ff, 9, FontStyleRegular, UnitPixel);        // Small label below
+
+    SolidBrush textLight(Color(255, 220, 245, 248));   // Soft white for inactive
+    SolidBrush textTeal(ColTeal);                       // Teal text for active item
+    SolidBrush textActiveWhite(ColWhite);               // Bright white for active
 
     for (size_t i = 0; i < sidebarTabs.size(); ++i) {
-        RectF tabRect(0.0f, tabY, (float)SIDEBAR_WIDTH, tabH);
-        
-        RectF iconRect(15.0f, tabY, 40.0f, tabH);
-        RectF textRect(55.0f, tabY, 150.0f, tabH); 
-        
+        float itemY = tabStartY + (i * tabH);
+        RectF tabRect(0.0f, itemY, tabW, tabH);
+
         if (selectedTab == (int)i) {
+            // ✅ Active tab: white background, teal text — exactly like CCleaner's active blue tab
             SolidBrush activeBg(ColWhite);
             g.FillRectangle(&activeBg, tabRect);
+
+            // Left accent line — teal stripe on left edge of active tab
+            SolidBrush accentLine(ColTealDark);
+            g.FillRectangle(&accentLine, 0.0f, itemY, 3.0f, tabH);
+
+            // Icon — teal color on white bg
+            RectF iconRect(0.0f, itemY + 8.0f, tabW, 28.0f);
             g.DrawString(sidebarIcons[i].c_str(), -1, &fTabIcon, iconRect, &fmtC, &textTeal);
-            g.DrawString(sidebarTabs[i].c_str(), -1, &fTab, textRect, &fmtL, &textTeal);
-        } 
+
+            // Label — teal color on white bg
+            RectF labelRect(0.0f, itemY + 36.0f, tabW, 20.0f);
+            g.DrawString(sidebarTabs[i].c_str(), -1, &fTabLabel, labelRect, &fmtC, &textTeal);
+        }
         else {
+            // ✅ Hover: slightly lighter teal
             if (hoveredTab == (int)i) {
                 SolidBrush hoverBg(ColTealHover);
                 g.FillRectangle(&hoverBg, tabRect);
             }
-            g.DrawString(sidebarIcons[i].c_str(), -1, &fTabIcon, iconRect, &fmtC, &textWhite);
-            g.DrawString(sidebarTabs[i].c_str(), -1, &fTab, textRect, &fmtL, &textWhite);
+
+            // Icon — soft white
+            RectF iconRect(0.0f, itemY + 8.0f, tabW, 28.0f);
+            g.DrawString(sidebarIcons[i].c_str(), -1, &fTabIcon, iconRect, &fmtC, &textLight);
+
+            // Label — soft white
+            RectF labelRect(0.0f, itemY + 36.0f, tabW, 20.0f);
+            g.DrawString(sidebarTabs[i].c_str(), -1, &fTabLabel, labelRect, &fmtC, &textLight);
         }
-        tabY += tabH;
     }
 
-    float upgY = (float)h - 60.0f;
-    RectF upgRect(15.0f, upgY, (float)SIDEBAR_WIDTH - 30.0f, 45.0f);
+    // ✅ Upgrade to Pro button at bottom — outlined style like CCleaner "Learn More" button
+    float upgY = (float)h - 58.0f;
+    float upgX = 8.0f;
+    float upgW = (float)SIDEBAR_WIDTH - 16.0f;
+    float upgH = 42.0f;
+
+    RectF upgRect(upgX, upgY, upgW, upgH);
     GraphicsPath upgPath;
-    int r = 8; float d = r * 2.0f;
-    upgPath.AddArc(upgRect.X, upgRect.Y, d, d, 180.0f, 90.0f);
-    upgPath.AddArc(upgRect.X + upgRect.Width - d, upgRect.Y, d, d, 270.0f, 90.0f);
-    upgPath.AddArc(upgRect.X + upgRect.Width - d, upgRect.Y + upgRect.Height - d, d, d, 0.0f, 90.0f);
-    upgPath.AddArc(upgRect.X, upgRect.Y + upgRect.Height - d, d, d, 90.0f, 90.0f);
+    float r = 6.0f; float d = r * 2.0f;
+    upgPath.AddArc(upgX, upgY, d, d, 180.0f, 90.0f);
+    upgPath.AddArc(upgX + upgW - d, upgY, d, d, 270.0f, 90.0f);
+    upgPath.AddArc(upgX + upgW - d, upgY + upgH - d, d, d, 0.0f, 90.0f);
+    upgPath.AddArc(upgX, upgY + upgH - d, d, d, 90.0f, 90.0f);
     upgPath.CloseFigure();
 
-    SolidBrush btnColor(hoverUpgrade ? ColUpgradeHover : ColUpgradeBtn);
-    g.FillPath(&btnColor, &upgPath);
-    g.DrawString(L"Upgrade to Pro", -1, &fTab, upgRect, &fmtC, &textWhite);
+    if (hoverUpgrade) {
+        // Filled on hover
+        SolidBrush upgFill(Color(255, 243, 156, 18));
+        g.FillPath(&upgFill, &upgPath);
+    } else {
+        // Outlined when not hovered — white border on teal bg
+        Pen upgBorder(ColWhite, 1.5f);
+        g.DrawPath(&upgBorder, &upgPath);
+    }
+
+    Font fUpgLabel(&ff, 9, FontStyleBold, UnitPixel);
+    g.DrawString(L"Upgrade to Pro", -1, &fUpgLabel, upgRect, &fmtC, &textWhite);
 }
 
 void DrawMainArea(Graphics& g, int w, int h) {
@@ -772,14 +818,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (pt.y < TITLEBAR_HEIGHT * g_scaleFactor) {
             float x = pt.x / g_scaleFactor;
             float scaledW = (r.right - r.left) / g_scaleFactor;
-            float btnW = 50.0f;
-            float upgW = 160.0f;
+            float btnW = 46.0f;
+            float upgW = 170.0f;
             float controlsStartX = scaledW - (btnW * 3);
             
             if (x >= controlsStartX) return HTCLIENT; 
             
             if (isUpdateReady) {
-                float upgX = controlsStartX - upgW - 15.0f;
+                float upgX = controlsStartX - upgW - 12.0f;
                 if (x >= upgX && x <= upgX + upgW) return HTCLIENT;
             }
             
@@ -798,7 +844,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             lpMMI->ptMaxPosition.x = mi.rcWork.left - mi.rcMonitor.left;
             lpMMI->ptMaxPosition.y = mi.rcWork.top - mi.rcMonitor.top;
             lpMMI->ptMaxSize.x = mi.rcWork.right - mi.rcWork.left;
-            // 🟢 3. Taskbar Fix: Subtracting 2 pixels from max height to prevent covering taskbar
+            // 🟢 3. Taskbar Fix
             lpMMI->ptMaxSize.y = (mi.rcWork.bottom - mi.rcWork.top) - 2; 
         }
         return 0;
@@ -835,7 +881,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         
         bool redraw = false;
 
-        float btnW = 50.0f;
+        float btnW = 46.0f;
         bool oldMin = hoverMinimize, oldMax = hoverMaximize, oldClose = hoverClose;
         hoverMinimize = (y <= TITLEBAR_HEIGHT && x >= scaledW - (btnW * 3) && x < scaledW - (btnW * 2));
         hoverMaximize = (y <= TITLEBAR_HEIGHT && x >= scaledW - (btnW * 2) && x < scaledW - btnW);
@@ -845,31 +891,33 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         bool oldUpgBtn = hoverUpdateBtn;
         hoverUpdateBtn = false;
         if (isUpdateReady) {
-            float upgW = 160.0f; 
-            float upgX = scaledW - (btnW * 3) - upgW - 15.0f;
+            float upgW = 170.0f;
+            float upgX = scaledW - (btnW * 3) - upgW - 12.0f;
             if (x >= upgX && x <= upgX + upgW && y >= 0.0f && y <= (float)TITLEBAR_HEIGHT) {
                 hoverUpdateBtn = true;
             }
         }
         if (oldUpgBtn != hoverUpdateBtn) redraw = true;
 
+        // ✅ Sidebar hover — updated for new CCleaner tab layout (62px per tab, starts after 70px brand area)
         int oldTab = hoveredTab;
         hoveredTab = -1;
         if (x >= 0.0f && x <= SIDEBAR_WIDTH) {
-            float tabY = (float)TITLEBAR_HEIGHT + 100.0f; 
+            float tabStartY = (float)TITLEBAR_HEIGHT + 70.0f + 4.0f;
+            float tabH = 62.0f;
             for (size_t i = 0; i < sidebarTabs.size(); ++i) {
-                if (y >= tabY && y <= tabY + 45.0f) { hoveredTab = (int)i; break; }
-                tabY += 45.0f;
+                float itemY = tabStartY + (i * tabH);
+                if (y >= itemY && y <= itemY + tabH) { hoveredTab = (int)i; break; }
             }
         }
         if (oldTab != hoveredTab) redraw = true;
 
+        // ✅ Upgrade button hover — updated Y position
         bool oldUpg = hoverUpgrade;
-        hoverUpgrade = (x >= 15.0f && x <= SIDEBAR_WIDTH - 15.0f && y >= scaledH - 60.0f && y <= scaledH - 15.0f);
+        hoverUpgrade = (x >= 8.0f && x <= SIDEBAR_WIDTH - 8.0f && y >= scaledH - 58.0f && y <= scaledH - 16.0f);
         if (oldUpg != hoverUpgrade) redraw = true;
 
-        // 🔴 FIX #3: ProcessStatisticsMouseMove — 5 parameter version এ match করানো হলো
-        // tab_statistics.cpp এ signature: ProcessStatisticsMouseMove(float,float,float,float,float)
+        // 🔴 FIX #3: ProcessStatisticsMouseMove
         if (selectedTab == 0) { ProcessDashboardMouseMove(x, y); redraw = true; }
         else if (selectedTab == 1) { ProcessBlocksMouseMove(x, y); redraw = true; }
         else if (selectedTab == 2) { ProcessAdultMouseMove(x, y); redraw = true; }
@@ -904,9 +952,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
 
         if (isUpdateReady) {
-            float btnW = 50.0f;
-            float upgW = 160.0f;
-            float upgX = scaledW - (btnW * 3) - upgW - 15.0f;
+            float btnW = 46.0f;
+            float upgW = 170.0f;
+            float upgX = scaledW - (btnW * 3) - upgW - 12.0f;
             if (x >= upgX && x <= upgX + upgW && y >= 0.0f && y <= (float)TITLEBAR_HEIGHT) {
                 ApplySilentUpdate();
                 return 0;
@@ -920,12 +968,21 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
         if (hoverClose) { ShowWindow(hWnd, SW_HIDE); } 
 
-        if (hoveredTab != -1) {
-            if (selectedTab != hoveredTab) {
-                selectedTab = hoveredTab;
-                HideAllWebViews(); 
+        // ✅ Tab click — updated for CCleaner layout
+        if (x >= 0.0f && x <= SIDEBAR_WIDTH) {
+            float tabStartY = (float)TITLEBAR_HEIGHT + 70.0f + 4.0f;
+            float tabH = 62.0f;
+            for (size_t i = 0; i < sidebarTabs.size(); ++i) {
+                float itemY = tabStartY + (i * tabH);
+                if (y >= itemY && y <= itemY + tabH) {
+                    if (selectedTab != (int)i) {
+                        selectedTab = (int)i;
+                        HideAllWebViews();
+                    }
+                    InvalidateRect(hWnd, NULL, FALSE);
+                    break;
+                }
             }
-            InvalidateRect(hWnd, NULL, FALSE);
         }
         
         if (hoverUpgrade) {
@@ -934,7 +991,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 
         int prevTab = selectedTab;
 
-        // 🔴 FIX #4: ProcessStatisticsMouseClick — 5 parameter version এ match করানো হলো
+        // 🔴 FIX #4: ProcessStatisticsMouseClick
         if (selectedTab == 0) { ProcessDashboardMouseClick(x, y, selectedTab); }
         else if (selectedTab == 1) { ProcessBlocksMouseClick(x, y); }
         else if (selectedTab == 2) { ProcessAdultMouseClick(x, y); }
@@ -1074,7 +1131,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
 
             if (argLower == L"-minibrowser") {
                 g_isPureViewerMode = true; 
-                viewerUrl = L"https://www.google.com"; // Default to Google
+                viewerUrl = L"https://www.google.com";
                 viewerTitle = L"RasFocus Mini Browser"; 
                 break;
             } else if (argLower.length() > 4 && argLower.substr(argLower.length() - 4) == L".pdf") {
@@ -1111,7 +1168,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
 
     CheckDailyMessage();
 
-    // 🟢 AUTOSTART SETUP — PC on হলে চালু হবে (3 method)
+    // 🟢 AUTOSTART SETUP
     SetupAutoRun();
 
     SetupDefaultViewer(); 
