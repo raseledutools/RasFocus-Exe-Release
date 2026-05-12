@@ -265,7 +265,7 @@ static void LoadAdultSettings() {
     }
 }
 
-static void LoadStrictSettings() {
+void LoadStrictSettings() {
     wstring fp = GetStrictSaveFilePath();
     std::wifstream in(fp.c_str());
     in.imbue(std::locale(in.getloc(), new std::codecvt_utf8<wchar_t>));
