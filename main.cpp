@@ -537,14 +537,15 @@ void DrawTitleBar(Graphics& g, int w) {
     FontFamily ff(L"Segoe UI");
     FontFamily ffIcons(L"Segoe MDL2 Assets");
 
-    // ── লোগো (title bar — ১৮px, ভার্টিক্যালি সেন্টার) ──
+// ── লোগো (title bar — ১৮px, ভার্টিক্যালি সেন্টার) ──
     const int TB_LOGO_SIZE = 18;
     HICON hIconSm = (HICON)LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APP_ICON),
                                      IMAGE_ICON, TB_LOGO_SIZE, TB_LOGO_SIZE, LR_SHARED);
     if (hIconSm) {
         HDC hdcG = g.GetHDC();
         int iconY = (TITLEBAR_HEIGHT - TB_LOGO_SIZE) / 2;
-        DrawIconEx(hdcG, 8, iconY, hIconSm, TB_LOGO_SIZE, TB_LOGO_SIZE, 0, NULL, DI_NORMAL);
+        // x-অক্ষ বরাবর 8 এর জায়গায় 12 দিলাম যাতে বর্ডারে লেগে না থাকে
+        DrawIconEx(hdcG, 12, iconY, hIconSm, TB_LOGO_SIZE, TB_LOGO_SIZE, 0, NULL, DI_NORMAL);
         g.ReleaseHDC(hdcG);
     }
 
@@ -554,10 +555,10 @@ void DrawTitleBar(Graphics& g, int w) {
     StringFormat fmtL;
     fmtL.SetAlignment(StringAlignmentNear);
     fmtL.SetLineAlignment(StringAlignmentCenter);
-    g.DrawString(L"RasFocus Pro", -1, &fTitle,
-                 RectF(30.0f, 0.0f, 280.0f, (float)TITLEBAR_HEIGHT),
+    // নাম RasFocus+ করা হলো এবং টেক্সট বক্স একটু সরিয়ে দেওয়া হলো
+    g.DrawString(L"RasFocus+", -1, &fTitle,
+                 RectF(38.0f, 0.0f, 280.0f, (float)TITLEBAR_HEIGHT),
                  &fmtL, &textDark);
-
     // ── Window Controls ──
     float btnW = 42.0f;
     float btnH = (float)TITLEBAR_HEIGHT;
@@ -625,28 +626,30 @@ void DrawSubHeader(Graphics& g, int w) {
     fmtTL.SetAlignment(StringAlignmentNear);
     fmtTL.SetLineAlignment(StringAlignmentCenter);
 
-    // ── বড় লোগো সাব-হেডারে (একদম মাঝখানে) ──
-    const int LOGO_SIZE = 36;
+  // ── বড় লোগো সাব-হেডারে (একদম মাঝখানে) ──
+    const int LOGO_SIZE = 32; // লোগো সাইজ একটু পারফেক্ট করলাম (36 থেকে 32)
     HICON hIconLg = (HICON)LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APP_ICON),
                                      IMAGE_ICON, LOGO_SIZE, LOGO_SIZE, LR_SHARED);
     if (hIconLg) {
         HDC hdcG = g.GetHDC();
-        int iconX = 12;
+        int iconX = 16; // লোগো একটু ডান দিকে সরালাম
         int iconY = (int)(subY + (subH - LOGO_SIZE) / 2.0f);
         DrawIconEx(hdcG, iconX, iconY, hIconLg, LOGO_SIZE, LOGO_SIZE, 0, NULL, DI_NORMAL);
         g.ReleaseHDC(hdcG);
     }
 
     // ── App Name + Version (পাশাপাশি প্রফেশনাল স্টাইল) ──
-    Font fAppName(&ff, 18, FontStyleBold, UnitPixel);
+    Font fAppName(&ff, 22, FontStyleBold, UnitPixel); // ফন্ট সাইজ একটু বড় করলাম
     Font fVersion(&ff, 12, FontStyleRegular, UnitPixel);
     SolidBrush whiteAlpha(Color(200, 255, 255, 255));
     
-    float textX = (float)(12 + LOGO_SIZE + 10);
-    g.DrawString(L"RasFocus Pro", -1, &fAppName, RectF(textX, subY, 110.0f, subH), &fmtTL, &white);
+    float textX = (float)(16 + LOGO_SIZE + 12);
+    // Width 110.0f থেকে 200.0f করলাম যাতে RasFocus+ ভেঙে নিচে না যায়
+    g.DrawString(L"RasFocus+", -1, &fAppName, RectF(textX, subY, 200.0f, subH), &fmtTL, &white);
     
+    // ভার্সন নাম্বারটা নামের ঠিক ডান পাশে পারফেক্ট গ্যাপে বসালাম
     wstring wVer(CURRENT_VERSION.begin(), CURRENT_VERSION.end());
-    g.DrawString(wVer.c_str(), -1, &fVersion, RectF(textX + 108.0f, subY + 2.0f, 60.0f, subH), &fmtTL, &whiteAlpha);
+    g.DrawString(wVer.c_str(), -1, &fVersion, RectF(textX + 115.0f, subY + 3.0f, 60.0f, subH), &fmtTL, &whiteAlpha);
 
     // ── ডান পাশে: Feedback icon + My Account button ──
     float rightPad = 20.0f;
