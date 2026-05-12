@@ -43,12 +43,11 @@ using namespace std;
 // --- Premium Gate (set this from your main/license module) ---
 // Declare this extern in tab_blocks.h and define it in your main app file.
 // extern bool g_isPremium;
-// extern bool g_showUpgradePopup;
 // For now we declare them here as weak defaults:
 #ifndef PREMIUM_EXTERN_DECLARED
-bool g_isPremium       = false;   // flip to true when user has valid license
-bool g_showUpgradePopup = false;  // main render loop checks this and draws the popup
+bool g_isPremium = false;   // flip to true when user has valid license
 #endif
+extern bool g_showUpgradePopup;  // Defined in upgrade.cpp
 
 
 
