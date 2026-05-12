@@ -35,6 +35,7 @@ HWND hParentWnd = NULL;
 #include "tab_statistics.h"
 #include "prewindow.h"
 #include "accounts.h"   // ← My Account tab handler
+#include "upgrade.h"    // ← Upgrade popup handler
 
 using namespace Gdiplus;
 using namespace std;
@@ -74,7 +75,7 @@ NOTIFYICONDATA nid = {};
 // ==========================================
 extern const int SIDEBAR_WIDTH      = 170;
 extern const int TITLEBAR_HEIGHT    = 28;   // আপডেটেড (লোগো সুন্দর করে বসানোর জন্য)
-extern const int SUBHEADER_HEIGHT   = 45;  // আপডেটেড (প্রফেশনাল সাইজ)
+extern const int SUBHEADER_HEIGHT   = 45;   // আপডেটেড (প্রফেশনাল সাইজ)
 
 // UI State
 int selectedTab  = 0;
@@ -92,12 +93,12 @@ int feedbackFocusField = 0;
 bool hoverFeedbackSubmit = false;
 bool hoverFeedbackClose  = false;
 
-// Sidebar tabs
+// Sidebar tabs (Special ট্যাব যোগ করা হয়েছে)
 vector<wstring> sidebarTabs = {
-    L"Dashboard", L"Blocks", L"Deep Study", L"Statistics", L"Settings"
+    L"Dashboard", L"Blocks", L"Deep Study", L"Special", L"Statistics", L"Settings"
 };
 vector<wstring> sidebarIcons = {
-    L"\xE80F", L"\xEA18", L"\xE7B3", L"\xE9D2", L"\xE713"
+    L"\xE80F", L"\xEA18", L"\xE7B3", L"\xE734", L"\xE9D2", L"\xE713"
 };
 
 // ==========================================
@@ -525,7 +526,7 @@ void SubmitFeedbackToFirebase(const wstring& email, const wstring& message) {
 // ==========================================
 
 // ------------------------------------------
-// 1. TITLE BAR — আপডেটেড (লোগো একদম মাঝে)
+// 1. TITLE BAR
 // ------------------------------------------
 void DrawTitleBar(Graphics& g, int w) {
     SolidBrush bgWhite(ColTitleBar);
@@ -537,16 +538,14 @@ void DrawTitleBar(Graphics& g, int w) {
     FontFamily ff(L"Segoe UI");
     FontFamily ffIcons(L"Segoe MDL2 Assets");
 
-// ── লোগো (title bar — ১৮px, ভার্টিক্যালি সেন্টার) ──
-    const int TB_LOGO_SIZE = 18;
+    // ── লোগো (title bar) ──
+    const int TB_LOGO_SIZE = 16;
     HICON hIconSm = (HICON)LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APP_ICON),
                                      IMAGE_ICON, TB_LOGO_SIZE, TB_LOGO_SIZE, LR_SHARED);
     if (hIconSm) {
-        HDC hdcG = g.GetHDC();
-        int iconY = (TITLEBAR_HEIGHT - TB_LOGO_SIZE) / 2;
-        // x-অক্ষ বরাবর 8 এর জায়গায় 12 দিলাম যাতে বর্ডারে লেগে না থাকে
-        DrawIconEx(hdcG, 12, iconY, hIconSm, TB_LOGO_SIZE, TB_LOGO_SIZE, 0, NULL, DI_NORMAL);
-        g.ReleaseHDC(hdcG);
+        Bitmap bmp(hIconSm);
+        float iconY = (TITLEBAR_HEIGHT - TB_LOGO_SIZE) / 2.0f;
+        g.DrawImage(&bmp, 10.0f, iconY, (float)TB_LOGO_SIZE, (float)TB_LOGO_SIZE);
     }
 
     // ── App Name ──
@@ -555,10 +554,10 @@ void DrawTitleBar(Graphics& g, int w) {
     StringFormat fmtL;
     fmtL.SetAlignment(StringAlignmentNear);
     fmtL.SetLineAlignment(StringAlignmentCenter);
-    // নাম RasFocus+ করা হলো এবং টেক্সট বক্স একটু সরিয়ে দেওয়া হলো
     g.DrawString(L"RasFocus+", -1, &fTitle,
-                 RectF(38.0f, 0.0f, 280.0f, (float)TITLEBAR_HEIGHT),
+                 RectF(34.0f, 0.0f, 280.0f, (float)TITLEBAR_HEIGHT),
                  &fmtL, &textDark);
+
     // ── Window Controls ──
     float btnW = 42.0f;
     float btnH = (float)TITLEBAR_HEIGHT;
@@ -605,7 +604,7 @@ void DrawTitleBar(Graphics& g, int w) {
 }
 
 // ------------------------------------------
-// 2. SUB-HEADER — আপডেটেড (প্রফেশনাল লুক)
+// 2. SUB-HEADER
 // ------------------------------------------
 void DrawSubHeader(Graphics& g, int w) {
     float subX = 0.0f;
@@ -626,8 +625,8 @@ void DrawSubHeader(Graphics& g, int w) {
     fmtTL.SetAlignment(StringAlignmentNear);
     fmtTL.SetLineAlignment(StringAlignmentCenter);
 
- // ── বড় লোগো সাব-হেডারে (সাইজ ছোট করা হলো) ──
-    const int LOGO_SIZE = 26; // ৩২ থেকে কমিয়ে ২৬ করা হলো
+    // ── বড় লোগো সাব-হেডারে ──
+    const int LOGO_SIZE = 26; 
     HICON hIconLg = (HICON)LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APP_ICON),
                                      IMAGE_ICON, LOGO_SIZE, LOGO_SIZE, LR_SHARED);
     if (hIconLg) {
@@ -638,7 +637,7 @@ void DrawSubHeader(Graphics& g, int w) {
     }
 
     // ── App Name + Version ──
-    Font fAppName(&ff, 18, FontStyleBold, UnitPixel); // ফন্ট সাইজ একটু কমানো হলো
+    Font fAppName(&ff, 18, FontStyleBold, UnitPixel); 
     Font fVersion(&ff, 11, FontStyleRegular, UnitPixel);
     SolidBrush whiteAlpha(Color(200, 255, 255, 255));
     
@@ -648,13 +647,13 @@ void DrawSubHeader(Graphics& g, int w) {
     wstring wVer(CURRENT_VERSION.begin(), CURRENT_VERSION.end());
     g.DrawString(wVer.c_str(), -1, &fVersion, RectF(textX + 90.0f, subY + 2.0f, 60.0f, subH), &fmtTL, &whiteAlpha);
 
-    // ── ডান পাশে: Feedback icon + My Account button (সাইজ ছোট করা হলো) ──
+    // ── ডান পাশে: Feedback icon + My Account button ──
     float rightPad = 20.0f;
-    float btnH     = 28.0f; // ৩৪ থেকে কমিয়ে ২৮ করা হলো
+    float btnH     = 28.0f; 
     float btnY     = subY + (subH - btnH) / 2.0f;
 
     // My Account বাটন
-    float acBtnW  = 110.0f; // ১২০ থেকে ১১০ করা হলো
+    float acBtnW  = 110.0f; 
     float acBtnX  = (float)w - rightPad - acBtnW;
 
     GraphicsPath acPath;
@@ -677,7 +676,6 @@ void DrawSubHeader(Graphics& g, int w) {
     g.DrawString(L"My Account", -1, &fBtnTxt, RectF(acBtnX + 28.0f, btnY, acBtnW - 30.0f, btnH), &fmtTL, &white);
 
     // Feedback icon with Text
-   // Feedback icon with Text
     float fbIconW = 60.0f;
     float fbIconX = acBtnX - fbIconW - 10.0f;
     
@@ -692,13 +690,14 @@ void DrawSubHeader(Graphics& g, int w) {
         g.FillPath(&fbHover, &fbPath);
     }
     
-    Font fFbIcon(&ffIcons, 16, FontStyleRegular, UnitPixel); // আইকনের সাইজ
+    Font fFbIcon(&ffIcons, 16, FontStyleRegular, UnitPixel); 
     Font fFbTxt(&ff, 9, FontStyleRegular, UnitPixel);
     
-    // \xED15 এর জায়গায় আপনার দেওয়া নতুন খামের আইকন \xE8C3 দেওয়া হলো
     g.DrawString(L"\xE8C3", -1, &fFbIcon, RectF(fbIconX, btnY + 1.0f, fbIconW, 14.0f), &fmtC, &white);
     g.DrawString(L"Feedback", -1, &fFbTxt, RectF(fbIconX, btnY + 15.0f, fbIconW, 14.0f), &fmtC, &whiteAlpha);
-  ----------------------------------
+}
+
+// ------------------------------------------
 // 3. SIDEBAR
 // ------------------------------------------
 void DrawSidebar(Graphics& g, int h) {
@@ -742,8 +741,6 @@ void DrawSidebar(Graphics& g, int h) {
             g.DrawString(sidebarIcons[i].c_str(), -1, &fTabIcon, RectF(sideX, tabY, iconW, tabH), &fmtIC, &white);
             g.DrawString(sidebarTabs[i].c_str(),  -1, &fTabTxt,  RectF(sideX + iconW, tabY, (float)SIDEBAR_WIDTH - iconW - 8.0f, tabH), &fmtTL, &white);
         }
-
-        // badges removed
     }
 
     // ── Upgrade Button — premium হলে লুকানো ──
@@ -845,13 +842,15 @@ void DrawMainArea(Graphics& g, int w, int h) {
     float contentW = (float)(w - SIDEBAR_WIDTH);
     float contentH = (float)(h - TITLEBAR_HEIGHT - SUBHEADER_HEIGHT);
 
+    // ট্যাবের ইন্ডেক্সিং ঠিক করা হয়েছে
     if      (selectedTab == 0) { DrawDashboardTab    (g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 1) { DrawBlocksTab       (g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 2) { DrawDeepStudyTab    (g, contentX, contentY, contentW, contentH); }
-    else if (selectedTab == 3) { DrawStatisticsTab   (g, contentX, contentY, contentW, contentH); }
-    else if (selectedTab == 4) { DrawSettingsTab     (g, contentX, contentY, contentW, contentH); }
-    else if (selectedTab == 5) { DrawPdfWorkspaceTab (g, contentX, contentY, contentW, contentH); }
-    else if (selectedTab == 7) { DrawAccountsTab     (g, contentX, contentY, contentW, contentH); } // ← My Account
+    else if (selectedTab == 3) { DrawSpecialTab      (g, contentX, contentY, contentW, contentH); } // ← Special Tab Added
+    else if (selectedTab == 4) { DrawStatisticsTab   (g, contentX, contentY, contentW, contentH); }
+    else if (selectedTab == 5) { DrawSettingsTab     (g, contentX, contentY, contentW, contentH); }
+    else if (selectedTab == 6) { DrawPdfWorkspaceTab (g, contentX, contentY, contentW, contentH); }
+    else if (selectedTab == 7) { DrawAccountsTab     (g, contentX, contentY, contentW, contentH); }
 }
 
 // ------------------------------------------
@@ -878,7 +877,9 @@ void OnPaint(HWND hWnd, HDC hdc) {
     DrawSidebar   (g, scaledH);
     DrawSubHeader (g, scaledW);
     DrawTitleBar  (g, scaledW);
+    
     DrawFeedbackPopup(g, scaledW, scaledH);
+    DrawUpgradePopup(g, scaledW, scaledH); // ← Upgrade Popup Draw Call
 
     if (showDailyMessage || onboardingStep > 0) {
         DrawPreWindowOverlay(g, scaledW, scaledH, g_scaleFactor);
@@ -890,14 +891,14 @@ void OnPaint(HWND hWnd, HDC hdc) {
 }
 
 // ==========================================
-// COORDINATE HELPERS — আপডেটেড (ফিডব্যাক ও মাই একাউন্ট বাটন অনুযায়ী)
+// COORDINATE HELPERS
 // ==========================================
 inline bool HitFeedbackIcon(float x, float y, float w) {
     float subY  = (float)TITLEBAR_HEIGHT;
     float subH  = (float)SUBHEADER_HEIGHT;
-    float btnH  = 34.0f;
+    float btnH  = 28.0f;
     float btnY  = subY + (subH - btnH) / 2.0f;
-    float acBtnW = 120.0f;
+    float acBtnW = 110.0f;
     float acBtnX = w - 20.0f - acBtnW;
     float fbIconW = 60.0f;
     float fbIconX = acBtnX - fbIconW - 10.0f;
@@ -907,9 +908,9 @@ inline bool HitFeedbackIcon(float x, float y, float w) {
 inline bool HitMyAccount(float x, float y, float w) {
     float subY  = (float)TITLEBAR_HEIGHT;
     float subH  = (float)SUBHEADER_HEIGHT;
-    float btnH  = 34.0f;
+    float btnH  = 28.0f;
     float btnY  = subY + (subH - btnH) / 2.0f;
-    float acBtnW = 120.0f;
+    float acBtnW = 110.0f;
     float acBtnX = w - 20.0f - acBtnW;
     return (x >= acBtnX && x <= acBtnX + acBtnW && y >= btnY && y <= btnY + btnH);
 }
@@ -1010,6 +1011,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (showDailyMessage || onboardingStep > 0) {
             if (HandlePreWindowMouseMove(x, y, scaledW, scaledH)) { InvalidateRect(hWnd, NULL, FALSE); break; }
         }
+
+        // ← Upgrade Popup Intercept
+        if (g_showUpgradePopup) {
+            ProcessUpgradeMouseMove(x, y);
+            InvalidateRect(hWnd, NULL, FALSE);
+            break;
+        }
+
         bool redraw = false;
 
         if (showFeedbackBox) {
@@ -1024,7 +1033,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             break;
         }
 
-        // My Account tab mouse move
         if (selectedTab == 7) {
             ProcessAccountsMouseMove(x, y);
             redraw = true;
@@ -1068,11 +1076,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             if (oldUpg != hoverUpgrade) redraw = true;
         }
 
-        if (selectedTab == 0) { ProcessDashboardMouseMove(x, y);   redraw = true; }
-        else if (selectedTab == 1) { ProcessBlocksMouseMove(x, y); redraw = true; }
-        else if (selectedTab == 2) { ProcessDeepStudyMouseMove(x, y); redraw = true; }
-        else if (selectedTab == 4) { ProcessSettingsMouseMove(x, y); redraw = true; }
-        else if (selectedTab == 3) {
+        // ট্যাবের ইন্ডেক্সিং ঠিক করা হয়েছে
+        if      (selectedTab == 0) { ProcessDashboardMouseMove(x, y);   redraw = true; }
+        else if (selectedTab == 1) { ProcessBlocksMouseMove(x, y);      redraw = true; }
+        else if (selectedTab == 2) { ProcessDeepStudyMouseMove(x, y);   redraw = true; }
+        else if (selectedTab == 3) { ProcessSpecialMouseMove(x, y);     redraw = true; } // ← Special Tab
+        else if (selectedTab == 5) { ProcessSettingsMouseMove(x, y);    redraw = true; }
+        else if (selectedTab == 4) {
             float cX = (float)SIDEBAR_WIDTH, cY = (float)(TITLEBAR_HEIGHT + SUBHEADER_HEIGHT);
             float cW = scaledW - cX;
             ProcessStatisticsMouseMove(x, y, cX, cY, cW);
@@ -1091,6 +1101,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 
         if (showDailyMessage || onboardingStep > 0) {
             if (HandlePreWindowClick(x, y, selectedTab)) InvalidateRect(hWnd, NULL, FALSE);
+            break;
+        }
+
+        // ← Upgrade Popup Intercept
+        if (g_showUpgradePopup) {
+            ProcessUpgradeMouseClick(x, y, hWnd);
             break;
         }
 
@@ -1138,7 +1154,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             InvalidateRect(hWnd, NULL, FALSE); break;
         }
 
-        // ── My Account বাটন ক্লিক ──
         if (HitMyAccount(x, y, scaledW)) {
             selectedTab = 7;
             HideAllWebViews();
@@ -1157,30 +1172,30 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             }
         }
 
+        // ← Upgrade Now বাটনে ক্লিক করলে এখন লগিন পেজে না গিয়ে সরাসরি Upgrade Popup ওপেন হবে
         if (!g_isPremiumUser && hoverUpgrade) {
-            selectedTab = 7;
-            HideAllWebViews();
+            g_showUpgradePopup = true; 
             InvalidateRect(hWnd, NULL, FALSE);
             break;
         }
 
-        // Tab সবেমাত্র switch হলে content click forward করব না
-        // কারণ hover state পুরনো, coordinate sidebar এর — crash হবে
         if (prevTab != selectedTab) {
             HideAllWebViews();
             InvalidateRect(hWnd, NULL, FALSE);
             break;
         }
 
+        // ট্যাবের ইন্ডেক্সিং ঠিক করা হয়েছে
         if      (selectedTab == 0) { ProcessDashboardMouseClick(x, y, selectedTab); }
         else if (selectedTab == 1) { ProcessBlocksMouseClick(x, y); }
         else if (selectedTab == 2) { ProcessDeepStudyMouseClick(x, y); }
-        else if (selectedTab == 3) {
+        else if (selectedTab == 3) { ProcessSpecialMouseClick(x, y); } // ← Special Tab
+        else if (selectedTab == 4) {
             float cX = (float)SIDEBAR_WIDTH, cY = (float)(TITLEBAR_HEIGHT + SUBHEADER_HEIGHT);
             float cW = scaledW - cX, cH = scaledH - cY;
             ProcessStatisticsMouseClick(x, y, cX, cY, cW);
         }
-        else if (selectedTab == 4) { ProcessSettingsMouseClick(x, y); }
+        else if (selectedTab == 5) { ProcessSettingsMouseClick(x, y); }
         else if (selectedTab == 7) {
             ProcessAccountsMouseClick(x, y, hWnd);
         }
@@ -1195,7 +1210,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         float y = pt.y / g_scaleFactor;
         int delta = GET_WHEEL_DELTA_WPARAM(wp);
         if (selectedTab == 1) { extern void ProcessBlocksMouseWheel(float,float,int); ProcessBlocksMouseWheel(x,y,delta); InvalidateRect(hWnd,NULL,FALSE); }
-        // Adult Block mouse wheel removed
         break;
     }
 
@@ -1208,7 +1222,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
     }
 
     case WM_CHAR: {
-        // My Account tab (index 7) — accounts.h handles input
         if (selectedTab == 7) {
             extern void ProcessAccountsChar(wchar_t);
             ProcessAccountsChar((wchar_t)wp);
@@ -1232,7 +1245,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
     }
 
     case WM_KEYDOWN: {
-        // My Account tab (index 7)
         if (selectedTab == 7) {
             extern void ProcessAccountsKeyDown(WPARAM);
             ProcessAccountsKeyDown(wp);
@@ -1286,7 +1298,6 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
     if (g_firebaseApp) OutputDebugStringW(L"[RasFocus] Firebase Initialized!\n");
     else               OutputDebugStringW(L"[RasFocus] Firebase Init Failed!\n");
 
-    // accounts.h কে Firebase app পাস করো (login/signup এ ব্যবহার হবে)
     InitAccountsModule(g_firebaseApp);
 
     int argc; LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
