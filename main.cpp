@@ -74,7 +74,7 @@ NOTIFYICONDATA nid = {};
 // ==========================================
 extern const int SIDEBAR_WIDTH      = 170;
 extern const int TITLEBAR_HEIGHT    = 28;   // আপডেটেড (লোগো সুন্দর করে বসানোর জন্য)
-extern const int SUBHEADER_HEIGHT   = 55;   // আপডেটেড (প্রফেশনাল সাইজ)
+extern const int SUBHEADER_HEIGHT   = 45;  // আপডেটেড (প্রফেশনাল সাইজ)
 
 // UI State
 int selectedTab  = 0;
@@ -626,42 +626,39 @@ void DrawSubHeader(Graphics& g, int w) {
     fmtTL.SetAlignment(StringAlignmentNear);
     fmtTL.SetLineAlignment(StringAlignmentCenter);
 
-  // ── বড় লোগো সাব-হেডারে (একদম মাঝখানে) ──
-    const int LOGO_SIZE = 32; // লোগো সাইজ একটু পারফেক্ট করলাম (36 থেকে 32)
+ // ── বড় লোগো সাব-হেডারে (সাইজ ছোট করা হলো) ──
+    const int LOGO_SIZE = 26; // ৩২ থেকে কমিয়ে ২৬ করা হলো
     HICON hIconLg = (HICON)LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APP_ICON),
                                      IMAGE_ICON, LOGO_SIZE, LOGO_SIZE, LR_SHARED);
     if (hIconLg) {
-        HDC hdcG = g.GetHDC();
-        int iconX = 16; // লোগো একটু ডান দিকে সরালাম
-        int iconY = (int)(subY + (subH - LOGO_SIZE) / 2.0f);
-        DrawIconEx(hdcG, iconX, iconY, hIconLg, LOGO_SIZE, LOGO_SIZE, 0, NULL, DI_NORMAL);
-        g.ReleaseHDC(hdcG);
+        Bitmap bmp(hIconLg);
+        float iconX = 16.0f;
+        float iconY = subY + (subH - LOGO_SIZE) / 2.0f;
+        g.DrawImage(&bmp, iconX, iconY, (float)LOGO_SIZE, (float)LOGO_SIZE);
     }
 
-    // ── App Name + Version (পাশাপাশি প্রফেশনাল স্টাইল) ──
-    Font fAppName(&ff, 22, FontStyleBold, UnitPixel); // ফন্ট সাইজ একটু বড় করলাম
-    Font fVersion(&ff, 12, FontStyleRegular, UnitPixel);
+    // ── App Name + Version ──
+    Font fAppName(&ff, 18, FontStyleBold, UnitPixel); // ফন্ট সাইজ একটু কমানো হলো
+    Font fVersion(&ff, 11, FontStyleRegular, UnitPixel);
     SolidBrush whiteAlpha(Color(200, 255, 255, 255));
     
-    float textX = (float)(16 + LOGO_SIZE + 12);
-    // Width 110.0f থেকে 200.0f করলাম যাতে RasFocus+ ভেঙে নিচে না যায়
-    g.DrawString(L"RasFocus+", -1, &fAppName, RectF(textX, subY, 200.0f, subH), &fmtTL, &white);
+    float textX = 16.0f + LOGO_SIZE + 10.0f; 
+    g.DrawString(L"RasFocus+", -1, &fAppName, RectF(textX, subY, 110.0f, subH), &fmtTL, &white);
     
-    // ভার্সন নাম্বারটা নামের ঠিক ডান পাশে পারফেক্ট গ্যাপে বসালাম
     wstring wVer(CURRENT_VERSION.begin(), CURRENT_VERSION.end());
-    g.DrawString(wVer.c_str(), -1, &fVersion, RectF(textX + 115.0f, subY + 3.0f, 60.0f, subH), &fmtTL, &whiteAlpha);
+    g.DrawString(wVer.c_str(), -1, &fVersion, RectF(textX + 90.0f, subY + 2.0f, 60.0f, subH), &fmtTL, &whiteAlpha);
 
-    // ── ডান পাশে: Feedback icon + My Account button ──
+    // ── ডান পাশে: Feedback icon + My Account button (সাইজ ছোট করা হলো) ──
     float rightPad = 20.0f;
-    float btnH     = 34.0f;
+    float btnH     = 28.0f; // ৩৪ থেকে কমিয়ে ২৮ করা হলো
     float btnY     = subY + (subH - btnH) / 2.0f;
 
     // My Account বাটন
-    float acBtnW  = 120.0f;
+    float acBtnW  = 110.0f; // ১২০ থেকে ১১০ করা হলো
     float acBtnX  = (float)w - rightPad - acBtnW;
 
     GraphicsPath acPath;
-    float r2 = 5.0f, d2 = r2 * 2.0f;
+    float r2 = 4.0f, d2 = r2 * 2.0f;
     acPath.AddArc(acBtnX, btnY, d2, d2, 180.0f, 90.0f);
     acPath.AddArc(acBtnX + acBtnW - d2, btnY, d2, d2, 270.0f, 90.0f);
     acPath.AddArc(acBtnX + acBtnW - d2, btnY + btnH - d2, d2, d2, 0.0f, 90.0f);
@@ -673,11 +670,11 @@ void DrawSubHeader(Graphics& g, int w) {
     Pen acBorder(Color(100, 255, 255, 255), 1.0f);
     g.DrawPath(&acBorder, &acPath);
 
-    Font fBtnIcon(&ffIcons, 14, FontStyleRegular, UnitPixel);
-    g.DrawString(L"\xE77B", -1, &fBtnIcon, RectF(acBtnX + 8.0f, btnY, 20.0f, btnH), &fmtC, &white);
+    Font fBtnIcon(&ffIcons, 13, FontStyleRegular, UnitPixel);
+    g.DrawString(L"\xE77B", -1, &fBtnIcon, RectF(acBtnX + 6.0f, btnY, 20.0f, btnH), &fmtC, &white);
 
-    Font fBtnTxt(&ff, 12, FontStyleBold, UnitPixel);
-    g.DrawString(L"My Account", -1, &fBtnTxt, RectF(acBtnX + 32.0f, btnY, acBtnW - 35.0f, btnH), &fmtTL, &white);
+    Font fBtnTxt(&ff, 11, FontStyleBold, UnitPixel);
+    g.DrawString(L"My Account", -1, &fBtnTxt, RectF(acBtnX + 28.0f, btnY, acBtnW - 30.0f, btnH), &fmtTL, &white);
 
     // Feedback icon with Text
     float fbIconW = 60.0f;
@@ -694,14 +691,12 @@ void DrawSubHeader(Graphics& g, int w) {
         g.FillPath(&fbHover, &fbPath);
     }
     
-    Font fFbIcon(&ffIcons, 16, FontStyleRegular, UnitPixel);
+    Font fFbIcon(&ffIcons, 14, FontStyleRegular, UnitPixel);
     Font fFbTxt(&ff, 9, FontStyleRegular, UnitPixel);
     
-    g.DrawString(L"\xED15", -1, &fFbIcon, RectF(fbIconX, btnY + 2.0f, fbIconW, 18.0f), &fmtC, &white);
-    g.DrawString(L"Feedback", -1, &fFbTxt, RectF(fbIconX, btnY + 18.0f, fbIconW, 16.0f), &fmtC, &whiteAlpha);
-}
-
-// ------------------------------------------
+    g.DrawString(L"\xED15", -1, &fFbIcon, RectF(fbIconX, btnY + 1.0f, fbIconW, 14.0f), &fmtC, &white);
+    g.DrawString(L"Feedback", -1, &fFbTxt, RectF(fbIconX, btnY + 14.0f, fbIconW, 14.0f), &fmtC, &whiteAlpha);
+  ----------------------------------
 // 3. SIDEBAR
 // ------------------------------------------
 void DrawSidebar(Graphics& g, int h) {
