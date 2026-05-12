@@ -1,5 +1,7 @@
 #include "tab_blocks.h"
 #include "tab_schedule_blocks.h"
+#include "tab_adult.h"
+#include "tab_device_block.h"
 #include <vector>
 #include <string>
 #include <commdlg.h> 
@@ -29,6 +31,7 @@ static float tAppScrollY = 0.0f, cAppScrollY = 0.0f;
 static float tStoreScrollY = 0.0f, cStoreScrollY = 0.0f;
 
 // --- Main Navigation States ---
+// 0=Simple Blocks, 1=Schedule Blocks, 2=Adult Block, 3=Device Block
 static int currentBlockTab = 0; 
 static int hoverBlockTab = -1;
 
@@ -38,10 +41,10 @@ static int controlMode = 0; // 0 = Self, 1 = Parents, 2 = Long Text
 static bool hoverControlDropdown = false;
 static bool isControlDropdownOpen = false;
 static bool hoverOptSelf = false;
-static bool hoverOptParents = false; // Changed from Friend
-static bool hoverOptLongText = false; // Added Long Text
+static bool hoverOptParents = false;
+static bool hoverOptLongText = false;
 static bool hoverStartFocusBtn = false;
-static time_t focusEndTimeBlocks = 0; // PC Restart persistence
+static time_t focusEndTimeBlocks = 0;
 
 // --- Quotes States ---
 static bool showQuotes = true;
@@ -158,7 +161,6 @@ wstring GetAppDataFolder() {
     if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, 0, path))) {
         wstring fullPath = wstring(path) + L"\\RasFocus";
         CreateDirectoryW(fullPath.c_str(), NULL);
-        // HIDDEN FOLDER IMPLEMENTATION
         SetFileAttributesW(fullPath.c_str(), FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM);
         return fullPath;
     }
@@ -294,7 +296,7 @@ void EnforceSystemApps() {
         if (it->isSystemLocked) it = appList.erase(it);
         else ++it;
     }
-    if (simpleBlockMode == 0) { // Allow Mode
+    if (simpleBlockMode == 0) {
         appList.insert(appList.begin(), {L"explorer.exe", false, true});
         appList.insert(appList.begin(), {L"svchost.exe", false, true});
         appList.insert(appList.begin(), {L"RasFocus.exe", false, true});
@@ -402,7 +404,6 @@ LRESULT CALLBACK KeyboardHookProcBlocks(int nCode, WPARAM wParam, LPARAM lParam)
                 wstring lowerWeb = toLowerW_Blocks(web.name);
                 size_t dotPos = lowerWeb.find(L".");
                 wstring coreName = (dotPos != wstring::npos) ? lowerWeb.substr(0, dotPos) : lowerWeb;
-
                 if (coreName.length() > 2 && wBuffer.find(coreName) != wstring::npos) {
                     shouldBlock = true; break;
                 }
@@ -413,7 +414,6 @@ LRESULT CALLBACK KeyboardHookProcBlocks(int nCode, WPARAM wParam, LPARAM lParam)
                     wstring lowerApp = toLowerW_Blocks(app.name);
                     size_t dotPos = lowerApp.find(L".");
                     wstring coreName = (dotPos != wstring::npos) ? lowerApp.substr(0, dotPos) : lowerApp;
-
                     if (coreName.length() > 2 && wBuffer.find(coreName) != wstring::npos) {
                         shouldBlock = true; break;
                     }
@@ -423,9 +423,7 @@ LRESULT CALLBACK KeyboardHookProcBlocks(int nCode, WPARAM wParam, LPARAM lParam)
             if (shouldBlock) {
                 globalKeyBufferBlocks = ""; 
                 HWND hActive = GetForegroundWindow();
-                if (hActive) {
-                    CloseActiveTabOnly(hActive); 
-                }
+                if (hActive) { CloseActiveTabOnly(hActive); }
                 TriggerGlobalBlockAlert();
             }
         } 
@@ -499,7 +497,6 @@ BOOL CALLBACK EnumWindowsProcBlocker(HWND hwnd, LPARAM lParam) {
         if (EnumProcessModules(hProcess, &hMod, sizeof(hMod), &cbNeeded)) {
             GetModuleBaseNameW(hProcess, hMod, processName, sizeof(processName)/sizeof(wchar_t));
             wstring pName(processName); wstring wTitle(windowTitle);
-            
             if (ShouldKillProcessBlocks(pName, wTitle)) {
                 PostMessage(hwnd, WM_CLOSE, 0, 0); 
                 TerminateProcess(hProcess, 0); 
@@ -520,17 +517,14 @@ void BackgroundBlockerThread() {
                 if (GetWindowTextW(hActive, windowTitle, 512) > 0) {
                     wstring lowerTitle = toLowerW_Blocks(windowTitle);
                     bool shouldBlockTab = false;
-
                     for (const auto& web : webList) {
                         wstring lowerWeb = toLowerW_Blocks(web.name);
                         size_t dotPos = lowerWeb.find(L".");
                         wstring coreName = (dotPos != wstring::npos) ? lowerWeb.substr(0, dotPos) : lowerWeb;
-
                         if (coreName.length() > 2 && lowerTitle.find(coreName) != wstring::npos) {
                             shouldBlockTab = true; break;
                         }
                     }
-
                     if (shouldBlockTab) {
                         CloseActiveTabAndMinimize(hActive); 
                         TriggerGlobalBlockAlert();          
@@ -538,7 +532,6 @@ void BackgroundBlockerThread() {
                     }
                 }
             }
-
             processKillTimer += 50;
             if (processKillTimer >= 2000) {
                 EnumWindows(EnumWindowsProcBlocker, 0); 
@@ -576,7 +569,6 @@ void RefreshRunningApps() {
     }
     CloseHandle(hProcessSnap);
     
-    // Priority Sorting
     vector<wstring> priorities = {L"chrome", L"msedge", L"firefox", L"telegram", L"whatsapp", L"discord", L"vlc", L"spotify", L"netflix", L"zoom", L"skype"};
     auto getPriority = [&](const wstring& name) {
         wstring lower = toLowerW_Blocks(name);
@@ -587,10 +579,9 @@ void RefreshRunningApps() {
     };
     
     std::sort(systemStoreApps.begin(), systemStoreApps.end(), [&](const wstring& a, const wstring& b) {
-        int pA = getPriority(a);
-        int pB = getPriority(b);
+        int pA = getPriority(a); int pB = getPriority(b);
         if(pA != pB) return pA < pB;
-        return a < b; // Alphabetical for same priority
+        return a < b;
     });
 
     if(systemStoreApps.empty()) systemStoreApps.push_back(L"No active apps found");
@@ -612,7 +603,9 @@ static void DrawBlocksOverlaySpinner(Graphics& g, float x, float y, const wstrin
     g.DrawString(L"\xE710", -1, fIcon, pRect, &fmtC, &brushDark);
 }
 
-// --- Main Drawing Function ---
+// ==========================================
+// MAIN DRAWING FUNCTION
+// ==========================================
 void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, float contentH) {
     static bool isBlocksDataLoaded = false;
     if (!isBlocksDataLoaded) {
@@ -625,21 +618,19 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
     // Smooth scroll interpolations
     cWebScrollY += (tWebScrollY - cWebScrollY) * 0.2f;
     if (abs(tWebScrollY - cWebScrollY) < 0.5f) cWebScrollY = tWebScrollY;
-
     cAppScrollY += (tAppScrollY - cAppScrollY) * 0.2f;
     if (abs(tAppScrollY - cAppScrollY) < 0.5f) cAppScrollY = tAppScrollY;
-
     cStoreScrollY += (tStoreScrollY - cStoreScrollY) * 0.2f;
     if (abs(tStoreScrollY - cStoreScrollY) < 0.5f) cStoreScrollY = tStoreScrollY;
 
     s_contentX = contentX; s_contentY = contentY; s_contentW = contentW; s_contentH = contentH;
 
     FontFamily ff(L"Segoe UI");
-    Font fTopTab(&ff, 15, FontStyleBold, UnitPixel);
+    Font fTopTab(&ff, 14, FontStyleBold, UnitPixel);   // slightly smaller to fit 4 tabs
     Font fTitle(&ff, 24, FontStyleBold, UnitPixel); 
     Font fNormal(&ff, 15, FontStyleRegular, UnitPixel); Font fBold(&ff, 15, FontStyleBold, UnitPixel);
     Font fInfo(&ff, 13, FontStyleItalic, UnitPixel); 
-    Font fSmallerBold(&ff, 12, FontStyleBold, UnitPixel); // Smaller font for buttons
+    Font fSmallerBold(&ff, 12, FontStyleBold, UnitPixel);
     FontFamily ffIcons(L"Segoe MDL2 Assets");
     Font fIcon(&ffIcons, 22, FontStyleRegular, UnitPixel); Font fSmallIcon(&ffIcons, 14, FontStyleRegular, UnitPixel);
     
@@ -650,29 +641,49 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
     StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
 
     // ==========================================
-    // --- HEADER ---
+    // --- HEADER: 4 TABS ---
     // ==========================================
     g.FillRectangle(&brushWhite, contentX, contentY, contentW, 60.0f); 
-    
-    float tabW = 200.0f, tabH = 40.0f;
-    float tab1X = contentX + 20.0f, tab2X = tab1X + tabW + 10.0f, tab3X = tab2X + tabW + 10.0f, tabY = contentY + 10.0f;
 
-    SolidBrush bTab1(currentBlockTab == 0 ? Color(255, 12, 168, 176) : (hoverBlockTab == 0 ? Color(255, 230, 230, 230) : Color(255, 245, 245, 245)));
-    SolidBrush bTab2(currentBlockTab == 1 ? Color(255, 12, 168, 176) : (hoverBlockTab == 1 ? Color(255, 230, 230, 230) : Color(255, 245, 245, 245)));
-    SolidBrush bTab3(currentBlockTab == 2 ? Color(255, 12, 168, 176) : (hoverBlockTab == 2 ? Color(255, 230, 230, 230) : Color(255, 245, 245, 245)));
-    
-    SolidBrush bT1(currentBlockTab == 0 ? Color(255, 255, 255, 255) : Color(255, 100, 100, 100));
-    SolidBrush bT2(currentBlockTab == 1 ? Color(255, 255, 255, 255) : Color(255, 100, 100, 100));
-    SolidBrush bT3(currentBlockTab == 2 ? Color(255, 255, 255, 255) : Color(255, 100, 100, 100));
+    // 4 tabs: tabW shrunk to fit all 4 with gaps in available header width
+    // Available width = contentW - 20(left margin) - 10(right margin) = contentW - 30
+    // 4 tabs + 3 gaps of 10px = 4*tabW + 30  =>  tabW = (contentW - 30 - 30) / 4
+    float tabH = 40.0f;
+    float tabW = (contentW - 60.0f) / 4.0f - 7.5f; // ~155px at 800px width, scales with window
+    float tabGap = 10.0f;
+    float tab1X = contentX + 20.0f;
+    float tab2X = tab1X + tabW + tabGap;
+    float tab3X = tab2X + tabW + tabGap;
+    float tab4X = tab3X + tabW + tabGap;
+    float tabY  = contentY + 10.0f;
 
-    g.FillRectangle(&bTab1, tab1X, tabY, tabW, tabH); g.DrawString(L"Simple Blocks", -1, &fTopTab, RectF(tab1X, tabY, tabW, tabH), &fmtC, &bT1);
-    g.FillRectangle(&bTab2, tab2X, tabY, tabW, tabH); g.DrawString(L"Schedule Blocks", -1, &fTopTab, RectF(tab2X, tabY, tabW, tabH), &fmtC, &bT2);
-    g.FillRectangle(&bTab3, tab3X, tabY, tabW, tabH); g.DrawString(L"Device Block", -1, &fTopTab, RectF(tab3X, tabY, tabW, tabH), &fmtC, &bT3);
+    // Tab backgrounds
+    SolidBrush bTab1(currentBlockTab == 0 ? Color(255,12,168,176) : (hoverBlockTab==0 ? Color(255,230,230,230) : Color(255,245,245,245)));
+    SolidBrush bTab2(currentBlockTab == 1 ? Color(255,12,168,176) : (hoverBlockTab==1 ? Color(255,230,230,230) : Color(255,245,245,245)));
+    SolidBrush bTab3(currentBlockTab == 2 ? Color(255,12,168,176) : (hoverBlockTab==2 ? Color(255,230,230,230) : Color(255,245,245,245)));
+    SolidBrush bTab4(currentBlockTab == 3 ? Color(255,12,168,176) : (hoverBlockTab==3 ? Color(255,230,230,230) : Color(255,245,245,245)));
+
+    // Tab text colors
+    SolidBrush bT1(currentBlockTab==0 ? Color(255,255,255,255) : Color(255,100,100,100));
+    SolidBrush bT2(currentBlockTab==1 ? Color(255,255,255,255) : Color(255,100,100,100));
+    SolidBrush bT3(currentBlockTab==2 ? Color(255,255,255,255) : Color(255,100,100,100));
+    SolidBrush bT4(currentBlockTab==3 ? Color(255,255,255,255) : Color(255,100,100,100));
+
+    g.FillRectangle(&bTab1, tab1X, tabY, tabW, tabH);
+    g.DrawString(L"Simple Blocks",   -1, &fTopTab, RectF(tab1X, tabY, tabW, tabH), &fmtC, &bT1);
+    g.FillRectangle(&bTab2, tab2X, tabY, tabW, tabH);
+    g.DrawString(L"Schedule Blocks", -1, &fTopTab, RectF(tab2X, tabY, tabW, tabH), &fmtC, &bT2);
+    g.FillRectangle(&bTab3, tab3X, tabY, tabW, tabH);
+    g.DrawString(L"Adult Block",     -1, &fTopTab, RectF(tab3X, tabY, tabW, tabH), &fmtC, &bT3);
+    g.FillRectangle(&bTab4, tab4X, tabY, tabW, tabH);
+    g.DrawString(L"Device Block",    -1, &fTopTab, RectF(tab4X, tabY, tabW, tabH), &fmtC, &bT4);
 
     float bodyY = contentY + 60.0f;
     g.FillRectangle(&brushBg, contentX, bodyY, contentW, contentH - 60.0f); 
 
-    float boxX = contentX + 30.0f; float boxW = contentW - 60.0f; float boxH = contentH - 60.0f - 40.0f; 
+    float boxX = contentX + 30.0f;
+    float boxW = contentW - 60.0f;
+    float boxH = contentH - 60.0f - 40.0f; 
     GraphicsPath* boxPath = GetBlockRoundRectPath(RectF(boxX, bodyY + 20.0f, boxW, boxH), 6);
     g.FillPath(&brushWhite, boxPath); g.DrawPath(&penBorder, boxPath); delete boxPath;
 
@@ -681,6 +692,9 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
     float webComboX = boxX + 30.0f + ((boxW - 90.0f) / 2.0f) - 105.0f;
     float webComboY = modeDropY + 95.0f;
 
+    // ==========================================
+    // TAB 0: SIMPLE BLOCKS (unchanged)
+    // ==========================================
     if (currentBlockTab == 0) { 
         float rowY = bodyY + 40.0f;
 
@@ -702,7 +716,7 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
             }
         }
 
-        SolidBrush sbBrush(isFocusActive ? (hoverStartFocusBtn ? Color(255, 200, 50, 50) : SClrRed) : (hoverStartFocusBtn ? SClrGreenHover : SClrGreen));
+        SolidBrush sbBrush(isFocusActive ? (hoverStartFocusBtn ? Color(255,200,50,50) : SClrRed) : (hoverStartFocusBtn ? SClrGreenHover : SClrGreen));
         GraphicsPath* sbp = GetBlockRoundRectPath(startBtn, 4); g.FillPath(&sbBrush, sbp); delete sbp;
         
         wstring startTextStr = L"Start Focus";
@@ -768,7 +782,6 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
         g.FillPath(&wAddBrush, wAddP); delete wAddP;
         g.DrawString(L"+ Add", -1, &fBold, wAddRect, &fmtC, &brushWhite);
 
-        // --- Web Table Smooth Scroll ---
         RectF webTable(leftColX, secY + 90.0f, colW, 160.0f);
         g.FillRectangle(&brushBg, webTable); g.DrawRectangle(&penBorder, webTable.X, webTable.Y, webTable.Width, webTable.Height);
         
@@ -786,7 +799,6 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
         }
         g.SetClip(&oldClip);
         
-        // Scrollbar Web
         if (webList.size() * 30.0f > webTable.Height) {
             float maxScroll = webList.size() * 30.0f - webTable.Height + 10.0f;
             float thumbH = max(20.0f, (webTable.Height / (webList.size() * 30.0f)) * webTable.Height);
@@ -836,7 +848,6 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
         g.FillPath(&aAddBrush, aAddP); delete aAddP;
         g.DrawString(L"+ Add", -1, &fBold, aAddRect, &fmtC, &brushWhite);
 
-        // --- App Table Smooth Scroll ---
         RectF appTable(rightColX, secY + 110.0f, colW, 140.0f);
         g.FillRectangle(&brushBg, appTable); g.DrawRectangle(&penBorder, appTable.X, appTable.Y, appTable.Width, appTable.Height);
         
@@ -858,7 +869,6 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
         }
         g.SetClip(&oldClip);
 
-        // Scrollbar App
         if (appList.size() * 30.0f > appTable.Height) {
             float maxScroll = appList.size() * 30.0f - appTable.Height + 10.0f;
             float thumbH = max(20.0f, (appTable.Height / (appList.size() * 30.0f)) * appTable.Height);
@@ -866,7 +876,6 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
             g.FillRectangle(&brushGray, appTable.X + appTable.Width - 4.0f, thumbY, 4.0f, thumbH);
         }
 
-        // --- Green Buttons modified size ---
         float btnW = (colW - 20.0f) / 3.0f;
         float btnY = secY + 260.0f;
         SolidBrush greenBtn(hoverAddExe ? SClrGreenHover : SClrGreen); 
@@ -902,13 +911,12 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
             RectF listRect(webComboX - 120.0f, listY, 150.0f, commonWebsites.size() * 30.0f + 10.0f);
             GraphicsPath* listP = GetBlockRoundRectPath(listRect, 4);
             g.FillPath(&brushWhite, listP); g.DrawPath(&penBorder, listP); delete listP;
-
-            float itemY = listY + 5.0f;
+            float itemY2 = listY + 5.0f;
             for (size_t i = 0; i < commonWebsites.size(); ++i) {
                 SolidBrush optBg(hoverWebOptIdx == i ? SClrBgHover : SClrWhite);
-                g.FillRectangle(&optBg, RectF(listRect.X + 2.0f, itemY, listRect.Width - 4.0f, 30.0f));
-                g.DrawString(commonWebsites[i].c_str(), -1, &fNormal, RectF(listRect.X + 10.0f, itemY, listRect.Width, 30.0f), &fmtL, &brushDark);
-                itemY += 30.0f;
+                g.FillRectangle(&optBg, RectF(listRect.X + 2.0f, itemY2, listRect.Width - 4.0f, 30.0f));
+                g.DrawString(commonWebsites[i].c_str(), -1, &fNormal, RectF(listRect.X + 10.0f, itemY2, listRect.Width, 30.0f), &fmtL, &brushDark);
+                itemY2 += 30.0f;
             }
         }
 
@@ -917,13 +925,12 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
             RectF listRect(aComboX - 120.0f, listY, 150.0f, commonApps.size() * 30.0f + 10.0f);
             GraphicsPath* listP = GetBlockRoundRectPath(listRect, 4);
             g.FillPath(&brushWhite, listP); g.DrawPath(&penBorder, listP); delete listP;
-
-            float itemY = listY + 5.0f;
+            float itemY2 = listY + 5.0f;
             for (size_t i = 0; i < commonApps.size(); ++i) {
                 SolidBrush optBg(hoverAppOptIdx == i ? SClrBgHover : SClrWhite);
-                g.FillRectangle(&optBg, RectF(listRect.X + 2.0f, itemY, listRect.Width - 4.0f, 30.0f));
-                g.DrawString(commonApps[i].c_str(), -1, &fNormal, RectF(listRect.X + 10.0f, itemY, listRect.Width, 30.0f), &fmtL, &brushDark);
-                itemY += 30.0f;
+                g.FillRectangle(&optBg, RectF(listRect.X + 2.0f, itemY2, listRect.Width - 4.0f, 30.0f));
+                g.DrawString(commonApps[i].c_str(), -1, &fNormal, RectF(listRect.X + 10.0f, itemY2, listRect.Width, 30.0f), &fmtL, &brushDark);
+                itemY2 += 30.0f;
             }
         }
 
@@ -932,11 +939,9 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
             RectF listRect(modeDropX, listY, 200.0f, 80.0f);
             GraphicsPath* listP = GetBlockRoundRectPath(listRect, 4);
             g.FillPath(&brushWhite, listP); g.DrawPath(&penBorder, listP); delete listP;
-
             SolidBrush opt1Bg(hoverOptAllow ? SClrBgHover : SClrWhite);
             g.FillRectangle(&opt1Bg, RectF(listRect.X + 2.0f, listY + 2.0f, listRect.Width - 4.0f, 38.0f));
             g.DrawString(L"Allow Apps & Web", -1, &fNormal, RectF(listRect.X + 15.0f, listY + 2.0f, listRect.Width, 38.0f), &fmtL, &brushDark);
-
             SolidBrush opt2Bg(hoverOptBlock ? SClrBgHover : SClrWhite);
             g.FillRectangle(&opt2Bg, RectF(listRect.X + 2.0f, listY + 40.0f, listRect.Width - 4.0f, 38.0f));
             g.DrawString(L"Block Apps & Web", -1, &fNormal, RectF(listRect.X + 15.0f, listY + 40.0f, listRect.Width, 38.0f), &fmtL, &brushDark);
@@ -944,30 +949,41 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
 
         if (isControlDropdownOpen && !isFocusActive) {
             float listY = ctrlDropY + 42.0f;
-            RectF listRect(ctrlDropX, listY, 160.0f, 118.0f); // Taller for 3 items
+            RectF listRect(ctrlDropX, listY, 160.0f, 118.0f);
             GraphicsPath* listP = GetBlockRoundRectPath(listRect, 4);
             g.FillPath(&brushWhite, listP); g.DrawPath(&penBorder, listP); delete listP;
-
             SolidBrush opt1Bg(hoverOptSelf ? SClrBgHover : SClrWhite);
             g.FillRectangle(&opt1Bg, RectF(listRect.X + 2.0f, listY + 2.0f, listRect.Width - 4.0f, 38.0f));
             g.DrawString(L"Self Control", -1, &fBold, RectF(listRect.X + 15.0f, listY + 2.0f, listRect.Width, 38.0f), &fmtL, &brushDark);
-
             SolidBrush opt2Bg(hoverOptParents ? SClrBgHover : SClrWhite);
             g.FillRectangle(&opt2Bg, RectF(listRect.X + 2.0f, listY + 40.0f, listRect.Width - 4.0f, 38.0f));
             g.DrawString(L"Parents Control", -1, &fBold, RectF(listRect.X + 15.0f, listY + 40.0f, listRect.Width, 38.0f), &fmtL, &brushDark);
-            
             SolidBrush opt3Bg(hoverOptLongText ? SClrBgHover : SClrWhite);
             g.FillRectangle(&opt3Bg, RectF(listRect.X + 2.0f, listY + 78.0f, listRect.Width - 4.0f, 38.0f));
             g.DrawString(L"Long Text Control", -1, &fBold, RectF(listRect.X + 15.0f, listY + 78.0f, listRect.Width, 38.0f), &fmtL, &brushDark);
         }
     } 
+    // ==========================================
+    // TAB 1: SCHEDULE BLOCKS
+    // ==========================================
     else if (currentBlockTab == 1) {
-        // --- SCHEDULE BLOCKS ড্রয়িং লিংক করা হলো ---
         DrawScheduleBlocksTab(g, boxX, bodyY + 20.0f, boxW, boxH);
+    }
+    // ==========================================
+    // TAB 2: ADULT BLOCK
+    // ==========================================
+    else if (currentBlockTab == 2) {
+        DrawAdultBlockTab(g, boxX, bodyY + 20.0f, boxW, boxH);
+    }
+    // ==========================================
+    // TAB 3: DEVICE BLOCK
+    // ==========================================
+    else if (currentBlockTab == 3) {
+        DrawDeviceBlockTab(g, boxX, bodyY + 20.0f, boxW, boxH);
     }
     
     // ==========================================
-    // 3. FULL SCREEN OVERLAYS
+    // FULL SCREEN OVERLAYS (Simple Blocks only)
     // ==========================================
     if (showTimeOverlay || showPassOverlay || showStoreOverlay || showTitleOverlay || showLongTextOverlay) {
         SolidBrush overlayBg(SClrOverlay);
@@ -986,27 +1002,24 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
             g.DrawString(L"ADD MICROSOFT STORE APPS", -1, &fTitle, RectF(ovX, ovY + 20.0f, ovW, 30.0f), &fmtC, &brushDark);
             g.DrawLine(&penBorder, ovX + 30.0f, ovY + 60.0f, ovX + ovW - 30.0f, ovY + 60.0f);
             
-            // Store List Smooth Scroll
             RectF clipRect(ovX + 10.0f, ovY + 65.0f, ovW - 20.0f, ovH - 120.0f);
             Region oldClip; g.GetClip(&oldClip);
             g.SetClip(clipRect);
 
             float listY = ovY + 70.0f - cStoreScrollY;
             for (size_t i = 0; i < systemStoreApps.size(); ++i) {
-                if (listY > ovY - 20.0f && listY < ovY + ovH) { // drawing bounds
+                if (listY > ovY - 20.0f && listY < ovY + ovH) {
                     RectF addBtn(ovX + 30.0f, listY + 5.0f, 60.0f, 30.0f);
                     GraphicsPath* ap = GetBlockRoundRectPath(addBtn, 4);
                     SolidBrush aBr(hoverStoreAddIdx == i ? SClrGreenHover : SClrGreen);
                     g.FillPath(&aBr, ap); delete ap;
                     g.DrawString(L"Add", -1, &fBold, addBtn, &fmtC, &brushWhite);
-                    
                     g.DrawString(systemStoreApps[i].c_str(), -1, &fNormal, RectF(ovX + 110.0f, listY, 300.0f, 40.0f), &fmtL, &brushDark);
                 }
                 listY += 45.0f;
             }
             g.SetClip(&oldClip);
             
-            // Store Scrollbar
             float totalH = systemStoreApps.size() * 45.0f;
             float visibleH = ovH - 120.0f;
             if (totalH > visibleH) {
@@ -1028,7 +1041,6 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
             GraphicsPath* pp = GetBlockRoundRectPath(titleInpRect, 4);
             Pen pTealTitle(SClrTeal, 2.0f);
             g.FillPath(&brushWhite, pp); g.DrawPath(isTitleInputActive ? &pTealTitle : &penBorder, pp); delete pp;
-            
             if (inputTitleText.empty() && !isTitleInputActive) g.DrawString(L"e.g. Google Chrome", -1, &fNormal, titleInpRect, &fmtC, &brushGray);
             else {
                 g.DrawString(inputTitleText.c_str(), -1, &fNormal, RectF(ovX + 50.0f, ovY + 85.0f, ovW - 100.0f, 30.0f), &fmtL, &brushDark);
@@ -1040,13 +1052,11 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
                      g.FillRectangle(&brushDark, cursorX, ovY + 90.0f, 1.5f, 20.0f);
                 }
             }
-
             RectF cancelRect(ovX + 40.0f, ovY + 150.0f, 140.0f, 40.0f);
             GraphicsPath* cp = GetBlockRoundRectPath(cancelRect, 4);
             SolidBrush cancelBrush(hTitleCancel ? SClrBgHover : SClrWhite);
             g.FillPath(&cancelBrush, cp); g.DrawPath(&penBorder, cp); delete cp;
             g.DrawString(L"Cancel (Esc)", -1, &fBold, cancelRect, &fmtC, &brushDark);
-
             RectF confRect(ovX + 200.0f, ovY + 150.0f, 160.0f, 40.0f);
             GraphicsPath* sp = GetBlockRoundRectPath(confRect, 4);
             SolidBrush confBrush(hTitleAdd ? SClrTealHover : SClrTeal);
@@ -1059,13 +1069,11 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
             DrawBlocksOverlaySpinner(g, ovX + 110.0f, ovY + 80.0f, to_wstring(focusHours), hTimeHM, hTimeHP, &fIcon, &fBold);
             g.DrawString(L"Mins:", -1, &fBold, RectF(ovX + 250.0f, ovY + 80.0f, 50.0f, 36.0f), &fmtL, &brushDark);
             DrawBlocksOverlaySpinner(g, ovX + 300.0f, ovY + 80.0f, to_wstring(focusMins), hTimeMM, hTimeMP, &fIcon, &fBold);
-
             RectF cancelRect(ovX + 50.0f, ovY + 150.0f, 140.0f, 40.0f);
             GraphicsPath* cp = GetBlockRoundRectPath(cancelRect, 4);
             SolidBrush cancelBrush(hTimeCancel ? SClrBgHover : SClrWhite);
             g.FillPath(&cancelBrush, cp); g.DrawPath(&penBorder, cp); delete cp;
             g.DrawString(L"Cancel (Esc)", -1, &fBold, cancelRect, &fmtC, &brushDark);
-
             RectF startRect(ovX + 210.0f, ovY + 150.0f, 140.0f, 40.0f);
             GraphicsPath* sp = GetBlockRoundRectPath(startRect, 4);
             SolidBrush startBrush(hTimeStart ? SClrTealHover : SClrTeal);
@@ -1079,7 +1087,6 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
             GraphicsPath* pp = GetBlockRoundRectPath(passInpRect, 4);
             Pen pTealPass(SClrTeal, 2.0f);
             g.FillPath(&brushWhite, pp); g.DrawPath(isPassInputActive ? &pTealPass : &penBorder, pp); delete pp;
-            
             wstring displayPass = wstring(inputPassText.length(), L'*');
             if (inputPassText.empty() && !isPassInputActive) g.DrawString(L"Type password here...", -1, &fNormal, passInpRect, &fmtC, &brushGray);
             else {
@@ -1092,13 +1099,11 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
                      g.FillRectangle(&brushDark, cursorX, ovY + 90.0f, 1.5f, 20.0f);
                 }
             }
-
             RectF cancelRect(ovX + 40.0f, ovY + 150.0f, 140.0f, 40.0f);
             GraphicsPath* cp = GetBlockRoundRectPath(cancelRect, 4);
             SolidBrush cancelBrush(hPassCancel ? SClrBgHover : SClrWhite);
             g.FillPath(&cancelBrush, cp); g.DrawPath(&penBorder, cp); delete cp;
             g.DrawString(L"Cancel (Esc)", -1, &fBold, cancelRect, &fmtC, &brushDark);
-
             RectF confRect(ovX + 200.0f, ovY + 150.0f, 160.0f, 40.0f);
             GraphicsPath* sp = GetBlockRoundRectPath(confRect, 4);
             SolidBrush confBrush(hPassConfirm ? SClrTealHover : SClrTeal);
@@ -1108,35 +1113,28 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
         else if (showLongTextOverlay) {
             int words = CountWords(inputLongText);
             g.DrawString(L"TYPE 200 WORDS TO STOP FOCUS", -1, &fTitle, RectF(ovX, ovY + 20.0f, ovW, 30.0f), &fmtC, &brushDark);
-            
             wstring wordCountText = L"Word Count: " + to_wstring(words) + L" / 200";
             SolidBrush countBrush(words >= 200 ? SClrGreen : SClrRed);
             g.DrawString(wordCountText.c_str(), -1, &fBold, RectF(ovX, ovY + 60.0f, ovW, 20.0f), &fmtC, &countBrush);
-
             RectF textInpRect(ovX + 40.0f, ovY + 90.0f, ovW - 80.0f, 200.0f);
             GraphicsPath* pp = GetBlockRoundRectPath(textInpRect, 4);
             Pen pTealBox(SClrTeal, 2.0f);
             g.FillPath(&brushWhite, pp); 
             g.DrawPath(isLongTextInputActive ? &pTealBox : &penBorder, pp); delete pp;
-            
             StringFormat fmtWrap; fmtWrap.SetAlignment(StringAlignmentNear); fmtWrap.SetLineAlignment(StringAlignmentNear);
-            
             if (inputLongText.empty() && !isLongTextInputActive) {
                 g.DrawString(L"Start typing here... Type at least 200 words explaining why you are stopping this session.", -1, &fNormal, RectF(textInpRect.X+10.0f, textInpRect.Y+10.0f, textInpRect.Width-20.0f, textInpRect.Height-20.0f), &fmtWrap, &brushGray);
             } else {
                 g.DrawString(inputLongText.c_str(), -1, &fNormal, RectF(textInpRect.X+10.0f, textInpRect.Y+10.0f, textInpRect.Width-20.0f, textInpRect.Height-20.0f), &fmtWrap, &brushDark);
-                
                 if (isLongTextInputActive && (GetTickCount() / 500) % 2 == 0) {
                     g.FillRectangle(&brushTeal, textInpRect.X + textInpRect.Width - 15.0f, textInpRect.Y + textInpRect.Height - 15.0f, 10.0f, 10.0f);
                 }
             }
-
             RectF cancelRect(ovX + 100.0f, ovY + 320.0f, 140.0f, 40.0f);
             GraphicsPath* cp = GetBlockRoundRectPath(cancelRect, 4);
             SolidBrush cancelBrush(hLongTextCancel ? SClrBgHover : SClrWhite);
             g.FillPath(&cancelBrush, cp); g.DrawPath(&penBorder, cp); delete cp;
             g.DrawString(L"Cancel (Esc)", -1, &fBold, cancelRect, &fmtC, &brushDark);
-
             RectF confRect(ovX + 360.0f, ovY + 320.0f, 140.0f, 40.0f);
             GraphicsPath* sp = GetBlockRoundRectPath(confRect, 4);
             bool canConfirm = (words >= 200);
@@ -1147,12 +1145,12 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
     }
 }
 
-// --- Mouse Move Logic ---
+// ==========================================
+// MOUSE MOVE LOGIC
+// ==========================================
 void ProcessBlocksMouseMove(float x, float y) {
-    float contentX = s_contentX; 
-    float contentY = s_contentY;
-    float contentW = s_contentW; 
-    float contentH = s_contentH;
+    float contentX = s_contentX, contentY = s_contentY;
+    float contentW = s_contentW, contentH = s_contentH;
 
     hTimeHM = false; hTimeHP = false; hTimeMM = false; hTimeMP = false; hTimeStart = false; hTimeCancel = false;
     hPassInput = false; hPassConfirm = false; hPassCancel = false;
@@ -1166,7 +1164,6 @@ void ProcessBlocksMouseMove(float x, float y) {
     hoverAddStoreApp = false; hoverAddWindowTitle = false;
     hoverAppOptIdx = -1;
     hoverOptSelf = false; hoverOptParents = false; hoverOptLongText = false;
-
     hoverStartFocusBtn = false; 
 
     for (auto& item : webList) item.isHoveredCross = false;
@@ -1181,9 +1178,8 @@ void ProcessBlocksMouseMove(float x, float y) {
         if (showStoreOverlay) {
             float listY = ovY + 70.0f - cStoreScrollY;
             for (size_t i = 0; i < systemStoreApps.size(); ++i) {
-                if (listY > ovY + 60.0f && listY < ovY + ovH - 60.0f) { // roughly inside visible area
+                if (listY > ovY + 60.0f && listY < ovY + ovH - 60.0f)
                     if (RectF(ovX + 30.0f, listY + 5.0f, 60.0f, 30.0f).Contains(x, y)) hoverStoreAddIdx = i;
-                }
                 listY += 45.0f;
             }
             if (RectF(ovX + ovW - 120.0f, ovY + ovH - 50.0f, 90.0f, 35.0f).Contains(x, y)) hoverStoreClose = true;
@@ -1214,29 +1210,34 @@ void ProcessBlocksMouseMove(float x, float y) {
         return; 
     }
 
+    // --- Tab hover ---
     hoverBlockTab = -1;
-    float headerH = 60.0f;
-    float tabW = 200.0f, tabH = 40.0f;
-    float tab1X = contentX + 20.0f, tab2X = tab1X + tabW + 10.0f, tab3X = tab2X + tabW + 10.0f, tabY = contentY + 10.0f;
+    float tabH = 40.0f;
+    float tabW = (contentW - 60.0f) / 4.0f - 7.5f;
+    float tabGap = 10.0f;
+    float tab1X = contentX + 20.0f;
+    float tab2X = tab1X + tabW + tabGap;
+    float tab3X = tab2X + tabW + tabGap;
+    float tab4X = tab3X + tabW + tabGap;
+    float tabY  = contentY + 10.0f;
     
-    if (y >= contentY && y <= contentY + headerH) {
+    if (y >= contentY && y <= contentY + 60.0f) {
         if (RectF(tab1X, tabY, tabW, tabH).Contains(x, y)) hoverBlockTab = 0;
         else if (RectF(tab2X, tabY, tabW, tabH).Contains(x, y)) hoverBlockTab = 1;
         else if (RectF(tab3X, tabY, tabW, tabH).Contains(x, y)) hoverBlockTab = 2;
+        else if (RectF(tab4X, tabY, tabW, tabH).Contains(x, y)) hoverBlockTab = 3;
     }
 
     if (currentBlockTab == 0) {
         float bodyY = contentY + 60.0f;
         float boxX = contentX + 30.0f;
         float boxW = contentW - 60.0f;
-        
         float ctrlDropX = boxX + 30.0f;
         float ctrlDropY = bodyY + 40.0f;
         float modeDropX = boxX + 150.0f;
         float modeDropY = ctrlDropY + 75.0f;
         float webComboX = boxX + 30.0f + ((boxW - 90.0f) / 2.0f) - 105.0f;
         float webComboY = modeDropY + 95.0f;
-
         float colW = (boxW - 90.0f) / 2.0f;
         float rightColX = boxX + 60.0f + colW;
         float secY = modeDropY + 50.0f;
@@ -1288,7 +1289,6 @@ void ProcessBlocksMouseMove(float x, float y) {
             if (RectF(rightColX, qY + 2.0f, 150.0f, 20.0f).Contains(x, y)) hoverQuotesCheckbox = true;
             if (RectF(rightColX + 180.0f, qY - 2.0f, 100.0f, 24.0f).Contains(x, y)) hoverLangDropdown = true;
             if (RectF(webComboX, webComboY, 30.0f, 36.0f).Contains(x, y)) hoverWebCombo = true;
-            
             float aComboX = rightColX + colW - 105.0f;
             if (RectF(aComboX, secY + 65.0f, 30.0f, 36.0f).Contains(x, y)) hoverAppCombo = true;
         }
@@ -1296,7 +1296,6 @@ void ProcessBlocksMouseMove(float x, float y) {
         float leftColX = boxX + 30.0f;
         if (RectF(leftColX, secY + 45.0f, colW - 110.0f, 36.0f).Contains(x, y)) hoverWebInput = true;
         if (RectF(leftColX + colW - 70.0f, secY + 45.0f, 70.0f, 36.0f).Contains(x, y)) hoverWebAddBtn = true;
-        
         if (RectF(rightColX, secY + 65.0f, colW - 110.0f, 36.0f).Contains(x, y)) hoverAppInput = true;
         if (RectF(rightColX + colW - 70.0f, secY + 65.0f, 70.0f, 36.0f).Contains(x, y)) hoverAppAddBtn = true;
         
@@ -1307,33 +1306,37 @@ void ProcessBlocksMouseMove(float x, float y) {
         if (RectF(rightColX + (btnW * 2) + 20.0f, btnY, btnW, 40.0f).Contains(x, y)) hoverAddWindowTitle = true;
 
         if (!isFocusActive) {
-            // Hover with smooth scroll bounds (Web)
             float itemY = secY + 90.0f + 5.0f - cWebScrollY;
             for (size_t i = 0; i < webList.size(); ++i) {
-                if (itemY > secY + 90.0f - 30.0f && itemY < secY + 90.0f + 160.0f) {
+                if (itemY > secY + 90.0f - 30.0f && itemY < secY + 90.0f + 160.0f)
                     if (RectF(leftColX + colW - 30.0f, itemY, 30.0f, 30.0f).Contains(x, y)) webList[i].isHoveredCross = true;
-                }
                 itemY += 30.0f;
             }
-            // Hover with smooth scroll bounds (App)
             float aItemY = secY + 110.0f + 5.0f - cAppScrollY;
             for (size_t i = 0; i < appList.size(); ++i) {
-                if (!appList[i].isSystemLocked && aItemY > secY + 110.0f - 30.0f && aItemY < secY + 110.0f + 140.0f) {
+                if (!appList[i].isSystemLocked && aItemY > secY + 110.0f - 30.0f && aItemY < secY + 110.0f + 140.0f)
                     if (RectF(rightColX + colW - 30.0f, aItemY, 30.0f, 30.0f).Contains(x, y)) appList[i].isHoveredCross = true;
-                }
                 aItemY += 30.0f;
             }
         }
-    } else if (currentBlockTab == 1) {
-        // --- SCHEDULE BLOCKS লিংক ---
+    }
+    else if (currentBlockTab == 1) {
         ProcessScheduleBlocksMouseMove(x, y);
+    }
+    else if (currentBlockTab == 2) {
+        ProcessAdultBlockMouseMove(x, y);
+    }
+    else if (currentBlockTab == 3) {
+        ProcessDeviceBlockMouseMove(x, y);
     }
 }
 
-// --- Mouse Click Logic ---
+// ==========================================
+// MOUSE CLICK LOGIC
+// ==========================================
 void ProcessBlocksMouseClick(float x, float y) {
     if (showStoreOverlay) {
-        if (hoverStoreAddIdx != -1 && hoverStoreAddIdx < systemStoreApps.size()) { 
+        if (hoverStoreAddIdx != -1 && hoverStoreAddIdx < (int)systemStoreApps.size()) { 
             if (systemStoreApps[hoverStoreAddIdx] != L"No active apps found") {
                 appList.push_back({systemStoreApps[hoverStoreAddIdx], false, false}); 
                 SaveBlocksData();
@@ -1389,26 +1392,22 @@ void ProcessBlocksMouseClick(float x, float y) {
         return;
     }
 
+    // Tab switch
     if (hoverBlockTab != -1) { 
         currentBlockTab = hoverBlockTab; 
-        isModeDropdownOpen = false; isControlDropdownOpen = false; isWebComboOpen = false; isAppComboOpen = false;
+        isModeDropdownOpen = false; isControlDropdownOpen = false;
+        isWebComboOpen = false; isAppComboOpen = false;
         isLangDropdownOpen = false;
         return; 
     }
 
     if (currentBlockTab == 0) {
         if (hoverStartFocusBtn) {
-            isWebInputActive = false;   
-            isAppInputActive = false;   
-            hoverStartFocusBtn = false; 
-
+            isWebInputActive = false; isAppInputActive = false; hoverStartFocusBtn = false; 
             if (isFocusActive) {
                 if (controlMode == 1) { isStoppingFocus = true; showPassOverlay = true; isPassInputActive = true; }
                 else if (controlMode == 2) { showLongTextOverlay = true; isLongTextInputActive = true; }
-                else { 
-                    isFocusActive = false; 
-                    SaveBlocksData();
-                }
+                else { isFocusActive = false; SaveBlocksData(); }
             } else {
                 if (controlMode == 0 || controlMode == 2) { showTimeOverlay = true; }
                 else { isStoppingFocus = false; showPassOverlay = true; isPassInputActive = true; }
@@ -1423,52 +1422,35 @@ void ProcessBlocksMouseClick(float x, float y) {
         } else if (isLangDropdownOpen) {
             if (hoverOptBn) quoteLanguage = 0;
             if (hoverOptEn) quoteLanguage = 1;
-            isLangDropdownOpen = false; 
-            SaveBlocksData();
-            return;
+            isLangDropdownOpen = false; SaveBlocksData(); return;
         }
-
         if (isControlDropdownOpen && !hoverControlDropdown && !hoverOptSelf && !hoverOptParents && !hoverOptLongText) {
             isControlDropdownOpen = false; closedAnyDropdown = true;
         } else if (isControlDropdownOpen) {
             if (hoverOptSelf) controlMode = 0;
             if (hoverOptParents) controlMode = 1;
             if (hoverOptLongText) controlMode = 2;
-            isControlDropdownOpen = false; 
-            SaveBlocksData();
-            return;
+            isControlDropdownOpen = false; SaveBlocksData(); return;
         }
-        
         if (isModeDropdownOpen && !hoverModeDropdown && !hoverOptAllow && !hoverOptBlock) {
             isModeDropdownOpen = false; closedAnyDropdown = true;
         } else if (isModeDropdownOpen) {
             if (hoverOptAllow) { simpleBlockMode = 0; EnforceSystemApps(); }
             if (hoverOptBlock) { simpleBlockMode = 1; EnforceSystemApps(); }
-            isModeDropdownOpen = false; 
-            SaveBlocksData();
-            return;
+            isModeDropdownOpen = false; SaveBlocksData(); return;
         }
-        
         if (isWebComboOpen && !hoverWebCombo && hoverWebOptIdx == -1) {
             isWebComboOpen = false; closedAnyDropdown = true;
         } else if (isWebComboOpen) {
-            if (hoverWebOptIdx != -1) {
-                webList.push_back({commonWebsites[hoverWebOptIdx], false});
-                SaveBlocksData();
-            }
+            if (hoverWebOptIdx != -1) { webList.push_back({commonWebsites[hoverWebOptIdx], false}); SaveBlocksData(); }
             isWebComboOpen = false; return;
         }
-
         if (isAppComboOpen && !hoverAppCombo && hoverAppOptIdx == -1) {
             isAppComboOpen = false; closedAnyDropdown = true;
         } else if (isAppComboOpen) {
-            if (hoverAppOptIdx != -1) {
-                appList.push_back({commonApps[hoverAppOptIdx], false, false});
-                SaveBlocksData();
-            }
+            if (hoverAppOptIdx != -1) { appList.push_back({commonApps[hoverAppOptIdx], false, false}); SaveBlocksData(); }
             isAppComboOpen = false; return;
         }
-
         if (closedAnyDropdown) return; 
 
         if (hoverControlDropdown && !isFocusActive) { isControlDropdownOpen = true; return; }
@@ -1476,25 +1458,13 @@ void ProcessBlocksMouseClick(float x, float y) {
         if (hoverWebCombo && !isFocusActive) { isWebComboOpen = true; return; }
         if (hoverAppCombo && !isFocusActive) { isAppComboOpen = true; return; }
         if (hoverLangDropdown && !isFocusActive) { isLangDropdownOpen = true; return; }
-        if (hoverQuotesCheckbox && !isFocusActive) { 
-            showQuotes = !showQuotes; 
-            SaveBlocksData();
-            return; 
-        }
+        if (hoverQuotesCheckbox && !isFocusActive) { showQuotes = !showQuotes; SaveBlocksData(); return; }
 
         isWebInputActive = hoverWebInput;
         isAppInputActive = hoverAppInput;
 
-        if (hoverWebAddBtn && !webInputText.empty()) { 
-            webList.push_back({webInputText, false}); 
-            webInputText = L""; 
-            SaveBlocksData();
-        }
-        if (hoverAppAddBtn && !appInputText.empty()) { 
-            appList.push_back({appInputText, false, false}); 
-            appInputText = L""; 
-            SaveBlocksData();
-        }
+        if (hoverWebAddBtn && !webInputText.empty()) { webList.push_back({webInputText, false}); webInputText = L""; SaveBlocksData(); }
+        if (hoverAppAddBtn && !appInputText.empty()) { appList.push_back({appInputText, false, false}); appInputText = L""; SaveBlocksData(); }
 
         if (hoverAddExe) {
             OPENFILENAMEW ofn; wchar_t szFile[260] = { 0 };
@@ -1504,36 +1474,37 @@ void ProcessBlocksMouseClick(float x, float y) {
             if (GetOpenFileNameW(&ofn) == TRUE) {
                 wstring filePath = ofn.lpstrFile; size_t pos = filePath.find_last_of(L"\\/");
                 if(pos != wstring::npos) filePath = filePath.substr(pos+1);
-                appList.push_back({filePath, false, false});
-                SaveBlocksData();
+                appList.push_back({filePath, false, false}); SaveBlocksData();
             }
         }
-        
-        if (hoverAddStoreApp) { 
-            RefreshRunningApps(); 
-            tStoreScrollY = cStoreScrollY = 0; // Reset scroll on open
-            showStoreOverlay = true; 
-        }
+        if (hoverAddStoreApp) { RefreshRunningApps(); tStoreScrollY = cStoreScrollY = 0; showStoreOverlay = true; }
         if (hoverAddWindowTitle) { showTitleOverlay = true; isTitleInputActive = true; }
 
         if (!isFocusActive) {
             bool listChanged = false;
             for (auto it = webList.begin(); it != webList.end(); ) { 
-                if (it->isHoveredCross) { it = webList.erase(it); listChanged = true; } 
-                else ++it; 
+                if (it->isHoveredCross) { it = webList.erase(it); listChanged = true; } else ++it; 
             }
             for (auto it = appList.begin(); it != appList.end(); ) { 
-                if (it->isHoveredCross && !it->isSystemLocked) { it = appList.erase(it); listChanged = true; } 
-                else ++it; 
+                if (it->isHoveredCross && !it->isSystemLocked) { it = appList.erase(it); listChanged = true; } else ++it; 
             }
             if (listChanged) SaveBlocksData();
         }
-    } else if (currentBlockTab == 1) {
-        // --- SCHEDULE BLOCKS লিংক ---
+    }
+    else if (currentBlockTab == 1) {
         ProcessScheduleBlocksMouseClick(x, y);
+    }
+    else if (currentBlockTab == 2) {
+        ProcessAdultBlockMouseClick(x, y);
+    }
+    else if (currentBlockTab == 3) {
+        ProcessDeviceBlockMouseClick(x, y);
     }
 }
 
+// ==========================================
+// KEY PRESS LOGIC
+// ==========================================
 void ProcessBlocksKeyPress(wchar_t c) {
     if (showLongTextOverlay && isLongTextInputActive) {
         if ((c >= 32 && c <= 126) || c == L'\n' || c == L'\r') {
@@ -1548,24 +1519,24 @@ void ProcessBlocksKeyPress(wchar_t c) {
             if (isWebInputActive && c >= 32 && c <= 126 && webInputText.length() < 40) webInputText += c;
             if (isAppInputActive && c >= 32 && c <= 126 && appInputText.length() < 40) appInputText += c;
         } else if (currentBlockTab == 1) {
-            // --- SCHEDULE BLOCKS লিংক ---
             ProcessScheduleBlocksKeyPress(c);
+        } else if (currentBlockTab == 2) {
+            ProcessAdultBlockKeyPress(c);
+        } else if (currentBlockTab == 3) {
+            ProcessDeviceBlockKeyPress(c);
         }
     }
 }
 
+// ==========================================
+// KEY DOWN LOGIC
+// ==========================================
 void ProcessBlocksKeyDown(WPARAM key) {
-    // --- ESC TO CLOSE POPUPS ---
     if (key == VK_ESCAPE) {
         if (showPassOverlay || showTitleOverlay || showTimeOverlay || showStoreOverlay || showLongTextOverlay) {
-            showPassOverlay = false;
-            showTitleOverlay = false;
-            showTimeOverlay = false;
-            showStoreOverlay = false;
-            showLongTextOverlay = false;
-            inputPassText = L"";
-            inputTitleText = L"";
-            inputLongText = L"";
+            showPassOverlay = false; showTitleOverlay = false; showTimeOverlay = false;
+            showStoreOverlay = false; showLongTextOverlay = false;
+            inputPassText = L""; inputTitleText = L""; inputLongText = L"";
             return;
         }
     }
@@ -1581,32 +1552,35 @@ void ProcessBlocksKeyDown(WPARAM key) {
             if (isWebInputActive) {
                 if (key == VK_BACK && !webInputText.empty()) webInputText.pop_back();
                 else if (key == VK_RETURN && !webInputText.empty()) {
-                    webList.push_back({webInputText, false}); webInputText = L""; 
-                    SaveBlocksData();
+                    webList.push_back({webInputText, false}); webInputText = L""; SaveBlocksData();
                 }
             }
             if (isAppInputActive) {
                 if (key == VK_BACK && !appInputText.empty()) appInputText.pop_back();
                 else if (key == VK_RETURN && !appInputText.empty()) {
-                    appList.push_back({appInputText, false, false}); appInputText = L""; 
-                    SaveBlocksData();
+                    appList.push_back({appInputText, false, false}); appInputText = L""; SaveBlocksData();
                 }
             }
         } else if (currentBlockTab == 1) {
-            // --- SCHEDULE BLOCKS লিংক ---
             ProcessScheduleBlocksKeyDown(key);
+        } else if (currentBlockTab == 2) {
+            ProcessAdultBlockKeyDown(key);
+        } else if (currentBlockTab == 3) {
+            ProcessDeviceBlockKeyDown(key);
         }
     }
 }
 
+// ==========================================
+// MOUSE WHEEL LOGIC
+// ==========================================
 void ProcessBlocksMouseWheel(float x, float y, int delta) {
     int steps = (delta > 0) ? 1 : -1;
 
-    // --- SMOOTH PIXEL SCROLL LOGIC ---
     if (showStoreOverlay) {
-        tStoreScrollY -= steps * 60.0f; // Scroll 60px per wheel step
+        tStoreScrollY -= steps * 60.0f;
         float visibleStoreH = 450.0f - 70.0f - 60.0f; 
-        float maxStoreScroll = max(0.0f, systemStoreApps.size() * 45.0f - visibleStoreH);
+        float maxStoreScroll = max(0.0f, (float)systemStoreApps.size() * 45.0f - visibleStoreH);
         tStoreScrollY = max(0.0f, min(tStoreScrollY, maxStoreScroll));
         return;
     }
@@ -1623,19 +1597,21 @@ void ProcessBlocksMouseWheel(float x, float y, int delta) {
             RectF webTable(leftColX, secY + 90.0f, colW, 160.0f);
             if (webTable.Contains(x, y)) {
                 tWebScrollY -= steps * 40.0f; 
-                float maxWebScroll = max(0.0f, webList.size() * 30.0f - 160.0f + 10.0f);
+                float maxWebScroll = max(0.0f, (float)webList.size() * 30.0f - 160.0f + 10.0f);
                 tWebScrollY = max(0.0f, min(tWebScrollY, maxWebScroll));
             }
-
             RectF appTable(rightColX, secY + 110.0f, colW, 140.0f);
             if (appTable.Contains(x, y)) {
                 tAppScrollY -= steps * 40.0f; 
-                float maxAppScroll = max(0.0f, appList.size() * 30.0f - 140.0f + 10.0f);
+                float maxAppScroll = max(0.0f, (float)appList.size() * 30.0f - 140.0f + 10.0f);
                 tAppScrollY = max(0.0f, min(tAppScrollY, maxAppScroll));
             }
         } else if (currentBlockTab == 1) {
-            // --- SCHEDULE BLOCKS লিংক ---
             ProcessScheduleBlocksMouseWheel(x, y, delta);
+        } else if (currentBlockTab == 2) {
+            ProcessAdultBlockMouseWheel(x, y, delta);
+        } else if (currentBlockTab == 3) {
+            ProcessDeviceBlockMouseWheel(x, y, delta);
         }
     }
 }
