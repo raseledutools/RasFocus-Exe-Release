@@ -33,10 +33,12 @@ static wchar_t s_email   [512]  = {};
 static wchar_t s_password[512]  = {};
 static bool    s_saveLogin      = false;
 static bool    s_showPassword   = false;
-static int     s_focusField     = 1;       // 1=email 2=password 0=none
+static int     s_focusField     = 0;       // 1=email 2=password 0=none
 static bool    s_isLoading      = false;
 static wstring s_statusMsg      = L"";
 static bool    s_isError        = false;
+static DWORD   s_lastBlinkTime  = 0;
+static bool    s_cursorVisible  = true;
 
 // ── Hover states ──
 static bool s_hoverLogin      = false;
@@ -47,11 +49,6 @@ static bool s_hoverPrivacy    = false;
 static bool s_hoverSaveCheck  = false;
 static bool s_hoverEye        = false;
 static bool s_hoverLogout     = false;
-
-// ── Cursor Blink ──
-static DWORD s_lastBlinkTick  = 0;
-static bool  s_cursorVisible  = true;
-static HWND  s_hWndRef        = NULL;  // Timer callback এর জন্য
 
 // ── Saved credentials path ──
 static string GetCredsPath() {
@@ -325,13 +322,13 @@ static bool HitRect(float mx, float my, float x, float y, float w, float h) {
 //  DRAW
 // ============================================================
 void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
-    SolidBrush bgBrush(Color(255, 245, 248, 250));
+    SolidBrush bgBrush(Color(255, 240, 248, 255));
     g.FillRectangle(&bgBrush, cx, cy, cw, ch);
 
     if (!g_loggedInEmail.empty()) {
         CardLayout L = GetLayout(cx, cy, cw, ch);
         GraphicsPath card;
-        float rc = 10.0f, dc = rc * 2.0f;
+        float rc = 12.0f, dc = rc * 2.0f;
         card.AddArc(L.cardX, L.cardY, dc, dc, 180.0f, 90.0f);
         card.AddArc(L.cardX + L.cardW - dc, L.cardY, dc, dc, 270.0f, 90.0f);
         card.AddArc(L.cardX + L.cardW - dc, L.cardY + L.cardH - dc, dc, dc, 0.0f, 90.0f);
@@ -339,74 +336,75 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
         card.CloseFigure();
         SolidBrush cardBg(Color(255, 255, 255, 255));
         g.FillPath(&cardBg, &card);
-        Pen cardShadow(Color(20, 0, 150, 160), 1.0f);
+        Pen cardShadow(Color(30, 0, 100, 180), 1.5f);
         g.DrawPath(&cardShadow, &card);
 
         GraphicsPath hdrPath;
         hdrPath.AddArc(L.cardX, L.cardY, dc, dc, 180.0f, 90.0f);
         hdrPath.AddArc(L.cardX + L.cardW - dc, L.cardY, dc, dc, 270.0f, 90.0f);
-        hdrPath.AddLine(L.cardX + L.cardW, L.cardY + 80.0f, L.cardX, L.cardY + 80.0f);
+        hdrPath.AddLine(L.cardX + L.cardW, L.cardY + 90.0f, L.cardX, L.cardY + 90.0f);
         hdrPath.CloseFigure();
-        SolidBrush hdrBg(Color(255, 0, 150, 160));
+        LinearGradientBrush hdrBg(PointF(L.cardX, L.cardY), PointF(L.cardX + L.cardW, L.cardY + 90.0f),
+            Color(255, 0, 120, 160), Color(255, 0, 180, 200));
         g.FillPath(&hdrBg, &hdrPath);
 
         FontFamily ff(L"Segoe UI");
         FontFamily ffIcons(L"Segoe MDL2 Assets");
         SolidBrush white(Color(255, 255, 255, 255));
-        SolidBrush teal(Color(255, 0, 150, 160));
-        SolidBrush dark(Color(255, 50, 50, 50));
-        SolidBrush gray(Color(255, 130, 130, 130));
+        SolidBrush teal(Color(255, 0, 150, 180));
+        SolidBrush dark(Color(255, 40, 40, 50));
+        SolidBrush gray(Color(255, 120, 130, 140));
         StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
         StringFormat fmtL; fmtL.SetAlignment(StringAlignmentNear);   fmtL.SetLineAlignment(StringAlignmentCenter);
 
-        float avR = 40.0f;
+        float avR = 45.0f;
         float avCX = L.cardX + L.cardW / 2.0f;
-        float avCY = L.cardY + 80.0f;
+        float avCY = L.cardY + 90.0f;
         SolidBrush avBg(Color(255, 255, 255, 255));
         g.FillEllipse(&avBg, avCX - avR, avCY - avR, avR * 2.0f, avR * 2.0f);
-        Pen avBorder(Color(255, 0, 150, 160), 3.0f);
+        Pen avBorder(Color(255, 0, 150, 180), 3.5f);
         g.DrawEllipse(&avBorder, avCX - avR, avCY - avR, avR * 2.0f, avR * 2.0f);
-        Font fAvIcon(&ffIcons, 32, FontStyleRegular, UnitPixel);
+        Font fAvIcon(&ffIcons, 36, FontStyleRegular, UnitPixel);
         g.DrawString(L"\xE77B", -1, &fAvIcon, RectF(avCX - avR, avCY - avR, avR * 2.0f, avR * 2.0f), &fmtC, &teal);
 
-        Font fHdrTitle(&ff, 16, FontStyleBold, UnitPixel);
-        g.DrawString(L"My Account", -1, &fHdrTitle, RectF(L.cardX, L.cardY, L.cardW, 50.0f), &fmtC, &white);
+        Font fHdrTitle(&ff, 18, FontStyleBold, UnitPixel);
+        g.DrawString(L"My Account", -1, &fHdrTitle, RectF(L.cardX, L.cardY, L.cardW, 55.0f), &fmtC, &white);
 
-        float infoY = avCY + avR + 20.0f;
-        Font fLabel(&ff, 11, FontStyleRegular, UnitPixel);
-        Font fValue(&ff, 13, FontStyleBold, UnitPixel);
+        float infoY = avCY + avR + 25.0f;
+        Font fLabel(&ff, 12, FontStyleRegular, UnitPixel);
+        Font fValue(&ff, 14, FontStyleBold, UnitPixel);
 
-        g.DrawString(L"Email", -1, &fLabel, RectF(L.fieldX, infoY, L.fieldW, 18.0f), &fmtL, &gray);
-        g.DrawString(g_loggedInEmail.c_str(), -1, &fValue, RectF(L.fieldX, infoY + 18.0f, L.fieldW, 22.0f), &fmtL, &dark);
+        g.DrawString(L"Email", -1, &fLabel, RectF(L.fieldX, infoY, L.fieldW, 20.0f), &fmtL, &gray);
+        g.DrawString(g_loggedInEmail.c_str(), -1, &fValue, RectF(L.fieldX, infoY + 20.0f, L.fieldW, 24.0f), &fmtL, &dark);
 
-        float badgeY = infoY + 58.0f;
-        g.DrawString(L"Plan", -1, &fLabel, RectF(L.fieldX, badgeY, L.fieldW, 18.0f), &fmtL, &gray);
+        float badgeY = infoY + 65.0f;
+        g.DrawString(L"Plan", -1, &fLabel, RectF(L.fieldX, badgeY, L.fieldW, 20.0f), &fmtL, &gray);
 
-        float badgeW = 110.0f, badgeH = 26.0f;
+        float badgeW = 120.0f, badgeH = 30.0f;
         GraphicsPath badge;
-        float br = 5.0f, bd = br * 2.0f;
-        badge.AddArc(L.fieldX, badgeY + 20.0f, bd, bd, 180.0f, 90.0f);
-        badge.AddArc(L.fieldX + badgeW - bd, badgeY + 20.0f, bd, bd, 270.0f, 90.0f);
-        badge.AddArc(L.fieldX + badgeW - bd, badgeY + 20.0f + badgeH - bd, bd, bd, 0.0f, 90.0f);
-        badge.AddArc(L.fieldX, badgeY + 20.0f + badgeH - bd, bd, bd, 90.0f, 90.0f);
+        float br = 6.0f, bd = br * 2.0f;
+        badge.AddArc(L.fieldX, badgeY + 22.0f, bd, bd, 180.0f, 90.0f);
+        badge.AddArc(L.fieldX + badgeW - bd, badgeY + 22.0f, bd, bd, 270.0f, 90.0f);
+        badge.AddArc(L.fieldX + badgeW - bd, badgeY + 22.0f + badgeH - bd, bd, bd, 0.0f, 90.0f);
+        badge.AddArc(L.fieldX, badgeY + 22.0f + badgeH - bd, bd, bd, 90.0f, 90.0f);
         badge.CloseFigure();
-        SolidBrush badgeBg(g_isPremiumUser ? Color(255, 243, 156, 18) : Color(255, 0, 150, 160));
+        SolidBrush badgeBg(g_isPremiumUser ? Color(255, 255, 140, 0) : Color(255, 0, 150, 180));
         g.FillPath(&badgeBg, &badge);
-        Font fBadge(&ff, 11, FontStyleBold, UnitPixel);
-        g.DrawString(g_isPremiumUser ? L"★ Premium" : L"Free Plan", -1, &fBadge, RectF(L.fieldX, badgeY + 20.0f, badgeW, badgeH), &fmtC, &white);
+        Font fBadge(&ff, 12, FontStyleBold, UnitPixel);
+        g.DrawString(g_isPremiumUser ? L"★ Premium" : L"Free Plan", -1, &fBadge, RectF(L.fieldX, badgeY + 22.0f, badgeW, badgeH), &fmtC, &white);
 
-        float logoutW = 140.0f, logoutH = 36.0f;
+        float logoutW = 150.0f, logoutH = 40.0f;
         float logoutX = L.cardX + (L.cardW - logoutW) / 2.0f;
-        float logoutY = L.cardY + L.cardH - 60.0f;
+        float logoutY = L.cardY + L.cardH - 65.0f;
         GraphicsPath lPath;
         lPath.AddArc(logoutX, logoutY, bd, bd, 180.0f, 90.0f);
         lPath.AddArc(logoutX + logoutW - bd, logoutY, bd, bd, 270.0f, 90.0f);
         lPath.AddArc(logoutX + logoutW - bd, logoutY + logoutH - bd, bd, bd, 0.0f, 90.0f);
         lPath.AddArc(logoutX, logoutY + logoutH - bd, bd, bd, 90.0f, 90.0f);
         lPath.CloseFigure();
-        SolidBrush lBg(s_hoverLogout ? Color(255, 200, 30, 30) : Color(255, 220, 50, 50));
+        SolidBrush lBg(s_hoverLogout ? Color(255, 180, 20, 20) : Color(255, 220, 50, 50));
         g.FillPath(&lBg, &lPath);
-        Font fLogout(&ff, 12, FontStyleBold, UnitPixel);
+        Font fLogout(&ff, 13, FontStyleBold, UnitPixel);
         g.DrawString(L"\xE7E8 Log Out", -1, &fLogout, RectF(logoutX, logoutY, logoutW, logoutH), &fmtC, &white);
         return;
     }
@@ -415,9 +413,9 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
     CardLayout L = GetLayout(cx, cy, cw, ch);
 
     for (int i = 3; i >= 0; --i) {
-        SolidBrush shadowBrush(Color(8 + i * 4, 0, 100, 120));
+        SolidBrush shadowBrush(Color(10 + i * 5, 0, 80, 140));
         GraphicsPath shadowPath;
-        float sr = 10.0f, sd = sr * 2.0f;
+        float sr = 12.0f, sd = sr * 2.0f;
         float sx = L.cardX - i, sy = L.cardY + i, sw2 = L.cardW + i * 2.0f, sh2 = L.cardH;
         shadowPath.AddArc(sx, sy, sd, sd, 180.0f, 90.0f);
         shadowPath.AddArc(sx + sw2 - sd, sy, sd, sd, 270.0f, 90.0f);
@@ -428,7 +426,7 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
     }
 
     GraphicsPath cardPath;
-    float rc = 10.0f, dc = rc * 2.0f;
+    float rc = 12.0f, dc = rc * 2.0f;
     cardPath.AddArc(L.cardX, L.cardY, dc, dc, 180.0f, 90.0f);
     cardPath.AddArc(L.cardX + L.cardW - dc, L.cardY, dc, dc, 270.0f, 90.0f);
     cardPath.AddArc(L.cardX + L.cardW - dc, L.cardY + L.cardH - dc, dc, dc, 0.0f, 90.0f);
@@ -439,9 +437,9 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
 
     FontFamily ff(L"Segoe UI");
     FontFamily ffIcons(L"Segoe MDL2 Assets");
-    SolidBrush teal(Color(255, 0, 150, 160));
-    SolidBrush dark(Color(255, 50, 50, 50));
-    SolidBrush gray(Color(255, 140, 140, 140));
+    SolidBrush teal(Color(255, 0, 150, 180));
+    SolidBrush dark(Color(255, 40, 40, 50));
+    SolidBrush gray(Color(255, 130, 140, 150));
     SolidBrush white(Color(255, 255, 255, 255));
     StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
     StringFormat fmtL; fmtL.SetAlignment(StringAlignmentNear);   fmtL.SetLineAlignment(StringAlignmentCenter);
@@ -463,40 +461,29 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
     Pen emailBorder(emailFocused ? Color(255, 0, 150, 160) : Color(255, 220, 225, 230), emailFocused ? 1.5f : 1.0f);
     g.DrawRectangle(&emailBorder, L.fieldX, L.emailY, L.fieldW, L.fldH);
 
-    // ── Cursor Blink Update ──
-    DWORD now = GetTickCount();
-    if (now - s_lastBlinkTick >= 500) {
-        s_cursorVisible = !s_cursorVisible;
-        s_lastBlinkTick = now;
-        if (s_hWndRef) InvalidateRect(s_hWndRef, NULL, FALSE);
-    }
-
     Font fInput(&ff, 12, FontStyleRegular, UnitPixel);
     wstring emailStr(s_email);
-    Color darkCol(255, 50, 50, 50);
-    SolidBrush inputColor(emailStr.empty() ? Color(255, 160, 170, 180) : darkCol);
-    g.DrawString(emailStr.empty() ? L"Email address" : emailStr.c_str(), -1, &fInput,
-        RectF(L.fieldX + 32.0f, L.emailY, L.fieldW - 40.0f, L.fldH), &fmtL, &inputColor);
-
-    // ── Email Cursor ──
-    if (emailFocused && s_cursorVisible) {
-        float curX = L.fieldX + 33.0f;
-        if (!emailStr.empty()) {
-            RectF measured; CharacterRange cr(0, (int)emailStr.size());
-            StringFormat sfm; sfm.SetMeasurableCharacterRanges(1, &cr);
-            Region rgn;
-            g.MeasureCharacterRanges(emailStr.c_str(), -1, &fInput,
-                RectF(L.fieldX + 32.0f, L.emailY, L.fieldW - 40.0f, L.fldH), &sfm, 1, &rgn);
-            rgn.GetBounds(&measured, &g);
-            curX = L.fieldX + 32.0f + measured.Width + 1.0f;
+    SolidBrush inputColor(emailStr.empty() ? Color(255, 160, 170, 180) : Color(255, 50, 50, 50));
+    float textX = L.fieldX + 32.0f;
+    if (!emailStr.empty()) {
+        g.DrawString(emailStr.c_str(), -1, &fInput, RectF(textX, L.emailY, L.fieldW - 40.0f, L.fldH), &fmtL, &inputColor);
+    } else if (emailFocused) {
+        DWORD currentTime = GetTickCount();
+        if (currentTime - s_lastBlinkTime > 500) {
+            s_cursorVisible = !s_cursorVisible;
+            s_lastBlinkTime = currentTime;
         }
-        Pen curPen(Color(255, 0, 150, 160), 1.5f);
-        g.DrawLine(&curPen, curX, L.emailY + 6.0f, curX, L.emailY + L.fldH - 6.0f);
+        if (s_cursorVisible) {
+            Pen cursorPen(Color(255, 0, 150, 160), 2.0f);
+            g.DrawLine(&cursorPen, textX, L.emailY + 8.0f, textX, L.emailY + L.fldH - 8.0f);
+        }
+        g.DrawString(L"Email address", -1, &fInput, RectF(textX, L.emailY, L.fieldW - 40.0f, L.fldH), &fmtL, &inputColor);
+    } else {
+        g.DrawString(L"Email address", -1, &fInput, RectF(textX, L.emailY, L.fieldW - 40.0f, L.fldH), &fmtL, &inputColor);
     }
-
+    
     Font fFieldIcon(&ffIcons, 13, FontStyleRegular, UnitPixel);
-    g.DrawString(L"\xE715", -1, &fFieldIcon, RectF(L.fieldX + 8.0f, L.emailY, 24.0f, L.fldH),
-        &fmtC, emailStr.empty() ? &gray : &teal);
+    g.DrawString(L"\xE715", -1, &fFieldIcon, RectF(L.fieldX + 8.0f, L.emailY, 24.0f, L.fldH), &fmtC, emailStr.empty() ? &gray : &teal);
 
     // Password
     bool passFocused = (s_focusField == 2);
@@ -505,26 +492,27 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
     g.DrawRectangle(&passBorder, L.fieldX, L.passY, L.fieldW, L.fldH);
 
     wstring passStr(s_password);
-    wstring passDisplay = passStr.empty() ? L"Password" : (s_showPassword ? passStr : wstring(passStr.size(), L'•'));
-    SolidBrush passColor(passStr.empty() ? Color(255, 160, 170, 180) : darkCol);
-    g.DrawString(passDisplay.c_str(), -1, &fInput, RectF(L.fieldX + 32.0f, L.passY, L.fieldW - 65.0f, L.fldH), &fmtL, &passColor);
-
-    // ── Password Cursor ──
-    if (passFocused && s_cursorVisible) {
-        float curX = L.fieldX + 33.0f;
-        if (!passDisplay.empty() && passStr.size() > 0) {
-            RectF measured; CharacterRange cr(0, (int)passDisplay.size());
-            StringFormat sfm; sfm.SetMeasurableCharacterRanges(1, &cr);
-            Region rgn;
-            g.MeasureCharacterRanges(passDisplay.c_str(), -1, &fInput,
-                RectF(L.fieldX + 32.0f, L.passY, L.fieldW - 65.0f, L.fldH), &sfm, 1, &rgn);
-            rgn.GetBounds(&measured, &g);
-            curX = L.fieldX + 32.0f + measured.Width + 1.0f;
+    float passTextX = L.fieldX + 32.0f;
+    if (!passStr.empty()) {
+        wstring passDisplay = s_showPassword ? passStr : wstring(passStr.size(), L'•');
+        SolidBrush passColorVal(Color(255, 50, 50, 50));
+        g.DrawString(passDisplay.c_str(), -1, &fInput, RectF(passTextX, L.passY, L.fieldW - 65.0f, L.fldH), &fmtL, &passColorVal);
+    } else if (passFocused) {
+        DWORD currentTime = GetTickCount();
+        if (currentTime - s_lastBlinkTime > 500) {
+            s_cursorVisible = !s_cursorVisible;
+            s_lastBlinkTime = currentTime;
         }
-        Pen curPen(Color(255, 0, 150, 160), 1.5f);
-        g.DrawLine(&curPen, curX, L.passY + 6.0f, curX, L.passY + L.fldH - 6.0f);
+        if (s_cursorVisible) {
+            Pen cursorPen(Color(255, 0, 150, 160), 2.0f);
+            g.DrawLine(&cursorPen, passTextX, L.passY + 8.0f, passTextX, L.passY + L.fldH - 8.0f);
+        }
+        SolidBrush passColorVal(Color(255, 160, 170, 180));
+        g.DrawString(L"Password", -1, &fInput, RectF(passTextX, L.passY, L.fieldW - 65.0f, L.fldH), &fmtL, &passColorVal);
+    } else {
+        SolidBrush passColorVal(Color(255, 160, 170, 180));
+        g.DrawString(L"Password", -1, &fInput, RectF(passTextX, L.passY, L.fieldW - 65.0f, L.fldH), &fmtL, &passColorVal);
     }
-
     g.DrawString(L"\xE72E", -1, &fFieldIcon, RectF(L.fieldX + 8.0f, L.passY, 24.0f, L.fldH), &fmtC, passStr.empty() ? &gray : &teal);
 
     Font fEye(&ffIcons, 13, FontStyleRegular, UnitPixel);
@@ -547,25 +535,26 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
 
     // Status Message
     if (!s_statusMsg.empty()) {
-        SolidBrush statusBrush(s_isError ? Color(255, 200, 50, 50) : Color(255, 0, 140, 80));
-        Font fStatus(&ff, 10, FontStyleBold, UnitPixel);
-        g.DrawString(s_statusMsg.c_str(), -1, &fStatus, RectF(L.cardX, L.loginBtnY - 20.0f, L.cardW, 16.0f), &fmtC, &statusBrush);
+        SolidBrush statusBrush(s_isError ? Color(255, 220, 60, 60) : Color(255, 0, 160, 90));
+        Font fStatus(&ff, 11, FontStyleBold, UnitPixel);
+        g.DrawString(s_statusMsg.c_str(), -1, &fStatus, RectF(L.cardX, L.loginBtnY - 22.0f, L.cardW, 18.0f), &fmtC, &statusBrush);
     } else if (s_isLoading) {
-        Font fStatus(&ff, 10, FontStyleBold, UnitPixel);
-        g.DrawString(L"Logging in...", -1, &fStatus, RectF(L.cardX, L.loginBtnY - 20.0f, L.cardW, 16.0f), &fmtC, &teal);
+        Font fStatus(&ff, 11, FontStyleBold, UnitPixel);
+        g.DrawString(L"Logging in...", -1, &fStatus, RectF(L.cardX, L.loginBtnY - 22.0f, L.cardW, 18.0f), &fmtC, &teal);
     }
 
     // Login Button
     GraphicsPath btnP1;
-    float br = 5.0f, bd = br * 2.0f;
+    float br = 6.0f, bd = br * 2.0f;
     btnP1.AddArc(L.loginBtnX, L.loginBtnY, bd, bd, 180.0f, 90.0f);
     btnP1.AddArc(L.loginBtnX + L.loginBtnW - bd, L.loginBtnY, bd, bd, 270.0f, 90.0f);
     btnP1.AddArc(L.loginBtnX + L.loginBtnW - bd, L.loginBtnY + L.loginBtnH - bd, bd, bd, 0.0f, 90.0f);
     btnP1.AddArc(L.loginBtnX, L.loginBtnY + L.loginBtnH - bd, bd, bd, 90.0f, 90.0f);
     btnP1.CloseFigure();
-    SolidBrush loginBg(s_hoverLogin ? Color(255, 0, 120, 130) : Color(255, 0, 150, 160));
+    LinearGradientBrush loginBg(PointF(L.loginBtnX, L.loginBtnY), PointF(L.loginBtnX + L.loginBtnW, L.loginBtnY + L.loginBtnH),
+        Color(255, 0, 120, 140), Color(255, 0, 180, 200));
     g.FillPath(&loginBg, &btnP1);
-    Font fBtn(&ff, 12, FontStyleBold, UnitPixel);
+    Font fBtn(&ff, 13, FontStyleBold, UnitPixel);
     g.DrawString(L"Log In", -1, &fBtn, RectF(L.loginBtnX, L.loginBtnY, L.loginBtnW, L.loginBtnH), &fmtC, &white);
 
     // Cancel Button
@@ -575,17 +564,17 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
     btnP2.AddArc(L.cancelBtnX + L.cancelBtnW - bd, L.cancelBtnY + L.cancelBtnH - bd, bd, bd, 0.0f, 90.0f);
     btnP2.AddArc(L.cancelBtnX, L.cancelBtnY + L.cancelBtnH - bd, bd, bd, 90.0f, 90.0f);
     btnP2.CloseFigure();
-    SolidBrush cancelBg(s_hoverCancel ? Color(255, 240, 245, 248) : Color(255, 255, 255, 255));
+    SolidBrush cancelBg(s_hoverCancel ? Color(255, 245, 250, 255) : Color(255, 255, 255, 255));
     g.FillPath(&cancelBg, &btnP2);
-    Pen cancelPen(Color(255, 0, 150, 160), 1.0f);
+    Pen cancelPen(Color(255, 0, 150, 180), 1.5f);
     g.DrawPath(&cancelPen, &btnP2);
     g.DrawString(L"Cancel", -1, &fBtn, RectF(L.cancelBtnX, L.cancelBtnY, L.cancelBtnW, L.cancelBtnH), &fmtC, &teal);
 
     // Links
-    Font fLink(&ff, 10, FontStyleRegular, UnitPixel);
-    Font fLinkU(&ff, 10, FontStyleUnderline, UnitPixel);
-    SolidBrush linkTeal(Color(255, 0, 150, 160));
-    SolidBrush linkHover(Color(255, 0, 100, 110));
+    Font fLink(&ff, 11, FontStyleRegular, UnitPixel);
+    Font fLinkU(&ff, 11, FontStyleUnderline, UnitPixel);
+    SolidBrush linkTeal(Color(255, 0, 150, 180));
+    SolidBrush linkHover(Color(255, 0, 100, 130));
 
     g.DrawString(L"Create an account", -1, &fLinkU, RectF(L.signupX, L.signupY, L.signupW, L.signupH), &fmtL, s_hoverSignup ? &linkHover : &linkTeal);
     StringFormat fmtR; fmtR.SetAlignment(StringAlignmentFar); fmtR.SetLineAlignment(StringAlignmentCenter);
@@ -642,14 +631,18 @@ void ProcessAccountsMouseClick(float x, float y, HWND hWnd) {
     CardLayout L = GetCurrentLayout();
 
     if (HitRect(x, y, L.fieldX, L.emailY, L.fieldW - L.eyeW, L.fldH)) {
-        s_focusField = 1; s_hWndRef = hWnd;
-        s_cursorVisible = true; s_lastBlinkTick = GetTickCount();
-        InvalidateRect(hWnd, NULL, FALSE); return;
+        s_focusField = 1;
+        s_cursorVisible = true;
+        s_lastBlinkTime = GetTickCount();
+        InvalidateRect(hWnd, NULL, FALSE);
+        return;
     }
     if (HitRect(x, y, L.fieldX, L.passY,  L.fieldW - L.eyeW, L.fldH)) {
-        s_focusField = 2; s_hWndRef = hWnd;
-        s_cursorVisible = true; s_lastBlinkTick = GetTickCount();
-        InvalidateRect(hWnd, NULL, FALSE); return;
+        s_focusField = 2;
+        s_cursorVisible = true;
+        s_lastBlinkTime = GetTickCount();
+        InvalidateRect(hWnd, NULL, FALSE);
+        return;
     }
     if (HitRect(x, y, L.eyeX, L.eyeY, L.eyeW, L.fldH)) { s_showPassword = !s_showPassword; InvalidateRect(hWnd, NULL, FALSE); return; }
     if (HitRect(x, y, L.fieldX, L.checkY - 5.0f, 120.0f, 24.0f)) { s_saveLogin = !s_saveLogin; InvalidateRect(hWnd, NULL, FALSE); return; }
@@ -695,17 +688,29 @@ void ProcessAccountsChar(wchar_t c) {
         if (s_focusField == 2) { int len = (int)wcslen(s_password); if (len > 0) s_password[len-1] = L'\0'; }
     } else if (c == L'\r' || c == L'\n') {
         if (s_focusField == 1) s_focusField = 2; else s_focusField = 1;
+        s_cursorVisible = true;
+        s_lastBlinkTime = GetTickCount();
     } else if (c >= 32) {
         if (s_focusField == 1) { int len = (int)wcslen(s_email);    if (len < 510) { s_email[len] = c; s_email[len+1] = L'\0'; } }
         if (s_focusField == 2) { int len = (int)wcslen(s_password); if (len < 510) { s_password[len] = c; s_password[len+1] = L'\0'; } }
+        s_cursorVisible = true;
+        s_lastBlinkTime = GetTickCount();
     }
 }
 
 void ProcessAccountsKeyDown(WPARAM wp) {
     if (!g_loggedInEmail.empty()) return;
-    if (wp == VK_TAB) s_focusField = (s_focusField == 1) ? 2 : 1;
+    if (wp == VK_TAB) {
+        s_focusField = (s_focusField == 1) ? 2 : 1;
+        s_cursorVisible = true;
+        s_lastBlinkTime = GetTickCount();
+    }
     else if (wp == VK_DELETE) {
         if (s_focusField == 1) ZeroMemory(s_email, sizeof(s_email));
         if (s_focusField == 2) ZeroMemory(s_password, sizeof(s_password));
-    } else if (wp == VK_ESCAPE) { s_focusField = 0; s_statusMsg = L""; }
+    }
+    else if (wp == VK_ESCAPE) {
+        s_focusField = 0;
+        s_statusMsg = L"";
+    }
 }
