@@ -460,7 +460,7 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
 
     Font fInput(&ff, 12, FontStyleRegular, UnitPixel);
     wstring emailStr(s_email);
-    SolidBrush inputColor(emailStr.empty() ? Color(255, 160, 170, 180) : dark.GetColor());
+    SolidBrush inputColor(emailStr.empty() ? Color(255, 160, 170, 180) : Color(255, 50, 50, 50));
     g.DrawString(emailStr.empty() ? L"Email address" : emailStr.c_str(), -1, &fInput, RectF(L.fieldX + 32.0f, L.emailY, L.fieldW - 40.0f, L.fldH), &fmtL, &inputColor);
     
     Font fFieldIcon(&ffIcons, 13, FontStyleRegular, UnitPixel);
@@ -474,7 +474,7 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
 
     wstring passStr(s_password);
     wstring passDisplay = passStr.empty() ? L"Password" : (s_showPassword ? passStr : wstring(passStr.size(), L'•'));
-    SolidBrush passColor(passStr.empty() ? Color(255, 160, 170, 180) : dark.GetColor());
+    SolidBrush passColor(passStr.empty() ? Color(255, 160, 170, 180) : Color(255, 50, 50, 50));
     g.DrawString(passDisplay.c_str(), -1, &fInput, RectF(L.fieldX + 32.0f, L.passY, L.fieldW - 65.0f, L.fldH), &fmtL, &passColor);
     g.DrawString(L"\xE72E", -1, &fFieldIcon, RectF(L.fieldX + 8.0f, L.passY, 24.0f, L.fldH), &fmtC, passStr.empty() ? &gray : &teal);
 

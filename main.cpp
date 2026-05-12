@@ -846,7 +846,7 @@ void DrawMainArea(Graphics& g, int w, int h) {
     if      (selectedTab == 0) { DrawDashboardTab    (g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 1) { DrawBlocksTab       (g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 2) { DrawDeepStudyTab    (g, contentX, contentY, contentW, contentH); }
-    else if (selectedTab == 3) { DrawSpecialTab      (g, contentX, contentY, contentW, contentH); } // ← Special Tab Added
+    else if (selectedTab == 3) { DrawSpecialFeatureTab(g, contentX, contentY, contentW, contentH); } // ← Special Tab Added
     else if (selectedTab == 4) { DrawStatisticsTab   (g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 5) { DrawSettingsTab     (g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 6) { DrawPdfWorkspaceTab (g, contentX, contentY, contentW, contentH); }
@@ -1080,7 +1080,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         if      (selectedTab == 0) { ProcessDashboardMouseMove(x, y);   redraw = true; }
         else if (selectedTab == 1) { ProcessBlocksMouseMove(x, y);      redraw = true; }
         else if (selectedTab == 2) { ProcessDeepStudyMouseMove(x, y);   redraw = true; }
-        else if (selectedTab == 3) { ProcessSpecialMouseMove(x, y);     redraw = true; } // ← Special Tab
+        else if (selectedTab == 3) { ProcessSpecialFeatureMouseMove(x, y);     redraw = true; } // ← Special Tab
         else if (selectedTab == 5) { ProcessSettingsMouseMove(x, y);    redraw = true; }
         else if (selectedTab == 4) {
             float cX = (float)SIDEBAR_WIDTH, cY = (float)(TITLEBAR_HEIGHT + SUBHEADER_HEIGHT);
@@ -1189,7 +1189,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         if      (selectedTab == 0) { ProcessDashboardMouseClick(x, y, selectedTab); }
         else if (selectedTab == 1) { ProcessBlocksMouseClick(x, y); }
         else if (selectedTab == 2) { ProcessDeepStudyMouseClick(x, y); }
-        else if (selectedTab == 3) { ProcessSpecialMouseClick(x, y); } // ← Special Tab
+        else if (selectedTab == 3) { ProcessSpecialFeatureMouseClick(x, y); } // ← Special Tab
         else if (selectedTab == 4) {
             float cX = (float)SIDEBAR_WIDTH, cY = (float)(TITLEBAR_HEIGHT + SUBHEADER_HEIGHT);
             float cW = scaledW - cX, cH = scaledH - cY;
