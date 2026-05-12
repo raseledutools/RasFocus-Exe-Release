@@ -677,6 +677,7 @@ void DrawSubHeader(Graphics& g, int w) {
     g.DrawString(L"My Account", -1, &fBtnTxt, RectF(acBtnX + 28.0f, btnY, acBtnW - 30.0f, btnH), &fmtTL, &white);
 
     // Feedback icon with Text
+   // Feedback icon with Text
     float fbIconW = 60.0f;
     float fbIconX = acBtnX - fbIconW - 10.0f;
     
@@ -691,11 +692,12 @@ void DrawSubHeader(Graphics& g, int w) {
         g.FillPath(&fbHover, &fbPath);
     }
     
-    Font fFbIcon(&ffIcons, 14, FontStyleRegular, UnitPixel);
+    Font fFbIcon(&ffIcons, 16, FontStyleRegular, UnitPixel); // আইকনের সাইজ
     Font fFbTxt(&ff, 9, FontStyleRegular, UnitPixel);
     
-    g.DrawString(L"\xED15", -1, &fFbIcon, RectF(fbIconX, btnY + 1.0f, fbIconW, 14.0f), &fmtC, &white);
-    g.DrawString(L"Feedback", -1, &fFbTxt, RectF(fbIconX, btnY + 14.0f, fbIconW, 14.0f), &fmtC, &whiteAlpha);
+    // \xED15 এর জায়গায় আপনার দেওয়া নতুন খামের আইকন \xE8C3 দেওয়া হলো
+    g.DrawString(L"\xE8C3", -1, &fFbIcon, RectF(fbIconX, btnY + 1.0f, fbIconW, 14.0f), &fmtC, &white);
+    g.DrawString(L"Feedback", -1, &fFbTxt, RectF(fbIconX, btnY + 15.0f, fbIconW, 14.0f), &fmtC, &whiteAlpha);
   ----------------------------------
 // 3. SIDEBAR
 // ------------------------------------------
