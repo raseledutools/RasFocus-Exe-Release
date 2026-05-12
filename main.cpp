@@ -94,10 +94,10 @@ bool hoverFeedbackClose  = false;
 
 // Sidebar tabs
 vector<wstring> sidebarTabs = {
-    L"Dashboard", L"Blocks", L"Adult Block", L"Deep Study", L"Statistics", L"Settings"
+    L"Dashboard", L"Blocks", L"Deep Study", L"Statistics", L"Settings"
 };
 vector<wstring> sidebarIcons = {
-    L"\xE80F", L"\xEA18", L"\xE72E", L"\xE7B3", L"\xE9D2", L"\xE713"
+    L"\xE80F", L"\xEA18", L"\xE7B3", L"\xE9D2", L"\xE713"
 };
 
 // ==========================================
@@ -537,13 +537,13 @@ void DrawTitleBar(Graphics& g, int w) {
     FontFamily ff(L"Segoe UI");
     FontFamily ffIcons(L"Segoe MDL2 Assets");
 
-    // ── লোগো (title bar — ২০px, ভার্টিক্যালি সেন্টার) ──
+    // ── লোগো (title bar — ২৪px, ভার্টিক্যালি সেন্টার) ──
     HICON hIconSm = (HICON)LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APP_ICON),
-                                     IMAGE_ICON, 20, 20, LR_SHARED);
+                                     IMAGE_ICON, 24, 24, LR_SHARED);
     if (hIconSm) {
         HDC hdcG = g.GetHDC();
-        int iconY = (TITLEBAR_HEIGHT - 20) / 2;
-        DrawIconEx(hdcG, 6, iconY, hIconSm, 20, 20, 0, NULL, DI_NORMAL);
+        int iconY = (TITLEBAR_HEIGHT - 24) / 2;
+        DrawIconEx(hdcG, 4, iconY, hIconSm, 24, 24, 0, NULL, DI_NORMAL);
         g.ReleaseHDC(hdcG);
     }
 
@@ -554,7 +554,7 @@ void DrawTitleBar(Graphics& g, int w) {
     fmtL.SetAlignment(StringAlignmentNear);
     fmtL.SetLineAlignment(StringAlignmentCenter);
     g.DrawString(L"RasFocus Pro", -1, &fTitle,
-                 RectF(32.0f, 0.0f, 280.0f, (float)TITLEBAR_HEIGHT),
+                 RectF(34.0f, 0.0f, 280.0f, (float)TITLEBAR_HEIGHT),
                  &fmtL, &textDark);
 
     // ── Window Controls ──
@@ -624,14 +624,15 @@ void DrawSubHeader(Graphics& g, int w) {
     fmtTL.SetAlignment(StringAlignmentNear);
     fmtTL.SetLineAlignment(StringAlignmentCenter);
 
-    // ── বড় লোগো (৪৪px) সাব-হেডারের একদম শুরুতে বাম দিকে ──
-    const int LOGO_SIZE = 44;
+    // ── বড় লোগো (৫৪px) সাব-হেডারের একদম শুরুতে, নিচের দিকে ──
+    const int LOGO_SIZE = 54;
     HICON hIconLg = (HICON)LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APP_ICON),
                                      IMAGE_ICON, LOGO_SIZE, LOGO_SIZE, LR_SHARED);
     if (hIconLg) {
         HDC hdcG = g.GetHDC();
-        int iconX = 10;   // সাব-হেডারের শুরুতে, বামে ১০px গ্যাপ
-        int iconY = (int)(subY + (subH - LOGO_SIZE) / 2.0f);
+        int iconX = 8;
+        // নিচের দিকে নামানো: subH এর ৭০% position এ center করা
+        int iconY = (int)(subY + subH * 0.55f - LOGO_SIZE / 2.0f);
         DrawIconEx(hdcG, iconX, iconY, hIconLg, LOGO_SIZE, LOGO_SIZE, 0, NULL, DI_NORMAL);
         g.ReleaseHDC(hdcG);
     }
@@ -640,7 +641,7 @@ void DrawSubHeader(Graphics& g, int w) {
     Font fAppName(&ff, 18, FontStyleBold, UnitPixel);
     Font fVersion(&ff, 10, FontStyleRegular, UnitPixel);
     SolidBrush whiteAlpha(Color(200, 255, 255, 255));
-    float textX = (float)(10 + LOGO_SIZE + 8);   // লোগো + ৮px গ্যাপ
+    float textX = (float)(8 + LOGO_SIZE + 8);   // লোগো + ৮px গ্যাপ
     g.DrawString(L"RasFocus Pro", -1, &fAppName,
                  RectF(textX, subY + (subH / 2.0f) - 14.0f, 200.0f, 24.0f), &fmtTL, &white);
     wstring wVer(CURRENT_VERSION.begin(), CURRENT_VERSION.end());
@@ -736,15 +737,7 @@ void DrawSidebar(Graphics& g, int h) {
             g.DrawString(sidebarTabs[i].c_str(),  -1, &fTabTxt,  RectF(sideX + iconW, tabY, (float)SIDEBAR_WIDTH - iconW - 8.0f, tabH), &fmtTL, &white);
         }
 
-        if (i == 3 || i == 4) {
-            SolidBrush badgeBg(Color(255, 230, 50, 50));
-            float bSize = 16.0f;
-            float bX    = iconW - 10.0f;
-            float bY    = tabY + (tabH - bSize) / 2.0f - 10.0f;
-            g.FillEllipse(&badgeBg, bX, bY, bSize, bSize);
-            Font fBadge(&ff, 10, FontStyleBold, UnitPixel);
-            g.DrawString(i == 3 ? L"2" : L"1", -1, &fBadge, RectF(bX, bY, bSize, bSize), &fmtIC, &white);
-        }
+        // badges removed
     }
 
     // ── Upgrade Button — premium হলে লুকানো ──
@@ -848,11 +841,10 @@ void DrawMainArea(Graphics& g, int w, int h) {
 
     if      (selectedTab == 0) { DrawDashboardTab    (g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 1) { DrawBlocksTab       (g, contentX, contentY, contentW, contentH); }
-    else if (selectedTab == 2) { DrawAdultBlockTab   (g, contentX, contentY, contentW, contentH); }
-    else if (selectedTab == 3) { DrawDeepStudyTab    (g, contentX, contentY, contentW, contentH); }
-    else if (selectedTab == 4) { DrawStatisticsTab   (g, contentX, contentY, contentW, contentH); }
-    else if (selectedTab == 5) { DrawSettingsTab     (g, contentX, contentY, contentW, contentH); }
-    else if (selectedTab == 6) { DrawPdfWorkspaceTab (g, contentX, contentY, contentW, contentH); }
+    else if (selectedTab == 2) { DrawDeepStudyTab    (g, contentX, contentY, contentW, contentH); }
+    else if (selectedTab == 3) { DrawStatisticsTab   (g, contentX, contentY, contentW, contentH); }
+    else if (selectedTab == 4) { DrawSettingsTab     (g, contentX, contentY, contentW, contentH); }
+    else if (selectedTab == 5) { DrawPdfWorkspaceTab (g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 7) { DrawAccountsTab     (g, contentX, contentY, contentW, contentH); } // ← My Account
 }
 
@@ -1071,10 +1063,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 
         if (selectedTab == 0) { ProcessDashboardMouseMove(x, y);   redraw = true; }
         else if (selectedTab == 1) { ProcessBlocksMouseMove(x, y); redraw = true; }
-        else if (selectedTab == 2) { ProcessAdultMouseMove(x, y);  redraw = true; }
-        else if (selectedTab == 3) { ProcessDeepStudyMouseMove(x, y); redraw = true; }
-        else if (selectedTab == 5) { ProcessSettingsMouseMove(x, y); redraw = true; }
-        else if (selectedTab == 4) {
+        else if (selectedTab == 2) { ProcessDeepStudyMouseMove(x, y); redraw = true; }
+        else if (selectedTab == 4) { ProcessSettingsMouseMove(x, y); redraw = true; }
+        else if (selectedTab == 3) {
             float cX = (float)SIDEBAR_WIDTH, cY = (float)(TITLEBAR_HEIGHT + SUBHEADER_HEIGHT);
             float cW = scaledW - cX;
             ProcessStatisticsMouseMove(x, y, cX, cY, cW);
@@ -1176,14 +1167,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 
         if      (selectedTab == 0) { ProcessDashboardMouseClick(x, y, selectedTab); }
         else if (selectedTab == 1) { ProcessBlocksMouseClick(x, y); }
-        else if (selectedTab == 2) { ProcessAdultMouseClick(x, y); }
-        else if (selectedTab == 3) { ProcessDeepStudyMouseClick(x, y); }
-        else if (selectedTab == 4) {
+        else if (selectedTab == 2) { ProcessDeepStudyMouseClick(x, y); }
+        else if (selectedTab == 3) {
             float cX = (float)SIDEBAR_WIDTH, cY = (float)(TITLEBAR_HEIGHT + SUBHEADER_HEIGHT);
             float cW = scaledW - cX, cH = scaledH - cY;
             ProcessStatisticsMouseClick(x, y, cX, cY, cW);
         }
-        else if (selectedTab == 5) { ProcessSettingsMouseClick(x, y); }
+        else if (selectedTab == 4) { ProcessSettingsMouseClick(x, y); }
         else if (selectedTab == 7) {
             ProcessAccountsMouseClick(x, y, hWnd);
         }
@@ -1198,7 +1188,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         float y = pt.y / g_scaleFactor;
         int delta = GET_WHEEL_DELTA_WPARAM(wp);
         if (selectedTab == 1) { extern void ProcessBlocksMouseWheel(float,float,int); ProcessBlocksMouseWheel(x,y,delta); InvalidateRect(hWnd,NULL,FALSE); }
-        else if (selectedTab == 2) { extern void ProcessAdultMouseWheel(float,float,int); ProcessAdultMouseWheel(x,y,delta); InvalidateRect(hWnd,NULL,FALSE); }
+        // Adult Block mouse wheel removed
         break;
     }
 
@@ -1230,8 +1220,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             InvalidateRect(hWnd, NULL, FALSE); break;
         }
         if (selectedTab == 1) { extern void ProcessBlocksKeyPress(wchar_t); ProcessBlocksKeyPress((wchar_t)wp); InvalidateRect(hWnd,NULL,FALSE); }
-        else if (selectedTab == 2) { extern void ProcessAdultKeyPress(wchar_t); ProcessAdultKeyPress((wchar_t)wp); InvalidateRect(hWnd,NULL,FALSE); }
-        else if (selectedTab == 3) { ProcessDeepStudyKeyPress((wchar_t)wp); InvalidateRect(hWnd,NULL,FALSE); }
+        else if (selectedTab == 2) { ProcessDeepStudyKeyPress((wchar_t)wp); InvalidateRect(hWnd,NULL,FALSE); }
         break;
     }
 
@@ -1249,8 +1238,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             break;
         }
         if (selectedTab == 1) { extern void ProcessBlocksKeyDown(WPARAM); ProcessBlocksKeyDown(wp); InvalidateRect(hWnd,NULL,FALSE); }
-        else if (selectedTab == 2) { extern void ProcessAdultKeyDown(WPARAM); ProcessAdultKeyDown(wp); InvalidateRect(hWnd,NULL,FALSE); }
-        else if (selectedTab == 3) { ProcessDeepStudyKeyDown(wp); InvalidateRect(hWnd,NULL,FALSE); }
+        else if (selectedTab == 2) { ProcessDeepStudyKeyDown(wp); InvalidateRect(hWnd,NULL,FALSE); }
         break;
     }
 
