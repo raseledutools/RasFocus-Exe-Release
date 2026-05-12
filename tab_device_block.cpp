@@ -4,6 +4,10 @@
 #include <powrprof.h>
 #pragma comment(lib, "PowrProf.lib")
 
+// --- Premium Feature Gate ---
+extern bool g_isPremium;
+extern bool g_showUpgradePopup;
+
 using namespace Gdiplus;
 using namespace std;
 
@@ -270,6 +274,9 @@ void ProcessDeviceBlockMouseMove(float x, float y) {
 
 // --- Mouse Click ---
 void ProcessDeviceBlockMouseClick(float x, float y) {
+    // Entire Device Block feature is Premium only
+    if (!g_isPremium) { g_showUpgradePopup = true; return; }
+
     // 1. Process Open Dropdowns First
     if (isFastingDropOpen) {
         if (hovFastingOpt != -1) fastingModeIdx = hovFastingOpt;

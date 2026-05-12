@@ -3,6 +3,10 @@
 // UPDATED: Professional 2-Column Layout to fix overlap and empty right space.
 
 #include "tab_adult.h"
+
+// --- Premium Feature Gate ---
+extern bool g_isPremium;
+extern bool g_showUpgradePopup;
 #include <vector>
 #include <string>
 #include <algorithm>
@@ -1158,10 +1162,14 @@ void ProcessAdultMouseClick(float x, float y) {
         }
     }
     if(hoverStrictFocusBtn){
+        if(!g_isPremium){ g_showUpgradePopup=true; return; }
         if(isStrictFocusActive)isStrictFocusActive=false;
         else showStrictTimeOverlay=true;
     }
-    if(hoverStrictPanicBtn){isPanicActive=true;panicStartTime=GetTickCount();}
+    if(hoverStrictPanicBtn){
+        if(!g_isPremium){ g_showUpgradePopup=true; return; }
+        isPanicActive=true;panicStartTime=GetTickCount();
+    }
 
     if(isControlDropOpen){if(hoverCtrlIdx!=-1)controlMode=hoverCtrlIdx;isControlDropOpen=false;SaveAdultSettings();return;}
     if(isRelDropOpen){if(hoverRelIdx!=-1)adultReligion=hoverRelIdx;isRelDropOpen=false;SaveAdultSettings();return;}
@@ -1178,6 +1186,7 @@ void ProcessAdultMouseClick(float x, float y) {
     handleCb(cbPeriodicPopups, hCbPeriodicPopups);
 
     if(hCb24HourLock&&!cb24HourLock){
+        if(!g_isPremium){ g_showUpgradePopup=true; return; }
         int r=MessageBox(NULL,"Are you sure? This locks for 24 hours and CANNOT be undone.","24-Hour Lockdown",MB_YESNO|MB_ICONWARNING);
         if(r==IDYES){cb24HourLock=true;isAdultFocusActive=true;lock24hEndTime=GetTickCount64()+86400000ULL;}
     }
@@ -1187,6 +1196,9 @@ void ProcessAdultMouseClick(float x, float y) {
     if(!isAdultFocusActive){for(auto it=customAdultKeywords.begin();it!=customAdultKeywords.end();){if(it->isHoveredCross)it=customAdultKeywords.erase(it);else ++it;}}
 
     auto toggleStrict=[](bool& state,bool hover,bool doProtocol){ if(hover){state=!state;if(doProtocol){}} };
+    if(hCbSilentUrl||hCbDnsFilter||hCbSafeSearch||hCbIncognito||hCbStrictMode){
+        if(!g_isPremium){ g_showUpgradePopup=true; return; }
+    }
     if(hCbSilentUrl){cbSilentUrl=!cbSilentUrl;}
     if(hCbDnsFilter){cbDnsFilter=!cbDnsFilter;SetFamilyDNS(cbDnsFilter);EnforceStrictProtocols();}
     if(hCbSafeSearch){cbSafeSearch=!cbSafeSearch;EnforceStrictProtocols();}
