@@ -1,1404 +1,654 @@
 #define _CRT_SECURE_NO_WARNINGS
-
-// CMD স্ক্রিন আসা বন্ধ করার জন্য Linker Command
-#pragma comment(linker, "/SUBSYSTEM:windows /ENTRY:WinMainCRTStartup")
-
+#include "accounts.h"
 #include <windows.h>
 #include <windowsx.h>
-
-HWND hParentWnd = NULL;
-
-#include <shellapi.h>
-#include "tab_pdf_workspace.h"
-#include <shlobj.h>
 #include <gdiplus.h>
-#include <vector>
+#include <wininet.h>
+#include <shellapi.h>
+#include <shlobj.h>
 #include <string>
-#include <iostream>
+#include <sstream>
 #include <fstream>
 #include <process.h>
-#include <wininet.h>
 
 #pragma comment(lib, "wininet.lib")
 
-#include "firebase/app.h"
-
-#include "browser/mini_browser.h"
-#include "tab_blocks.h"
-#include "tab_adult.h"
-#include "tab_settings.h"
-#include "tab_device_block.h"
-#include "tab_deep_study.h"
-#include "tab_utilities.h"
-#include "tab_dashboard.h"
-#include "tab_special.h"
-#include "tab_statistics.h"
-#include "prewindow.h"
-#include "accounts.h"   // ← My Account tab handler
+#ifndef IDI_APP_ICON
+#define IDI_APP_ICON 101
+#endif
 
 using namespace Gdiplus;
 using namespace std;
 
-#define WM_TRAYICON (WM_USER + 1)
-#define IDI_APP_ICON 101
-#define IDR_OBSERVER_EXE 102
+// ============================================================
+//  GLOBALS
+// ============================================================
+bool    g_isPremiumUser  = false;
+wstring g_loggedInEmail  = L"";
 
-// --- AUTO UPDATE ---
-const string CURRENT_VERSION = "v1.0.6";
-const string GITHUB_USER = "raseledutools";
-const string GITHUB_REPO = "RasFocus-update";
+static firebase::App* s_firebaseApp = nullptr;
 
-bool isUpdateReady     = false;
-bool isCheckingUpdate  = false;
-string newVersionStr   = "";
-bool hoverUpdateBtn    = false;
+// ── UI State ──
+static wchar_t s_email   [512]  = {};
+static wchar_t s_password[512]  = {};
+static bool    s_saveLogin      = false;
+static bool    s_showPassword   = false;
+static int     s_focusField     = 1;       // 1=email 2=password 0=none
+static bool    s_isLoading      = false;
+static wstring s_statusMsg      = L"";
+static bool    s_isError        = false;
 
-ULONG_PTR gdiplusToken;
-float g_scaleFactor = 1.0f;
-int windowWidth  = 1024;
-int windowHeight = 600;
-bool isMaximized = true;
+// ── Hover states ──
+static bool s_hoverLogin      = false;
+static bool s_hoverCancel     = false;
+static bool s_hoverSignup     = false;
+static bool s_hoverReset      = false;
+static bool s_hoverPrivacy    = false;
+static bool s_hoverSaveCheck  = false;
+static bool s_hoverEye        = false;
+static bool s_hoverLogout     = false;
 
-firebase::App* g_firebaseApp = nullptr;
-
-bool g_isPureViewerMode  = false;
-wstring currentWorkspacePdf = L"";
-
-// Premium status — accounts.h/cpp must expose this
-extern bool g_isPremiumUser;   // set to true after successful premium login
-
-NOTIFYICONDATA nid = {};
-
-// ==========================================
-// LAYOUT
-// ==========================================
-extern const int SIDEBAR_WIDTH      = 170;
-extern const int TITLEBAR_HEIGHT    = 28;
-extern const int SUBHEADER_HEIGHT   = 45;
-
-// UI State
-int selectedTab  = 0;
-int hoveredTab   = -1;
-bool hoverMinimize = false, hoverMaximize = false, hoverClose = false;
-bool hoverUpgrade   = false;
-bool hoverFeedback  = false;
-bool hoverMyAccount = false;
-
-// Feedback popup state
-bool showFeedbackBox   = false;
-wchar_t feedbackEmail[256]   = {};
-wchar_t feedbackMessage[1024] = {};
-int feedbackFocusField = 0;
-bool hoverFeedbackSubmit = false;
-bool hoverFeedbackClose  = false;
-
-// Sidebar tabs
-vector<wstring> sidebarTabs = {
-    L"Dashboard", L"Blocks", L"Deep Study", L"Statistics", L"Settings"
-};
-vector<wstring> sidebarIcons = {
-    L"\xE80F", L"\xEA18", L"\xE7B3", L"\xE9D2", L"\xE713"
-};
-
-// ==========================================
-// COLOR PALETTE
-// ==========================================
-const Color ColTitleBar(255, 255, 255, 255);
-const Color ColTitleBarText(255, 50, 50, 50);
-const Color ColSubHeader(255, 0, 150, 160);
-const Color ColSidebar(255, 0, 135, 145);
-const Color ColSidebarActive(255, 0, 110, 120);
-const Color ColSidebarHover(255, 0, 160, 170);
-const Color ColWhite(255, 255, 255, 255);
-const Color ColBgContent(255, 245, 248, 250);
-const Color ColTextDark(255, 50, 50, 50);
-const Color ColTextGray(255, 120, 120, 120);
-const Color ColUpgradeBtn(255, 243, 156, 18);
-const Color ColUpgradeHover(255, 211, 84, 0);
-const Color ColTeal(255, 0, 140, 150);
-
-bool isSafeBrowsingActive = false;
-bool isStrictActive       = false;
-
-bool RequestParentalAccess(HWND hwnd);
-
-bool g_isAppDisabledByAdmin = false;
-
-// ==========================================
-// FIREBASE KILL SWITCH
-// ==========================================
-void __cdecl FirebaseKillThread(void* p) {
-    while (true) {
-        string url = "https://rasfocus-c746d-default-rtdb.firebaseio.com/app_status.json?t=" + to_string(GetTickCount());
-        char tempPath[MAX_PATH];
-        GetTempPathA(MAX_PATH, tempPath);
-        string savePath = string(tempPath) + "rf_status.json";
-        DeleteUrlCacheEntryA(url.c_str());
-        HRESULT hr = URLDownloadToFileA(NULL, url.c_str(), savePath.c_str(), 0, NULL);
-        if (hr == S_OK) {
-            ifstream inFile(savePath);
-            string content((istreambuf_iterator<char>(inFile)), istreambuf_iterator<char>());
-            inFile.close();
-            remove(savePath.c_str());
-            bool isDisabled = (content.find("\"is_active\":false") != string::npos ||
-                               content.find("\"is_active\": false") != string::npos);
-            if (isDisabled && !g_isAppDisabledByAdmin) {
-                g_isAppDisabledByAdmin = true;
-                if (hParentWnd) ShowWindow(hParentWnd, SW_HIDE);
-                MessageBoxA(NULL, "This application has been disabled by the server administrator.",
-                    "RasFocus Pro - Access Denied", MB_OK | MB_ICONERROR | MB_TOPMOST);
-            } else if (!isDisabled && g_isAppDisabledByAdmin) {
-                g_isAppDisabledByAdmin = false;
-                if (hParentWnd) {
-                    ShowWindow(hParentWnd, SW_SHOWMAXIMIZED);
-                    SetForegroundWindow(hParentWnd);
-                }
-                MessageBoxA(NULL, "Application access has been restored by admin.",
-                    "RasFocus Pro", MB_OK | MB_ICONINFORMATION | MB_TOPMOST);
-            }
-        }
-        Sleep(5000);
-    }
-    _endthread();
-}
-
-// ==========================================
-// HIDE ALL WEBVIEWS
-// ==========================================
-void HideAllWebViews() {
-    if (!hParentWnd) return;
-    EnumChildWindows(hParentWnd, [](HWND hwnd, LPARAM lParam) -> BOOL {
-        char className[256];
-        GetClassNameA(hwnd, className, sizeof(className));
-        if (strstr(className, "Chrome_WidgetWin_") != nullptr) {
-            ShowWindow(hwnd, SW_HIDE);
-            SetWindowPos(hwnd, NULL, -10000, -10000, 0, 0, SWP_NOZORDER | SWP_NOSIZE);
-        }
-        return TRUE;
-    }, 0);
-}
-
-// ==========================================
-// UTILITY
-// ==========================================
-string GetSecretDir() {
-    static string secretPath;
-    if (!secretPath.empty()) return secretPath;
+// ── Saved credentials path ──
+static string GetCredsPath() {
     char appData[MAX_PATH];
-    if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_APPDATA, NULL, 0, appData))) {
-        secretPath = string(appData) + "\\.rasfocus\\";
-    } else {
-        char currentDir[MAX_PATH];
-        GetCurrentDirectoryA(MAX_PATH, currentDir);
-        secretPath = string(currentDir) + "\\rasfocus_data\\";
-    }
-    CreateDirectoryA(secretPath.c_str(), NULL);
-    SetFileAttributesA(secretPath.c_str(), FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM);
-    return secretPath;
+    if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_APPDATA, NULL, 0, appData)))
+        return string(appData) + "\\.rasfocus\\creds.dat";
+    return "rasfocus_creds.dat";
 }
 
-string GetExePath() {
-    char path[MAX_PATH];
-    GetModuleFileNameA(NULL, path, MAX_PATH);
-    return string(path);
+// ── Simple XOR obfuscation for saved creds ──
+static string XorStr(const string& s) {
+    const char key[] = "RasFocus2024!@#$";
+    string out = s;
+    for (size_t i = 0; i < out.size(); ++i)
+        out[i] ^= key[i % (sizeof(key) - 1)];
+    return out;
 }
 
-void RegisterFileAssociation(const string& ext, const string& progId, const string& desc) {
-    string exePath = GetExePath();
-    string command = "\"" + exePath + "\" \"%1\"";
-    HKEY hKey;
-    string extPath = "Software\\Classes\\" + ext;
-    if (RegCreateKeyExA(HKEY_CURRENT_USER, extPath.c_str(), 0, NULL, REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
-        RegSetValueExA(hKey, "", 0, REG_SZ, (const BYTE*)progId.c_str(), (DWORD)(progId.length() + 1));
-        RegCloseKey(hKey);
-    }
-    string progIdPath = "Software\\Classes\\" + progId;
-    if (RegCreateKeyExA(HKEY_CURRENT_USER, progIdPath.c_str(), 0, NULL, REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
-        RegSetValueExA(hKey, "", 0, REG_SZ, (const BYTE*)desc.c_str(), (DWORD)(desc.length() + 1));
-        RegCloseKey(hKey);
-    }
-    string iconPath = progIdPath + "\\DefaultIcon";
-    if (RegCreateKeyExA(HKEY_CURRENT_USER, iconPath.c_str(), 0, NULL, REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
-        RegSetValueExA(hKey, "", 0, REG_SZ, (const BYTE*)exePath.c_str(), (DWORD)(exePath.length() + 1));
-        RegCloseKey(hKey);
-    }
-    string cmdPath = progIdPath + "\\shell\\open\\command";
-    if (RegCreateKeyExA(HKEY_CURRENT_USER, cmdPath.c_str(), 0, NULL, REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
-        RegSetValueExA(hKey, "", 0, REG_SZ, (const BYTE*)command.c_str(), (DWORD)(command.length() + 1));
-        RegCloseKey(hKey);
-    }
+static void SaveCredentials(const wstring& email, const wstring& password) {
+    char emailA[512] = {}, passA[512] = {};
+    WideCharToMultiByte(CP_UTF8, 0, email.c_str(),    -1, emailA, 511, NULL, NULL);
+    WideCharToMultiByte(CP_UTF8, 0, password.c_str(), -1, passA,  511, NULL, NULL);
+    string data = string(emailA) + "\n" + string(passA);
+    string enc  = XorStr(data);
+    ofstream f(GetCredsPath(), ios::binary);
+    if (f.is_open()) { f.write(enc.c_str(), enc.size()); f.close(); }
 }
 
-void SetupDefaultViewer() {
-    RegisterFileAssociation(".pdf",  "RasFocus.PDF",   "RasFocus PDF Document");
-    RegisterFileAssociation(".jpg",  "RasFocus.Image", "RasFocus Image File");
-    RegisterFileAssociation(".png",  "RasFocus.Image", "RasFocus Image File");
-    RegisterFileAssociation(".jpeg", "RasFocus.Image", "RasFocus Image File");
-    SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, NULL, NULL);
+static bool LoadSavedCredentials() {
+    ifstream f(GetCredsPath(), ios::binary);
+    if (!f.is_open()) return false;
+    string enc((istreambuf_iterator<char>(f)), istreambuf_iterator<char>());
+    f.close();
+    if (enc.empty()) return false;
+    string data = XorStr(enc);
+    size_t nl = data.find('\n');
+    if (nl == string::npos) return false;
+    string emailA = data.substr(0, nl);
+    string passA  = data.substr(nl + 1);
+    MultiByteToWideChar(CP_UTF8, 0, emailA.c_str(), -1, s_email,    511);
+    MultiByteToWideChar(CP_UTF8, 0, passA.c_str(),  -1, s_password, 511);
+    s_saveLogin = true;
+    return true;
 }
 
-// ==========================================
-// SILENT UPDATER
-// ==========================================
-void __cdecl SilentUpdateThread(void* p) {
-    if (isCheckingUpdate || isUpdateReady) { _endthread(); return; }
-    isCheckingUpdate = true;
-    string secretDir = GetSecretDir();
-    string apiFile   = secretDir + "api_response.json";
-    string apiUrl    = "https://api.github.com/repos/" + GITHUB_USER + "/" + GITHUB_REPO + "/releases/latest";
-    DeleteUrlCacheEntryA(apiUrl.c_str());
-    HRESULT hrApi = URLDownloadToFileA(NULL, apiUrl.c_str(), apiFile.c_str(), 0, NULL);
-    if (hrApi == S_OK) {
-        ifstream vf(apiFile);
-        string jsonContent((istreambuf_iterator<char>(vf)), istreambuf_iterator<char>());
-        vf.close();
-        remove(apiFile.c_str());
-        string searchKey = "\"tag_name\":";
-        size_t tagPos = jsonContent.find(searchKey);
-        if (tagPos != string::npos) {
-            size_t startQuote = jsonContent.find("\"", tagPos + searchKey.length());
-            if (startQuote != string::npos) {
-                size_t endQuote = jsonContent.find("\"", startQuote + 1);
-                if (endQuote != string::npos) {
-                    string latestVer = jsonContent.substr(startQuote + 1, endQuote - startQuote - 1);
-                    if (latestVer != CURRENT_VERSION && latestVer.find("v") != string::npos) {
-                        newVersionStr = latestVer;
-                        string exeUrl = "https://github.com/" + GITHUB_USER + "/" + GITHUB_REPO +
-                                        "/releases/download/" + latestVer + "/RasFocus.exe";
-                        string updateExePath = secretDir + "RasFocus_New.exe";
-                        HRESULT hrExe = URLDownloadToFileA(NULL, exeUrl.c_str(), updateExePath.c_str(), 0, NULL);
-                        if (hrExe == S_OK) {
-                            isUpdateReady = true;
-                            HWND hWnd = FindWindowA("RasFocusCore", "RasFocus Pro");
-                            if (hWnd) InvalidateRect(hWnd, NULL, FALSE);
-                        }
-                    }
-                }
-            }
+static void ClearSavedCredentials() {
+    remove(GetCredsPath().c_str());
+}
+
+// ============================================================
+//  FIREBASE REST LOGIN  (Email + Password)
+// ============================================================
+struct LoginResult {
+    bool    success;
+    string  idToken;
+    string  localId;
+    string  email;
+    string  errorMsg;
+};
+
+static string JsonExtract(const string& json, const string& key) {
+    string search = "\"" + key + "\":\"";
+    size_t pos = json.find(search);
+    if (pos == string::npos) return "";
+    pos += search.size();
+    size_t end = json.find("\"", pos);
+    if (end == string::npos) return "";
+    return json.substr(pos, end - pos);
+}
+
+static LoginResult FirebaseLogin(const string& email, const string& password) {
+    LoginResult res = { false, "", "", "", "" };
+    const string API_KEY = "AIzaSyBVl3BuW6gfmp_K2IMYd1rbvLEA2l0yinA";
+    const string HOST    = "identitytoolkit.googleapis.com";
+    const string PATH    = "/v1/accounts:signInWithPassword?key=" + API_KEY;
+    string body = "{\"email\":\"" + email + "\",\"password\":\"" + password + "\",\"returnSecureToken\":true}";
+
+    HINTERNET hInet = InternetOpenA("RasFocus/1.0", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
+    if (!hInet) { res.errorMsg = "No internet connection."; return res; }
+
+    HINTERNET hConn = InternetConnectA(hInet, HOST.c_str(), INTERNET_DEFAULT_HTTPS_PORT, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
+    if (!hConn) { InternetCloseHandle(hInet); res.errorMsg = "Connection failed."; return res; }
+
+    HINTERNET hReq = HttpOpenRequestA(hConn, "POST", PATH.c_str(), NULL, NULL, NULL, INTERNET_FLAG_SECURE | INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE, 0);
+    if (!hReq) { InternetCloseHandle(hConn); InternetCloseHandle(hInet); res.errorMsg = "Request failed."; return res; }
+
+    string headers = "Content-Type: application/json\r\n";
+    BOOL sent = HttpSendRequestA(hReq, headers.c_str(), (DWORD)headers.size(), (LPVOID)body.c_str(), (DWORD)body.size());
+
+    string response = "";
+    if (sent) {
+        char buf[4096]; DWORD bytesRead = 0;
+        while (InternetReadFile(hReq, buf, sizeof(buf) - 1, &bytesRead) && bytesRead > 0) {
+            buf[bytesRead] = '\0'; response += buf;
         }
     }
-    isCheckingUpdate = false;
+    InternetCloseHandle(hReq); InternetCloseHandle(hConn); InternetCloseHandle(hInet);
+
+    if (response.empty()) { res.errorMsg = "Empty server response."; return res; }
+    if (response.find("\"error\"") != string::npos) {
+        string msg = JsonExtract(response, "message");
+        if (msg == "EMAIL_NOT_FOUND" || msg == "INVALID_EMAIL") res.errorMsg = "Email not found. Please sign up first.";
+        else if (msg == "INVALID_PASSWORD" || msg == "INVALID_LOGIN_CREDENTIALS") res.errorMsg = "Wrong password. Please try again.";
+        else if (msg == "USER_DISABLED") res.errorMsg = "This account has been disabled.";
+        else if (msg == "TOO_MANY_ATTEMPTS_TRY_LATER") res.errorMsg = "Too many attempts. Try later.";
+        else res.errorMsg = "Login failed: " + msg;
+        return res;
+    }
+
+    res.idToken = JsonExtract(response, "idToken");
+    res.localId = JsonExtract(response, "localId");
+    res.email   = JsonExtract(response, "email");
+    res.success = !res.idToken.empty();
+    if (!res.success) res.errorMsg = "Login failed. Please try again.";
+    return res;
+}
+
+static bool CheckPremiumFromFirebase(const string& uid, const string& idToken) {
+    string host = "rasfocus-c746d-default-rtdb.firebaseio.com";
+    string path = "/users/" + uid + "/isPremium.json?auth=" + idToken;
+
+    HINTERNET hInet = InternetOpenA("RasFocus/1.0", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
+    if (!hInet) return false;
+    HINTERNET hConn = InternetConnectA(hInet, host.c_str(), INTERNET_DEFAULT_HTTPS_PORT, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
+    if (!hConn) { InternetCloseHandle(hInet); return false; }
+    HINTERNET hReq = HttpOpenRequestA(hConn, "GET", path.c_str(), NULL, NULL, NULL, INTERNET_FLAG_SECURE | INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE, 0);
+    if (!hReq) { InternetCloseHandle(hConn); InternetCloseHandle(hInet); return false; }
+
+    HttpSendRequestA(hReq, NULL, 0, NULL, 0);
+    string response = ""; char buf[1024]; DWORD br = 0;
+    while (InternetReadFile(hReq, buf, sizeof(buf) - 1, &br) && br > 0) { buf[br] = '\0'; response += buf; }
+    InternetCloseHandle(hReq); InternetCloseHandle(hConn); InternetCloseHandle(hInet);
+    return (response.find("true") != string::npos);
+}
+
+struct LoginThreadData { HWND hWnd; string email; string password; bool saveLogin; };
+
+void __cdecl LoginThread(void* param) {
+    LoginThreadData* data = (LoginThreadData*)param;
+    LoginResult res = FirebaseLogin(data->email, data->password);
+
+    if (res.success) {
+        bool isPremium = CheckPremiumFromFirebase(res.localId, res.idToken);
+        g_isPremiumUser = isPremium;
+
+        wchar_t emailW[512] = {};
+        MultiByteToWideChar(CP_UTF8, 0, res.email.c_str(), -1, emailW, 511);
+        g_loggedInEmail = emailW;
+
+        if (data->saveLogin) {
+            wchar_t passW[512] = {};
+            MultiByteToWideChar(CP_UTF8, 0, data->password.c_str(), -1, passW, 511);
+            SaveCredentials(emailW, passW);
+        }
+
+        s_isLoading = false;
+        s_statusMsg = isPremium ? L"Welcome back! Premium account active." : L"Logged in successfully!";
+        s_isError   = false;
+        ZeroMemory(s_password, sizeof(s_password));
+    } else {
+        s_isLoading = false;
+        wchar_t errW[512] = {};
+        MultiByteToWideChar(CP_UTF8, 0, res.errorMsg.c_str(), -1, errW, 511);
+        s_statusMsg = errW;
+        s_isError   = true;
+    }
+
+    if (data->hWnd) InvalidateRect(data->hWnd, NULL, FALSE);
+    delete data;
     _endthread();
 }
 
-void StartSilentUpdateCheck() { _beginthread(SilentUpdateThread, 0, NULL); }
-
-void ApplySilentUpdate() {
-    string secretDir      = GetSecretDir();
-    string batPath        = secretDir + "updater.bat";
-    string newExePath     = secretDir + "RasFocus_New.exe";
-    string currentExePath = GetExePath();
-    ofstream batFile(batPath);
-    batFile << "@echo off\n"
-            << "timeout /t 1 /nobreak >nul\n"
-            << "taskkill /F /IM RasObserve.exe /T >nul 2>&1\n"
-            << "taskkill /F /IM RasFocus.exe /T >nul 2>&1\n"
-            << "timeout /t 1 /nobreak >nul\n"
-            << "copy /Y \"" << newExePath     << "\" \"" << currentExePath << "\"\n"
-            << "start \"\" \"" << currentExePath << "\"\n"
-            << "del \"" << newExePath << "\"\n"
-            << "del \"%~f0\"\n";
-    batFile.close();
-    string cmdExec = "cmd.exe /c \"" + batPath + "\"";
-    STARTUPINFOA siBat = { sizeof(STARTUPINFOA) };
-    siBat.dwFlags = STARTF_USESHOWWINDOW;
-    siBat.wShowWindow = SW_HIDE;
-    PROCESS_INFORMATION piBat;
-    CreateProcessA(NULL, (LPSTR)cmdExec.c_str(), NULL, NULL, FALSE,
-                   CREATE_NO_WINDOW | DETACHED_PROCESS, NULL, NULL, &siBat, &piBat);
-    exit(0);
+// ============================================================
+//  INIT
+// ============================================================
+void InitAccountsModule(firebase::App* app) {
+    s_firebaseApp = app;
+    if (LoadSavedCredentials()) s_statusMsg = L"";
 }
 
-// ==========================================
-// SYSTEM
-// ==========================================
-bool IsRunAsAdmin() {
-    BOOL isAdmin = FALSE;
-    PSID adminGroup;
-    SID_IDENTIFIER_AUTHORITY ntAuthority = SECURITY_NT_AUTHORITY;
-    if (AllocateAndInitializeSid(&ntAuthority, 2,
-        SECURITY_BUILTIN_DOMAIN_RID, DOMAIN_ALIAS_RID_ADMINS,
-        0, 0, 0, 0, 0, 0, &adminGroup)) {
-        CheckTokenMembership(NULL, adminGroup, &isAdmin);
-        FreeSid(adminGroup);
-    }
-    return isAdmin != FALSE;
+// ============================================================
+//  LAYOUT EXACT CALCULATIONS (For 100% accurate Hit Testing)
+// ============================================================
+struct CardLayout {
+    float cardX, cardY, cardW, cardH;
+    float logoSz, logoX, logoY;
+    float fieldX, fieldW, fldH;
+    float emailY, passY, checkY, linksY;
+    float loginBtnX, loginBtnY, loginBtnW, loginBtnH;
+    float cancelBtnX, cancelBtnY, cancelBtnW, cancelBtnH;
+    float eyeX, eyeY, eyeW;
+    float signupX, signupY, signupW, signupH;
+    float resetX, resetY, resetW, resetH;
+    float privacyX, privacyY, privacyW, privacyH;
+};
+
+static CardLayout GetLayout(float cx, float cy, float cw, float ch) {
+    CardLayout L = {};
+    L.cardW = 380.0f;
+    L.cardH = 440.0f;
+    L.cardX = cx + (cw - L.cardW) / 2.0f;
+    L.cardY = cy + (ch - L.cardH) / 2.0f;
+
+    L.logoSz = 56.0f;
+    L.logoX  = L.cardX + (L.cardW - L.logoSz) / 2.0f;
+    L.logoY  = L.cardY + 25.0f;
+
+    L.fieldW = L.cardW - 70.0f;
+    L.fieldX = L.cardX + 35.0f;
+    L.fldH   = 36.0f;
+
+    L.emailY = L.logoY + L.logoSz + 45.0f;
+    L.passY  = L.emailY + L.fldH + 15.0f;
+    
+    L.eyeW   = 32.0f;
+    L.eyeX   = L.fieldX + L.fieldW - L.eyeW;
+    L.eyeY   = L.passY;
+
+    L.checkY = L.passY + L.fldH + 12.0f;
+    
+    float btnGap = 10.0f;
+    L.loginBtnW  = (L.fieldW - btnGap) / 2.0f;
+    L.loginBtnH  = 36.0f;
+    L.loginBtnX  = L.fieldX;
+    L.loginBtnY  = L.checkY + 30.0f;
+
+    L.cancelBtnW = L.loginBtnW;
+    L.cancelBtnH = L.loginBtnH;
+    L.cancelBtnX = L.loginBtnX + L.loginBtnW + btnGap;
+    L.cancelBtnY = L.loginBtnY;
+
+    L.linksY  = L.loginBtnY + L.loginBtnH + 20.0f;
+    
+    // Explicit hitboxes for links
+    L.signupX = L.cardX + 40.0f;
+    L.signupY = L.linksY;
+    L.signupW = 120.0f;
+    L.signupH = 20.0f;
+
+    L.resetX  = L.cardX + L.cardW - 120.0f;
+    L.resetY  = L.linksY;
+    L.resetW  = 90.0f;
+    L.resetH  = 20.0f;
+
+    L.privacyW = 80.0f;
+    L.privacyH = 18.0f;
+    L.privacyX = L.cardX + (L.cardW - L.privacyW) / 2.0f;
+    L.privacyY = L.cardY + L.cardH - 30.0f;
+
+    return L;
 }
 
-void CreateDesktopShortcut() {
-    char desktopPath[MAX_PATH];
-    if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_DESKTOPDIRECTORY, NULL, 0, desktopPath))) {
-        string mainShortcutPath      = string(desktopPath) + "\\RasFocus Pro.lnk";
-        string miniBrowserShortcutPath = string(desktopPath) + "\\RasFocus Mini Browser.lnk";
-        string exePath = GetExePath();
-        CoInitialize(NULL);
-        IShellLink* psl;
-        if (GetFileAttributesA(mainShortcutPath.c_str()) == INVALID_FILE_ATTRIBUTES) {
-            if (SUCCEEDED(CoCreateInstance(CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER, IID_IShellLink, (LPVOID*)&psl))) {
-                IPersistFile* ppf;
-                psl->SetPath("C:\\Windows\\System32\\schtasks.exe");
-                psl->SetArguments("/run /tn \"RasFocusPro_AutoStart\"");
-                psl->SetDescription("RasFocus Pro - Block Apps & Adult Content");
-                psl->SetIconLocation(exePath.c_str(), 0);
-                if (SUCCEEDED(psl->QueryInterface(IID_IPersistFile, (LPVOID*)&ppf))) {
-                    WCHAR wsz[MAX_PATH];
-                    MultiByteToWideChar(CP_ACP, 0, mainShortcutPath.c_str(), -1, wsz, MAX_PATH);
-                    ppf->Save(wsz, TRUE);
-                    ppf->Release();
-                }
-                psl->Release();
-            }
-        }
-        if (GetFileAttributesA(miniBrowserShortcutPath.c_str()) == INVALID_FILE_ATTRIBUTES) {
-            if (SUCCEEDED(CoCreateInstance(CLSID_ShellLink, NULL, CLSCTX_INPROC_SERVER, IID_IShellLink, (LPVOID*)&psl))) {
-                IPersistFile* ppf;
-                psl->SetPath(exePath.c_str());
-                psl->SetArguments("-minibrowser");
-                psl->SetDescription("RasFocus Safe Mini Browser");
-                psl->SetIconLocation(exePath.c_str(), 0);
-                if (SUCCEEDED(psl->QueryInterface(IID_IPersistFile, (LPVOID*)&ppf))) {
-                    WCHAR wsz[MAX_PATH];
-                    MultiByteToWideChar(CP_ACP, 0, miniBrowserShortcutPath.c_str(), -1, wsz, MAX_PATH);
-                    ppf->Save(wsz, TRUE);
-                    ppf->Release();
-                }
-                psl->Release();
-            }
-        }
-        CoUninitialize();
-    }
+extern int windowWidth, windowHeight;
+extern const int SIDEBAR_WIDTH;
+extern const int TITLEBAR_HEIGHT;
+extern const int SUBHEADER_HEIGHT;
+
+static CardLayout GetCurrentLayout() {
+    float cx = (float)SIDEBAR_WIDTH;
+    float cy = (float)(TITLEBAR_HEIGHT + SUBHEADER_HEIGHT);
+    float cw = (float)windowWidth  - cx;
+    float ch = (float)windowHeight - cy;
+    return GetLayout(cx, cy, cw, ch);
 }
 
-void SetupAutoRun() {
-    wchar_t szPath[MAX_PATH];
-    GetModuleFileNameW(NULL, szPath, MAX_PATH);
-    wstring pathStr = szPath;
-    if (IsRunAsAdmin()) {
-        wstring schCreate =
-            L"schtasks.exe /create"
-            L" /tn \"RasFocusPro_AutoStart\""
-            L" /tr \"\\\"" + pathStr + L"\\\" -silent\""
-            L" /sc onlogon"
-            L" /rl highest"
-            L" /f";
-        STARTUPINFOW si1 = { sizeof(STARTUPINFOW) };
-        si1.dwFlags = STARTF_USESHOWWINDOW; si1.wShowWindow = SW_HIDE;
-        PROCESS_INFORMATION pi1;
-        if (CreateProcessW(NULL, (LPWSTR)schCreate.c_str(), NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si1, &pi1)) {
-            WaitForSingleObject(pi1.hProcess, 5000);
-            CloseHandle(pi1.hProcess); CloseHandle(pi1.hThread);
-        }
-        wstring schPowerFix =
-            L"powershell.exe -WindowStyle Hidden -Command \""
-            L"Set-ScheduledTask -TaskName 'RasFocusPro_AutoStart'"
-            L" -Settings (New-ScheduledTaskSettingsSet"
-            L" -AllowStartIfOnBatteries"
-            L" -DontStopIfGoingOnBatteries"
-            L" -ExecutionTimeLimit 0)\"";
-        STARTUPINFOW si2 = { sizeof(STARTUPINFOW) };
-        si2.dwFlags = STARTF_USESHOWWINDOW; si2.wShowWindow = SW_HIDE;
-        PROCESS_INFORMATION pi2;
-        if (CreateProcessW(NULL, (LPWSTR)schPowerFix.c_str(), NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si2, &pi2)) {
-            WaitForSingleObject(pi2.hProcess, 5000);
-            CloseHandle(pi2.hProcess); CloseHandle(pi2.hThread);
-        }
-        wstring schStartup =
-            L"powershell.exe -WindowStyle Hidden -Command \""
-            L"$task = Get-ScheduledTask -TaskName 'RasFocusPro_AutoStart';"
-            L"$trigger = New-ScheduledTaskTrigger -AtStartup;"
-            L"$task.Triggers += $trigger;"
-            L"Set-ScheduledTask -TaskName 'RasFocusPro_AutoStart' -Trigger $task.Triggers\"";
-        STARTUPINFOW si3 = { sizeof(STARTUPINFOW) };
-        si3.dwFlags = STARTF_USESHOWWINDOW; si3.wShowWindow = SW_HIDE;
-        PROCESS_INFORMATION pi3;
-        if (CreateProcessW(NULL, (LPWSTR)schStartup.c_str(), NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si3, &pi3)) {
-            WaitForSingleObject(pi3.hProcess, 5000);
-            CloseHandle(pi3.hProcess); CloseHandle(pi3.hThread);
-        }
-    }
-    {
-        HKEY hKey;
-        if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
-                          0, KEY_SET_VALUE, &hKey) == ERROR_SUCCESS) {
-            wstring regCmd = L"\"" + pathStr + L"\" -silent";
-            RegSetValueExW(hKey, L"RasFocusPro", 0, REG_SZ,
-                           (const BYTE*)regCmd.c_str(), (DWORD)((regCmd.size() + 1) * sizeof(wchar_t)));
-            RegCloseKey(hKey);
-        }
-    }
-    if (IsRunAsAdmin()) {
-        HKEY hKeyLM;
-        if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
-                          0, KEY_SET_VALUE, &hKeyLM) == ERROR_SUCCESS) {
-            wstring regCmd = L"\"" + pathStr + L"\" -silent";
-            RegSetValueExW(hKeyLM, L"RasFocusPro", 0, REG_SZ,
-                           (const BYTE*)regCmd.c_str(), (DWORD)((regCmd.size() + 1) * sizeof(wchar_t)));
-            RegCloseKey(hKeyLM);
-        }
-    }
+static bool HitRect(float mx, float my, float x, float y, float w, float h) {
+    return mx >= x && mx <= x + w && my >= y && my <= y + h;
 }
 
-void ExtractAndRunObserver() {
-    WinExec("taskkill /F /IM RasObserve.exe", SW_HIDE);
-    Sleep(50);
-    HRSRC hRes = FindResource(NULL, MAKEINTRESOURCE(IDR_OBSERVER_EXE), RT_RCDATA);
-    if (!hRes) return;
-    HGLOBAL hData = LoadResource(NULL, hRes);
-    void* pData = LockResource(hData);
-    DWORD size  = SizeofResource(NULL, hRes);
-    wstring folderPath = L"C:\\ProgramData\\RasFocus";
-    CreateDirectoryW(folderPath.c_str(), NULL);
-    wstring destPath = folderPath + L"\\RasObserve.exe";
-    HANDLE hFile = CreateFileW(destPath.c_str(), GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
-                               FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM, NULL);
-    if (hFile != INVALID_HANDLE_VALUE) {
-        DWORD written;
-        WriteFile(hFile, pData, size, &written, NULL);
-        CloseHandle(hFile);
-    }
-    wchar_t currentAppPath[MAX_PATH];
-    GetModuleFileNameW(NULL, currentAppPath, MAX_PATH);
-    wstring wAppPath(currentAppPath);
-    wstring wWorkingDir = wAppPath.substr(0, wAppPath.find_last_of(L"\\/"));
-    wstring cmdArgs = L"\"" + destPath + L"\" \"" + wAppPath + L"\"";
-    wchar_t cmdBuffer[MAX_PATH * 2];
-    wcscpy_s(cmdBuffer, cmdArgs.c_str());
-    STARTUPINFOW si = { sizeof(STARTUPINFOW) };
-    si.dwFlags = STARTF_USESHOWWINDOW; si.wShowWindow = SW_HIDE;
-    PROCESS_INFORMATION pi;
-    if (CreateProcessW(NULL, cmdBuffer, NULL, NULL, FALSE,
-                       CREATE_NO_WINDOW | DETACHED_PROCESS, NULL, wWorkingDir.c_str(), &si, &pi)) {
-        CloseHandle(pi.hProcess); CloseHandle(pi.hThread);
-    }
-}
+// ============================================================
+//  DRAW
+// ============================================================
+void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
+    SolidBrush bgBrush(Color(255, 245, 248, 250));
+    g.FillRectangle(&bgBrush, cx, cy, cw, ch);
 
-void AddTrayIcon(HWND hWnd) {
-    nid.cbSize = sizeof(NOTIFYICONDATA);
-    nid.hWnd   = hWnd;
-    nid.uID    = 1001;
-    nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
-    nid.uCallbackMessage = WM_TRAYICON;
-    nid.hIcon  = LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APP_ICON));
-    lstrcpy(nid.szTip, "RasFocus Pro is running...");
-    Shell_NotifyIcon(NIM_ADD, &nid);
-}
+    if (!g_loggedInEmail.empty()) {
+        CardLayout L = GetLayout(cx, cy, cw, ch);
+        GraphicsPath card;
+        float rc = 10.0f, dc = rc * 2.0f;
+        card.AddArc(L.cardX, L.cardY, dc, dc, 180.0f, 90.0f);
+        card.AddArc(L.cardX + L.cardW - dc, L.cardY, dc, dc, 270.0f, 90.0f);
+        card.AddArc(L.cardX + L.cardW - dc, L.cardY + L.cardH - dc, dc, dc, 0.0f, 90.0f);
+        card.AddArc(L.cardX, L.cardY + L.cardH - dc, dc, dc, 90.0f, 90.0f);
+        card.CloseFigure();
+        SolidBrush cardBg(Color(255, 255, 255, 255));
+        g.FillPath(&cardBg, &card);
+        Pen cardShadow(Color(20, 0, 150, 160), 1.0f);
+        g.DrawPath(&cardShadow, &card);
 
-void RemoveTrayIcon() { Shell_NotifyIcon(NIM_DELETE, &nid); }
+        GraphicsPath hdrPath;
+        hdrPath.AddArc(L.cardX, L.cardY, dc, dc, 180.0f, 90.0f);
+        hdrPath.AddArc(L.cardX + L.cardW - dc, L.cardY, dc, dc, 270.0f, 90.0f);
+        hdrPath.AddLine(L.cardX + L.cardW, L.cardY + 80.0f, L.cardX, L.cardY + 80.0f);
+        hdrPath.CloseFigure();
+        SolidBrush hdrBg(Color(255, 0, 150, 160));
+        g.FillPath(&hdrBg, &hdrPath);
 
-// ==========================================
-// OPEN UPGRADE PAGE IN DEFAULT BROWSER
-// ==========================================
-void OpenUpgradeWebsite() {
-    ShellExecuteA(NULL, "open", "https://raseledutools.github.io/product.html", NULL, NULL, SW_SHOWNORMAL);
-}
+        FontFamily ff(L"Segoe UI");
+        FontFamily ffIcons(L"Segoe MDL2 Assets");
+        SolidBrush white(Color(255, 255, 255, 255));
+        SolidBrush teal(Color(255, 0, 150, 160));
+        SolidBrush dark(Color(255, 50, 50, 50));
+        SolidBrush gray(Color(255, 130, 130, 130));
+        StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
+        StringFormat fmtL; fmtL.SetAlignment(StringAlignmentNear);   fmtL.SetLineAlignment(StringAlignmentCenter);
 
-// ==========================================
-// FIREBASE FEEDBACK SUBMIT (via REST)
-// ==========================================
-void SubmitFeedbackToFirebase(const wstring& email, const wstring& message) {
-    char emailA[512] = {}, msgA[2048] = {};
-    WideCharToMultiByte(CP_UTF8, 0, email.c_str(),   -1, emailA, 511, NULL, NULL);
-    WideCharToMultiByte(CP_UTF8, 0, message.c_str(), -1, msgA,  2047, NULL, NULL);
+        float avR = 40.0f;
+        float avCX = L.cardX + L.cardW / 2.0f;
+        float avCY = L.cardY + 80.0f;
+        SolidBrush avBg(Color(255, 255, 255, 255));
+        g.FillEllipse(&avBg, avCX - avR, avCY - avR, avR * 2.0f, avR * 2.0f);
+        Pen avBorder(Color(255, 0, 150, 160), 3.0f);
+        g.DrawEllipse(&avBorder, avCX - avR, avCY - avR, avR * 2.0f, avR * 2.0f);
+        Font fAvIcon(&ffIcons, 32, FontStyleRegular, UnitPixel);
+        g.DrawString(L"\xE77B", -1, &fAvIcon, RectF(avCX - avR, avCY - avR, avR * 2.0f, avR * 2.0f), &fmtC, &teal);
 
-    string jsonBody = "{\"email\":\"" + string(emailA) + "\",\"message\":\"" + string(msgA) + "\"}";
+        Font fHdrTitle(&ff, 16, FontStyleBold, UnitPixel);
+        g.DrawString(L"My Account", -1, &fHdrTitle, RectF(L.cardX, L.cardY, L.cardW, 50.0f), &fmtC, &white);
 
-    HINTERNET hInternet = InternetOpenA("RasFocus/1.0", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
-    if (!hInternet) return;
+        float infoY = avCY + avR + 20.0f;
+        Font fLabel(&ff, 11, FontStyleRegular, UnitPixel);
+        Font fValue(&ff, 13, FontStyleBold, UnitPixel);
 
-    HINTERNET hConnect = InternetConnectA(hInternet,
-        "rasfocus-c746d-default-rtdb.firebaseio.com",
-        INTERNET_DEFAULT_HTTPS_PORT,
-        NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
+        g.DrawString(L"Email", -1, &fLabel, RectF(L.fieldX, infoY, L.fieldW, 18.0f), &fmtL, &gray);
+        g.DrawString(g_loggedInEmail.c_str(), -1, &fValue, RectF(L.fieldX, infoY + 18.0f, L.fieldW, 22.0f), &fmtL, &dark);
 
-    if (hConnect) {
-        HINTERNET hRequest = HttpOpenRequestA(hConnect, "POST",
-            "/feedback.json",
-            NULL, NULL, NULL,
-            INTERNET_FLAG_SECURE | INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE,
-            0);
-        if (hRequest) {
-            string headers = "Content-Type: application/json\r\n";
-            HttpSendRequestA(hRequest, headers.c_str(), (DWORD)headers.size(),
-                             (LPVOID)jsonBody.c_str(), (DWORD)jsonBody.size());
-            InternetCloseHandle(hRequest);
-        }
-        InternetCloseHandle(hConnect);
-    }
-    InternetCloseHandle(hInternet);
-}
+        float badgeY = infoY + 58.0f;
+        g.DrawString(L"Plan", -1, &fLabel, RectF(L.fieldX, badgeY, L.fieldW, 18.0f), &fmtL, &gray);
 
-// ==========================================
-// DRAWING
-// ==========================================
+        float badgeW = 110.0f, badgeH = 26.0f;
+        GraphicsPath badge;
+        float br = 5.0f, bd = br * 2.0f;
+        badge.AddArc(L.fieldX, badgeY + 20.0f, bd, bd, 180.0f, 90.0f);
+        badge.AddArc(L.fieldX + badgeW - bd, badgeY + 20.0f, bd, bd, 270.0f, 90.0f);
+        badge.AddArc(L.fieldX + badgeW - bd, badgeY + 20.0f + badgeH - bd, bd, bd, 0.0f, 90.0f);
+        badge.AddArc(L.fieldX, badgeY + 20.0f + badgeH - bd, bd, bd, 90.0f, 90.0f);
+        badge.CloseFigure();
+        SolidBrush badgeBg(g_isPremiumUser ? Color(255, 243, 156, 18) : Color(255, 0, 150, 160));
+        g.FillPath(&badgeBg, &badge);
+        Font fBadge(&ff, 11, FontStyleBold, UnitPixel);
+        g.DrawString(g_isPremiumUser ? L"★ Premium" : L"Free Plan", -1, &fBadge, RectF(L.fieldX, badgeY + 20.0f, badgeW, badgeH), &fmtC, &white);
 
-// ------------------------------------------
-// 1. TITLE BAR
-// ------------------------------------------
-void DrawTitleBar(Graphics& g, int w) {
-    SolidBrush bgWhite(ColTitleBar);
-    g.FillRectangle(&bgWhite, 0.0f, 0.0f, (float)w, (float)TITLEBAR_HEIGHT);
-
-    Pen borderPen(Color(255, 220, 225, 230), 1.0f);
-    g.DrawLine(&borderPen, 0.0f, (float)TITLEBAR_HEIGHT - 1.0f, (float)w, (float)TITLEBAR_HEIGHT - 1.0f);
-
-    FontFamily ff(L"Segoe UI");
-    FontFamily ffIcons(L"Segoe MDL2 Assets");
-
-    const int TB_LOGO_SIZE = 18;
-    HICON hIconSm = (HICON)LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APP_ICON),
-                                     IMAGE_ICON, TB_LOGO_SIZE, TB_LOGO_SIZE, LR_SHARED);
-    if (hIconSm) {
-        HDC hdcG = g.GetHDC();
-        int iconY = (TITLEBAR_HEIGHT - TB_LOGO_SIZE) / 2;
-        DrawIconEx(hdcG, 12, iconY, hIconSm, TB_LOGO_SIZE, TB_LOGO_SIZE, 0, NULL, DI_NORMAL);
-        g.ReleaseHDC(hdcG);
+        float logoutW = 140.0f, logoutH = 36.0f;
+        float logoutX = L.cardX + (L.cardW - logoutW) / 2.0f;
+        float logoutY = L.cardY + L.cardH - 60.0f;
+        GraphicsPath lPath;
+        lPath.AddArc(logoutX, logoutY, bd, bd, 180.0f, 90.0f);
+        lPath.AddArc(logoutX + logoutW - bd, logoutY, bd, bd, 270.0f, 90.0f);
+        lPath.AddArc(logoutX + logoutW - bd, logoutY + logoutH - bd, bd, bd, 0.0f, 90.0f);
+        lPath.AddArc(logoutX, logoutY + logoutH - bd, bd, bd, 90.0f, 90.0f);
+        lPath.CloseFigure();
+        SolidBrush lBg(s_hoverLogout ? Color(255, 200, 30, 30) : Color(255, 220, 50, 50));
+        g.FillPath(&lBg, &lPath);
+        Font fLogout(&ff, 12, FontStyleBold, UnitPixel);
+        g.DrawString(L"\xE7E8 Log Out", -1, &fLogout, RectF(logoutX, logoutY, logoutW, logoutH), &fmtC, &white);
+        return;
     }
 
-    Font fTitle(&ff, 11, FontStyleBold, UnitPixel);
-    SolidBrush textDark(ColTitleBarText);
-    StringFormat fmtL;
-    fmtL.SetAlignment(StringAlignmentNear);
-    fmtL.SetLineAlignment(StringAlignmentCenter);
-    g.DrawString(L"RasFocus+", -1, &fTitle,
-                 RectF(38.0f, 0.0f, 280.0f, (float)TITLEBAR_HEIGHT),
-                 &fmtL, &textDark);
+    // ─── LOGIN VIEW ───
+    CardLayout L = GetLayout(cx, cy, cw, ch);
 
-    float btnW = 42.0f;
-    float btnH = (float)TITLEBAR_HEIGHT;
-    float startX = (float)w - (btnW * 3);
-
-    if (hoverMinimize) { SolidBrush b(Color(30, 0, 0, 0)); g.FillRectangle(&b, startX, 0.0f, btnW, btnH); }
-    if (hoverMaximize) { SolidBrush b(Color(30, 0, 0, 0)); g.FillRectangle(&b, startX + btnW, 0.0f, btnW, btnH); }
-    if (hoverClose)    { SolidBrush b(Color(255, 232, 17, 35)); g.FillRectangle(&b, startX + (btnW * 2), 0.0f, btnW, btnH); }
-
-    Font fIcons(&ffIcons, 9, FontStyleRegular, UnitPixel);
-    SolidBrush iconColor(Color(255, 80, 80, 80));
-    SolidBrush iconWhite(ColWhite);
-    StringFormat fmtC;
-    fmtC.SetAlignment(StringAlignmentCenter);
-    fmtC.SetLineAlignment(StringAlignmentCenter);
-
-    g.DrawString(L"\xE921", -1, &fIcons, RectF(startX, 0.0f, btnW, btnH), &fmtC, &iconColor);
-    const wchar_t* maxIcon = isMaximized ? L"\xE923" : L"\xE922";
-    g.DrawString(maxIcon,   -1, &fIcons, RectF(startX + btnW, 0.0f, btnW, btnH), &fmtC, &iconColor);
-    g.DrawString(L"\xE8BB", -1, &fIcons, RectF(startX + (btnW * 2), 0.0f, btnW, btnH),
-                 &fmtC, hoverClose ? &iconWhite : &iconColor);
-
-    if (isUpdateReady) {
-        float upgW = 150.0f;
-        float upgH = (float)TITLEBAR_HEIGHT - 6.0f;
-        float upgX = startX - upgW - 10.0f;
-        float upgY = 3.0f;
-        GraphicsPath upgPath;
-        float r = 4.0f, d = r * 2.0f;
-        upgPath.AddArc(upgX, upgY, d, d, 180.0f, 90.0f);
-        upgPath.AddArc(upgX + upgW - d, upgY, d, d, 270.0f, 90.0f);
-        upgPath.AddArc(upgX + upgW - d, upgY + upgH - d, d, d, 0.0f, 90.0f);
-        upgPath.AddArc(upgX, upgY + upgH - d, d, d, 90.0f, 90.0f);
-        upgPath.CloseFigure();
-        SolidBrush upgBg(hoverUpdateBtn ? Color(255, 30, 215, 96) : Color(255, 0, 180, 70));
-        g.FillPath(&upgBg, &upgPath);
-        Font fUpg(&ff, 9, FontStyleBold, UnitPixel);
-        wstring wVer(newVersionStr.begin(), newVersionStr.end());
-        wstring btnTxt = L"Update " + wVer + L" Ready";
-        SolidBrush white(ColWhite);
-        g.DrawString(btnTxt.c_str(), -1, &fUpg, RectF(upgX, upgY, upgW, upgH), &fmtC, &white);
+    for (int i = 3; i >= 0; --i) {
+        SolidBrush shadowBrush(Color(8 + i * 4, 0, 100, 120));
+        GraphicsPath shadowPath;
+        float sr = 10.0f, sd = sr * 2.0f;
+        float sx = L.cardX - i, sy = L.cardY + i, sw2 = L.cardW + i * 2.0f, sh2 = L.cardH;
+        shadowPath.AddArc(sx, sy, sd, sd, 180.0f, 90.0f);
+        shadowPath.AddArc(sx + sw2 - sd, sy, sd, sd, 270.0f, 90.0f);
+        shadowPath.AddArc(sx + sw2 - sd, sy + sh2 - sd, sd, sd, 0.0f, 90.0f);
+        shadowPath.AddArc(sx, sy + sh2 - sd, sd, sd, 90.0f, 90.0f);
+        shadowPath.CloseFigure();
+        g.FillPath(&shadowBrush, &shadowPath);
     }
-}
-
-// ------------------------------------------
-// 2. SUB-HEADER
-// ------------------------------------------
-void DrawSubHeader(Graphics& g, int w) {
-    float subX = 0.0f;
-    float subY = (float)TITLEBAR_HEIGHT;
-    float subW = (float)w;
-    float subH = (float)SUBHEADER_HEIGHT;
-
-    SolidBrush bgDeep(ColSubHeader);
-    g.FillRectangle(&bgDeep, subX, subY, subW, subH);
-
-    FontFamily ff(L"Segoe UI");
-    FontFamily ffIcons(L"Segoe MDL2 Assets");
-    SolidBrush white(ColWhite);
-    StringFormat fmtC;
-    fmtC.SetAlignment(StringAlignmentCenter);
-    fmtC.SetLineAlignment(StringAlignmentCenter);
-    StringFormat fmtTL;
-    fmtTL.SetAlignment(StringAlignmentNear);
-    fmtTL.SetLineAlignment(StringAlignmentCenter);
-
-    const int LOGO_SIZE = 26;
-    HICON hIconLg = (HICON)LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APP_ICON),
-                                     IMAGE_ICON, LOGO_SIZE, LOGO_SIZE, LR_SHARED);
-    if (hIconLg) {
-        Bitmap bmp(hIconLg);
-        float iconX = 16.0f;
-        float iconY = subY + (subH - LOGO_SIZE) / 2.0f;
-        g.DrawImage(&bmp, iconX, iconY, (float)LOGO_SIZE, (float)LOGO_SIZE);
-    }
-
-    Font fAppName(&ff, 18, FontStyleBold, UnitPixel);
-    Font fVersion(&ff, 11, FontStyleRegular, UnitPixel);
-    SolidBrush whiteAlpha(Color(200, 255, 255, 255));
-
-    float textX = 16.0f + LOGO_SIZE + 10.0f;
-    g.DrawString(L"RasFocus+", -1, &fAppName, RectF(textX, subY, 110.0f, subH), &fmtTL, &white);
-
-    wstring wVer(CURRENT_VERSION.begin(), CURRENT_VERSION.end());
-    g.DrawString(wVer.c_str(), -1, &fVersion, RectF(textX + 90.0f, subY + 2.0f, 60.0f, subH), &fmtTL, &whiteAlpha);
-
-    float rightPad = 20.0f;
-    float btnH     = 28.0f;
-    float btnY     = subY + (subH - btnH) / 2.0f;
-
-    // ── My Account বাটন (premium হলে নাম দেখায়, না হলে "My Account") ──
-    float acBtnW  = 110.0f;
-    float acBtnX  = (float)w - rightPad - acBtnW;
-
-    GraphicsPath acPath;
-    float r2 = 4.0f, d2 = r2 * 2.0f;
-    acPath.AddArc(acBtnX, btnY, d2, d2, 180.0f, 90.0f);
-    acPath.AddArc(acBtnX + acBtnW - d2, btnY, d2, d2, 270.0f, 90.0f);
-    acPath.AddArc(acBtnX + acBtnW - d2, btnY + btnH - d2, d2, d2, 0.0f, 90.0f);
-    acPath.AddArc(acBtnX, btnY + btnH - d2, d2, d2, 90.0f, 90.0f);
-    acPath.CloseFigure();
-
-    SolidBrush acBg(hoverMyAccount ? Color(80, 255, 255, 255) : Color(45, 255, 255, 255));
-    g.FillPath(&acBg, &acPath);
-    Pen acBorder(Color(100, 255, 255, 255), 1.0f);
-    g.DrawPath(&acBorder, &acPath);
-
-    Font fBtnIcon(&ffIcons, 13, FontStyleRegular, UnitPixel);
-    g.DrawString(L"\xE77B", -1, &fBtnIcon, RectF(acBtnX + 6.0f, btnY, 20.0f, btnH), &fmtC, &white);
-
-    Font fBtnTxt(&ff, 11, FontStyleBold, UnitPixel);
-
-    // Premium user হলে নাম + PRO badge দেখাও
-    if (g_isPremiumUser) {
-        extern wstring g_loggedInUserName;  // accounts.cpp থেকে expose করতে হবে
-        wstring displayName = g_loggedInUserName.empty() ? L"My Account" : g_loggedInUserName;
-        // নাম truncate (৯ char)
-        if (displayName.length() > 9) displayName = displayName.substr(0, 8) + L"…";
-        g.DrawString(displayName.c_str(), -1, &fBtnTxt,
-                     RectF(acBtnX + 28.0f, btnY, acBtnW - 30.0f, btnH * 0.6f), &fmtTL, &white);
-        // PRO badge
-        Font fPro(&ff, 8, FontStyleBold, UnitPixel);
-        SolidBrush goldBrush(Color(255, 255, 215, 0));
-        g.DrawString(L"PRO", -1, &fPro,
-                     RectF(acBtnX + 28.0f, btnY + btnH * 0.55f, acBtnW - 30.0f, btnH * 0.45f), &fmtTL, &goldBrush);
-    } else {
-        g.DrawString(L"My Account", -1, &fBtnTxt,
-                     RectF(acBtnX + 28.0f, btnY, acBtnW - 30.0f, btnH), &fmtTL, &white);
-    }
-
-    // Feedback icon
-    float fbIconW = 60.0f;
-    float fbIconX = acBtnX - fbIconW - 10.0f;
-
-    if (hoverFeedback) {
-        SolidBrush fbHover(Color(50, 255, 255, 255));
-        GraphicsPath fbPath;
-        fbPath.AddArc(fbIconX, btnY, d2, d2, 180, 90);
-        fbPath.AddArc(fbIconX+fbIconW-d2, btnY, d2, d2, 270, 90);
-        fbPath.AddArc(fbIconX+fbIconW-d2, btnY+btnH-d2, d2, d2, 0, 90);
-        fbPath.AddArc(fbIconX, btnY+btnH-d2, d2, d2, 90, 90);
-        fbPath.CloseFigure();
-        g.FillPath(&fbHover, &fbPath);
-    }
-
-    Font fFbIcon(&ffIcons, 16, FontStyleRegular, UnitPixel);
-    Font fFbTxt(&ff, 9, FontStyleRegular, UnitPixel);
-    g.DrawString(L"\xE8C3", -1, &fFbIcon, RectF(fbIconX, btnY + 1.0f, fbIconW, 14.0f), &fmtC, &white);
-    g.DrawString(L"Feedback", -1, &fFbTxt, RectF(fbIconX, btnY + 15.0f, fbIconW, 14.0f), &fmtC, &whiteAlpha);
-}   // ← DrawSubHeader এর closing brace (আগে এটা মিসিং ছিল!)
-
-// ------------------------------------------
-// 3. SIDEBAR
-// ------------------------------------------
-void DrawSidebar(Graphics& g, int h) {
-    float sideX = 0.0f;
-    float sideY = (float)(TITLEBAR_HEIGHT + SUBHEADER_HEIGHT);
-    float sideH = (float)(h - sideY);
-
-    SolidBrush bgTeal(ColSidebar);
-    g.FillRectangle(&bgTeal, sideX, sideY, (float)SIDEBAR_WIDTH, sideH);
-
-    FontFamily ff(L"Segoe UI");
-    FontFamily ffIcons(L"Segoe MDL2 Assets");
-    StringFormat fmtTL; fmtTL.SetAlignment(StringAlignmentNear); fmtTL.SetLineAlignment(StringAlignmentCenter);
-    SolidBrush white(ColWhite);
-
-    float tabsStartY = sideY + 20.0f;
-    Font fTabTxt(&ff, 15, FontStyleBold, UnitPixel);
-    Font fTabIcon(&ffIcons, 18, FontStyleRegular, UnitPixel);
-    SolidBrush tealText(ColSubHeader);
-    float tabH  = 50.0f;
-    float iconW = 42.0f;
-
-    StringFormat fmtIC; fmtIC.SetAlignment(StringAlignmentCenter); fmtIC.SetLineAlignment(StringAlignmentCenter);
-
-    for (size_t i = 0; i < sidebarTabs.size(); ++i) {
-        float tabY = tabsStartY + (float)i * tabH;
-        RectF tabRect(sideX, tabY, (float)SIDEBAR_WIDTH, tabH);
-
-        if (selectedTab == (int)i) {
-            SolidBrush activeBg(ColWhite);
-            g.FillRectangle(&activeBg, tabRect);
-            SolidBrush accentBar(ColSubHeader);
-            g.FillRectangle(&accentBar, sideX, tabY, 4.0f, tabH);
-            g.DrawString(sidebarIcons[i].c_str(), -1, &fTabIcon, RectF(sideX, tabY, iconW, tabH), &fmtIC, &tealText);
-            g.DrawString(sidebarTabs[i].c_str(),  -1, &fTabTxt,  RectF(sideX + iconW, tabY, (float)SIDEBAR_WIDTH - iconW - 8.0f, tabH), &fmtTL, &tealText);
-        } else {
-            if (hoveredTab == (int)i) {
-                SolidBrush hoverBg(ColSidebarHover);
-                g.FillRectangle(&hoverBg, tabRect);
-            }
-            g.DrawString(sidebarIcons[i].c_str(), -1, &fTabIcon, RectF(sideX, tabY, iconW, tabH), &fmtIC, &white);
-            g.DrawString(sidebarTabs[i].c_str(),  -1, &fTabTxt,  RectF(sideX + iconW, tabY, (float)SIDEBAR_WIDTH - iconW - 8.0f, tabH), &fmtTL, &white);
-        }
-    }
-
-    // ── Upgrade Button ──
-    // Premium user হলে বাটন লুকানো, না হলে দেখাও
-    if (!g_isPremiumUser) {
-        float upgH  = 38.0f;
-        float upgY  = (float)h - upgH - 16.0f;
-        float upgMX = 15.0f;
-        float upgW  = (float)SIDEBAR_WIDTH - upgMX * 2.0f;
-        GraphicsPath upgPath;
-        float r = 7.0f, d = r * 2.0f;
-        upgPath.AddArc(upgMX, upgY, d, d, 180.0f, 90.0f);
-        upgPath.AddArc(upgMX + upgW - d, upgY, d, d, 270.0f, 90.0f);
-        upgPath.AddArc(upgMX + upgW - d, upgY + upgH - d, d, d, 0.0f, 90.0f);
-        upgPath.AddArc(upgMX, upgY + upgH - d, d, d, 90.0f, 90.0f);
-        upgPath.CloseFigure();
-        SolidBrush btnColor(hoverUpgrade ? ColUpgradeHover : ColUpgradeBtn);
-        g.FillPath(&btnColor, &upgPath);
-        Font fUpg(&ff, 13, FontStyleBold, UnitPixel);
-        g.DrawString(L"\u2B06  Upgrade Now", -1, &fUpg, RectF(upgMX, upgY, upgW, upgH), &fmtIC, &white);
-    }
-}
-
-// ------------------------------------------
-// 4. FEEDBACK POPUP
-// ------------------------------------------
-void DrawFeedbackPopup(Graphics& g, int w, int h) {
-    if (!showFeedbackBox) return;
-    SolidBrush overlay(Color(140, 0, 0, 0));
-    g.FillRectangle(&overlay, 0.0f, 0.0f, (float)w, (float)h);
-
-    float popW = 400.0f, popH = 280.0f;
-    float popX = (w - popW) / 2.0f;
-    float popY = (h - popH) / 2.0f;
 
     GraphicsPath cardPath;
     float rc = 10.0f, dc = rc * 2.0f;
-    cardPath.AddArc(popX, popY, dc, dc, 180.0f, 90.0f);
-    cardPath.AddArc(popX + popW - dc, popY, dc, dc, 270.0f, 90.0f);
-    cardPath.AddArc(popX + popW - dc, popY + popH - dc, dc, dc, 0.0f, 90.0f);
-    cardPath.AddArc(popX, popY + popH - dc, dc, dc, 90.0f, 90.0f);
+    cardPath.AddArc(L.cardX, L.cardY, dc, dc, 180.0f, 90.0f);
+    cardPath.AddArc(L.cardX + L.cardW - dc, L.cardY, dc, dc, 270.0f, 90.0f);
+    cardPath.AddArc(L.cardX + L.cardW - dc, L.cardY + L.cardH - dc, dc, dc, 0.0f, 90.0f);
+    cardPath.AddArc(L.cardX, L.cardY + L.cardH - dc, dc, dc, 90.0f, 90.0f);
     cardPath.CloseFigure();
-    SolidBrush cardBg(ColWhite);
+    SolidBrush cardBg(Color(255, 255, 255, 255));
     g.FillPath(&cardBg, &cardPath);
 
-    GraphicsPath headerPath;
-    headerPath.AddArc(popX, popY, dc, dc, 180.0f, 90.0f);
-    headerPath.AddArc(popX + popW - dc, popY, dc, dc, 270.0f, 90.0f);
-    headerPath.AddLine(popX + popW, popY + 40.0f, popX, popY + 40.0f);
-    headerPath.CloseFigure();
-    SolidBrush headerBg(ColSubHeader);
-    g.FillPath(&headerBg, &headerPath);
-
     FontFamily ff(L"Segoe UI");
-    SolidBrush white(ColWhite), darkText(Color(255, 60, 60, 60)), grayText(Color(255, 140, 140, 140));
-    Font fHeader(&ff, 13, FontStyleBold, UnitPixel), fLabel(&ff, 10, FontStyleRegular, UnitPixel), fInput(&ff, 11, FontStyleRegular, UnitPixel);
-    StringFormat fmtL; fmtL.SetAlignment(StringAlignmentNear); fmtL.SetLineAlignment(StringAlignmentCenter);
-    g.DrawString(L"Send Feedback", -1, &fHeader, RectF(popX + 16.0f, popY, popW - 40.0f, 40.0f), &fmtL, &white);
-
     FontFamily ffIcons(L"Segoe MDL2 Assets");
-    Font fCloseIcon(&ffIcons, 11, FontStyleRegular, UnitPixel);
-    SolidBrush closeColor(hoverFeedbackClose ? Color(255, 232, 17, 35) : ColWhite);
+    SolidBrush teal(Color(255, 0, 150, 160));
+    SolidBrush dark(Color(255, 50, 50, 50));
+    SolidBrush gray(Color(255, 140, 140, 140));
+    SolidBrush white(Color(255, 255, 255, 255));
     StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
-    g.DrawString(L"\xE8BB", -1, &fCloseIcon, RectF(popX + popW - 32.0f, popY, 32.0f, 40.0f), &fmtC, &closeColor);
+    StringFormat fmtL; fmtL.SetAlignment(StringAlignmentNear);   fmtL.SetLineAlignment(StringAlignmentCenter);
 
-    float fieldX = popX + 20.0f, fieldW = popW - 40.0f;
-    g.DrawString(L"Email", -1, &fLabel, RectF(fieldX, popY + 52.0f, fieldW, 16.0f), &fmtL, &grayText);
-    Pen fieldBorder(feedbackFocusField == 1 ? Color(255, 0, 140, 150) : Color(255, 200, 205, 210), 1.5f);
-    g.DrawRectangle(&fieldBorder, fieldX, popY + 70.0f, fieldW, 28.0f);
-    wstring emailStr(feedbackEmail);
-    g.DrawString(emailStr.empty() ? L"your@email.com" : emailStr.c_str(), -1, &fInput,
-                 RectF(fieldX + 6.0f, popY + 70.0f, fieldW - 12.0f, 28.0f), &fmtL,
-                 emailStr.empty() ? &grayText : &darkText);
-
-    g.DrawString(L"Message", -1, &fLabel, RectF(fieldX, popY + 110.0f, fieldW, 16.0f), &fmtL, &grayText);
-    Pen msgBorder(feedbackFocusField == 2 ? Color(255, 0, 140, 150) : Color(255, 200, 205, 210), 1.5f);
-    g.DrawRectangle(&msgBorder, fieldX, popY + 128.0f, fieldW, 60.0f);
-    wstring msgStr(feedbackMessage);
-    g.DrawString(msgStr.empty() ? L"Write your message here..." : msgStr.c_str(), -1, &fInput,
-                 RectF(fieldX + 6.0f, popY + 132.0f, fieldW - 12.0f, 52.0f), &fmtL,
-                 msgStr.empty() ? &grayText : &darkText);
-
-    float sbW = 110.0f, sbH = 32.0f, sbX = popX + popW - 20.0f - sbW, sbY = popY + popH - 16.0f - sbH;
-    GraphicsPath sbPath; float rs = 5.0f, ds = rs * 2.0f;
-    sbPath.AddArc(sbX, sbY, ds, ds, 180.0f, 90.0f); sbPath.AddArc(sbX + sbW - ds, sbY, ds, ds, 270.0f, 90.0f);
-    sbPath.AddArc(sbX + sbW - ds, sbY + sbH - ds, ds, ds, 0.0f, 90.0f); sbPath.AddArc(sbX, sbY + sbH - ds, ds, ds, 90.0f, 90.0f);
-    sbPath.CloseFigure();
-    SolidBrush sbBg(hoverFeedbackSubmit ? Color(255, 0, 110, 120) : ColSubHeader);
-    g.FillPath(&sbBg, &sbPath);
-    Font fSbTxt(&ff, 10, FontStyleBold, UnitPixel);
-    g.DrawString(L"Submit", -1, &fSbTxt, RectF(sbX, sbY, sbW, sbH), &fmtC, &white);
-}
-
-// ------------------------------------------
-// MAIN AREA
-// ------------------------------------------
-void DrawMainArea(Graphics& g, int w, int h) {
-    float contentX = (float)SIDEBAR_WIDTH;
-    float contentY = (float)(TITLEBAR_HEIGHT + SUBHEADER_HEIGHT);
-    float contentW = (float)(w - SIDEBAR_WIDTH);
-    float contentH = (float)(h - TITLEBAR_HEIGHT - SUBHEADER_HEIGHT);
-
-    if      (selectedTab == 0) { DrawDashboardTab    (g, contentX, contentY, contentW, contentH); }
-    else if (selectedTab == 1) { DrawBlocksTab       (g, contentX, contentY, contentW, contentH); }
-    else if (selectedTab == 2) { DrawDeepStudyTab    (g, contentX, contentY, contentW, contentH); }
-    else if (selectedTab == 3) { DrawStatisticsTab   (g, contentX, contentY, contentW, contentH); }
-    else if (selectedTab == 4) { DrawSettingsTab     (g, contentX, contentY, contentW, contentH); }
-    else if (selectedTab == 5) { DrawPdfWorkspaceTab (g, contentX, contentY, contentW, contentH); }
-    else if (selectedTab == 7) { DrawAccountsTab     (g, contentX, contentY, contentW, contentH); }
-}
-
-// ------------------------------------------
-// ON PAINT
-// ------------------------------------------
-void OnPaint(HWND hWnd, HDC hdc) {
-    RECT r; GetClientRect(hWnd, &r);
-    int w = r.right - r.left;
-    int h = r.bottom - r.top;
-
-    HDC mdc  = CreateCompatibleDC(hdc);
-    HBITMAP mbmp = CreateCompatibleBitmap(hdc, w, h);
-    SelectObject(mdc, mbmp);
-
-    Graphics g(mdc);
-    g.SetSmoothingMode(SmoothingModeHighQuality);
-    g.SetTextRenderingHint(TextRenderingHintClearTypeGridFit);
-
-    g.ScaleTransform(g_scaleFactor, g_scaleFactor);
-    int scaledW = (int)(w / g_scaleFactor);
-    int scaledH = (int)(h / g_scaleFactor);
-
-    DrawMainArea  (g, scaledW, scaledH);
-    DrawSidebar   (g, scaledH);
-    DrawSubHeader (g, scaledW);
-    DrawTitleBar  (g, scaledW);
-    DrawFeedbackPopup(g, scaledW, scaledH);
-
-    if (showDailyMessage || onboardingStep > 0) {
-        DrawPreWindowOverlay(g, scaledW, scaledH, g_scaleFactor);
+    // Official App Logo
+    HICON hIconLg = (HICON)LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APP_ICON), IMAGE_ICON, (int)L.logoSz, (int)L.logoSz, LR_SHARED);
+    if (hIconLg) {
+        Bitmap bmp(hIconLg);
+        g.DrawImage(&bmp, L.logoX, L.logoY, L.logoSz, L.logoSz);
     }
 
-    BitBlt(hdc, 0, 0, w, h, mdc, 0, 0, SRCCOPY);
-    DeleteObject(mbmp);
-    DeleteDC(mdc);
-}
+    Font fWelcome(&ff, 15, FontStyleBold, UnitPixel);
+    g.DrawString(L"Sign in to RasFocus+", -1, &fWelcome, RectF(L.cardX, L.logoY + L.logoSz + 10.0f, L.cardW, 26.0f), &fmtC, &dark);
 
-// ==========================================
-// COORDINATE HELPERS
-// ==========================================
-inline bool HitFeedbackIcon(float x, float y, float w) {
-    float subY  = (float)TITLEBAR_HEIGHT;
-    float subH  = (float)SUBHEADER_HEIGHT;
-    float btnH  = 28.0f;
-    float btnY  = subY + (subH - btnH) / 2.0f;
-    float acBtnW = 110.0f;
-    float acBtnX = w - 20.0f - acBtnW;
-    float fbIconW = 60.0f;
-    float fbIconX = acBtnX - fbIconW - 10.0f;
-    return (x >= fbIconX && x <= fbIconX + fbIconW && y >= btnY && y <= btnY + btnH);
-}
+    // Email
+    bool emailFocused = (s_focusField == 1);
+    SolidBrush fieldBg(Color(255, 248, 250, 252));
+    g.FillRectangle(&fieldBg, L.fieldX, L.emailY, L.fieldW, L.fldH);
+    Pen emailBorder(emailFocused ? Color(255, 0, 150, 160) : Color(255, 220, 225, 230), emailFocused ? 1.5f : 1.0f);
+    g.DrawRectangle(&emailBorder, L.fieldX, L.emailY, L.fieldW, L.fldH);
 
-inline bool HitMyAccount(float x, float y, float w) {
-    float subY  = (float)TITLEBAR_HEIGHT;
-    float subH  = (float)SUBHEADER_HEIGHT;
-    float btnH  = 28.0f;
-    float btnY  = subY + (subH - btnH) / 2.0f;
-    float acBtnW = 110.0f;
-    float acBtnX = w - 20.0f - acBtnW;
-    return (x >= acBtnX && x <= acBtnX + acBtnW && y >= btnY && y <= btnY + btnH);
-}
+    Font fInput(&ff, 12, FontStyleRegular, UnitPixel);
+    wstring emailStr(s_email);
+    SolidBrush inputColor(emailStr.empty() ? Color(255, 160, 170, 180) : dark.GetColor());
+    g.DrawString(emailStr.empty() ? L"Email address" : emailStr.c_str(), -1, &fInput, RectF(L.fieldX + 32.0f, L.emailY, L.fieldW - 40.0f, L.fldH), &fmtL, &inputColor);
+    
+    Font fFieldIcon(&ffIcons, 13, FontStyleRegular, UnitPixel);
+    g.DrawString(L"\xE715", -1, &fFieldIcon, RectF(L.fieldX + 8.0f, L.emailY, 24.0f, L.fldH), &fmtC, emailStr.empty() ? &gray : &teal);
 
-struct PopupRects { float popX, popY, popW, popH; };
-PopupRects GetPopupRects(int w, int h) {
-    float popW = 400.0f, popH = 280.0f;
-    return { (w - popW) / 2.0f, (h - popH) / 2.0f, popW, popH };
-}
+    // Password
+    bool passFocused = (s_focusField == 2);
+    g.FillRectangle(&fieldBg, L.fieldX, L.passY, L.fieldW, L.fldH);
+    Pen passBorder(passFocused ? Color(255, 0, 150, 160) : Color(255, 220, 225, 230), passFocused ? 1.5f : 1.0f);
+    g.DrawRectangle(&passBorder, L.fieldX, L.passY, L.fieldW, L.fldH);
 
-// ==========================================
-// WINDOW PROCEDURE
-// ==========================================
-LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
-    switch (msg) {
+    wstring passStr(s_password);
+    wstring passDisplay = passStr.empty() ? L"Password" : (s_showPassword ? passStr : wstring(passStr.size(), L'•'));
+    SolidBrush passColor(passStr.empty() ? Color(255, 160, 170, 180) : dark.GetColor());
+    g.DrawString(passDisplay.c_str(), -1, &fInput, RectF(L.fieldX + 32.0f, L.passY, L.fieldW - 65.0f, L.fldH), &fmtL, &passColor);
+    g.DrawString(L"\xE72E", -1, &fFieldIcon, RectF(L.fieldX + 8.0f, L.passY, 24.0f, L.fldH), &fmtC, passStr.empty() ? &gray : &teal);
 
-    case WM_ERASEBKGND:
-        return 1;
+    Font fEye(&ffIcons, 13, FontStyleRegular, UnitPixel);
+    SolidBrush eyeColor(s_hoverEye ? Color(255, 0, 150, 160) : Color(255, 160, 170, 180));
+    g.DrawString(s_showPassword ? L"\xED1A" : L"\xE7B3", -1, &fEye, RectF(L.eyeX, L.eyeY, L.eyeW, L.fldH), &fmtC, &eyeColor);
 
-    case WM_TIMER: {
-        if (wp == 1005) StartSilentUpdateCheck();
-        break;
-    }
-
-    case WM_NCCALCSIZE: {
-        if (wp == TRUE) return 0;
-        break;
-    }
-
-    case WM_NCHITTEST: {
-        POINT pt = { GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
-        ScreenToClient(hWnd, &pt);
-        int border = 8;
-        RECT r; GetClientRect(hWnd, &r);
-
-        if (pt.y < border && pt.x < border)                   return HTTOPLEFT;
-        if (pt.y < border && pt.x >= r.right - border)        return HTTOPRIGHT;
-        if (pt.y >= r.bottom - border && pt.x < border)       return HTBOTTOMLEFT;
-        if (pt.y >= r.bottom - border && pt.x >= r.right - border) return HTBOTTOMRIGHT;
-        if (pt.y < border)              return HTTOP;
-        if (pt.y >= r.bottom - border)  return HTBOTTOM;
-        if (pt.x < border)              return HTLEFT;
-        if (pt.x >= r.right - border)   return HTRIGHT;
-
-        if (pt.y < TITLEBAR_HEIGHT * g_scaleFactor) {
-            float x = pt.x / g_scaleFactor;
-            float scaledW = (r.right - r.left) / g_scaleFactor;
-            float btnW = 42.0f;
-            float controlsStartX = scaledW - (btnW * 3);
-            if (x >= controlsStartX) return HTCLIENT;
-            if (isUpdateReady) {
-                float upgW = 150.0f;
-                float upgX = controlsStartX - upgW - 10.0f;
-                if (x >= upgX && x <= upgX + upgW) return HTCLIENT;
-            }
-            return HTCAPTION;
-        }
-        return HTCLIENT;
-    }
-
-    case WM_GETMINMAXINFO: {
-        LPMINMAXINFO lpMMI = (LPMINMAXINFO)lp;
-        lpMMI->ptMinTrackSize.x = (LONG)(1024 * g_scaleFactor);
-        lpMMI->ptMinTrackSize.y = (LONG)(600  * g_scaleFactor);
-        HMONITOR hMonitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
-        MONITORINFO mi = { sizeof(mi) };
-        if (GetMonitorInfo(hMonitor, &mi)) {
-            lpMMI->ptMaxPosition.x = mi.rcWork.left - mi.rcMonitor.left;
-            lpMMI->ptMaxPosition.y = mi.rcWork.top  - mi.rcMonitor.top;
-            lpMMI->ptMaxSize.x     = mi.rcWork.right  - mi.rcWork.left;
-            lpMMI->ptMaxSize.y     = (mi.rcWork.bottom - mi.rcWork.top) - 2;
-        }
-        return 0;
-    }
-
-    case WM_SIZE: {
-        if (wp == SIZE_MAXIMIZED) isMaximized = true;
-        else if (wp == SIZE_RESTORED) isMaximized = false;
-        RECT r; GetClientRect(hWnd, &r);
-        windowWidth  = r.right - r.left;
-        windowHeight = r.bottom - r.top;
-        InvalidateRect(hWnd, NULL, FALSE);
-        break;
-    }
-
-    case WM_CLOSE:    { ShowWindow(hWnd, SW_HIDE); return 0; }
-    case WM_SYSCOMMAND: {
-        if ((wp & 0xFFF0) == SC_CLOSE) { ShowWindow(hWnd, SW_HIDE); return 0; }
-        return DefWindowProc(hWnd, msg, wp, lp);
-    }
-
-    case WM_MOUSEMOVE: {
-        float x = GET_X_LPARAM(lp) / g_scaleFactor;
-        float y = GET_Y_LPARAM(lp) / g_scaleFactor;
-        float scaledW = windowWidth  / g_scaleFactor;
-        float scaledH = windowHeight / g_scaleFactor;
-
-        if (showDailyMessage || onboardingStep > 0) {
-            if (HandlePreWindowMouseMove(x, y, scaledW, scaledH)) { InvalidateRect(hWnd, NULL, FALSE); break; }
-        }
-        bool redraw = false;
-
-        if (showFeedbackBox) {
-            auto pr = GetPopupRects((int)scaledW, (int)scaledH);
-            float sbW = 110.0f, sbH = 32.0f, sbX = pr.popX + pr.popW - 20.0f - sbW, sbY = pr.popY + pr.popH - 16.0f - sbH;
-            bool newFS = (x >= sbX && x <= sbX + sbW && y >= sbY && y <= sbY + sbH);
-            bool newFC = (x >= pr.popX + pr.popW - 32.0f && x <= pr.popX + pr.popW && y >= pr.popY && y <= pr.popY + 40.0f);
-            if (newFS != hoverFeedbackSubmit || newFC != hoverFeedbackClose) {
-                hoverFeedbackSubmit = newFS; hoverFeedbackClose  = newFC; redraw = true;
-            }
-            if (redraw) InvalidateRect(hWnd, NULL, FALSE);
-            break;
-        }
-
-        if (selectedTab == 7) {
-            ProcessAccountsMouseMove(x, y);
-            redraw = true;
-        }
-
-        float btnW = 42.0f;
-        bool oldMin = hoverMinimize, oldMax = hoverMaximize, oldClose = hoverClose;
-        hoverMinimize = (y <= TITLEBAR_HEIGHT && x >= scaledW - (btnW*3) && x < scaledW - (btnW*2));
-        hoverMaximize = (y <= TITLEBAR_HEIGHT && x >= scaledW - (btnW*2) && x < scaledW - btnW);
-        hoverClose    = (y <= TITLEBAR_HEIGHT && x >= scaledW - btnW);
-        if (oldMin != hoverMinimize || oldMax != hoverMaximize || oldClose != hoverClose) redraw = true;
-
-        bool oldUpgBtn = hoverUpdateBtn; hoverUpdateBtn = false;
-        if (isUpdateReady) {
-            float upgW = 150.0f, upgX = scaledW - (btnW*3) - upgW - 10.0f;
-            if (x >= upgX && x <= upgX + upgW && y >= 0.0f && y <= (float)TITLEBAR_HEIGHT) hoverUpdateBtn = true;
-        }
-        if (oldUpgBtn != hoverUpdateBtn) redraw = true;
-
-        bool oldFb = hoverFeedback, oldAc = hoverMyAccount;
-        hoverFeedback  = HitFeedbackIcon(x, y, scaledW);
-        hoverMyAccount = HitMyAccount   (x, y, scaledW);
-        if (oldFb != hoverFeedback || oldAc != hoverMyAccount) redraw = true;
-
-        int oldTab = hoveredTab; hoveredTab = -1;
-        float sideY = (float)(TITLEBAR_HEIGHT + SUBHEADER_HEIGHT);
-        float tabsStartY = sideY + 20.0f;
-        float tabH  = 50.0f;
-        if (x >= 0.0f && x <= SIDEBAR_WIDTH && y >= tabsStartY) {
-            int idx = (int)((y - tabsStartY) / tabH);
-            if (idx >= 0 && idx < (int)sidebarTabs.size()) hoveredTab = idx;
-        }
-        if (oldTab != hoveredTab) redraw = true;
-
-        if (!g_isPremiumUser) {
-            bool oldUpg = hoverUpgrade;
-            float upgH  = 38.0f;
-            float upgBtnY = scaledH - upgH - 16.0f;
-            float upgMX = 15.0f;
-            hoverUpgrade = (x >= upgMX && x <= SIDEBAR_WIDTH - upgMX && y >= upgBtnY && y <= upgBtnY + upgH);
-            if (oldUpg != hoverUpgrade) redraw = true;
-        }
-
-        if (selectedTab == 0) { ProcessDashboardMouseMove(x, y);   redraw = true; }
-        else if (selectedTab == 1) { ProcessBlocksMouseMove(x, y); redraw = true; }
-        else if (selectedTab == 2) { ProcessDeepStudyMouseMove(x, y); redraw = true; }
-        else if (selectedTab == 4) { ProcessSettingsMouseMove(x, y); redraw = true; }
-        else if (selectedTab == 3) {
-            float cX = (float)SIDEBAR_WIDTH, cY = (float)(TITLEBAR_HEIGHT + SUBHEADER_HEIGHT);
-            float cW = scaledW - cX;
-            ProcessStatisticsMouseMove(x, y, cX, cY, cW);
-            redraw = true;
-        }
-
-        if (redraw) InvalidateRect(hWnd, NULL, FALSE);
-        break;
-    }
-
-    case WM_LBUTTONDOWN: {
-        float x = GET_X_LPARAM(lp) / g_scaleFactor;
-        float y = GET_Y_LPARAM(lp) / g_scaleFactor;
-        float scaledW = windowWidth  / g_scaleFactor;
-        float scaledH = windowHeight / g_scaleFactor;
-
-        if (showDailyMessage || onboardingStep > 0) {
-            if (HandlePreWindowClick(x, y, selectedTab)) InvalidateRect(hWnd, NULL, FALSE);
-            break;
-        }
-
-        if (showFeedbackBox) {
-            auto pr = GetPopupRects((int)scaledW, (int)scaledH);
-            if (x >= pr.popX + pr.popW - 32.0f && x <= pr.popX + pr.popW && y >= pr.popY && y <= pr.popY + 40.0f) {
-                showFeedbackBox = false; InvalidateRect(hWnd, NULL, FALSE); break;
-            }
-            if (x >= pr.popX + 20.0f && x <= pr.popX + pr.popW - 20.0f && y >= pr.popY + 70.0f && y <= pr.popY + 98.0f) {
-                feedbackFocusField = 1; InvalidateRect(hWnd, NULL, FALSE); break;
-            }
-            if (x >= pr.popX + 20.0f && x <= pr.popX + pr.popW - 20.0f && y >= pr.popY + 128.0f && y <= pr.popY + 188.0f) {
-                feedbackFocusField = 2; InvalidateRect(hWnd, NULL, FALSE); break;
-            }
-            float sbW = 110.0f, sbH = 32.0f, sbX = pr.popX + pr.popW - 20.0f - sbW, sbY = pr.popY + pr.popH - 16.0f - sbH;
-            if (x >= sbX && x <= sbX + sbW && y >= sbY && y <= sbY + sbH) {
-                wstring emailW(feedbackEmail), msgW(feedbackMessage);
-                if (!emailW.empty() && !msgW.empty()) {
-                    SubmitFeedbackToFirebase(emailW, msgW);
-                    showFeedbackBox = false;
-                    ZeroMemory(feedbackEmail,   sizeof(feedbackEmail));
-                    ZeroMemory(feedbackMessage, sizeof(feedbackMessage));
-                    MessageBoxA(hWnd, "Feedback submitted! Thank you.", "RasFocus Pro", MB_OK | MB_ICONINFORMATION);
-                } else {
-                    MessageBoxA(hWnd, "Please fill in both email and message.", "RasFocus Pro", MB_OK | MB_ICONWARNING);
-                }
-                InvalidateRect(hWnd, NULL, FALSE); break;
-            }
-            break;
-        }
-
-        if (isUpdateReady) {
-            float btnW = 42.0f, upgW = 150.0f, upgX = scaledW - (btnW*3) - upgW - 10.0f;
-            if (x >= upgX && x <= upgX + upgW && y >= 0.0f && y <= (float)TITLEBAR_HEIGHT) {
-                ApplySilentUpdate(); return 0;
-            }
-        }
-
-        if (hoverMinimize) ShowWindow(hWnd, SW_MINIMIZE);
-        if (hoverMaximize) { if (isMaximized) ShowWindow(hWnd, SW_RESTORE); else ShowWindow(hWnd, SW_MAXIMIZE); }
-        if (hoverClose)    ShowWindow(hWnd, SW_HIDE);
-
-        if (HitFeedbackIcon(x, y, scaledW)) {
-            showFeedbackBox = true; feedbackFocusField = 1;
-            InvalidateRect(hWnd, NULL, FALSE); break;
-        }
-
-        // ── My Account বাটন ক্লিক ──
-        if (HitMyAccount(x, y, scaledW)) {
-            selectedTab = 7;
-            HideAllWebViews();
-            InvalidateRect(hWnd, NULL, FALSE);
-            break;
-        }
-
-        int prevTab = selectedTab;
-        float sideY = (float)(TITLEBAR_HEIGHT + SUBHEADER_HEIGHT);
-        float tabsStartY = sideY + 20.0f;
-        float tabH  = 50.0f;
-        if (x >= 0.0f && x <= SIDEBAR_WIDTH && y >= tabsStartY) {
-            int idx = (int)((y - tabsStartY) / tabH);
-            if (idx >= 0 && idx < (int)sidebarTabs.size()) {
-                if (selectedTab != idx) { selectedTab = idx; HideAllWebViews(); }
-            }
-        }
-
-        // ── Upgrade Now বাটন ক্লিক → website open ──
-        if (!g_isPremiumUser && hoverUpgrade) {
-            OpenUpgradeWebsite();   // browser এ https://raseledutools.github.io/product.html খুলবে
-            InvalidateRect(hWnd, NULL, FALSE);
-            break;
-        }
-
-        if (prevTab != selectedTab) {
-            HideAllWebViews();
-            InvalidateRect(hWnd, NULL, FALSE);
-            break;
-        }
-
-        if      (selectedTab == 0) { ProcessDashboardMouseClick(x, y, selectedTab); }
-        else if (selectedTab == 1) { ProcessBlocksMouseClick(x, y); }
-        else if (selectedTab == 2) { ProcessDeepStudyMouseClick(x, y); }
-        else if (selectedTab == 3) {
-            float cX = (float)SIDEBAR_WIDTH, cY = (float)(TITLEBAR_HEIGHT + SUBHEADER_HEIGHT);
-            float cW = scaledW - cX, cH = scaledH - cY;
-            ProcessStatisticsMouseClick(x, y, cX, cY, cW);
-        }
-        else if (selectedTab == 4) { ProcessSettingsMouseClick(x, y); }
-        else if (selectedTab == 7) {
-            ProcessAccountsMouseClick(x, y, hWnd);
-        }
-        InvalidateRect(hWnd, NULL, FALSE);
-        break;
-    }
-
-    case WM_MOUSEWHEEL: {
-        POINT pt = { GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
-        ScreenToClient(hWnd, &pt);
-        float x = pt.x / g_scaleFactor;
-        float y = pt.y / g_scaleFactor;
-        int delta = GET_WHEEL_DELTA_WPARAM(wp);
-        if (selectedTab == 1) { extern void ProcessBlocksMouseWheel(float,float,int); ProcessBlocksMouseWheel(x,y,delta); InvalidateRect(hWnd,NULL,FALSE); }
-        break;
-    }
-
-    case WM_TRAYICON: {
-        if (lp == WM_LBUTTONUP) {
-            if (IsWindowVisible(hWnd) && !IsIconic(hWnd)) { ShowWindow(hWnd, SW_HIDE); }
-            else { ShowWindow(hWnd, SW_SHOW); ShowWindow(hWnd, SW_RESTORE); SetForegroundWindow(hWnd); }
-        }
-        break;
-    }
-
-    case WM_CHAR: {
-        if (selectedTab == 7) {
-            extern void ProcessAccountsChar(wchar_t);
-            ProcessAccountsChar((wchar_t)wp);
-            InvalidateRect(hWnd, NULL, FALSE);
-            break;
-        }
-        if (showFeedbackBox) {
-            wchar_t c = (wchar_t)wp;
-            if (c == L'\b') {
-                if (feedbackFocusField == 1) { int len = (int)wcslen(feedbackEmail); if (len > 0) feedbackEmail[len - 1] = L'\0'; }
-                else if (feedbackFocusField == 2) { int len = (int)wcslen(feedbackMessage); if (len > 0) feedbackMessage[len - 1] = L'\0'; }
-            } else if (c >= L' ' || c == L'\t') {
-                if (feedbackFocusField == 1) { int len = (int)wcslen(feedbackEmail); if (len < 254) { feedbackEmail[len] = c; feedbackEmail[len+1] = L'\0'; } }
-                else if (feedbackFocusField == 2) { int len = (int)wcslen(feedbackMessage); if (len < 1022) { feedbackMessage[len] = c; feedbackMessage[len+1] = L'\0'; } }
-            }
-            InvalidateRect(hWnd, NULL, FALSE); break;
-        }
-        if (selectedTab == 1) { extern void ProcessBlocksKeyPress(wchar_t); ProcessBlocksKeyPress((wchar_t)wp); InvalidateRect(hWnd,NULL,FALSE); }
-        else if (selectedTab == 2) { ProcessDeepStudyKeyPress((wchar_t)wp); InvalidateRect(hWnd,NULL,FALSE); }
-        break;
-    }
-
-    case WM_KEYDOWN: {
-        if (selectedTab == 7) {
-            extern void ProcessAccountsKeyDown(WPARAM);
-            ProcessAccountsKeyDown(wp);
-            InvalidateRect(hWnd, NULL, FALSE);
-            break;
-        }
-        if (showFeedbackBox) {
-            if (wp == VK_ESCAPE) { showFeedbackBox = false; InvalidateRect(hWnd, NULL, FALSE); }
-            else if (wp == VK_TAB) { feedbackFocusField = (feedbackFocusField == 1) ? 2 : 1; InvalidateRect(hWnd, NULL, FALSE); }
-            break;
-        }
-        if (selectedTab == 1) { extern void ProcessBlocksKeyDown(WPARAM); ProcessBlocksKeyDown(wp); InvalidateRect(hWnd,NULL,FALSE); }
-        else if (selectedTab == 2) { ProcessDeepStudyKeyDown(wp); InvalidateRect(hWnd,NULL,FALSE); }
-        break;
-    }
-
-    case WM_PAINT: {
-        PAINTSTRUCT ps;
-        HDC hdc = BeginPaint(hWnd, &ps);
-        OnPaint(hWnd, hdc);
-        EndPaint(hWnd, &ps);
-        break;
-    }
-
-    case WM_DESTROY:
-        extern void SaveDeepStudySettings();
-        SaveDeepStudySettings();
-        RemoveTrayIcon();
-        PostQuitMessage(0);
-        break;
-
-    default:
-        return DefWindowProc(hWnd, msg, wp, lp);
-    }
-    return 0;
-}
-
-// ==========================================
-// WINMAIN
-// ==========================================
-int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
-    _beginthread(FirebaseKillThread, 0, NULL);
-
-    firebase::AppOptions options;
-    options.set_project_id   ("rasfocus-c746d");
-    options.set_app_id       ("1:868329616276:web:2f1954de893f5d3f231581");
-    options.set_api_key      ("AIzaSyBVl3BuW6gfmp_K2IMYd1rbvLEA2l0yinA");
-    options.set_storage_bucket("rasfocus-c746d.firebasestorage.app");
-
-    g_firebaseApp = firebase::App::Create(options);
-    if (g_firebaseApp) OutputDebugStringW(L"[RasFocus] Firebase Initialized!\n");
-    else               OutputDebugStringW(L"[RasFocus] Firebase Init Failed!\n");
-
-    InitAccountsModule(g_firebaseApp);
-
-    int argc; LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
-    g_isPureViewerMode = false; wstring viewerUrl = L"", viewerTitle = L"";
-
-    if (argv && argc > 1) {
-        for (int i = 1; i < argc; ++i) {
-            wstring arg = argv[i], argLower = arg;
-            for (auto& k : argLower) k = towlower(k);
-            if (argLower == L"-minibrowser") { g_isPureViewerMode = true; viewerUrl = L"https://www.google.com"; viewerTitle = L"RasFocus Mini Browser"; break; }
-            else if (argLower.length() > 4 && argLower.substr(argLower.length()-4) == L".pdf") { g_isPureViewerMode = true; viewerUrl = arg; viewerTitle = L"RasFocus PDF Viewer"; break; }
-            else if (argLower.length() > 4 && (argLower.substr(argLower.length()-4) == L".jpg" || argLower.substr(argLower.length()-4) == L".png" || argLower.substr(argLower.length()-5) == L".jpeg")) { g_isPureViewerMode = true; viewerUrl = arg; viewerTitle = L"RasFocus Photo Viewer"; break; }
-            else if (argLower.find(L"http://") == 0 || argLower.find(L"https://") == 0) { g_isPureViewerMode = true; viewerUrl = arg; viewerTitle = L"RasFocus Web Viewer"; break; }
-        }
-    }
-    if (argv) LocalFree(argv);
-
-    HANDLE hMutex = NULL;
-    if (!g_isPureViewerMode) {
-        hMutex = CreateMutexA(NULL, FALSE, "RasFocusPro_SingleInstance_Mutex");
-        if (GetLastError() == ERROR_ALREADY_EXISTS) {
-            HWND hExistingWnd = FindWindowA("RasFocusCore", "RasFocus Pro");
-            if (hExistingWnd) { ShowWindow(hExistingWnd, SW_RESTORE); ShowWindow(hExistingWnd, SW_SHOW); SetForegroundWindow(hExistingWnd); }
-            CloseHandle(hMutex);
-            return 0;
-        }
-    }
-
-    extern void CheckFirstRun(); CheckFirstRun();
-    CheckDailyMessage();
-    SetupAutoRun();
-    SetupDefaultViewer();
-    CreateDesktopShortcut();
-    ExtractAndRunObserver();
-    extern void LoadDeepStudySettings(); LoadDeepStudySettings();
-    extern void LoadStrictSettings();    LoadStrictSettings();
-
-    SetProcessDPIAware();
-    HDC screenDC = GetDC(NULL);
-    g_scaleFactor = GetDeviceCaps(screenDC, LOGPIXELSX) / 96.0f;
-    ReleaseDC(NULL, screenDC);
-
-    GdiplusStartupInput gsi;
-    GdiplusStartup(&gdiplusToken, &gsi, NULL);
-
-    WNDCLASS wc = { 0 };
-    wc.lpfnWndProc   = WndProc;
-    wc.hInstance     = hInst;
-    wc.lpszClassName = "RasFocusCore";
-    wc.hCursor       = LoadCursor(NULL, IDC_ARROW);
-    wc.style         = CS_HREDRAW | CS_VREDRAW;
-    RegisterClass(&wc);
-
-    int sw = (int)(windowWidth  * g_scaleFactor);
-    int sh = (int)(windowHeight * g_scaleFactor);
-
-    RECT workArea;
-    SystemParametersInfo(SPI_GETWORKAREA, 0, &workArea, 0);
-
-    HWND hWnd = CreateWindowEx(
-        WS_EX_APPWINDOW, "RasFocusCore", "RasFocus Pro",
-        WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
-        CW_USEDEFAULT, CW_USEDEFAULT, sw, sh, NULL, NULL, hInst, NULL
-    );
-    hParentWnd = hWnd;
-
-    HICON hAppIcon = LoadIcon(hInst, MAKEINTRESOURCE(IDI_APP_ICON));
-    if (hAppIcon) {
-        SendMessage(hWnd, WM_SETICON, ICON_BIG,   (LPARAM)hAppIcon);
-        SendMessage(hWnd, WM_SETICON, ICON_SMALL, (LPARAM)hAppIcon);
-    }
-
-    AddTrayIcon(hWnd);
-
-    string cmdLine(lpCmdLine);
-    if (g_isPureViewerMode) {
-        if (viewerUrl.find(L".pdf") != wstring::npos) {
-            selectedTab = 6;
-            currentWorkspacePdf = viewerUrl;
-            ShowWindow(hWnd, SW_SHOWMAXIMIZED);
-            SetForegroundWindow(hWnd);
-        } else {
-            ShowWindow(hWnd, SW_HIDE);
-            LaunchMiniBrowser(viewerUrl, viewerTitle);
-        }
-    } else if (cmdLine.find("-silent") != string::npos) {
-        ShowWindow(hWnd, SW_HIDE);
-        int response = MessageBoxA(NULL, "Start your day with high productivity",
-            "RasFocus Pro", MB_YESNO | MB_ICONINFORMATION | MB_TOPMOST | MB_SETFOREGROUND);
-        if (response == IDYES) { ShowWindow(hWnd, SW_SHOWMAXIMIZED); SetForegroundWindow(hWnd); }
+    // Save Login
+    float chkSize = 14.0f;
+    float chkY = L.checkY;
+    Pen chkBorder(Color(255, 0, 150, 160), 1.5f);
+    if (s_saveLogin) {
+        g.FillRectangle(&teal, L.fieldX, chkY, chkSize, chkSize);
+        Font fCheck(&ffIcons, 10, FontStyleRegular, UnitPixel);
+        g.DrawString(L"\xE73E", -1, &fCheck, RectF(L.fieldX, chkY, chkSize, chkSize), &fmtC, &white);
     } else {
-        ShowWindow(hWnd, SW_SHOWMAXIMIZED);
+        g.DrawRectangle(&chkBorder, L.fieldX, chkY, chkSize, chkSize);
+    }
+    Font fChkLabel(&ff, 11, FontStyleRegular, UnitPixel);
+    g.DrawString(L"Remember me", -1, &fChkLabel, RectF(L.fieldX + 22.0f, chkY - 2.0f, 150.0f, 18.0f), &fmtL, &dark);
+
+    // Status Message
+    if (!s_statusMsg.empty()) {
+        SolidBrush statusBrush(s_isError ? Color(255, 200, 50, 50) : Color(255, 0, 140, 80));
+        Font fStatus(&ff, 10, FontStyleBold, UnitPixel);
+        g.DrawString(s_statusMsg.c_str(), -1, &fStatus, RectF(L.cardX, L.loginBtnY - 20.0f, L.cardW, 16.0f), &fmtC, &statusBrush);
+    } else if (s_isLoading) {
+        Font fStatus(&ff, 10, FontStyleBold, UnitPixel);
+        g.DrawString(L"Logging in...", -1, &fStatus, RectF(L.cardX, L.loginBtnY - 20.0f, L.cardW, 16.0f), &fmtC, &teal);
     }
 
-    UpdateWindow(hWnd);
-    StartSilentUpdateCheck();
-    SetTimer(hWnd, 1005, 300000, NULL);
+    // Login Button
+    GraphicsPath btnP1;
+    float br = 5.0f, bd = br * 2.0f;
+    btnP1.AddArc(L.loginBtnX, L.loginBtnY, bd, bd, 180.0f, 90.0f);
+    btnP1.AddArc(L.loginBtnX + L.loginBtnW - bd, L.loginBtnY, bd, bd, 270.0f, 90.0f);
+    btnP1.AddArc(L.loginBtnX + L.loginBtnW - bd, L.loginBtnY + L.loginBtnH - bd, bd, bd, 0.0f, 90.0f);
+    btnP1.AddArc(L.loginBtnX, L.loginBtnY + L.loginBtnH - bd, bd, bd, 90.0f, 90.0f);
+    btnP1.CloseFigure();
+    SolidBrush loginBg(s_hoverLogin ? Color(255, 0, 120, 130) : Color(255, 0, 150, 160));
+    g.FillPath(&loginBg, &btnP1);
+    Font fBtn(&ff, 12, FontStyleBold, UnitPixel);
+    g.DrawString(L"Log In", -1, &fBtn, RectF(L.loginBtnX, L.loginBtnY, L.loginBtnW, L.loginBtnH), &fmtC, &white);
 
-    MSG msg;
-    while (GetMessage(&msg, NULL, 0, 0)) {
-        TranslateMessage(&msg);
-        DispatchMessage(&msg);
+    // Cancel Button
+    GraphicsPath btnP2;
+    btnP2.AddArc(L.cancelBtnX, L.cancelBtnY, bd, bd, 180.0f, 90.0f);
+    btnP2.AddArc(L.cancelBtnX + L.cancelBtnW - bd, L.cancelBtnY, bd, bd, 270.0f, 90.0f);
+    btnP2.AddArc(L.cancelBtnX + L.cancelBtnW - bd, L.cancelBtnY + L.cancelBtnH - bd, bd, bd, 0.0f, 90.0f);
+    btnP2.AddArc(L.cancelBtnX, L.cancelBtnY + L.cancelBtnH - bd, bd, bd, 90.0f, 90.0f);
+    btnP2.CloseFigure();
+    SolidBrush cancelBg(s_hoverCancel ? Color(255, 240, 245, 248) : Color(255, 255, 255, 255));
+    g.FillPath(&cancelBg, &btnP2);
+    Pen cancelPen(Color(255, 0, 150, 160), 1.0f);
+    g.DrawPath(&cancelPen, &btnP2);
+    g.DrawString(L"Cancel", -1, &fBtn, RectF(L.cancelBtnX, L.cancelBtnY, L.cancelBtnW, L.cancelBtnH), &fmtC, &teal);
+
+    // Links
+    Font fLink(&ff, 10, FontStyleRegular, UnitPixel);
+    Font fLinkU(&ff, 10, FontStyleUnderline, UnitPixel);
+    SolidBrush linkTeal(Color(255, 0, 150, 160));
+    SolidBrush linkHover(Color(255, 0, 100, 110));
+
+    g.DrawString(L"Create an account", -1, &fLinkU, RectF(L.signupX, L.signupY, L.signupW, L.signupH), &fmtL, s_hoverSignup ? &linkHover : &linkTeal);
+    StringFormat fmtR; fmtR.SetAlignment(StringAlignmentFar); fmtR.SetLineAlignment(StringAlignmentCenter);
+    g.DrawString(L"Reset Password", -1, &fLinkU, RectF(L.resetX, L.resetY, L.resetW, L.resetH), &fmtR, s_hoverReset ? &linkHover : &linkTeal);
+
+    g.DrawString(L"Privacy Policy", -1, &fLinkU, RectF(L.privacyX, L.privacyY, L.privacyW, L.privacyH), &fmtC, s_hoverPrivacy ? &linkHover : &linkTeal);
+}
+
+// ============================================================
+//  MOUSE MOVE
+// ============================================================
+void ProcessAccountsMouseMove(float x, float y) {
+    if (!g_loggedInEmail.empty()) {
+        CardLayout L = GetCurrentLayout();
+        float logoutW = 140.0f, logoutH = 36.0f;
+        float logoutX = L.cardX + (L.cardW - logoutW) / 2.0f;
+        float logoutY = L.cardY + L.cardH - 60.0f;
+        s_hoverLogout = HitRect(x, y, logoutX, logoutY, logoutW, logoutH);
+        return;
     }
 
-    GdiplusShutdown(gdiplusToken);
-    if (hMutex) CloseHandle(hMutex);
-    return 0;
+    CardLayout L = GetCurrentLayout();
+    s_hoverLogin     = HitRect(x, y, L.loginBtnX, L.loginBtnY, L.loginBtnW, L.loginBtnH);
+    s_hoverCancel    = HitRect(x, y, L.cancelBtnX, L.cancelBtnY, L.cancelBtnW, L.cancelBtnH);
+    s_hoverEye       = HitRect(x, y, L.eyeX, L.eyeY, L.eyeW, L.fldH);
+    s_hoverSaveCheck = HitRect(x, y, L.fieldX, L.checkY - 5.0f, 120.0f, 24.0f);
+    s_hoverSignup    = HitRect(x, y, L.signupX, L.signupY, L.signupW, L.signupH);
+    s_hoverReset     = HitRect(x, y, L.resetX, L.resetY, L.resetW, L.resetH);
+    s_hoverPrivacy   = HitRect(x, y, L.privacyX, L.privacyY, L.privacyW, L.privacyH);
+}
+
+// ============================================================
+//  MOUSE CLICK
+// ============================================================
+void ProcessAccountsMouseClick(float x, float y, HWND hWnd) {
+    if (!g_loggedInEmail.empty()) {
+        CardLayout L = GetCurrentLayout();
+        float logoutW = 140.0f, logoutH = 36.0f;
+        float logoutX = L.cardX + (L.cardW - logoutW) / 2.0f;
+        float logoutY = L.cardY + L.cardH - 60.0f;
+        if (HitRect(x, y, logoutX, logoutY, logoutW, logoutH)) {
+            g_loggedInEmail = L"";
+            g_isPremiumUser = false;
+            ZeroMemory(s_email,    sizeof(s_email));
+            ZeroMemory(s_password, sizeof(s_password));
+            s_statusMsg = L"Logged out successfully.";
+            s_isError   = false;
+            if (!s_saveLogin) ClearSavedCredentials();
+            InvalidateRect(hWnd, NULL, FALSE);
+        }
+        return;
+    }
+
+    CardLayout L = GetCurrentLayout();
+
+    if (HitRect(x, y, L.fieldX, L.emailY, L.fieldW - L.eyeW, L.fldH)) { s_focusField = 1; InvalidateRect(hWnd, NULL, FALSE); return; }
+    if (HitRect(x, y, L.fieldX, L.passY,  L.fieldW - L.eyeW, L.fldH)) { s_focusField = 2; InvalidateRect(hWnd, NULL, FALSE); return; }
+    if (HitRect(x, y, L.eyeX, L.eyeY, L.eyeW, L.fldH)) { s_showPassword = !s_showPassword; InvalidateRect(hWnd, NULL, FALSE); return; }
+    if (HitRect(x, y, L.fieldX, L.checkY - 5.0f, 120.0f, 24.0f)) { s_saveLogin = !s_saveLogin; InvalidateRect(hWnd, NULL, FALSE); return; }
+
+    if (HitRect(x, y, L.signupX, L.signupY, L.signupW, L.signupH)) { ShellExecuteW(NULL, L"open", L"https://raseledutools.github.io/product.html", NULL, NULL, SW_SHOWNORMAL); return; }
+    if (HitRect(x, y, L.resetX, L.resetY, L.resetW, L.resetH)) { ShellExecuteW(NULL, L"open", L"https://rasfocus.com/reset-password", NULL, NULL, SW_SHOWNORMAL); return; }
+    if (HitRect(x, y, L.privacyX, L.privacyY, L.privacyW, L.privacyH)) { ShellExecuteW(NULL, L"open", L"https://rasfocus.com/privacy", NULL, NULL, SW_SHOWNORMAL); return; }
+
+    if (HitRect(x, y, L.cancelBtnX, L.cancelBtnY, L.cancelBtnW, L.cancelBtnH)) {
+        s_statusMsg  = L"";
+        s_focusField = 0;
+        InvalidateRect(hWnd, NULL, FALSE); return;
+    }
+
+    if (HitRect(x, y, L.loginBtnX, L.loginBtnY, L.loginBtnW, L.loginBtnH)) {
+        wstring emailW(s_email), passW(s_password);
+        if (emailW.empty() || passW.empty()) {
+            s_statusMsg = L"Please enter email and password."; s_isError = true; InvalidateRect(hWnd, NULL, FALSE); return;
+        }
+        s_isLoading = true; s_statusMsg = L""; s_isError = false; InvalidateRect(hWnd, NULL, FALSE);
+
+        char emailA[512] = {}, passA[512] = {};
+        WideCharToMultiByte(CP_UTF8, 0, emailW.c_str(), -1, emailA, 511, NULL, NULL);
+        WideCharToMultiByte(CP_UTF8, 0, passW.c_str(),  -1, passA,  511, NULL, NULL);
+
+        LoginThreadData* data = new LoginThreadData();
+        data->hWnd      = hWnd;
+        data->email     = emailA;
+        data->password  = passA;
+        data->saveLogin = s_saveLogin;
+        _beginthread(LoginThread, 0, data);
+        return;
+    }
+}
+
+// ============================================================
+//  KEYBOARD
+// ============================================================
+void ProcessAccountsChar(wchar_t c) {
+    if (!g_loggedInEmail.empty()) return;
+    if (c == L'\b') {
+        if (s_focusField == 1) { int len = (int)wcslen(s_email);    if (len > 0) s_email[len-1] = L'\0'; }
+        if (s_focusField == 2) { int len = (int)wcslen(s_password); if (len > 0) s_password[len-1] = L'\0'; }
+    } else if (c == L'\r' || c == L'\n') {
+        if (s_focusField == 1) s_focusField = 2; else s_focusField = 1;
+    } else if (c >= 32) {
+        if (s_focusField == 1) { int len = (int)wcslen(s_email);    if (len < 510) { s_email[len] = c; s_email[len+1] = L'\0'; } }
+        if (s_focusField == 2) { int len = (int)wcslen(s_password); if (len < 510) { s_password[len] = c; s_password[len+1] = L'\0'; } }
+    }
+}
+
+void ProcessAccountsKeyDown(WPARAM wp) {
+    if (!g_loggedInEmail.empty()) return;
+    if (wp == VK_TAB) s_focusField = (s_focusField == 1) ? 2 : 1;
+    else if (wp == VK_DELETE) {
+        if (s_focusField == 1) ZeroMemory(s_email, sizeof(s_email));
+        if (s_focusField == 2) ZeroMemory(s_password, sizeof(s_password));
+    } else if (wp == VK_ESCAPE) { s_focusField = 0; s_statusMsg = L""; }
 }
