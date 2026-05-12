@@ -9,6 +9,7 @@ using namespace std;
 
 // গ্লোবাল ভেরিয়েবল যা দিয়ে পপ-আপ কন্ট্রোল করা হবে
 bool g_showUpgradePopup = false;
+bool g_isPremium = false;   // Default value for premium status
 
 extern int selectedTab; // main.cpp থেকে লগিন ট্যাবে যাওয়ার জন্য
 
