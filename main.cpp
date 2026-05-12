@@ -1160,8 +1160,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
 
         if (!g_isPremiumUser && hoverUpgrade) {
-            // Upgrade ক্লিক করলে My Account এ নিয়ে যাও (signup/login পেইজ)
             selectedTab = 7;
+            HideAllWebViews();
+            InvalidateRect(hWnd, NULL, FALSE);
+            break;
+        }
+
+        // Tab সবেমাত্র switch হলে content click forward করব না
+        // কারণ hover state পুরনো, coordinate sidebar এর — crash হবে
+        if (prevTab != selectedTab) {
             HideAllWebViews();
             InvalidateRect(hWnd, NULL, FALSE);
             break;
@@ -1178,11 +1185,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
         else if (selectedTab == 5) { ProcessSettingsMouseClick(x, y); }
         else if (selectedTab == 7) {
-            // accounts.h এর click handler — sign-up ক্লিকে ShellExecute দিয়ে website খুলবে
             ProcessAccountsMouseClick(x, y, hWnd);
         }
-
-        if (prevTab != selectedTab) HideAllWebViews();
         InvalidateRect(hWnd, NULL, FALSE);
         break;
     }
