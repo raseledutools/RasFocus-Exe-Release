@@ -801,7 +801,7 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
             g.DrawString(L"No custom keywords added yet",-1,&fSmall,tblR,&fC,&bGr);
         }
         if((int)customAdultKeywords.size()>3)
-            g.FillRectangle(&bGr,tblR.X+tblR.Width-4,tblR.Y,4,tblR.Height);
+            g.FillRectangle(&bGr,(INT)(tblR.X+tblR.Width-4),(INT)tblR.Y,4,(INT)tblR.Height);
 
         // ─────────────────────────────────────────
         // Divider
@@ -1397,3 +1397,10 @@ void ProcessAdultMouseWheel(float x, float y, int delta) {
         }
     }
 }
+
+// ─── Aliases used by tab_blocks.cpp ───────────────────────────────────────
+void ProcessAdultBlockMouseMove(float x, float y)          { ProcessAdultMouseMove(x, y); }
+void ProcessAdultBlockMouseClick(float x, float y)         { ProcessAdultMouseClick(x, y); }
+void ProcessAdultBlockKeyPress(wchar_t c)                  { ProcessAdultKeyPress(c); }
+void ProcessAdultBlockKeyDown(WPARAM key)                  { ProcessAdultKeyDown(key); }
+void ProcessAdultBlockMouseWheel(float x, float y, int d)  { ProcessAdultMouseWheel(x, y, d); }

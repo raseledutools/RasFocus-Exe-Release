@@ -1,6 +1,8 @@
 #include "tab_device_block.h"
 #include <vector>
 #include <string>
+#include <powrprof.h>
+#pragma comment(lib, "PowrProf.lib")
 
 using namespace Gdiplus;
 using namespace std;
@@ -39,6 +41,7 @@ static const Color ClrBg(255, 248, 250, 252);
 static const Color ClrBgHover(255, 235, 248, 250);
 static const Color ClrRed(255, 231, 76, 60);
 static const Color ClrGreen(255, 90, 170, 20);
+static const Color ClrGreenHover(255, 70, 150, 10);
 
 // --- Helpers ---
 static GraphicsPath* GetDeviceRoundRectPath(RectF rect, int radius) {
@@ -91,7 +94,7 @@ void DrawDeviceBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
     // CARD 1: INTERNET FASTING
     // ==========================================
     GraphicsPath* cp1 = GetDeviceRoundRectPath(RectF(leftCardX, cardY, cardW, cardH), 8);
-    g.FillPath(&bWhite, cp1); g.DrawPath(&penBorder, cp1); delete cp1;
+    g.FillPath(&bWhite, cp1); g.DrawPath(&pBorder, cp1); delete cp1;
 
     g.DrawString(L"\xE774", -1, &fIconBig, RectF(leftCardX + 20.0f, cardY + 20.0f, 40.0f, 40.0f), &fL, &bTeal); // Globe Icon
     g.DrawString(L"Internet Fasting", -1, &fCardTitle, RectF(leftCardX + 65.0f, cardY + 25.0f, cardW - 70.0f, 30.0f), &fL, &bDark);
@@ -325,3 +328,8 @@ void ProcessDeviceBlockMouseClick(float x, float y) {
         }
     }
 }
+
+// ─── Aliases used by tab_blocks.cpp ───────────────────────────────────────
+void ProcessDeviceBlockKeyPress(wchar_t /*c*/)              { /* Device block has no key input */ }
+void ProcessDeviceBlockKeyDown(WPARAM /*key*/)              { /* Device block has no key input */ }
+void ProcessDeviceBlockMouseWheel(float x, float y, int /*d*/) { ProcessDeviceBlockMouseMove(x, y); }

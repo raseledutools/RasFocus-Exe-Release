@@ -2,7 +2,17 @@
 #include <windows.h>
 #include <gdiplus.h>
 
-// main.cpp থেকে কল করার জন্য ফাংশন ডিক্লারেশন
-void DrawAdultBlockTab(Gdiplus::Graphics& g, float contentX, float contentY, float contentW, float contentH);
+// --- Adult Block Tab Functions ---
+void DrawAdultBlockTab(Gdiplus::Graphics& g, float cx, float cy, float cw, float ch);
 void ProcessAdultMouseMove(float x, float y);
 void ProcessAdultMouseClick(float x, float y);
+void ProcessAdultKeyPress(wchar_t c);
+void ProcessAdultKeyDown(WPARAM key);
+void ProcessAdultMouseWheel(float x, float y, int delta);
+
+// --- Aliases used by tab_blocks.cpp ---
+void ProcessAdultBlockMouseMove(float x, float y);
+void ProcessAdultBlockMouseClick(float x, float y);
+void ProcessAdultBlockKeyPress(wchar_t c);
+void ProcessAdultBlockKeyDown(WPARAM key);
+void ProcessAdultBlockMouseWheel(float x, float y, int delta);

@@ -444,7 +444,6 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
     // ── Card shadow (soft) ──
     for (int i = 3; i >= 0; --i) {
         SolidBrush shadowBrush(Color(10 + i * 5, 0, 100, 120));
-        g.FillRoundedRectangle == nullptr; // GDI+ no built-in, use path
         GraphicsPath shadowPath;
         float sr = 14.0f, sd = sr * 2.0f;
         float sx = L.cardX - i, sy = L.cardY + i, sw2 = L.cardW + i * 2.0f, sh2 = L.cardH;
@@ -589,7 +588,7 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
     // Measure text to position links
     wstring dontHave = L"Don't have an account?  ";
     SizeF szDH; StringFormat sf; sf.SetAlignment(StringAlignmentNear);
-    g.MeasureString(dontHave.c_str(), -1, &fLink, PointF(L.fieldX, L.linksY), &sf, &szDH);
+    { RectF _mr; g.MeasureString(dontHave.c_str(), -1, &fLink, PointF(L.fieldX, L.linksY), &sf, &_mr); szDH = SizeF(_mr.Width, _mr.Height); }
 
     g.DrawString(dontHave.c_str(), -1, &fLink,
                  RectF(L.fieldX, L.linksY, szDH.Width, 20.0f), &fmtL, &gray);
@@ -599,11 +598,11 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
                  RectF(L.fieldX + szDH.Width, L.linksY, 90.0f, 20.0f), &fmtL, &signupColor);
     // " | Reset password"
     SizeF szSU;
-    g.MeasureString(L"Sign up free", -1, &fLink, PointF(0, 0), &sf, &szSU);
+    { RectF _mr; g.MeasureString(L"Sign up free", -1, &fLink, PointF(0, 0), &sf, &_mr); szSU = SizeF(_mr.Width, _mr.Height); }
     g.DrawString(L" | ", -1, &fLink,
                  RectF(L.fieldX + szDH.Width + szSU.Width, L.linksY, 20.0f, 20.0f), &fmtL, &gray);
     SizeF szSep;
-    g.MeasureString(L" | ", -1, &fLink, PointF(0, 0), &sf, &szSep);
+    { RectF _mr; g.MeasureString(L" | ", -1, &fLink, PointF(0, 0), &sf, &_mr); szSep = SizeF(_mr.Width, _mr.Height); }
     SolidBrush& resetColor = s_hoverReset ? linkHover : linkTeal;
     g.DrawString(L"Reset password", -1, &fLinkU,
                  RectF(L.fieldX + szDH.Width + szSU.Width + szSep.Width, L.linksY, 110.0f, 20.0f),
@@ -665,15 +664,15 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
 
     // "privacy policy" link
     SizeF szBotText;
-    g.MeasureString(L"When logged in, your data will be stored securely.\nFor more information, please see our ",
-                    -1, &fBottom, PointF(0, 0), &fmtBottom, &szBotText);
+    { RectF _mr; g.MeasureString(L"When logged in, your data will be stored securely.\nFor more information, please see our ",
+                    -1, &fBottom, PointF(0, 0), &fmtBottom, &_mr); szBotText = SizeF(_mr.Width, _mr.Height); }
     Font fPrivacy(&ff, 9, FontStyleUnderline, UnitPixel);
     SolidBrush& privacyColor = s_hoverPrivacy ? linkHover : linkTeal;
     // second line: "For more information, please see our " ~ 38px from bottom line start
     float privacyY = L.bottomTextY + 16.0f;
     // Measure "For more information, please see our " width
     SizeF szForMore;
-    g.MeasureString(L"For more information, please see our ", -1, &fBottom, PointF(0,0), &fmtBottom, &szForMore);
+    { RectF _mr; g.MeasureString(L"For more information, please see our ", -1, &fBottom, PointF(0,0), &fmtBottom, &_mr); szForMore = SizeF(_mr.Width, _mr.Height); }
     float lineCenterX = L.cardX + L.cardW / 2.0f;
     float forMoreHalfW = szForMore.Width / 2.0f;
     float privacyX = lineCenterX + forMoreHalfW - szForMore.Width / 2.0f + szForMore.Width;
