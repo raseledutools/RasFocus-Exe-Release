@@ -69,8 +69,8 @@ NOTIFYICONDATA nid = {};
 // LAYOUT — NEW PERFECTED HIERARCHY
 // ==========================================
 extern const int SIDEBAR_WIDTH      = 170;  
-extern const int TITLEBAR_HEIGHT    = 26;   // উপরের সাদা বার আরও চিকন করা হয়েছে
-extern const int SUBHEADER_HEIGHT   = 46;   // ফুল উইডথ সাব-হেডার
+extern const int TITLEBAR_HEIGHT    = 32;   // অনুরোধ অনুযায়ী উপরের বার বড় করা হয়েছে (আগে ২৬ ছিল)
+extern const int SUBHEADER_HEIGHT   = 60;   // অনুরোধ অনুযায়ী সাব-হেডার বড় করা হয়েছে (আগে ৪৬ ছিল)
 
 // UI State
 int selectedTab  = 0;
@@ -521,7 +521,7 @@ void SubmitFeedbackToFirebase(const wstring& email, const wstring& message) {
 
 // ==========================================
 // ═══════════════════════════════════════
-//   DRAWING — NEW UPDATED UI
+//    DRAWING — NEW UPDATED UI
 // ═══════════════════════════════════════
 // ==========================================
 
@@ -548,17 +548,17 @@ void DrawTitleBar(Graphics& g, int w) {
     }
 
     // ── App Name (Title Bar) ──
-    Font fTitle(&ff, 11, FontStyleBold, UnitPixel);
+    Font fTitle(&ff, 12, FontStyleBold, UnitPixel); // ফন্ট সামান্য বড় করা হয়েছে
     SolidBrush textDark(ColTitleBarText);
     StringFormat fmtL;
     fmtL.SetAlignment(StringAlignmentNear);
     fmtL.SetLineAlignment(StringAlignmentCenter);
     g.DrawString(L"RasFocus Pro", -1, &fTitle,
-                 RectF(32.0f, 0.0f, 300.0f, (float)TITLEBAR_HEIGHT),
+                 RectF(35.0f, 0.0f, 300.0f, (float)TITLEBAR_HEIGHT), // বামে একটু গ্যাপ বাড়ানো হয়েছে
                  &fmtL, &textDark);
 
     // ── Window Controls ──
-    float btnW = 42.0f;
+    float btnW = 46.0f; // কন্ট্রোল বাটন সামান্য চওড়া করা হয়েছে
     float btnH = (float)TITLEBAR_HEIGHT;
     float startX = (float)w - (btnW * 3);
 
@@ -582,9 +582,9 @@ void DrawTitleBar(Graphics& g, int w) {
     // ── Update Button ──
     if (isUpdateReady) {
         float upgW = 150.0f;
-        float upgH = (float)TITLEBAR_HEIGHT - 6.0f;
+        float upgH = (float)TITLEBAR_HEIGHT - 8.0f; // উচ্চতা সামান্য কমানো হয়েছে
         float upgX = startX - upgW - 12.0f;
-        float upgY = 3.0f;
+        float upgY = 4.0f; // উপর থেকে গ্যাপ বাড়ানো হয়েছে
         GraphicsPath upgPath;
         float r = 4.0f, d = r * 2.0f;
         upgPath.AddArc(upgX, upgY, d, d, 180.0f, 90.0f);
@@ -624,62 +624,69 @@ void DrawSubHeader(Graphics& g, int w) {
     fmtTL.SetAlignment(StringAlignmentNear); 
     fmtTL.SetLineAlignment(StringAlignmentCenter);
 
-    // ── সাব-হেডারে বড় লোগো এবং নাম ──
-    HICON hIconLg = (HICON)LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APP_ICON), IMAGE_ICON, 32, 32, LR_SHARED);
+    // অনুরোধ অনুযায়ী লোগো সঠিক জায়গায় বসানো হয়েছে (বড় লোগো)
+    HICON hIconLg = (HICON)LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APP_ICON), IMAGE_ICON, 40, 40, LR_SHARED);
     if (hIconLg) {
         HDC hdcG = g.GetHDC();
-        int iconY = (int)(subY + (subH - 32.0f) / 2.0f+6);
-        DrawIconEx(hdcG, 12, iconY, hIconLg, 32, 32, 0, NULL, DI_NORMAL);
+        // লোগো ভার্টিক্যালি সেন্টারে করার জন্য হিসাব
+        int iconY = (int)(subY + (subH - 40.0f) / 2.0f);
+        DrawIconEx(hdcG, 15, iconY, hIconLg, 40, 40, 0, NULL, DI_NORMAL);
         g.ReleaseHDC(hdcG);
     }
 
-    Font fAppName(&ff, 14, FontStyleBold, UnitPixel);
-    Font fVersion(&ff,  9, FontStyleRegular, UnitPixel);
+    Font fAppName(&ff, 18, FontStyleBold, UnitPixel); // ফন্ট বড় করা হয়েছে
+    Font fVersion(&ff, 10, FontStyleRegular, UnitPixel); // ফন্ট সামান্য বড় করা হয়েছে
     SolidBrush whiteAlpha(Color(200, 255, 255, 255));
-    float textX = 52.0f;
-    g.DrawString(L"RasFocus Pro", -1, &fAppName, RectF(textX, subY + 8.0f, 150.0f, 20.0f), &fmtTL, &white);
+    float textX = 65.0f; // লোগো বড় হওয়ায় গ্যাপ বাড়ানো হয়েছে
+    g.DrawString(L"RasFocus Pro", -1, &fAppName, RectF(textX, subY + (subH / 2.0f) - 14.0f, 200.0f, 24.0f), &fmtTL, &white);
     wstring wVer(CURRENT_VERSION.begin(), CURRENT_VERSION.end());
-    g.DrawString(wVer.c_str(), -1, &fVersion, RectF(textX, subY + 28.0f, 150.0f, 16.0f), &fmtTL, &whiteAlpha);
+    g.DrawString(wVer.c_str(), -1, &fVersion, RectF(textX, subY + (subH / 2.0f) + 6.0f, 100.0f, 16.0f), &fmtTL, &whiteAlpha);
 
     // ── ডান পাশে: Feedback icon + My Account button ──
-    float rightPad = 16.0f;
-    float btnH     = 30.0f;
+    float rightPad = 20.0f; // প্যাডিং সামান্য বাড়ানো হয়েছে
+    float btnH     = 36.0f; // বাটন বড় করা হয়েছে
     float btnY     = subY + (subH - btnH) / 2.0f;
 
-    // My Account বাটন
-    float acBtnW  = 110.0f;
+    // My Account বাটন (অনুরোধ অনুযায়ী ডিজাইন সুন্দর করা হয়েছে)
+    float acBtnW  = 130.0f; // বাটন চওড়া করা হয়েছে
     float acBtnX  = (float)w - rightPad - acBtnW;
 
     GraphicsPath acPath;
-    float r2 = 5.0f, d2 = r2 * 2.0f;
+    float r2 = 6.0f, d2 = r2 * 2.0f; // কোণা সামান্য বেশি গোল করা হয়েছে
     acPath.AddArc(acBtnX, btnY, d2, d2, 180.0f, 90.0f);
     acPath.AddArc(acBtnX + acBtnW - d2, btnY, d2, d2, 270.0f, 90.0f);
     acPath.AddArc(acBtnX + acBtnW - d2, btnY + btnH - d2, d2, d2, 0.0f, 90.0f);
     acPath.AddArc(acBtnX, btnY + btnH - d2, d2, d2, 90.0f, 90.0f);
     acPath.CloseFigure();
 
-    SolidBrush acBg(hoverMyAccount ? Color(60, 255, 255, 255) : Color(35, 255, 255, 255));
+    // সুন্দর ডিজাইনের জন্য গ্রেডিয়েন্ট ব্রাশ ব্যবহার করা যেতে পারে, তবে এখানে সলিড কালার রাখা হল স্বচ্ছতা সহকারে
+    // হোভার করলে রঙ উজ্জ্বল হবে
+    SolidBrush acBg(hoverMyAccount ? Color(80, 255, 255, 255) : Color(45, 255, 255, 255)); 
     g.FillPath(&acBg, &acPath);
-    Pen acBorder(Color(80, 255, 255, 255), 1.0f);
+    
+    // আউটলাইন বর্ডার
+    Pen acBorder(Color(100, 255, 255, 255), 1.0f);
     g.DrawPath(&acBorder, &acPath);
 
-    Font fBtnIcon(&ffIcons, 13, FontStyleRegular, UnitPixel);
-    g.DrawString(L"\xE77B", -1, &fBtnIcon, RectF(acBtnX + 6.0f, btnY, 20.0f, btnH), &fmtC, &white);
+    // বাটন আইকন
+    Font fBtnIcon(&ffIcons, 15, FontStyleRegular, UnitPixel); // আইকন বড় করা হয়েছে
+    g.DrawString(L"\xE77B", -1, &fBtnIcon, RectF(acBtnX + 10.0f, btnY, 24.0f, btnH), &fmtC, &white);
 
-    Font fBtnTxt(&ff, 11, FontStyleBold, UnitPixel);
+    // বাটন টেক্সট
+    Font fBtnTxt(&ff, 12, FontStyleBold, UnitPixel); // টেক্সট বড় করা হয়েছে
     StringFormat fmtBtnL;
     fmtBtnL.SetAlignment(StringAlignmentNear);
     fmtBtnL.SetLineAlignment(StringAlignmentCenter);
-    g.DrawString(L"My Account", -1, &fBtnTxt, RectF(acBtnX + 26.0f, btnY, acBtnW - 30.0f, btnH), &fmtBtnL, &white);
+    g.DrawString(L"My Account", -1, &fBtnTxt, RectF(acBtnX + 38.0f, btnY, acBtnW - 45.0f, btnH), &fmtBtnL, &white);
 
     // Feedback icon
-    float fbIconX = acBtnX - 44.0f;
-    float fbIconW = 34.0f;
+    float fbIconX = acBtnX - 55.0f; // গ্যাপ বাড়ানো হয়েছে
+    float fbIconW = 40.0f; // আইকন এরিয়া বড় করা হয়েছে
     if (hoverFeedback) {
-        SolidBrush fbHover(Color(40, 255, 255, 255));
+        SolidBrush fbHover(Color(50, 255, 255, 255));
         g.FillEllipse(&fbHover, fbIconX, btnY, fbIconW, btnH);
     }
-    Font fFbIcon(&ffIcons, 16, FontStyleRegular, UnitPixel);
+    Font fFbIcon(&ffIcons, 18, FontStyleRegular, UnitPixel); // আইকন বড় করা হয়েছে
     g.DrawString(L"\xED15", -1, &fFbIcon, RectF(fbIconX, btnY, fbIconW, btnH), &fmtC, &white);
 }
 
@@ -700,12 +707,15 @@ void DrawSidebar(Graphics& g, int h) {
     SolidBrush white(ColWhite);
 
     // ── Tabs Area ──
-    float tabsStartY = sideY + 16.0f; // একটু গ্যাপ দিয়ে শুরু
-    Font fTabTxt(&ff,     13, FontStyleBold,    UnitPixel);
-    Font fTabIcon(&ffIcons, 16, FontStyleRegular, UnitPixel);
+    float tabsStartY = sideY + 20.0f; // গ্যাপ সামান্য বাড়ানো হয়েছে
+    
+    // অনুরোধ অনুযায়ী সাইডবারের লেখা বড় করা হয়েছে (আগে ১৩ ছিল)
+    Font fTabTxt(&ff, 15, FontStyleBold, UnitPixel); 
+    Font fTabIcon(&ffIcons, 18, FontStyleRegular, UnitPixel); // আইকনও সামান্য বড় করা হয়েছে
+    
     SolidBrush tealText(ColSubHeader); // লেখার রঙ সাব-হেডারের মতো উজ্জ্বল
-    float tabH  = 45.0f; 
-    float iconW = 38.0f;
+    float tabH  = 50.0f;  // ট্যাবের উচ্চতা বাড়ানো হয়েছে লেখার আকার বড় হওয়ায়
+    float iconW = 42.0f;  // আইকনের উইডথ বাড়ানো হয়েছে
 
     StringFormat fmtIC; fmtIC.SetAlignment(StringAlignmentCenter); fmtIC.SetLineAlignment(StringAlignmentCenter);
 
@@ -717,7 +727,7 @@ void DrawSidebar(Graphics& g, int h) {
             SolidBrush activeBg(ColWhite);
             g.FillRectangle(&activeBg, tabRect);
             SolidBrush accentBar(ColSubHeader);
-            g.FillRectangle(&accentBar, sideX, tabY, 3.0f, tabH);
+            g.FillRectangle(&accentBar, sideX, tabY, 4.0f, tabH); // অ্যাকসেন্ট বার সামান্য মোটা করা হয়েছে
 
             g.DrawString(sidebarIcons[i].c_str(), -1, &fTabIcon, RectF(sideX, tabY, iconW, tabH), &fmtIC, &tealText);
             g.DrawString(sidebarTabs[i].c_str(),  -1, &fTabTxt,  RectF(sideX + iconW, tabY, (float)SIDEBAR_WIDTH - iconW - 8.0f, tabH), &fmtTL, &tealText);
@@ -730,25 +740,25 @@ void DrawSidebar(Graphics& g, int h) {
             g.DrawString(sidebarTabs[i].c_str(),  -1, &fTabTxt,  RectF(sideX + iconW, tabY, (float)SIDEBAR_WIDTH - iconW - 8.0f, tabH), &fmtTL, &white);
         }
 
-        // Notification Badge
+        // Notification Badge (পজিশন অ্যাডজাস্ট করা হয়েছে ট্যাব সাইজ বাড়ার কারণে)
         if (i == 3 || i == 4) {
             SolidBrush badgeBg(Color(255, 230, 50, 50));
-            float bSize = 14.0f;
-            float bX    = iconW - 8.0f;
-            float bY    = tabY + 8.0f;
+            float bSize = 16.0f; // ব্যাজ সামান্য বড় করা হয়েছে
+            float bX    = iconW - 10.0f;
+            float bY    = tabY + (tabH - bSize) / 2.0f - 10.0f; // ভার্টিক্যালি সেন্টারে করা হয়েছে সামান্য উপরে
             g.FillEllipse(&badgeBg, bX, bY, bSize, bSize);
-            Font fBadge(&ff, 9, FontStyleBold, UnitPixel);
+            Font fBadge(&ff, 10, FontStyleBold, UnitPixel); // ব্যাজের টেক্সট সামান্য বড় করা হয়েছে
             g.DrawString(i == 3 ? L"2" : L"1", -1, &fBadge, RectF(bX, bY, bSize, bSize), &fmtIC, &white);
         }
     }
 
     // ── Upgrade Button ──
-    float upgH  = 34.0f;
-    float upgY  = (float)h - upgH - 14.0f;
-    float upgMX = 12.0f;
+    float upgH  = 38.0f; // বাটন বড় করা হয়েছে
+    float upgY  = (float)h - upgH - 16.0f; // গ্যাপ বাড়ানো হয়েছে
+    float upgMX = 15.0f; // মার্জিন বাড়ানো হয়েছে
     float upgW  = (float)SIDEBAR_WIDTH - upgMX * 2.0f;
     GraphicsPath upgPath;
-    float r = 6.0f, d = r * 2.0f;
+    float r = 7.0f, d = r * 2.0f; // কোণা সামান্য বেশি গোল করা হয়েছে
     upgPath.AddArc(upgMX, upgY, d, d, 180.0f, 90.0f);
     upgPath.AddArc(upgMX + upgW - d, upgY, d, d, 270.0f, 90.0f);
     upgPath.AddArc(upgMX + upgW - d, upgY + upgH - d, d, d, 0.0f, 90.0f);
@@ -756,7 +766,7 @@ void DrawSidebar(Graphics& g, int h) {
     upgPath.CloseFigure();
     SolidBrush btnColor(hoverUpgrade ? ColUpgradeHover : ColUpgradeBtn);
     g.FillPath(&btnColor, &upgPath);
-    Font fUpg(&ff, 12, FontStyleBold, UnitPixel);
+    Font fUpg(&ff, 13, FontStyleBold, UnitPixel); // টেক্সট বড় করা হয়েছে
     g.DrawString(L"\u2B06  Upgrade Now", -1, &fUpg, RectF(upgMX, upgY, upgW, upgH), &fmtIC, &white);
 }
 
@@ -883,21 +893,21 @@ void OnPaint(HWND hWnd, HDC hdc) {
 inline bool HitFeedbackIcon(float x, float y, float w) {
     float subY  = (float)TITLEBAR_HEIGHT;
     float subH  = (float)SUBHEADER_HEIGHT;
-    float btnH  = 30.0f;
+    float btnH  = 36.0f; // বাটন সাইজ বাড়ায় অ্যাডজাস্ট করা হয়েছে
     float btnY  = subY + (subH - btnH) / 2.0f;
-    float acBtnW = 110.0f;
-    float acBtnX = w - 16.0f - acBtnW;
-    float fbIconX = acBtnX - 44.0f;
-    return (x >= fbIconX && x <= fbIconX + 34.0f && y >= btnY && y <= btnY + btnH);
+    float acBtnW = 130.0f; // বাটন সাইজ বাড়ায় অ্যাডজাস্ট করা হয়েছে
+    float acBtnX = w - 20.0f - acBtnW; // প্যাডিং অ্যাডজাস্ট করা হয়েছে
+    float fbIconX = acBtnX - 55.0f; // গ্যাপ অ্যাডজাস্ট করা হয়েছে
+    return (x >= fbIconX && x <= fbIconX + 40.0f && y >= btnY && y <= btnY + btnH); // fbIconW অ্যাডজাস্ট করা হয়েছে
 }
 
 inline bool HitMyAccount(float x, float y, float w) {
     float subY  = (float)TITLEBAR_HEIGHT;
     float subH  = (float)SUBHEADER_HEIGHT;
-    float btnH  = 30.0f;
+    float btnH  = 36.0f; // বাটন সাইজ বাড়ায় অ্যাডজাস্ট করা হয়েছে
     float btnY  = subY + (subH - btnH) / 2.0f;
-    float acBtnW = 110.0f;
-    float acBtnX = w - 16.0f - acBtnW;
+    float acBtnW = 130.0f; // বাটন সাইজ বাড়ায় অ্যাডজাস্ট করা হয়েছে
+    float acBtnX = w - 20.0f - acBtnW; // প্যাডিং অ্যাডজাস্ট করা হয়েছে
     return (x >= acBtnX && x <= acBtnX + acBtnW && y >= btnY && y <= btnY + btnH);
 }
 
@@ -944,7 +954,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (pt.y < TITLEBAR_HEIGHT * g_scaleFactor) {
             float x = pt.x / g_scaleFactor;
             float scaledW = (r.right - r.left) / g_scaleFactor;
-            float btnW = 42.0f;
+            float btnW = 46.0f; // btnW অ্যাডজাস্ট করা হয়েছে ড্রয়িং কোড অনুযায়ী
             float controlsStartX = scaledW - (btnW * 3);
             if (x >= controlsStartX) return HTCLIENT;
             if (isUpdateReady) {
@@ -1011,7 +1021,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             break;
         }
 
-        float btnW = 42.0f;
+        float btnW = 46.0f; // btnW অ্যাডজাস্ট করা হয়েছে ড্রয়িং কোড অনুযায়ী
         bool oldMin = hoverMinimize, oldMax = hoverMaximize, oldClose = hoverClose;
         hoverMinimize = (y <= TITLEBAR_HEIGHT && x >= scaledW - (btnW*3) && x < scaledW - (btnW*2));
         hoverMaximize = (y <= TITLEBAR_HEIGHT && x >= scaledW - (btnW*2) && x < scaledW - btnW);
@@ -1032,8 +1042,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 
         int oldTab = hoveredTab; hoveredTab = -1;
         float sideY = (float)(TITLEBAR_HEIGHT + SUBHEADER_HEIGHT);
-        float tabsStartY = sideY + 16.0f;
-        float tabH  = 45.0f;
+        float tabsStartY = sideY + 20.0f; // ড্রয়িং কোড অনুযায়ী অ্যাডজাস্ট করা হয়েছে
+        float tabH  = 50.0f; // ড্রয়িং কোড অনুযায়ী অ্যাডজাস্ট করা হয়েছে
         if (x >= 0.0f && x <= SIDEBAR_WIDTH && y >= tabsStartY) {
             int idx = (int)((y - tabsStartY) / tabH);
             if (idx >= 0 && idx < (int)sidebarTabs.size()) hoveredTab = idx;
@@ -1041,8 +1051,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (oldTab != hoveredTab) redraw = true;
 
         bool oldUpg = hoverUpgrade;
-        float upgBtnY = scaledH - 34.0f - 14.0f;
-        hoverUpgrade = (x >= 12.0f && x <= SIDEBAR_WIDTH - 12.0f && y >= upgBtnY && y <= upgBtnY + 34.0f);
+        float upgH  = 38.0f; // ড্রয়িং কোড অনুযায়ী অ্যাডজাস্ট করা হয়েছে
+        float upgBtnY = scaledH - upgH - 16.0f; // ড্রয়িং কোড অনুযায়ী অ্যাডজাস্ট করা হয়েছে
+        float upgMX = 15.0f; // ড্রয়িং কোড অনুযায়ী অ্যাডজাস্ট করা হয়েছে
+        hoverUpgrade = (x >= upgMX && x <= SIDEBAR_WIDTH - upgMX && y >= upgBtnY && y <= upgBtnY + upgH);
         if (oldUpg != hoverUpgrade) redraw = true;
 
         if (selectedTab == 0) { ProcessDashboardMouseMove(x, y);   redraw = true; }
@@ -1091,7 +1103,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
 
         if (isUpdateReady) {
-            float btnW = 42.0f, upgW = 150.0f, upgX = scaledW - (btnW*3) - upgW - 12.0f;
+            float btnW = 46.0f, upgW = 150.0f, upgX = scaledW - (btnW*3) - upgW - 12.0f; // btnW অ্যাডজাস্ট করা হয়েছে ড্রয়িং কোড অনুযায়ী
             if (x >= upgX && x <= upgX + upgW && y >= 0.0f && y <= (float)TITLEBAR_HEIGHT) { ApplySilentUpdate(); return 0; }
         }
 
@@ -1104,8 +1116,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 
         int prevTab = selectedTab;
         float sideY = (float)(TITLEBAR_HEIGHT + SUBHEADER_HEIGHT);
-        float tabsStartY = sideY + 16.0f;
-        float tabH  = 45.0f;
+        float tabsStartY = sideY + 20.0f; // ড্রয়িং কোড অনুযায়ী অ্যাডজাস্ট করা হয়েছে
+        float tabH  = 50.0f; // ড্রয়িং কোড অনুযায়ী অ্যাডজাস্ট করা হয়েছে
         if (x >= 0.0f && x <= SIDEBAR_WIDTH && y >= tabsStartY) {
             int idx = (int)((y - tabsStartY) / tabH);
             if (idx >= 0 && idx < (int)sidebarTabs.size()) {
