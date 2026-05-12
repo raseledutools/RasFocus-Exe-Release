@@ -475,3 +475,12 @@ void ResetStatisticsAnimation()
     stat_animProgress = 0.0f;
     stat_firstLoad    = true;
 }
+
+// ============================================================
+//  MOUSE WHEEL
+// ============================================================
+void ProcessStatisticsMouseWheel(int delta)
+{
+    // Statistics tab mouse wheel handling (if needed in future)
+    // Currently placeholder to fix linker error
+}
