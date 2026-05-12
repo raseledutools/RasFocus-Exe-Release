@@ -3,10 +3,7 @@
 #include <string>
 #include <powrprof.h>
 #pragma comment(lib, "PowrProf.lib")
-
-// --- Premium Feature Gate ---
-extern bool g_isPremium;
-extern bool g_showUpgradePopup;
+#include "upgrade.h"
 
 using namespace Gdiplus;
 using namespace std;

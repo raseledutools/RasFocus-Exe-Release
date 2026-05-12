@@ -3,10 +3,7 @@
 // UPDATED: Professional 2-Column Layout to fix overlap and empty right space.
 
 #include "tab_adult.h"
-
-// --- Premium Feature Gate ---
-extern bool g_isPremium;
-extern bool g_showUpgradePopup;
+#include "upgrade.h"
 #include <vector>
 #include <string>
 #include <algorithm>

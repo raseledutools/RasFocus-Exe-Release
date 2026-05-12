@@ -3,10 +3,7 @@
 #include <fstream>
 #include <string>
 #include <thread>
-
-// --- Premium Feature Gate ---
-extern bool g_isPremium;
-extern bool g_showUpgradePopup;
+#include "upgrade.h"
 #include <mmsystem.h>
 #include <cmath>
 #include <algorithm> 

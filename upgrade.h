@@ -3,6 +3,7 @@
 #include <gdiplus.h>
 
 extern bool g_showUpgradePopup;
+extern bool g_isPremium;
 
 void DrawUpgradePopup(Gdiplus::Graphics& g, int w, int h);
 void ProcessUpgradeMouseMove(float x, float y);
