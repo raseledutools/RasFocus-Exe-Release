@@ -48,6 +48,11 @@ static bool s_hoverSaveCheck  = false;
 static bool s_hoverEye        = false;
 static bool s_hoverLogout     = false;
 
+// ── Cursor Blink ──
+static DWORD s_lastBlinkTick  = 0;
+static bool  s_cursorVisible  = true;
+static HWND  s_hWndRef        = NULL;  // Timer callback এর জন্য
+
 // ── Saved credentials path ──
 static string GetCredsPath() {
     char appData[MAX_PATH];
@@ -458,13 +463,39 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
     Pen emailBorder(emailFocused ? Color(255, 0, 150, 160) : Color(255, 220, 225, 230), emailFocused ? 1.5f : 1.0f);
     g.DrawRectangle(&emailBorder, L.fieldX, L.emailY, L.fieldW, L.fldH);
 
+    // ── Cursor Blink Update ──
+    DWORD now = GetTickCount();
+    if (now - s_lastBlinkTick >= 500) {
+        s_cursorVisible = !s_cursorVisible;
+        s_lastBlinkTick = now;
+        if (s_hWndRef) InvalidateRect(s_hWndRef, NULL, FALSE);
+    }
+
     Font fInput(&ff, 12, FontStyleRegular, UnitPixel);
     wstring emailStr(s_email);
     SolidBrush inputColor(emailStr.empty() ? Color(255, 160, 170, 180) : dark.GetColor());
-    g.DrawString(emailStr.empty() ? L"Email address" : emailStr.c_str(), -1, &fInput, RectF(L.fieldX + 32.0f, L.emailY, L.fieldW - 40.0f, L.fldH), &fmtL, &inputColor);
-    
+    g.DrawString(emailStr.empty() ? L"Email address" : emailStr.c_str(), -1, &fInput,
+        RectF(L.fieldX + 32.0f, L.emailY, L.fieldW - 40.0f, L.fldH), &fmtL, &inputColor);
+
+    // ── Email Cursor ──
+    if (emailFocused && s_cursorVisible) {
+        float curX = L.fieldX + 33.0f;
+        if (!emailStr.empty()) {
+            RectF measured; CharacterRange cr(0, (int)emailStr.size());
+            StringFormat sfm; sfm.SetMeasurableCharacterRanges(1, &cr);
+            Region rgn;
+            g.MeasureCharacterRanges(emailStr.c_str(), -1, &fInput,
+                RectF(L.fieldX + 32.0f, L.emailY, L.fieldW - 40.0f, L.fldH), &sfm, 1, &rgn);
+            rgn.GetBounds(&measured, &g);
+            curX = L.fieldX + 32.0f + measured.Width + 1.0f;
+        }
+        Pen curPen(Color(255, 0, 150, 160), 1.5f);
+        g.DrawLine(&curPen, curX, L.emailY + 6.0f, curX, L.emailY + L.fldH - 6.0f);
+    }
+
     Font fFieldIcon(&ffIcons, 13, FontStyleRegular, UnitPixel);
-    g.DrawString(L"\xE715", -1, &fFieldIcon, RectF(L.fieldX + 8.0f, L.emailY, 24.0f, L.fldH), &fmtC, emailStr.empty() ? &gray : &teal);
+    g.DrawString(L"\xE715", -1, &fFieldIcon, RectF(L.fieldX + 8.0f, L.emailY, 24.0f, L.fldH),
+        &fmtC, emailStr.empty() ? &gray : &teal);
 
     // Password
     bool passFocused = (s_focusField == 2);
@@ -476,6 +507,23 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
     wstring passDisplay = passStr.empty() ? L"Password" : (s_showPassword ? passStr : wstring(passStr.size(), L'•'));
     SolidBrush passColor(passStr.empty() ? Color(255, 160, 170, 180) : dark.GetColor());
     g.DrawString(passDisplay.c_str(), -1, &fInput, RectF(L.fieldX + 32.0f, L.passY, L.fieldW - 65.0f, L.fldH), &fmtL, &passColor);
+
+    // ── Password Cursor ──
+    if (passFocused && s_cursorVisible) {
+        float curX = L.fieldX + 33.0f;
+        if (!passDisplay.empty() && passStr.size() > 0) {
+            RectF measured; CharacterRange cr(0, (int)passDisplay.size());
+            StringFormat sfm; sfm.SetMeasurableCharacterRanges(1, &cr);
+            Region rgn;
+            g.MeasureCharacterRanges(passDisplay.c_str(), -1, &fInput,
+                RectF(L.fieldX + 32.0f, L.passY, L.fieldW - 65.0f, L.fldH), &sfm, 1, &rgn);
+            rgn.GetBounds(&measured, &g);
+            curX = L.fieldX + 32.0f + measured.Width + 1.0f;
+        }
+        Pen curPen(Color(255, 0, 150, 160), 1.5f);
+        g.DrawLine(&curPen, curX, L.passY + 6.0f, curX, L.passY + L.fldH - 6.0f);
+    }
+
     g.DrawString(L"\xE72E", -1, &fFieldIcon, RectF(L.fieldX + 8.0f, L.passY, 24.0f, L.fldH), &fmtC, passStr.empty() ? &gray : &teal);
 
     Font fEye(&ffIcons, 13, FontStyleRegular, UnitPixel);
@@ -592,8 +640,16 @@ void ProcessAccountsMouseClick(float x, float y, HWND hWnd) {
 
     CardLayout L = GetCurrentLayout();
 
-    if (HitRect(x, y, L.fieldX, L.emailY, L.fieldW - L.eyeW, L.fldH)) { s_focusField = 1; InvalidateRect(hWnd, NULL, FALSE); return; }
-    if (HitRect(x, y, L.fieldX, L.passY,  L.fieldW - L.eyeW, L.fldH)) { s_focusField = 2; InvalidateRect(hWnd, NULL, FALSE); return; }
+    if (HitRect(x, y, L.fieldX, L.emailY, L.fieldW - L.eyeW, L.fldH)) {
+        s_focusField = 1; s_hWndRef = hWnd;
+        s_cursorVisible = true; s_lastBlinkTick = GetTickCount();
+        InvalidateRect(hWnd, NULL, FALSE); return;
+    }
+    if (HitRect(x, y, L.fieldX, L.passY,  L.fieldW - L.eyeW, L.fldH)) {
+        s_focusField = 2; s_hWndRef = hWnd;
+        s_cursorVisible = true; s_lastBlinkTick = GetTickCount();
+        InvalidateRect(hWnd, NULL, FALSE); return;
+    }
     if (HitRect(x, y, L.eyeX, L.eyeY, L.eyeW, L.fldH)) { s_showPassword = !s_showPassword; InvalidateRect(hWnd, NULL, FALSE); return; }
     if (HitRect(x, y, L.fieldX, L.checkY - 5.0f, 120.0f, 24.0f)) { s_saveLogin = !s_saveLogin; InvalidateRect(hWnd, NULL, FALSE); return; }
 
