@@ -27,6 +27,7 @@ HWND hParentWnd = NULL;
 #include "tab_blocks.h"
 #include "tab_adult.h"
 #include "tab_settings.h"
+#include "tab_device_block.h"
 #include "tab_deep_study.h"
 #include "tab_utilities.h"
 #include "tab_dashboard.h"
