@@ -73,8 +73,8 @@ NOTIFYICONDATA nid = {};
 // LAYOUT
 // ==========================================
 extern const int SIDEBAR_WIDTH      = 170;
-extern const int TITLEBAR_HEIGHT    = 26;   // চিকন title bar (আগে ৩২ ছিল)
-extern const int SUBHEADER_HEIGHT   = 60;
+extern const int TITLEBAR_HEIGHT    = 28;   // আপডেটেড (লোগো সুন্দর করে বসানোর জন্য)
+extern const int SUBHEADER_HEIGHT   = 55;   // আপডেটেড (প্রফেশনাল সাইজ)
 
 // UI State
 int selectedTab  = 0;
@@ -525,7 +525,7 @@ void SubmitFeedbackToFirebase(const wstring& email, const wstring& message) {
 // ==========================================
 
 // ------------------------------------------
-// 1. TITLE BAR — চিকন (TITLEBAR_HEIGHT=26), লোগো ১৬px→২০px
+// 1. TITLE BAR — আপডেটেড (লোগো একদম মাঝে)
 // ------------------------------------------
 void DrawTitleBar(Graphics& g, int w) {
     SolidBrush bgWhite(ColTitleBar);
@@ -537,13 +537,14 @@ void DrawTitleBar(Graphics& g, int w) {
     FontFamily ff(L"Segoe UI");
     FontFamily ffIcons(L"Segoe MDL2 Assets");
 
-    // ── লোগো (title bar — ২৪px, ভার্টিক্যালি সেন্টার) ──
+    // ── লোগো (title bar — ১৮px, ভার্টিক্যালি সেন্টার) ──
+    const int TB_LOGO_SIZE = 18;
     HICON hIconSm = (HICON)LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APP_ICON),
-                                     IMAGE_ICON, 24, 24, LR_SHARED);
+                                     IMAGE_ICON, TB_LOGO_SIZE, TB_LOGO_SIZE, LR_SHARED);
     if (hIconSm) {
         HDC hdcG = g.GetHDC();
-        int iconY = (TITLEBAR_HEIGHT - 24) / 2;
-        DrawIconEx(hdcG, 4, iconY, hIconSm, 24, 24, 0, NULL, DI_NORMAL);
+        int iconY = (TITLEBAR_HEIGHT - TB_LOGO_SIZE) / 2;
+        DrawIconEx(hdcG, 8, iconY, hIconSm, TB_LOGO_SIZE, TB_LOGO_SIZE, 0, NULL, DI_NORMAL);
         g.ReleaseHDC(hdcG);
     }
 
@@ -554,7 +555,7 @@ void DrawTitleBar(Graphics& g, int w) {
     fmtL.SetAlignment(StringAlignmentNear);
     fmtL.SetLineAlignment(StringAlignmentCenter);
     g.DrawString(L"RasFocus Pro", -1, &fTitle,
-                 RectF(34.0f, 0.0f, 280.0f, (float)TITLEBAR_HEIGHT),
+                 RectF(30.0f, 0.0f, 280.0f, (float)TITLEBAR_HEIGHT),
                  &fmtL, &textDark);
 
     // ── Window Controls ──
@@ -603,7 +604,7 @@ void DrawTitleBar(Graphics& g, int w) {
 }
 
 // ------------------------------------------
-// 2. SUB-HEADER — শুরুতে বড় লোগো (৪৪px)
+// 2. SUB-HEADER — আপডেটেড (প্রফেশনাল লুক)
 // ------------------------------------------
 void DrawSubHeader(Graphics& g, int w) {
     float subX = 0.0f;
@@ -624,41 +625,40 @@ void DrawSubHeader(Graphics& g, int w) {
     fmtTL.SetAlignment(StringAlignmentNear);
     fmtTL.SetLineAlignment(StringAlignmentCenter);
 
-    // ── বড় লোগো (৫৪px) সাব-হেডারের একদম শুরুতে, নিচের দিকে ──
-    const int LOGO_SIZE = 54;
+    // ── বড় লোগো সাব-হেডারে (একদম মাঝখানে) ──
+    const int LOGO_SIZE = 36;
     HICON hIconLg = (HICON)LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APP_ICON),
                                      IMAGE_ICON, LOGO_SIZE, LOGO_SIZE, LR_SHARED);
     if (hIconLg) {
         HDC hdcG = g.GetHDC();
-        int iconX = 8;
-        // নিচের দিকে নামানো: subH এর ৭০% position এ center করা
-        int iconY = (int)(subY + subH * 0.55f - LOGO_SIZE / 2.0f);
+        int iconX = 12;
+        int iconY = (int)(subY + (subH - LOGO_SIZE) / 2.0f);
         DrawIconEx(hdcG, iconX, iconY, hIconLg, LOGO_SIZE, LOGO_SIZE, 0, NULL, DI_NORMAL);
         g.ReleaseHDC(hdcG);
     }
 
-    // ── App Name + Version (লোগোর ডানে) ──
+    // ── App Name + Version (পাশাপাশি প্রফেশনাল স্টাইল) ──
     Font fAppName(&ff, 18, FontStyleBold, UnitPixel);
-    Font fVersion(&ff, 10, FontStyleRegular, UnitPixel);
+    Font fVersion(&ff, 12, FontStyleRegular, UnitPixel);
     SolidBrush whiteAlpha(Color(200, 255, 255, 255));
-    float textX = (float)(8 + LOGO_SIZE + 8);   // লোগো + ৮px গ্যাপ
-    g.DrawString(L"RasFocus Pro", -1, &fAppName,
-                 RectF(textX, subY + (subH / 2.0f) - 14.0f, 200.0f, 24.0f), &fmtTL, &white);
+    
+    float textX = (float)(12 + LOGO_SIZE + 10);
+    g.DrawString(L"RasFocus Pro", -1, &fAppName, RectF(textX, subY, 110.0f, subH), &fmtTL, &white);
+    
     wstring wVer(CURRENT_VERSION.begin(), CURRENT_VERSION.end());
-    g.DrawString(wVer.c_str(), -1, &fVersion,
-                 RectF(textX, subY + (subH / 2.0f) + 6.0f, 100.0f, 16.0f), &fmtTL, &whiteAlpha);
+    g.DrawString(wVer.c_str(), -1, &fVersion, RectF(textX + 108.0f, subY + 2.0f, 60.0f, subH), &fmtTL, &whiteAlpha);
 
     // ── ডান পাশে: Feedback icon + My Account button ──
     float rightPad = 20.0f;
-    float btnH     = 36.0f;
+    float btnH     = 34.0f;
     float btnY     = subY + (subH - btnH) / 2.0f;
 
     // My Account বাটন
-    float acBtnW  = 130.0f;
+    float acBtnW  = 120.0f;
     float acBtnX  = (float)w - rightPad - acBtnW;
 
     GraphicsPath acPath;
-    float r2 = 6.0f, d2 = r2 * 2.0f;
+    float r2 = 5.0f, d2 = r2 * 2.0f;
     acPath.AddArc(acBtnX, btnY, d2, d2, 180.0f, 90.0f);
     acPath.AddArc(acBtnX + acBtnW - d2, btnY, d2, d2, 270.0f, 90.0f);
     acPath.AddArc(acBtnX + acBtnW - d2, btnY + btnH - d2, d2, d2, 0.0f, 90.0f);
@@ -670,26 +670,32 @@ void DrawSubHeader(Graphics& g, int w) {
     Pen acBorder(Color(100, 255, 255, 255), 1.0f);
     g.DrawPath(&acBorder, &acPath);
 
-    Font fBtnIcon(&ffIcons, 15, FontStyleRegular, UnitPixel);
-    g.DrawString(L"\xE77B", -1, &fBtnIcon, RectF(acBtnX + 10.0f, btnY, 24.0f, btnH), &fmtC, &white);
+    Font fBtnIcon(&ffIcons, 14, FontStyleRegular, UnitPixel);
+    g.DrawString(L"\xE77B", -1, &fBtnIcon, RectF(acBtnX + 8.0f, btnY, 20.0f, btnH), &fmtC, &white);
 
     Font fBtnTxt(&ff, 12, FontStyleBold, UnitPixel);
-    StringFormat fmtBtnL;
-    fmtBtnL.SetAlignment(StringAlignmentNear);
-    fmtBtnL.SetLineAlignment(StringAlignmentCenter);
-    g.DrawString(L"My Account", -1, &fBtnTxt,
-                 RectF(acBtnX + 38.0f, btnY, acBtnW - 45.0f, btnH), &fmtBtnL, &white);
+    g.DrawString(L"My Account", -1, &fBtnTxt, RectF(acBtnX + 32.0f, btnY, acBtnW - 35.0f, btnH), &fmtTL, &white);
 
-    // Feedback icon
-    float fbIconX = acBtnX - 55.0f;
-    float fbIconW = 40.0f;
+    // Feedback icon with Text
+    float fbIconW = 60.0f;
+    float fbIconX = acBtnX - fbIconW - 10.0f;
+    
     if (hoverFeedback) {
         SolidBrush fbHover(Color(50, 255, 255, 255));
-        g.FillEllipse(&fbHover, fbIconX, btnY, fbIconW, btnH);
+        GraphicsPath fbPath;
+        fbPath.AddArc(fbIconX, btnY, d2, d2, 180, 90);
+        fbPath.AddArc(fbIconX+fbIconW-d2, btnY, d2, d2, 270, 90);
+        fbPath.AddArc(fbIconX+fbIconW-d2, btnY+btnH-d2, d2, d2, 0, 90);
+        fbPath.AddArc(fbIconX, btnY+btnH-d2, d2, d2, 90, 90);
+        fbPath.CloseFigure();
+        g.FillPath(&fbHover, &fbPath);
     }
-    Font fFbIcon(&ffIcons, 18, FontStyleRegular, UnitPixel);
-    g.DrawString(L"\xED15", -1, &fFbIcon,
-                 RectF(fbIconX, btnY, fbIconW, btnH), &fmtC, &white);
+    
+    Font fFbIcon(&ffIcons, 16, FontStyleRegular, UnitPixel);
+    Font fFbTxt(&ff, 9, FontStyleRegular, UnitPixel);
+    
+    g.DrawString(L"\xED15", -1, &fFbIcon, RectF(fbIconX, btnY + 2.0f, fbIconW, 18.0f), &fmtC, &white);
+    g.DrawString(L"Feedback", -1, &fFbTxt, RectF(fbIconX, btnY + 18.0f, fbIconW, 16.0f), &fmtC, &whiteAlpha);
 }
 
 // ------------------------------------------
@@ -884,25 +890,26 @@ void OnPaint(HWND hWnd, HDC hdc) {
 }
 
 // ==========================================
-// COORDINATE HELPERS
+// COORDINATE HELPERS — আপডেটেড (ফিডব্যাক ও মাই একাউন্ট বাটন অনুযায়ী)
 // ==========================================
 inline bool HitFeedbackIcon(float x, float y, float w) {
     float subY  = (float)TITLEBAR_HEIGHT;
     float subH  = (float)SUBHEADER_HEIGHT;
-    float btnH  = 36.0f;
+    float btnH  = 34.0f;
     float btnY  = subY + (subH - btnH) / 2.0f;
-    float acBtnW = 130.0f;
+    float acBtnW = 120.0f;
     float acBtnX = w - 20.0f - acBtnW;
-    float fbIconX = acBtnX - 55.0f;
-    return (x >= fbIconX && x <= fbIconX + 40.0f && y >= btnY && y <= btnY + btnH);
+    float fbIconW = 60.0f;
+    float fbIconX = acBtnX - fbIconW - 10.0f;
+    return (x >= fbIconX && x <= fbIconX + fbIconW && y >= btnY && y <= btnY + btnH);
 }
 
 inline bool HitMyAccount(float x, float y, float w) {
     float subY  = (float)TITLEBAR_HEIGHT;
     float subH  = (float)SUBHEADER_HEIGHT;
-    float btnH  = 36.0f;
+    float btnH  = 34.0f;
     float btnY  = subY + (subH - btnH) / 2.0f;
-    float acBtnW = 130.0f;
+    float acBtnW = 120.0f;
     float acBtnX = w - 20.0f - acBtnW;
     return (x >= acBtnX && x <= acBtnX + acBtnW && y >= btnY && y <= btnY + btnH);
 }
