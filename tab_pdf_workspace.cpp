@@ -595,11 +595,25 @@ body.night .rbtn{color:#ccc!important;}
 body.night .rbtn:hover{background:#333!important;}
 body.night .statusbar{background:#1e1e1e!important;border-color:#333!important;}
 body.night .sb-item{color:#888!important;}
-/* Read mode */
+/* Read mode — only topbar + tabbar visible, ribbon/panels/statusbar hidden */
 body.read .left-panel,body.read .right-panel,
-body.read .ribbon-wrap,body.read .tabbar,body.read .topbar,
-body.read .statusbar{display:none!important;}
+body.read .ribbon-wrap,body.read .statusbar{display:none!important;}
 body.read .pdf-viewer-area{background:#1a1a1a!important;}
+/* Read mode floating Edit button */
+#read-edit-btn{
+  display:none;position:fixed;top:8px;right:12px;z-index:9999;
+  background:#2563eb;color:#fff;border:none;border-radius:6px;
+  padding:4px 14px;font-size:12px;font-weight:700;cursor:pointer;
+  box-shadow:0 2px 8px rgba(0,0,0,.35);letter-spacing:.3px;
+  transition:background .15s;
+}
+#read-edit-btn:hover{background:#1d4ed8;}
+body.read #read-edit-btn{display:block;}
+/* Read mode: slim topbar */
+body.read .topbar{background:#111;height:28px;}
+body.read .top-menu{font-size:11px;}
+body.read .tabbar{height:24px;}
+body.read .pdf-tab{font-size:10px;padding:0 10px;}
 /* Presentation mode */
 body.present *{cursor:none!important;}
 body.present .left-panel,body.present .right-panel,
@@ -655,6 +669,8 @@ ss << LR"CSS(
 // ─────────────────────────────────────────────────────────────
 ss << LR"HTML(
 <div id="app">
+<!-- ── READ MODE FLOATING EDIT BUTTON ── -->
+<button id="read-edit-btn" onclick="exitReadMode()" title="Exit Read Mode & Edit">✏️ Edit</button>
 <!-- ── TOPBAR ── -->
 <div class="topbar">
   <div class="top-menu" id="tm-file" onclick="toggleMenu('m-file',this)">File</div>
@@ -720,7 +736,7 @@ ss << LR"HTML(
   <div class="dd-item" onclick="toggleRightPanel()">&#9881; Properties Panel</div>
   <div class="dd-sep"></div>
   <div class="dd-item" onclick="cycleViewMode()">&#9790; Night / Sepia / Normal</div>
-  <div class="dd-item" onclick="enterReadMode()">&#9634; Read Mode</div>
+  <div class="dd-item" onclick="enterReadMode();closeAllMenus()">&#9634; Read Mode (ESC to exit)</div>
   <div class="dd-item" onclick="enterPresentation()">&#9654; Presentation Mode</div>
 </div>
 )HTML";
@@ -1174,7 +1190,7 @@ ss << LR"HTML(
   <div class="sb-right">
     <span class="sb-item" id="sb-mode">Normal</span>
     <div class="sb-sep"></div>
-    <span class="sb-item" style="cursor:pointer;" onclick="enterReadMode()">&#9634;</span>
+    <span class="sb-item" style="cursor:pointer;" onclick="enterReadMode()" title="Read Mode (ESC to exit)">&#9634;</span>
     <span class="sb-item" style="cursor:pointer;" onclick="enterPresentation()">&#9654;</span>
   </div>
 </div>
@@ -1537,44 +1553,59 @@ function scheduleRender(delay = 60) {
   g_renderTimer = setTimeout(() => renderViewer(), delay);
 }
 
+// Render token: cancels stale renders when a new one starts
+let g_renderToken = 0;
+
 async function renderViewer() {
   const t = activeTab(); if (!t) return;
+  const myToken = ++g_renderToken; // invalidate any previous render
+
   const container = document.getElementById('pdf-container');
   container.innerHTML = '';
 
+  const DPR = window.devicePixelRatio || 1; // HiDPI support
+
   for (let i = 0; i < t.pageOrder.length; i++) {
+    if (myToken !== g_renderToken) return; // cancelled by newer render
+
     const pNum = t.pageOrder[i];
     const page = await t.doc.getPage(pNum);
-    const vp = page.getViewport({ scale: t.zoom, rotation: t.rotation });
+    // ── Viewport: render at DPR×zoom for crisp output ──
+    const vpCss  = page.getViewport({ scale: t.zoom, rotation: t.rotation }); // layout size
+    const vp     = page.getViewport({ scale: t.zoom * DPR, rotation: t.rotation }); // render size
 
     const wrapper = document.createElement('div');
     wrapper.className = 'page-wrapper';
     wrapper.id = 'pw-' + i;
     wrapper.dataset.pageIndex = i;
-    wrapper.dataset.pdfPage = pNum;
-    wrapper.style.width = vp.width + 'px';
-    wrapper.style.height = vp.height + 'px';
+    wrapper.dataset.pdfPage   = pNum;
+    wrapper.style.width  = vpCss.width  + 'px';  // layout uses CSS size
+    wrapper.style.height = vpCss.height + 'px';
 )JS";
 
 ss << LR"JS(
-    // PDF canvas
+    // ── PDF canvas: full HiDPI resolution ──
     const pdfCanvas = document.createElement('canvas');
-    pdfCanvas.className = 'pdf-canvas';
-    pdfCanvas.width = vp.width; pdfCanvas.height = vp.height;
+    pdfCanvas.className    = 'pdf-canvas';
+    pdfCanvas.width        = Math.round(vp.width);   // already DPR×zoom resolution
+    pdfCanvas.height       = Math.round(vp.height);
+    pdfCanvas.style.width  = vpCss.width  + 'px';    // display at CSS size
+    pdfCanvas.style.height = vpCss.height + 'px';
+    const pdfCtx = pdfCanvas.getContext('2d');
+    // No ctx.scale needed — viewport is already at DPR scale
 
-    // Draw canvas
+    // ── Draw canvas (annotation layer — CSS size is fine) ──
     const drawCanvas = document.createElement('canvas');
-    drawCanvas.className = 'draw-canvas';
-    drawCanvas.width = vp.width; drawCanvas.height = vp.height;
-    drawCanvas.style.width = vp.width + 'px';
-    drawCanvas.style.height = vp.height + 'px';
+    drawCanvas.className   = 'draw-canvas';
+    drawCanvas.width       = vpCss.width;
+    drawCanvas.height      = vpCss.height;
+    drawCanvas.style.width  = vpCss.width  + 'px';
+    drawCanvas.style.height = vpCss.height + 'px';
 
-    // Grid
-    const grid = document.createElement('div');
+    // ── Grid + selection ──
+    const grid    = document.createElement('div');
     grid.className = 'grid-overlay' + (g_showGrid ? ' show' : '');
-
-    // Selection rect
-    const selRect = document.createElement('div');
+    const selRect  = document.createElement('div');
     selRect.className = 'sel-rect';
 
     wrapper.appendChild(pdfCanvas);
@@ -1583,10 +1614,14 @@ ss << LR"JS(
     wrapper.appendChild(selRect);
     container.appendChild(wrapper);
 
-    // Render PDF page
-    page.render({ canvasContext: pdfCanvas.getContext('2d'), viewport: vp });
+    // ── Render & AWAIT so page is visible before moving on ──
+    try {
+      await page.render({ canvasContext: pdfCtx, viewport: vp }).promise;
+    } catch(e) { /* page destroyed / replaced — skip */ }
 
-    // Restore overlays
+    if (myToken !== g_renderToken) return; // cancelled mid-render
+
+    // ── Restore overlays ──
     restoreDrawAnnotations(i, drawCanvas, vp.width, vp.height);
     restoreShapes(t, i, wrapper);
     restoreTextBoxes(t, i, wrapper);
@@ -1655,7 +1690,16 @@ document.addEventListener('keydown', e => {
   if (ctrl && e.key === '0') { zoomTo(1.0); }
   if (ctrl && e.key === '=') { zoomBy(0.15); }
   if (ctrl && e.key === '-') { zoomBy(-0.15); }
-  if (e.key === 'Escape') { closeModal(); closeAllMenus(); closeCtx(); }
+  if (e.key === 'Escape') {
+    // Priority: modal > menus > presentation > read mode
+    if (document.querySelector('.modal-overlay[style*="flex"]') ||
+        document.getElementById('loading-overlay')?.style.display === 'flex') {
+      closeModal(); return;
+    }
+    if (document.querySelector('.dropdown.open')) { closeAllMenus(); closeCtx(); return; }
+    if (document.body.classList.contains('present')) { enterPresentation(); return; } // toggles off
+    if (document.body.classList.contains('read')) { exitReadMode(); return; }
+  }
   if (e.key === 'Delete') deleteSelectedAnnotation();
   // Tool keys
   if (e.key === '1') setTool('hand');
@@ -3210,6 +3254,9 @@ async function actionPDFtoText() {
 ss << LR"JS(
 async function actionPerformOCR() {
   const t=activeTab(); if (!t){ showToast('Open a PDF.'); return; }
+  // If in read mode, temporarily exit so loading overlay is visible
+  const wasReadMode = document.body.classList.contains('read');
+  if (wasReadMode) exitReadMode();
   showLoading(true,'Running OCR (page 1)…',10);
   try {
     const page=await t.doc.getPage(t.pageOrder[0]);
@@ -3223,6 +3270,8 @@ async function actionPerformOCR() {
     showToast('OCR complete! Confidence: '+Math.round(result.data.confidence)+'%','success');
   } catch(e){ showToast('OCR failed: '+e.message); }
   showLoading(false);
+  // Restore read mode after OCR
+  if (wasReadMode) enterReadMode();
 }
 
 async function refreshStats() {
@@ -3262,10 +3311,17 @@ function cycleViewMode() {
   document.getElementById('sb-mode').textContent=labels[g_viewMode];
 }
 function enterReadMode() {
-  document.body.classList.toggle('read');
-  const on=document.body.classList.contains('read');
-  document.getElementById('sb-mode').textContent=on?'Read':'Normal';
-  if (!on) setTimeout(()=>{ const t=activeTab(); if(t) renderViewer(); },80);
+  document.body.classList.add('read');
+  document.getElementById('sb-mode').textContent = 'Read';
+}
+function exitReadMode() {
+  document.body.classList.remove('read');
+  document.getElementById('sb-mode').textContent = 'Normal';
+  setTimeout(() => { const t = activeTab(); if (t) renderViewer(); }, 80);
+}
+function toggleReadMode() {
+  if (document.body.classList.contains('read')) exitReadMode();
+  else enterReadMode();
 }
 function enterPresentation() {
   if (document.body.classList.contains('present')) {
