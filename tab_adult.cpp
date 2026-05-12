@@ -1,6 +1,10 @@
 // tab_adult.cpp - Unified Adult Block + Strict Protocols (v2.0)
 // Red-marked section removed. AI Filter removed. All in one GDI+ file.
+<<<<<<< HEAD
 // UPDATED: Professional 2-Column Layout to fix overlap and empty right space.
+=======
+// UPDATED: Single page layout, smaller fonts, compact design, no overlap.
+>>>>>>> 4469fab460e8a04c30e0957b1fff00e24b45a38c
 
 #include "tab_adult.h"
 #include <vector>
@@ -587,16 +591,24 @@ static void DrawSpinner(Graphics& g, float x, float y, const wstring& val,
 
 // ==========================================
 // ==========================================
+<<<<<<< HEAD
 // --- MAIN DRAW FUNCTION (2-COLUMN PAGE) ---
+=======
+// --- MAIN DRAW FUNCTION (Unified Page) ---
+>>>>>>> 4469fab460e8a04c30e0957b1fff00e24b45a38c
 // ==========================================
 // ==========================================
 void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
     s_contentX=cx; s_contentY=cy; s_contentW=cw; s_contentH=ch;
     InitAdultSystemOnBoot();
 
-    // --- Fonts ---
+    // --- Fonts (Scaled Down Slightly) ---
     FontFamily ff(L"Segoe UI");
+<<<<<<< HEAD
     Font fTitle(&ff,16,FontStyleBold,UnitPixel);
+=======
+    Font fTitle(&ff,18,FontStyleBold,UnitPixel);
+>>>>>>> 4469fab460e8a04c30e0957b1fff00e24b45a38c
     Font fNorm(&ff,12,FontStyleRegular,UnitPixel);
     Font fBold(&ff,13,FontStyleBold,UnitPixel);
     Font fSmall(&ff,11,FontStyleRegular,UnitPixel);
@@ -619,6 +631,7 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
     // Main background
     g.FillRectangle(&bBg,cx,cy,cw,ch);
 
+<<<<<<< HEAD
     // ─────────────────────────────────────────
     // LAYOUT CONSTANTS (2-COLUMN)
     // ─────────────────────────────────────────
@@ -633,6 +646,20 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
     RectF rFocusS(L_X + 470, cy + 15, 120, 30);
     RectF rPanic(L_X + 600, cy + 15, 110, 30);
 
+=======
+    // Layout Core Variables
+    float bX = cx + 20.0f;
+    float row1Y = cy + 15.0f;
+
+    RectF rFocusA(bX, row1Y, 130, 30);
+    RectF rMode(bX + 140, row1Y, 110, 30);
+    RectF rRel(bX + 260, row1Y, 100, 30);
+    RectF rLang(bX + 370, row1Y, 80, 30);
+    RectF rFocusS(bX + 460, row1Y, 120, 30);
+    RectF rPanic(bX + 590, row1Y, 110, 30);
+
+    // Helper lambda: draw a dropdown
+>>>>>>> 4469fab460e8a04c30e0957b1fff00e24b45a38c
     auto drawDrop=[&](RectF r, wstring txt, bool hov){
         GraphicsPath* p=MakeRoundRect(r,4);
         SolidBrush db(hov&&!isAdultFocusActive?AClrBgHover:AClrWhite);
@@ -642,6 +669,12 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
         g.DrawString(L"\xE70D",-1,&fSmIcon,RectF(r.X+r.Width-22,r.Y,22,r.Height),&fC,&bGr);
     };
 
+<<<<<<< HEAD
+=======
+    // ─────────────────────────────────────────
+    // ROW 1: General Controls (Safe & Strict)
+    // ─────────────────────────────────────────
+>>>>>>> 4469fab460e8a04c30e0957b1fff00e24b45a38c
     // Safe Focus
     {
         bool locked=(cb24HourLock||( isAdultFocusActive&&controlMode==0&&!cb24HourLock));
@@ -691,6 +724,7 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
             RectF(rPanic.X+28,rPanic.Y,rPanic.Width-28,rPanic.Height),&fL,&bW);
     }
 
+<<<<<<< HEAD
     // Divider
     g.DrawLine(&pBorder, L_X, cy + 55.0f, R_X + 360.0f, cy + 55.0f);
 
@@ -704,6 +738,21 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
     RectF rCbHardcore(L_X, cbStartY + 30, 360, 22);
     RectF rCbRomantic(L_X, cbStartY + 60, 360, 22);
     RectF rCbFbReels(L_X, cbStartY + 90, 360, 22);
+=======
+    g.DrawLine(&pBorder, bX, row1Y + 38.0f, cx + cw - 20.0f, row1Y + 38.0f);
+
+    // ─────────────────────────────────────────
+    // ROW 2: Blocking Rules & Custom Keywords
+    // ─────────────────────────────────────────
+    float row2Y = row1Y + 45.0f; // Y = 60
+    g.DrawString(L"Safe Browsing Rules & Custom Keywords",-1,&fBold,RectF(bX,row2Y,350,20),&fL,&bSecLbl);
+
+    float cbStartY = row2Y + 25.0f;
+    RectF rCbAdult(bX, cbStartY, 250, 22);
+    RectF rCbHardcore(bX, cbStartY + 26, 250, 22);
+    RectF rCbRomantic(bX, cbStartY + 52, 250, 22);
+    RectF rCbFbReels(bX, cbStartY + 78, 250, 22);
+>>>>>>> 4469fab460e8a04c30e0957b1fff00e24b45a38c
 
     auto drawCb=[&](RectF r, const wchar_t* txt, bool state, bool hover){
         RectF cbR(r.X, r.Y + 2, 16.0f, 16.0f);
@@ -720,11 +769,18 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
     drawCb(rCbRomantic, L"Block Romantic / Softcore", cbRomantic, hCbRomantic);
     drawCb(rCbFbReels, L"Block FB Reels / YT Shorts", cbFbReels, hCbFbReels);
 
+<<<<<<< HEAD
     g.DrawString(L"Custom Keywords",-1,&fBold,RectF(L_X, cy+230, 360, 20),&fL,&bSecLbl);
     
     RectF rCustIn(L_X, cy + 260, 290, 28);
     RectF rCustAdd(L_X + 300, cy + 260, 60, 28);
     RectF rCustTbl(L_X, cy + 295, 360, 105);
+=======
+    float rX = bX + 280.0f;
+    RectF rCustIn(rX, row2Y + 25, 200, 28);
+    RectF rCustAdd(rX + 210, row2Y + 25, 60, 28);
+    RectF rCustTbl(rX, row2Y + 60, 270, 75);
+>>>>>>> 4469fab460e8a04c30e0957b1fff00e24b45a38c
 
     GraphicsPath* cip=MakeRoundRect(rCustIn,4);
     g.FillPath(&bW,cip);
@@ -733,9 +789,15 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
     delete cip;
 
     if(customInputText.empty()&&!isCustomInputActive)
+<<<<<<< HEAD
         g.DrawString(L"e.g. badword",-1,&fNorm,RectF(rCustIn.X+8,rCustIn.Y,270,28),&fL,&bGr);
     else{
         g.DrawString(customInputText.c_str(),-1,&fNorm,RectF(rCustIn.X+8,rCustIn.Y,270,28),&fL,&bDk);
+=======
+        g.DrawString(L"e.g. badword",-1,&fNorm,RectF(rCustIn.X+8,rCustIn.Y,180,28),&fL,&bGr);
+    else{
+        g.DrawString(customInputText.c_str(),-1,&fNorm,RectF(rCustIn.X+8,rCustIn.Y,180,28),&fL,&bDk);
+>>>>>>> 4469fab460e8a04c30e0957b1fff00e24b45a38c
         if(isCustomInputActive&&(GetTickCount()/500)%2==0){
             Graphics gT(GetDesktopWindow()); RectF br;
             gT.MeasureString(customInputText.c_str(),-1,&fNorm,PointF(0,0),&br);
@@ -754,17 +816,27 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
     for(int i=0;i<maxD;i++){
         int di=customScrollOffset+i;
         if(di>=(int)customAdultKeywords.size()) break;
+<<<<<<< HEAD
         if(i%2==0){SolidBrush rowBg(Color(255,248,251,253));g.FillRectangle(&rowBg,rCustTbl.X+1,itmY,rCustTbl.Width-2,34.0f);}
         g.DrawString(customAdultKeywords[di].name.c_str(),-1,&fNorm,RectF(L_X+8,itmY,300,34),&fL,&bDk);
         SolidBrush xBr(customAdultKeywords[di].isHoveredCross?AClrRed:AClrGrayText);
         g.DrawString(L"\xE711",-1,&fSmIcon,RectF(L_X+320,itmY,30,34),&fC,&xBr);
         if(i<maxD-1) g.DrawLine(&pBorder,rCustTbl.X+2,itmY+34,rCustTbl.X+rCustTbl.Width-2,itmY+34);
         itmY+=35.0f;
+=======
+        if(i%2==0){SolidBrush rowBg(Color(255,248,251,253));g.FillRectangle(&rowBg,rCustTbl.X+1,itmY,rCustTbl.Width-2,24.0f);}
+        g.DrawString(customAdultKeywords[di].name.c_str(),-1,&fNorm,RectF(rX+8,itmY,230,24),&fL,&bDk);
+        SolidBrush xBr(customAdultKeywords[di].isHoveredCross?AClrRed:AClrGrayText);
+        g.DrawString(L"\xE711",-1,&fSmIcon,RectF(rX+240,itmY,24,24),&fC,&xBr);
+        if(i<maxD-1) g.DrawLine(&pBorder,rCustTbl.X+2,itmY+24,rCustTbl.X+rCustTbl.Width-2,itmY+24);
+        itmY+=25.0f;
+>>>>>>> 4469fab460e8a04c30e0957b1fff00e24b45a38c
     }
     if(customAdultKeywords.empty()) g.DrawString(L"No custom keywords added yet",-1,&fSmall,rCustTbl,&fC,&bGr);
     if((int)customAdultKeywords.size()>3) g.FillRectangle(&bGr,(INT)(rCustTbl.X+rCustTbl.Width-4),(INT)rCustTbl.Y,4,(INT)rCustTbl.Height);
 
     // ─────────────────────────────────────────
+<<<<<<< HEAD
     // RIGHT COLUMN: Strict Protocols & Advanced Options
     // ─────────────────────────────────────────
     g.DrawString(L"Strict Protocol Settings",-1,&fBold,RectF(R_X, cy+65, 360, 20),&fL,&bSecLbl);
@@ -778,12 +850,23 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
         RectF(R_X + 185, cy + 170, cardW2, cardH2),
         RectF(R_X, cy + 245, 360, cardH2)
     };
+=======
+    // ROW 3: Strict Protocols (Grid)
+    // ─────────────────────────────────────────
+    float row3Y = row2Y + 145.0f; // Y = 205
+    g.DrawString(L"Strict Protocol Settings",-1,&fBold,RectF(bX,row3Y,200,20),&fL,&bSecLbl);
+
+    float gridY = row3Y + 25.0f; // Y = 230
+    float cardW = (cw - 60) / 3.0f;
+    float cardH = 65.0f;
+>>>>>>> 4469fab460e8a04c30e0957b1fff00e24b45a38c
 
     struct StrictCard {
         const wchar_t* icon; const wchar_t* title; const wchar_t* desc;
         bool* state; bool* hover; Color activeClr;
     };
     StrictCard cards[]={
+<<<<<<< HEAD
         {L"\xE946", L"Silent Monitor",  L"Log & detect URLs.",       &cbSilentUrl,  &hCbSilentUrl,  AClrTeal},
         {L"\xE70F", L"Family DNS",      L"Cloudflare safe DNS.",     &cbDnsFilter,  &hCbDnsFilter,  AClrTeal},
         {L"\xE721", L"Safe Search",     L"Force web SafeSearch.",    &cbSafeSearch, &hCbSafeSearch, AClrTeal},
@@ -816,14 +899,63 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
 
         if(st){
             GraphicsPath* bar=MakeRoundRect(RectF(cardR.X,cardR.Y+8,3,cardH2-16),2);
+=======
+        {L"\xE946", L"Silent URL Monitor",  L"Log & detect URLs.",       &cbSilentUrl,  &hCbSilentUrl,  AClrTeal},
+        {L"\xE70F", L"DNS Family Filter",   L"Cloudflare family DNS.",   &cbDnsFilter,  &hCbDnsFilter,  AClrTeal},
+        {L"\xE721", L"Safe Search Enforce", L"Force SafeSearch on web.", &cbSafeSearch, &hCbSafeSearch, AClrTeal},
+        {L"\xE890", L"Block Incognito",     L"Close private windows.",   &cbIncognito,  &hCbIncognito,  AClrTeal},
+        {L"\xE72E", L"Strict Lock Mode",    L"Block TaskMgr & Regedit.", &cbStrictMode, &hCbStrictMode, AClrRed},
+    };
+
+    for(int i=0;i<5;i++){
+        int row=i/3, col=i%3;
+        float cx2=bX+col*(cardW+10.0f);
+        float cy2=gridY+row*(cardH+10.0f);
+        RectF cardR(cx2,cy2,cardW,cardH);
+
+        bool st=*cards[i].state; bool hv=*cards[i].hover;
+        GraphicsPath* cp=MakeRoundRect(cardR,5);
+        SolidBrush cbg(hv&&!st?AClrBgHover:(st?AClrTealLight:AClrCardBg));
+        g.FillPath(&cbg,cp);
+        Pen cp2(st?cards[i].activeClr:AClrBorder,(st?2.0f:1.5f));
+        g.DrawPath(&cp2,cp); delete cp;
+
+        SolidBrush iconC(st?cards[i].activeClr:AClrGrayText);
+        g.DrawString(cards[i].icon,-1,&fLgIcon,RectF(cx2+8,cy2+12,28,40),&fL,&iconC);
+
+        RectF cbx(cx2+cardW-24,cy2+8,16,16);
+        GraphicsPath* cxp=MakeRoundRect(cbx,3);
+        SolidBrush cxf(st?cards[i].activeClr:AClrWhite);
+        g.FillPath(&cxf,cxp); g.DrawPath(&pBorder,cxp); delete cxp;
+        if(st) g.DrawString(L"\xE73E",-1,&fSmIcon,cbx,&fC,&bW);
+
+        SolidBrush titleC(st?AClrDark:AClrDark);
+        g.DrawString(cards[i].title,-1,&fBold,RectF(cx2+40,cy2+8,cardW-68,18),&fL,&titleC);
+        g.DrawString(cards[i].desc,-1,&fTiny,RectF(cx2+40,cy2+26,cardW-44,30),&fL,&bGr);
+
+        if(st){
+            GraphicsPath* bar=MakeRoundRect(RectF(cx2,cy2+8,3,cardH-16),2);
+>>>>>>> 4469fab460e8a04c30e0957b1fff00e24b45a38c
             SolidBrush barB(cards[i].activeClr); g.FillPath(&barB,bar); delete bar;
         }
     }
 
+<<<<<<< HEAD
     g.DrawString(L"Advanced Options",-1,&fBold,RectF(R_X, cy+330, 200, 20),&fL,&bSecLbl);
 
     RectF rCard24h(R_X, cy + 360, cardW2, 70);
     RectF rCardPop(R_X + 185, cy + 360, cardW2, 70);
+=======
+    // ─────────────────────────────────────────
+    // ROW 4: Advanced Options
+    // ─────────────────────────────────────────
+    float row4Y = gridY + 2 * (cardH + 10.0f) + 5.0f; // Y = 385
+    g.DrawString(L"Advanced Options",-1,&fBold,RectF(bX,row4Y,200,20),&fL,&bSecLbl);
+
+    float r4CardW = (cw - 50) / 2.0f;
+    RectF rCard24h(bX, row4Y + 25, r4CardW, 65);
+    RectF rCardPop(bX + r4CardW + 10, row4Y + 25, r4CardW, 65);
+>>>>>>> 4469fab460e8a04c30e0957b1fff00e24b45a38c
 
     // Card 1: 24h Lockdown
     {
@@ -834,6 +966,7 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
         g.DrawPath(&cp2,cp); delete cp;
 
         SolidBrush iconC(cb24HourLock?AClrTeal:AClrOrange);
+<<<<<<< HEAD
         g.DrawString(L"\xE72E",-1,&fLgIcon,RectF(rCard24h.X+8,rCard24h.Y+15,28,40),&fL,&iconC);
 
         RectF cbx(rCard24h.X+rCard24h.Width-20,rCard24h.Y+8,14,14);
@@ -848,6 +981,22 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
             ULONGLONG left=lock24hEndTime>GetTickCount64()?lock24hEndTime-GetTickCount64():0;
             wstring rem=to_wstring(left/3600000)+L"h "+to_wstring((left%3600000)/60000)+L"m left";
             g.DrawString(rem.c_str(),-1,&fTiny,RectF(rCard24h.X+38,rCard24h.Y+42,rCard24h.Width-42,18),&fL,&bTeal);
+=======
+        g.DrawString(L"\xE72E",-1,&fLgIcon,RectF(rCard24h.X+10,rCard24h.Y+12,28,40),&fL,&iconC);
+
+        RectF cbx(rCard24h.X+rCard24h.Width-24,rCard24h.Y+8,16,16);
+        GraphicsPath* cxp=MakeRoundRect(cbx,3);
+        SolidBrush cxf(cb24HourLock?AClrTeal:AClrWhite);
+        g.FillPath(&cxf,cxp); g.DrawPath(&pBorder,cxp); delete cxp;
+        if(cb24HourLock) g.DrawString(L"\xE73E",-1,&fSmIcon,cbx,&fC,&bW);
+
+        g.DrawString(L"24-Hour Lockdown",-1,&fBold,RectF(rCard24h.X+44,rCard24h.Y+8,rCard24h.Width-70,18),&fL,&bDk);
+        g.DrawString(L"Lock for 24h. Cannot be undone.",-1,&fTiny,RectF(rCard24h.X+44,rCard24h.Y+26,rCard24h.Width-50,20),&fL,&bGr);
+        if(cb24HourLock){
+            ULONGLONG left=lock24hEndTime>GetTickCount64()?lock24hEndTime-GetTickCount64():0;
+            wstring rem=to_wstring(left/3600000)+L"h "+to_wstring((left%3600000)/60000)+L"m left";
+            g.DrawString(rem.c_str(),-1,&fTiny,RectF(rCard24h.X+44,rCard24h.Y+42,rCard24h.Width-50,18),&fL,&bTeal);
+>>>>>>> 4469fab460e8a04c30e0957b1fff00e24b45a38c
         }
     }
 
@@ -860,6 +1009,7 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
         g.DrawPath(&cp2,cp); delete cp;
 
         SolidBrush iconC(cbPeriodicPopups?AClrTeal:AClrGrayText);
+<<<<<<< HEAD
         g.DrawString(L"\xEA8F",-1,&fLgIcon,RectF(rCardPop.X+8,rCardPop.Y+15,28,40),&fL,&iconC);
 
         RectF cbx(rCardPop.X+rCardPop.Width-20,rCardPop.Y+8,14,14);
@@ -877,6 +1027,25 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
     // ─────────────────────────────────────────
     g.DrawLine(&pBorder, L_X, cy + 460.0f, R_X + 360.0f, cy + 460.0f);
     g.DrawString(L"Active Protections",-1,&fBold,RectF(L_X, cy + 475, 200, 20),&fL,&bSecLbl);
+=======
+        g.DrawString(L"\xEA8F",-1,&fLgIcon,RectF(rCardPop.X+10,rCardPop.Y+12,28,40),&fL,&iconC);
+
+        RectF cbx(rCardPop.X+rCardPop.Width-24,rCardPop.Y+8,16,16);
+        GraphicsPath* cxp=MakeRoundRect(cbx,3);
+        SolidBrush cxf(cbPeriodicPopups?AClrTeal:AClrWhite);
+        g.FillPath(&cxf,cxp); g.DrawPath(&pBorder,cxp); delete cxp;
+        if(cbPeriodicPopups) g.DrawString(L"\xE73E",-1,&fSmIcon,cbx,&fC,&bW);
+
+        g.DrawString(L"Periodic Reminders",-1,&fBold,RectF(rCardPop.X+44,rCardPop.Y+8,rCardPop.Width-70,18),&fL,&bDk);
+        g.DrawString(L"Fullscreen quote every 25 mins during focus.",-1,&fTiny,RectF(rCardPop.X+44,rCardPop.Y+26,rCardPop.Width-50,30),&fL,&bGr);
+    }
+
+    // ─────────────────────────────────────────
+    // ROW 5: Status Summary Bar
+    // ─────────────────────────────────────────
+    float row5Y = row4Y + 105.0f; // Y = 490
+    g.DrawString(L"Active Protections",-1,&fBold,RectF(bX,row5Y,200,20),&fL,&bSecLbl);
+>>>>>>> 4469fab460e8a04c30e0957b1fff00e24b45a38c
 
     struct Badge{const wchar_t* icon;const wchar_t* label;bool active;};
     Badge badges[]={
@@ -887,7 +1056,11 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
         {L"\xE72E",L"Strict Lock", cbStrictMode},
         {L"\xE728",L"Focus Active",isStrictFocusActive || isAdultFocusActive},
     };
+<<<<<<< HEAD
     float bxx = L_X; float badgeY = cy + 505.0f;
+=======
+    float bxx=bX; float badgeY=row5Y+25.0f;
+>>>>>>> 4469fab460e8a04c30e0957b1fff00e24b45a38c
     for(auto& badge:badges){
         Color bc=badge.active?AClrTeal:AClrBorder;
         SolidBrush txtc(badge.active?AClrWhite:AClrGrayText);
@@ -1062,6 +1235,7 @@ void ProcessAdultMouseMove(float x, float y) {
         return;
     }
 
+<<<<<<< HEAD
     float L_X = cx + 20.0f;
     float R_X = cx + 410.0f;
 
@@ -1080,10 +1254,30 @@ void ProcessAdultMouseMove(float x, float y) {
     if(isRelDropOpen){hoverRelIdx=-1;RectF dR(rRel.X,rRel.Y+31,rRel.Width,120);for(int i=0;i<4;i++)if(RectF(dR.X,dR.Y+i*30,dR.Width,30).Contains(x,y))hoverRelIdx=i;return;}
     if(isLangDropOpen){hoverLangIdx=-1;RectF dR(rLang.X,rLang.Y+31,rLang.Width,60);for(int i=0;i<2;i++)if(RectF(dR.X,dR.Y+i*30,dR.Width,30).Contains(x,y))hoverLangIdx=i;return;}
 
+=======
+    float bX = cx + 20.0f;
+    float row1Y = cy + 15.0f;
+    RectF rFocusA(bX, row1Y, 130, 30);
+    RectF rMode(bX + 140, row1Y, 110, 30);
+    RectF rRel(bX + 260, row1Y, 100, 30);
+    RectF rLang(bX + 370, row1Y, 80, 30);
+    RectF rFocusS(bX + 460, row1Y, 120, 30);
+    RectF rPanic(bX + 590, row1Y, 110, 30);
+
+    hoverAdultFocusBtn = rFocusA.Contains(x,y) && !cb24HourLock && !(isAdultFocusActive&&controlMode==0);
+    hoverStrictFocusBtn= rFocusS.Contains(x,y);
+    hoverStrictPanicBtn= rPanic.Contains(x,y);
+
+    if(isControlDropOpen){hoverCtrlIdx=-1;RectF dR(rMode.X,rMode.Y+31,rMode.Width,60);for(int i=0;i<2;i++)if(RectF(dR.X,dR.Y+i*30,dR.Width,30).Contains(x,y))hoverCtrlIdx=i;return;}
+    if(isRelDropOpen){hoverRelIdx=-1;RectF dR(rRel.X,rRel.Y+31,rRel.Width,120);for(int i=0;i<4;i++)if(RectF(dR.X,dR.Y+i*30,dR.Width,30).Contains(x,y))hoverRelIdx=i;return;}
+    if(isLangDropOpen){hoverLangIdx=-1;RectF dR(rLang.X,rLang.Y+31,rLang.Width,60);for(int i=0;i<2;i++)if(RectF(dR.X,dR.Y+i*30,dR.Width,30).Contains(x,y))hoverLangIdx=i;return;}
+
+>>>>>>> 4469fab460e8a04c30e0957b1fff00e24b45a38c
     hoverControlDrop=rMode.Contains(x,y);
     hoverRelDrop=rRel.Contains(x,y);
     hoverLangDrop=rLang.Contains(x,y);
 
+<<<<<<< HEAD
     float cbStartY = cy + 95;
     hCbAdultWeb = RectF(L_X, cbStartY, 360, 22).Contains(x,y);
     hCbHardcore = RectF(L_X, cbStartY + 30, 360, 22).Contains(x,y);
@@ -1115,6 +1309,41 @@ void ProcessAdultMouseMove(float x, float y) {
 
     hCb24HourLock    = RectF(R_X, cy + 360, cardW2, 70).Contains(x,y);
     hCbPeriodicPopups= RectF(R_X + 185, cy + 360, cardW2, 70).Contains(x,y);
+=======
+    float row2Y = row1Y + 45.0f;
+    float cbStartY = row2Y + 25.0f;
+    hCbAdultWeb = RectF(bX, cbStartY, 250, 22).Contains(x,y);
+    hCbHardcore = RectF(bX, cbStartY + 26, 250, 22).Contains(x,y);
+    hCbRomantic = RectF(bX, cbStartY + 52, 250, 22).Contains(x,y);
+    hCbFbReels  = RectF(bX, cbStartY + 78, 250, 22).Contains(x,y);
+
+    float rX = bX + 280.0f;
+    hoverCustomInput  = RectF(rX, row2Y + 25, 200, 28).Contains(x,y);
+    hoverCustomAddBtn = RectF(rX + 210, row2Y + 25, 60, 28).Contains(x,y);
+
+    if(!isAdultFocusActive){
+        float iy=row2Y + 61.0f;
+        int md=min(3,(int)customAdultKeywords.size()-customScrollOffset);
+        for(int i=0;i<md;i++){int di=customScrollOffset+i;if(RectF(rX+240,iy,24,24).Contains(x,y))customAdultKeywords[di].isHoveredCross=true;iy+=25.0f;}
+    }
+
+    float row3Y = row2Y + 145.0f;
+    float gridY = row3Y + 25.0f;
+    float cardW = (cw - 60) / 3.0f;
+    float cardH = 65.0f;
+    bool* hov[]={&hCbSilentUrl,&hCbDnsFilter,&hCbSafeSearch,&hCbIncognito,&hCbStrictMode};
+    for(int i=0;i<5;i++){
+        int row=i/3, col=i%3;
+        float cx2=bX+col*(cardW+10.0f);
+        float cy2=gridY+row*(cardH+10.0f);
+        *hov[i]=RectF(cx2,cy2,cardW,cardH).Contains(x,y);
+    }
+
+    float row4Y = gridY + 2 * (cardH + 10.0f) + 5.0f;
+    float r4CardW = (cw - 50) / 2.0f;
+    hCb24HourLock    = RectF(bX, row4Y + 25, r4CardW, 65).Contains(x,y);
+    hCbPeriodicPopups= RectF(bX + r4CardW + 10, row4Y + 25, r4CardW, 65).Contains(x,y);
+>>>>>>> 4469fab460e8a04c30e0957b1fff00e24b45a38c
 }
 
 // ==========================================
@@ -1226,8 +1455,16 @@ void ProcessAdultKeyDown(WPARAM key) {
 void ProcessAdultMouseWheel(float x, float y, int delta) {
     int steps=(delta>0)?1:-1;
     if(!showTimeOverlay&&!showPassOverlay&&!showStrictTimeOverlay){
+<<<<<<< HEAD
         float L_X = s_contentX + 20.0f;
         RectF tblR(L_X, s_contentY + 295, 360, 105);
+=======
+        float bX=s_contentX+30.0f;
+        float row1Y = s_contentY + 15.0f;
+        float row2Y = row1Y + 45.0f;
+        float rX = bX + 280.0f;
+        RectF tblR(rX, row2Y + 60, 270, 75);
+>>>>>>> 4469fab460e8a04c30e0957b1fff00e24b45a38c
         if(tblR.Contains(x,y)){
             if(steps>0&&customScrollOffset>0) customScrollOffset--;
             else if(steps<0&&customScrollOffset<max(0,(int)customAdultKeywords.size()-3)) customScrollOffset++;
@@ -1240,4 +1477,8 @@ void ProcessAdultBlockMouseMove(float x, float y)          { ProcessAdultMouseMo
 void ProcessAdultBlockMouseClick(float x, float y)         { ProcessAdultMouseClick(x, y); }
 void ProcessAdultBlockKeyPress(wchar_t c)                  { ProcessAdultKeyPress(c); }
 void ProcessAdultBlockKeyDown(WPARAM key)                  { ProcessAdultKeyDown(key); }
+<<<<<<< HEAD
 void ProcessAdultBlockMouseWheel(float x, float y, int d)  { ProcessAdultMouseWheel(x, y, d); }
+=======
+void ProcessAdultBlockMouseWheel(float x, float y, int d)  { ProcessAdultMouseWheel(x, y, d); }
+>>>>>>> 4469fab460e8a04c30e0957b1fff00e24b45a38c

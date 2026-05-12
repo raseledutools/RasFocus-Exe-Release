@@ -98,10 +98,10 @@ ss << LR"CSS(
   --c-page:#fff;
   --topbar-h:30px;
   --tabbar-h:28px;
-  --ribbon-h:88px;
+  --ribbon-h:44px;
   --statusbar-h:22px;
-  --left-panel-w:170px;
-  --right-panel-w:220px;
+  --left-panel-w:0px;
+  --right-panel-w:0px;
   --shadow:0 2px 12px rgba(0,0,0,.25);
   --radius:3px;
 }
@@ -215,29 +215,29 @@ ss << LR"CSS(
 }
 .rtab:hover{background:#d8d8d8;color:var(--c-text);}
 .rtab.active{background:var(--c-toolbar);border-color:var(--c-toolbar-border);color:var(--c-text);font-weight:600;}
-.ribbon-panel{display:none;padding:4px 8px;align-items:flex-start;gap:2px;min-height:68px;}
+.ribbon-panel{display:none;padding:4px 8px;align-items:center;gap:4px;min-height:36px;flex-wrap:wrap;flex-direction:row;}
 .ribbon-panel.active{display:flex;}
 .ribbon-group{
-  display:flex;flex-direction:column;align-items:center;
-  border-right:1px solid var(--c-border);padding:0 8px;gap:4px;min-width:60px;
+  display:flex;flex-direction:row;align-items:center;
+  border-right:1px solid var(--c-border);padding:0 6px;gap:3px;
 }
 .ribbon-group:last-child{border-right:none;}
-.rg-label{font-size:9px;color:var(--c-muted);text-align:center;margin-top:auto;}
+.rg-label{display:none;}
 .rg-row{display:flex;gap:2px;}
 )CSS";
 
 ss << LR"CSS(
 /* Ribbon buttons */
 .rbtn{
-  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  display:flex;flex-direction:row;align-items:center;justify-content:center;
   cursor:pointer;border-radius:var(--radius);border:1px solid transparent;
-  padding:3px 6px;transition:background .1s,border-color .1s;
-  min-width:36px;color:var(--c-text);gap:2px;background:transparent;
+  padding:3px 7px;transition:background .1s,border-color .1s;
+  color:var(--c-text);gap:4px;background:transparent;white-space:nowrap;
 }
 .rbtn:hover{background:#e0e0e0;border-color:var(--c-border);}
 .rbtn.active,.rbtn.pressed{background:#fce4e4;border-color:#f5b8b8;color:var(--c-accent);}
-.rbtn svg{width:18px;height:18px;fill:currentColor;flex-shrink:0;}
-.rbtn-lbl{font-size:9px;line-height:1;text-align:center;white-space:nowrap;}
+.rbtn svg{width:16px;height:16px;fill:currentColor;flex-shrink:0;}
+.rbtn-lbl{font-size:10px;line-height:1;text-align:center;white-space:nowrap;}
 /* Small ribbon buttons */
 .rbtn-sm{
   display:flex;align-items:center;gap:4px;cursor:pointer;border-radius:var(--radius);
@@ -275,10 +275,11 @@ ss << LR"CSS(
 .workspace{flex:1;display:flex;overflow:hidden;position:relative;}
 /* Left panel */
 .left-panel{
-  width:var(--left-panel-w);background:#e8e8e8;border-right:1px solid var(--c-border);
+  width:0;background:#e8e8e8;border-right:1px solid var(--c-border);
   display:flex;flex-direction:column;flex-shrink:0;overflow:hidden;
   transition:width .18s;
 }
+.left-panel.open{width:170px;}
 .left-panel.collapsed{width:0;border:none;}
 .lp-tabbar{display:flex;background:#ddd;border-bottom:1px solid var(--c-border);flex-shrink:0;}
 .lp-tab{
@@ -423,11 +424,12 @@ ss << LR"CSS(
 ss << LR"CSS(
 <style>
 .right-panel{
-  width:var(--right-panel-w);background:var(--c-sidebar);
+  width:0;background:var(--c-sidebar);
   border-left:1px solid var(--c-sidebar-border);
   display:flex;flex-direction:column;overflow-y:auto;flex-shrink:0;
   transition:width .18s;
 }
+.right-panel.open{width:220px;}
 .right-panel.collapsed{width:0;border:none;overflow:hidden;}
 .rp-section{border-bottom:1px solid var(--c-border);}
 .rp-header{
@@ -664,8 +666,9 @@ ss << LR"HTML(
   <div class="top-menu" id="tm-help" onclick="toggleMenu('m-help',this)">Help</div>
   <div class="top-sep"></div>
   <div class="top-right">
+    <div class="top-icon" title="Left Panel (Thumbs)" onclick="toggleLeftPanel()" style="font-size:13px;">&#9776;</div>
+    <div class="top-icon" title="Right Panel (Properties)" onclick="toggleRightPanel()" style="font-size:13px;">&#9783;</div>
     <div class="top-icon" title="Find (Ctrl+F)" onclick="toggleFindBar()">&#128269;</div>
-    <div class="top-icon" title="Panels" onclick="toggleBothPanels()">&#9783;</div>
     <div class="top-icon" title="Presentation" onclick="enterPresentation()">&#9654;</div>
     <div class="top-icon" title="Night Mode" onclick="cycleViewMode()">&#9790;</div>
   </div>
@@ -1038,11 +1041,18 @@ ss << LR"HTML(
   <!-- PDF Viewer -->
   <div class="pdf-viewer-area" id="viewer-area">
     <div class="pdf-container" id="pdf-container">
-      <div id="empty-hint" style="margin-top:140px;text-align:center;color:#777;pointer-events:none;">
-        <div style="font-size:56px;opacity:.2;">&#128196;</div>
-        <p style="margin-top:10px;font-size:14px;font-weight:600;">No file open</p>
-        <p style="margin-top:5px;font-size:11.5px;opacity:.7;">File ▸ Open, or drag &amp; drop a PDF here</p>
-        <p style="margin-top:4px;font-size:10.5px;opacity:.5;">You can also paste images directly onto open pages</p>
+      <div id="empty-hint" style="margin-top:0;text-align:center;color:#777;pointer-events:auto;width:100%;padding:30px 20px;">
+        <div style="font-size:52px;opacity:.25;margin-bottom:8px;">&#128196;</div>
+        <p style="font-size:16px;font-weight:700;color:#444;margin-bottom:4px;">PDF Pro — Acrobat Edition</p>
+        <p style="font-size:11.5px;opacity:.65;margin-bottom:20px;">File ▸ Open, drag &amp; drop, or click a recent file below</p>
+        <div style="display:flex;gap:10px;justify-content:center;margin-bottom:24px;">
+          <button onclick="openFileDialog(false)" style="padding:8px 20px;background:var(--c-accent);color:#fff;border:none;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;">&#128196; Open PDF</button>
+          <button onclick="openFileDialog(true)" style="padding:8px 20px;background:var(--c-accent2);color:#fff;border:none;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;">&#128214; Open Multiple</button>
+        </div>
+        <div id="recent-files-section" style="max-width:560px;margin:0 auto;text-align:left;">
+          <p style="font-size:10px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;padding-left:4px;">&#128337; Recent Files</p>
+          <div id="recent-files-list"></div>
+        </div>
       </div>
     </div>
     <!-- Find bar -->
@@ -1352,8 +1362,8 @@ function openFileDialog(multi=false) {
 }
 
 async function handleFiles(e) {
-  for (const f of e.target.files) {
-    if (!f.name.toLowerCase().endsWith('.pdf')) continue;
+  const files = Array.from(e.target.files).filter(f => f.name.toLowerCase().endsWith('.pdf'));
+  for (const f of files) {
     const bytes = new Uint8Array(await f.arrayBuffer());
     await createTab(f.name, bytes);
   }
@@ -1375,10 +1385,48 @@ async function loadPdfFromPath(path) {
 )JS";
 
 ss << LR"JS(
+// ── Recent Files (localStorage simulation via in-memory) ────────
+let g_recentFiles = [];
+
+function addToRecent(name, bytes) {
+  // Keep last 8 unique files
+  g_recentFiles = g_recentFiles.filter(r => r.name !== name);
+  g_recentFiles.unshift({ name, bytes: bytes.slice(), date: new Date().toLocaleString() });
+  if (g_recentFiles.length > 8) g_recentFiles.pop();
+}
+
+function renderRecentFiles() {
+  const list = document.getElementById('recent-files-list');
+  if (!list) return;
+  if (g_recentFiles.length === 0) {
+    list.innerHTML = '<p style="font-size:11px;color:#bbb;padding:10px 0;text-align:center;">No recent files yet</p>';
+    return;
+  }
+  list.innerHTML = g_recentFiles.map((r, i) => `
+    <div onclick="reopenRecent(${i})" style="display:flex;align-items:center;gap:10px;padding:9px 12px;
+      background:#fff;border:1px solid #e8e8e8;border-radius:5px;margin-bottom:6px;
+      cursor:pointer;transition:background .12s;" onmouseover="this.style.background='#f5f5f5'" onmouseout="this.style.background='#fff'">
+      <span style="font-size:22px;">&#128196;</span>
+      <div style="flex:1;min-width:0;">
+        <p style="font-size:12px;font-weight:600;color:#333;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.name}</p>
+        <p style="font-size:10px;color:#aaa;margin-top:1px;">${r.date}</p>
+      </div>
+      <span style="font-size:10px;color:#c0392b;font-weight:700;">Open ›</span>
+    </div>`).join('');
+}
+
+async function reopenRecent(idx) {
+  const r = g_recentFiles[idx];
+  if (!r) return;
+  await createTab(r.name, r.bytes);
+}
+
 async function createTab(name, bytes) {
   try {
-    document.getElementById('empty-hint').style.display = 'none';
-    const doc = await pdfjsLib.getDocument({ data: bytes }).promise;
+    // Hide homepage if visible
+    const hint = document.getElementById('empty-hint');
+    if (hint) hint.remove();
+    const doc = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
     const id = 'tab_' + Date.now() + Math.random().toString(36).slice(2, 6);
     const tab = {
       id, name, bytes: bytes.slice(), doc,
@@ -1393,6 +1441,7 @@ async function createTab(name, bytes) {
       modified: false
     };
     g_tabs.push(tab);
+    addToRecent(name, bytes);
     renderTabStrip();
     await switchTab(id);
   } catch (e) {
@@ -1451,12 +1500,28 @@ function closeTab(id) {
   renderTabStrip();
   if (g_activeId) switchTab(g_activeId);
   else {
-    document.getElementById('pdf-container').innerHTML =
-      '<div id="empty-hint" style="margin-top:140px;text-align:center;color:#777;pointer-events:none;">' +
-      '<div style="font-size:56px;opacity:.2;">&#128196;</div>' +
-      '<p style="margin-top:10px;font-size:14px;font-weight:600;">No file open</p></div>';
+    showHomepage();
     document.getElementById('lp-thumb').innerHTML = '';
   }
+}
+
+function showHomepage() {
+  const container = document.getElementById('pdf-container');
+  container.innerHTML = `
+    <div id="empty-hint" style="margin-top:0;text-align:center;color:#777;pointer-events:auto;width:100%;padding:30px 20px;">
+      <div style="font-size:52px;opacity:.25;margin-bottom:8px;">&#128196;</div>
+      <p style="font-size:16px;font-weight:700;color:#444;margin-bottom:4px;">PDF Pro — Acrobat Edition</p>
+      <p style="font-size:11.5px;opacity:.65;margin-bottom:20px;">File ▸ Open, drag &amp; drop, or click a recent file below</p>
+      <div style="display:flex;gap:10px;justify-content:center;margin-bottom:24px;">
+        <button onclick="openFileDialog(false)" style="padding:8px 20px;background:var(--c-accent);color:#fff;border:none;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;">&#128196; Open PDF</button>
+        <button onclick="openFileDialog(true)" style="padding:8px 20px;background:var(--c-accent2);color:#fff;border:none;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;">&#128214; Open Multiple</button>
+      </div>
+      <div id="recent-files-section" style="max-width:560px;margin:0 auto;text-align:left;">
+        <p style="font-size:10px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;padding-left:4px;">&#128337; Recent Files</p>
+        <div id="recent-files-list"></div>
+      </div>
+    </div>`;
+  renderRecentFiles();
 }
 </script>
 )JS";
@@ -3181,8 +3246,8 @@ async function refreshStats() {
 }
 
 // ── Panel toggles ─────────────────────────────────────────────
-function toggleLeftPanel() { document.getElementById('left-panel').classList.toggle('collapsed'); }
-function toggleRightPanel() { document.getElementById('right-panel').classList.toggle('collapsed'); }
+function toggleLeftPanel() { document.getElementById('left-panel').classList.toggle('open'); }
+function toggleRightPanel() { document.getElementById('right-panel').classList.toggle('open'); }
 function toggleBothPanels() { toggleLeftPanel(); toggleRightPanel(); }
 )JS";
 
@@ -3316,6 +3381,7 @@ window.g_webViewController_bridge=true;
 setTool('hand');
 renderTabStrip();
 updateStatusBar();
+renderRecentFiles();
 </script>
 </body>
 </html>
