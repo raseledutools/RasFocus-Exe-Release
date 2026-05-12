@@ -846,7 +846,7 @@ void DrawMainArea(Graphics& g, int w, int h) {
     if      (selectedTab == 0) { DrawDashboardTab    (g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 1) { DrawBlocksTab       (g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 2) { DrawDeepStudyTab    (g, contentX, contentY, contentW, contentH); }
-    else if (selectedTab == 3) { DrawSpecialFeatureTab      (g, contentX, contentY, contentW, contentH); } // ← Special Tab Added
+    else if (selectedTab == 3) { DrawSpecialFeatureTab(g, contentX, contentY, contentW, contentH); } // ← Special Tab Added
     else if (selectedTab == 4) { DrawStatisticsTab   (g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 5) { DrawSettingsTab     (g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 6) { DrawPdfWorkspaceTab (g, contentX, contentY, contentW, contentH); }
@@ -1082,7 +1082,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         else if (selectedTab == 2) { ProcessDeepStudyMouseMove(x, y);   redraw = true; }
         else if (selectedTab == 3) { ProcessSpecialFeatureMouseMove(x, y);     redraw = true; } // ← Special Tab
         else if (selectedTab == 5) { ProcessSettingsMouseMove(x, y);    redraw = true; }
-        else if (selectedTab == 4) { redraw = true; }
+        else if (selectedTab == 4) {
+            float cX = (float)SIDEBAR_WIDTH, cY = (float)(TITLEBAR_HEIGHT + SUBHEADER_HEIGHT);
+            float cW = scaledW - cX;
+            ProcessStatisticsMouseMove(x, y, cX, cY, cW);
+            redraw = true;
+        }
 
         if (redraw) InvalidateRect(hWnd, NULL, FALSE);
         break;
@@ -1185,7 +1190,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         else if (selectedTab == 1) { ProcessBlocksMouseClick(x, y); }
         else if (selectedTab == 2) { ProcessDeepStudyMouseClick(x, y); }
         else if (selectedTab == 3) { ProcessSpecialFeatureMouseClick(x, y); } // ← Special Tab
-        else if (selectedTab == 4) { /* Statistics tab has no click handler */ }
+        else if (selectedTab == 4) {
+            float cX = (float)SIDEBAR_WIDTH, cY = (float)(TITLEBAR_HEIGHT + SUBHEADER_HEIGHT);
+            float cW = scaledW - cX, cH = scaledH - cY;
+            ProcessStatisticsMouseClick(x, y, cX, cY, cW);
+        }
         else if (selectedTab == 5) { ProcessSettingsMouseClick(x, y); }
         else if (selectedTab == 7) {
             ProcessAccountsMouseClick(x, y, hWnd);
@@ -1201,7 +1210,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         float y = pt.y / g_scaleFactor;
         int delta = GET_WHEEL_DELTA_WPARAM(wp);
         if (selectedTab == 1) { extern void ProcessBlocksMouseWheel(float,float,int); ProcessBlocksMouseWheel(x,y,delta); InvalidateRect(hWnd,NULL,FALSE); }
-        if (selectedTab == 4) { extern void ProcessStatisticsMouseWheel(short); ProcessStatisticsMouseWheel((short)delta); InvalidateRect(hWnd,NULL,FALSE); }
         break;
     }
 
