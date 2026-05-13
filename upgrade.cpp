@@ -3,6 +3,7 @@
 #include <gdiplus.h>
 #include <string>
 #include <vector>
+#include <windows.h> // for SetCursor
 
 using namespace Gdiplus;
 using namespace std;
@@ -11,6 +12,7 @@ using namespace std;
 bool g_showUpgradePopup = false;
 
 extern int selectedTab; // main.cpp থেকে লগিন ট্যাবে যাওয়ার জন্য
+extern string g_loggedInUserUid; // accounts.cpp থেকে ইউজারের UID আনার জন্য (NEW)
 
 // Hover States
 static bool s_hoverClose   = false;
@@ -182,7 +184,7 @@ static bool HitRect(float mx, float my, float x, float y, float w, float h) {
 }
 
 // ============================================================
-//  MOUSE MOVE
+//  MOUSE MOVE (Added Hand Cursor logic)
 // ============================================================
 void ProcessUpgradeMouseMove(float x, float y) {
     if (!g_showUpgradePopup) return;
@@ -198,10 +200,17 @@ void ProcessUpgradeMouseMove(float x, float y) {
     s_hoverClose   = HitRect(x, y, L.closeX, L.closeY, L.closeW, L.closeW);
     s_hoverUpgrade = HitRect(x, y, L.upgBtnX, L.upgBtnY, L.upgBtnW, L.upgBtnH);
     s_hoverLogin   = HitRect(x, y, L.loginX, L.loginY, L.loginW, L.loginH);
+
+    // Change cursor to hand if hovering over clickable areas
+    if (s_hoverClose || s_hoverUpgrade || s_hoverLogin) {
+        SetCursor(LoadCursor(NULL, IDC_HAND));
+    } else {
+        SetCursor(LoadCursor(NULL, IDC_ARROW));
+    }
 }
 
 // ============================================================
-//  MOUSE CLICK
+//  MOUSE CLICK (Updated Dynamic Link Logic)
 // ============================================================
 void ProcessUpgradeMouseClick(float x, float y, HWND hWnd) {
     if (!g_showUpgradePopup) return;
@@ -220,9 +229,23 @@ void ProcessUpgradeMouseClick(float x, float y, HWND hWnd) {
     }
 
     if (HitRect(x, y, L.upgBtnX, L.upgBtnY, L.upgBtnW, L.upgBtnH)) {
-        // ওয়েবসাইট ওপেন হবে
-        ShellExecuteW(NULL, L"open", L"https://raseledutools.github.io/product.html", NULL, NULL, SW_SHOWNORMAL);
-        g_showUpgradePopup = false;
+        // যদি ইউজার লগইন করা না থাকে, তাহলে তাকে লগইন পেজে পাঠাও
+        if (g_loggedInUserUid.empty()) {
+            selectedTab = 7; // My Account Tab
+            g_showUpgradePopup = false;
+            
+            extern void HideAllWebViews();
+            HideAllWebViews();
+        } 
+        // ইউজার লগইন করা থাকলে তার UID সহ পেমেন্ট পেজ ওপেন করো
+        else {
+            string urlStr = "https://rasfocus.com/checkout?uid=" + g_loggedInUserUid;
+            wstring wUrl(urlStr.begin(), urlStr.end());
+            
+            ShellExecuteW(NULL, L"open", wUrl.c_str(), NULL, NULL, SW_SHOWNORMAL);
+            g_showUpgradePopup = false;
+        }
+
         InvalidateRect(hWnd, NULL, FALSE);
         return;
     }

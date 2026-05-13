@@ -179,7 +179,7 @@ std::string SendFirestoreRequest(const std::string& method, const std::string& p
 }
 
 // ==========================================
-// SUBSCRIPTION CHECK THREAD (UPDATED REALTIME)
+// SUBSCRIPTION CHECK THREAD (SECURE & READ-ONLY)
 // ==========================================
 void __cdecl SubscriptionCheckThread(void* p) {
     Sleep(3000); // UI লোড হওয়ার জন্য একটু অপেক্ষা
@@ -200,21 +200,14 @@ void __cdecl SubscriptionCheckThread(void* p) {
             isUser = false;
         }
         
-        // ফায়ারবেস থেকে ডেটা ফেচ করা
+        // ফায়ারবেস থেকে ডেটা ফেচ করা (শুধুমাত্র GET রিকোয়েস্ট)
         std::string response = SendFirestoreRequest("GET", path);
         
-        // যদি 404 Not Found হয় (মানে নতুন ইন্সটল), তাহলে ডেটাবেসে নতুন এন্ট্রি তৈরি করবে
+        // যদি 404 Not Found হয়, তাহলে ডেটাবেসে কোনো রাইট/PATCH করবে না। শুধু লোকালি ভেরিয়েবল সেট করবে।
         if (response.find("\"error\"") != std::string::npos && response.find("NOT_FOUND") != std::string::npos) {
-            std::string newPkg = isUser ? "FREE_BASIC" : "TRIAL";
+            g_currentPackage = isUser ? "FREE_BASIC" : "TRIAL";
             
-            // JSON পেলোড তৈরি (নতুন ইউজারের জন্য)
-            std::string payload = "{\"fields\": {\"current_package\": {\"stringValue\": \"" + newPkg + "\"}}}";
-            
-            // ফায়ারবেসে ডেটা পুশ করা (অ্যাডমিন প্যানেলে শো করার জন্য)
-            SendFirestoreRequest("PATCH", path, payload);
-            
-            g_currentPackage = newPkg;
-            if (newPkg == "TRIAL") g_packageStatusText = L"Trial Active (14 Days Left)";
+            if (g_currentPackage == "TRIAL") g_packageStatusText = L"Trial Active (14 Days Left)";
             else g_packageStatusText = L"Free Basic Version";
         } 
         // যদি ডেটাবেসে ইউজার আগে থেকেই থাকে, তাহলে তার বর্তমান প্যাকেজ বের করবে

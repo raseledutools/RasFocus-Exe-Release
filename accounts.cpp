@@ -39,7 +39,6 @@ static bool    s_isLoading      = false;
 static wstring s_statusMsg      = L"";
 static bool    s_isError        = false;
 static DWORD   s_lastBlinkTime  = 0;
-static bool    s_cursorVisible  = true;
 
 // ── Hover states ──
 static bool s_hoverLogin      = false;
@@ -167,22 +166,29 @@ static LoginResult FirebaseLogin(const string& email, const string& password) {
     return res;
 }
 
+// ── FIRESTORE SUBSCRIPTION CHECK ──
 static bool CheckPremiumFromFirebase(const string& uid, const string& idToken) {
-    string host = "rasfocus-c746d-default-rtdb.firebaseio.com";
-    string path = "/users/" + uid + "/isPremium.json?auth=" + idToken;
+    string host = "firestore.googleapis.com";
+    string path = "/v1/projects/rasfocus-c746d/databases/(default)/documents/users/" + uid;
 
     HINTERNET hInet = InternetOpenA("RasFocus/1.0", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
     if (!hInet) return false;
+
     HINTERNET hConn = InternetConnectA(hInet, host.c_str(), INTERNET_DEFAULT_HTTPS_PORT, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
     if (!hConn) { InternetCloseHandle(hInet); return false; }
+
     HINTERNET hReq = HttpOpenRequestA(hConn, "GET", path.c_str(), NULL, NULL, NULL, INTERNET_FLAG_SECURE | INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE, 0);
     if (!hReq) { InternetCloseHandle(hConn); InternetCloseHandle(hInet); return false; }
 
-    HttpSendRequestA(hReq, NULL, 0, NULL, 0);
+    string headers = "Authorization: Bearer " + idToken + "\r\n";
+    HttpSendRequestA(hReq, headers.c_str(), headers.length(), NULL, 0);
+
     string response = ""; char buf[1024]; DWORD br = 0;
     while (InternetReadFile(hReq, buf, sizeof(buf) - 1, &br) && br > 0) { buf[br] = '\0'; response += buf; }
     InternetCloseHandle(hReq); InternetCloseHandle(hConn); InternetCloseHandle(hInet);
-    return (response.find("true") != string::npos);
+
+    return (response.find("\"current_package\"") != string::npos && 
+           (response.find("\"PREMIUM\"") != string::npos || response.find("\"STUDENT\"") != string::npos));
 }
 
 struct LoginThreadData { HWND hWnd; string email; string password; bool saveLogin; };
@@ -224,23 +230,38 @@ void __cdecl LoginThread(void* param) {
 }
 
 // ============================================================
+//  CURSOR BLINK THREAD (Fixes typing cursor issue natively)
+// ============================================================
+void __cdecl CursorBlinkThread(void* p) {
+    while (true) {
+        if (s_focusField != 0) {
+            if (HWND hw = FindWindowA("RasFocusCore", NULL)) {
+                InvalidateRect(hw, NULL, FALSE);
+            }
+        }
+        Sleep(500);
+    }
+    _endthread();
+}
+
+// ============================================================
 //  INIT
 // ============================================================
 void InitAccountsModule(firebase::App* app) {
     s_firebaseApp = app;
     if (LoadSavedCredentials()) s_statusMsg = L"";
+    _beginthread(CursorBlinkThread, 0, NULL); // Start auto cursor blinker
 }
 
 // ============================================================
 //  LAYOUT
-//  *** FIX: g_scaleFactor diye divide kora hocche ***
 // ============================================================
 extern int   windowWidth;
 extern int   windowHeight;
 extern const int SIDEBAR_WIDTH;
 extern const int TITLEBAR_HEIGHT;
 extern const int SUBHEADER_HEIGHT;
-extern float g_scaleFactor;   // ← main.cpp থেকে আনা হচ্ছে
+extern float g_scaleFactor;
 
 struct CardLayout {
     float cardX, cardY, cardW, cardH;
@@ -310,7 +331,6 @@ static CardLayout GetLayout(float cx, float cy, float cw, float ch) {
     return L;
 }
 
-// *** MAIN FIX: windowWidth/Height are raw pixels — divide by g_scaleFactor ***
 static CardLayout GetCurrentLayout() {
     float scaledW = (float)windowWidth  / g_scaleFactor;
     float scaledH = (float)windowHeight / g_scaleFactor;
@@ -472,9 +492,11 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
     SolidBrush inputColor(emailStr.empty() ? Color(255, 160, 170, 180) : Color(255, 50, 50, 50));
     float textX = L.fieldX + 32.0f;
 
+    bool showCursor = ((GetTickCount() - s_lastBlinkTime) % 1000) < 500;
+
     if (!emailStr.empty()) {
         g.DrawString(emailStr.c_str(), -1, &fInput, RectF(textX, L.emailY, L.fieldW - 40.0f, L.fldH), &fmtL, &inputColor);
-        if (emailFocused && s_cursorVisible) {
+        if (emailFocused && showCursor) {
             RectF bbox;
             g.MeasureString(emailStr.c_str(), -1, &fInput, PointF(textX, L.emailY), &fmtL, &bbox);
             float curX = textX + bbox.Width;
@@ -483,7 +505,7 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
             g.DrawLine(&cursorPen, curX, L.emailY + 6.0f, curX, L.emailY + L.fldH - 6.0f);
         }
     } else if (emailFocused) {
-        if (s_cursorVisible) {
+        if (showCursor) {
             Pen cursorPen(Color(255, 0, 150, 160), 2.0f);
             g.DrawLine(&cursorPen, textX, L.emailY + 8.0f, textX, L.emailY + L.fldH - 8.0f);
         }
@@ -508,7 +530,7 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
         wstring passDisplay = s_showPassword ? passStr : wstring(passStr.size(), L'\u2022');
         SolidBrush passColorVal(Color(255, 50, 50, 50));
         g.DrawString(passDisplay.c_str(), -1, &fInput, RectF(passTextX, L.passY, L.fieldW - 65.0f, L.fldH), &fmtL, &passColorVal);
-        if (passFocused && s_cursorVisible) {
+        if (passFocused && showCursor) {
             RectF bbox;
             g.MeasureString(passDisplay.c_str(), -1, &fInput, PointF(passTextX, L.passY), &fmtL, &bbox);
             float curX = passTextX + bbox.Width;
@@ -517,7 +539,7 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
             g.DrawLine(&cursorPen, curX, L.passY + 6.0f, curX, L.passY + L.fldH - 6.0f);
         }
     } else if (passFocused) {
-        if (s_cursorVisible) {
+        if (showCursor) {
             Pen cursorPen(Color(255, 0, 150, 160), 2.0f);
             g.DrawLine(&cursorPen, passTextX, L.passY + 8.0f, passTextX, L.passY + L.fldH - 8.0f);
         }
@@ -596,7 +618,7 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
 }
 
 // ============================================================
-//  MOUSE MOVE
+//  MOUSE MOVE (Added custom mouse cursors for Hover)
 // ============================================================
 void ProcessAccountsMouseMove(float x, float y) {
     if (!g_loggedInEmail.empty()) {
@@ -605,6 +627,9 @@ void ProcessAccountsMouseMove(float x, float y) {
         float logoutX = L.cardX + (L.cardW - logoutW) / 2.0f;
         float logoutY = L.cardY + L.cardH - 65.0f;
         s_hoverLogout = HitRect(x, y, logoutX, logoutY, logoutW, logoutH);
+        
+        if (s_hoverLogout) SetCursor(LoadCursor(NULL, IDC_HAND));
+        else SetCursor(LoadCursor(NULL, IDC_ARROW));
         return;
     }
 
@@ -616,6 +641,17 @@ void ProcessAccountsMouseMove(float x, float y) {
     s_hoverSignup    = HitRect(x, y, L.signupX,    L.signupY,    L.signupW,    L.signupH);
     s_hoverReset     = HitRect(x, y, L.resetX,     L.resetY,     L.resetW,     L.resetH);
     s_hoverPrivacy   = HitRect(x, y, L.privacyX,   L.privacyY,   L.privacyW,   L.privacyH);
+
+    bool hoverEmailText = HitRect(x, y, L.fieldX, L.emailY, L.fieldW - L.eyeW, L.fldH);
+    bool hoverPassText  = HitRect(x, y, L.fieldX, L.passY, L.fieldW - L.eyeW, L.fldH);
+
+    if (hoverEmailText || hoverPassText) {
+        SetCursor(LoadCursor(NULL, IDC_IBEAM)); // Text typing cursor
+    } else if (s_hoverLogin || s_hoverCancel || s_hoverSignup || s_hoverReset || s_hoverPrivacy || s_hoverSaveCheck || s_hoverEye) {
+        SetCursor(LoadCursor(NULL, IDC_HAND)); // Hand link cursor
+    } else {
+        SetCursor(LoadCursor(NULL, IDC_ARROW)); // Normal mouse cursor
+    }
 }
 
 // ============================================================
@@ -644,11 +680,11 @@ void ProcessAccountsMouseClick(float x, float y, HWND hWnd) {
     CardLayout L = GetCurrentLayout();
 
     if (HitRect(x, y, L.fieldX, L.emailY, L.fieldW - L.eyeW, L.fldH)) {
-        s_focusField = 1; s_cursorVisible = true; s_lastBlinkTime = GetTickCount();
+        s_focusField = 1; s_lastBlinkTime = GetTickCount();
         InvalidateRect(hWnd, NULL, FALSE); return;
     }
     if (HitRect(x, y, L.fieldX, L.passY, L.fieldW - L.eyeW, L.fldH)) {
-        s_focusField = 2; s_cursorVisible = true; s_lastBlinkTime = GetTickCount();
+        s_focusField = 2; s_lastBlinkTime = GetTickCount();
         InvalidateRect(hWnd, NULL, FALSE); return;
     }
     if (HitRect(x, y, L.eyeX, L.eyeY, L.eyeW, L.fldH)) {
@@ -659,7 +695,7 @@ void ProcessAccountsMouseClick(float x, float y, HWND hWnd) {
     }
 
     if (HitRect(x, y, L.signupX, L.signupY, L.signupW, L.signupH)) {
-        ShellExecuteW(NULL, L"open", L"https://raseledutools.github.io/product.html", NULL, NULL, SW_SHOWNORMAL); return;
+        ShellExecuteW(NULL, L"open", L"https://rasfocus.com/checkout", NULL, NULL, SW_SHOWNORMAL); return;
     }
     if (HitRect(x, y, L.resetX, L.resetY, L.resetW, L.resetH)) {
         ShellExecuteW(NULL, L"open", L"https://rasfocus.com/reset-password", NULL, NULL, SW_SHOWNORMAL); return;
@@ -706,11 +742,11 @@ void ProcessAccountsChar(wchar_t c) {
         if (s_focusField == 2) { int len = (int)wcslen(s_password); if (len > 0) s_password[len-1] = L'\0'; }
     } else if (c == L'\r' || c == L'\n') {
         if (s_focusField == 1) s_focusField = 2; else s_focusField = 1;
-        s_cursorVisible = true; s_lastBlinkTime = GetTickCount();
+        s_lastBlinkTime = GetTickCount();
     } else if (c >= 32) {
         if (s_focusField == 1) { int len = (int)wcslen(s_email);    if (len < 510) { s_email[len] = c; s_email[len+1] = L'\0'; } }
         if (s_focusField == 2) { int len = (int)wcslen(s_password); if (len < 510) { s_password[len] = c; s_password[len+1] = L'\0'; } }
-        s_cursorVisible = true; s_lastBlinkTime = GetTickCount();
+        s_lastBlinkTime = GetTickCount();
     }
     if (HWND hw = FindWindowA("RasFocusCore", NULL)) InvalidateRect(hw, NULL, FALSE);
 }
@@ -719,7 +755,7 @@ void ProcessAccountsKeyDown(WPARAM wp) {
     if (!g_loggedInEmail.empty()) return;
     if (wp == VK_TAB) {
         s_focusField = (s_focusField == 1) ? 2 : 1;
-        s_cursorVisible = true; s_lastBlinkTime = GetTickCount();
+        s_lastBlinkTime = GetTickCount();
     } else if (wp == VK_DELETE) {
         if (s_focusField == 1) ZeroMemory(s_email,    sizeof(s_email));
         if (s_focusField == 2) ZeroMemory(s_password, sizeof(s_password));
@@ -727,13 +763,4 @@ void ProcessAccountsKeyDown(WPARAM wp) {
         s_focusField = 0; s_statusMsg = L"";
     }
     if (HWND hw = FindWindowA("RasFocusCore", NULL)) InvalidateRect(hw, NULL, FALSE);
-}
-
-// ============================================================
-//  CURSOR BLINK — main.cpp থেকে WM_TIMER (ID=1006) call করবে
-// ============================================================
-void TickAccountsCursor() {
-    if (s_focusField == 0) return;
-    s_cursorVisible = !s_cursorVisible;
-    // InvalidateRect main.cpp timer handler e hobe
 }
