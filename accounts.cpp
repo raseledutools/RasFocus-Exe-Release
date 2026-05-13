@@ -28,7 +28,6 @@ wstring g_loggedInEmail    = L"";
 string  g_loggedInUserUid  = "";
 
 static firebase::App* s_firebaseApp = nullptr;
-extern HWND g_mainHwnd;  // main.cpp থেকে — cursor blink repaint এর জন্য
 
 // ── UI State ──
 static wchar_t s_email   [512]  = {};
@@ -728,7 +727,7 @@ void ProcessAccountsChar(wchar_t c) {
         s_cursorVisible = true;
         s_lastBlinkTime = GetTickCount();
     }
-    if (g_mainHwnd) InvalidateRect(g_mainHwnd, NULL, FALSE);
+    if (HWND hw = FindWindowA("RasFocusCore", NULL)) InvalidateRect(hw, NULL, FALSE);
 }
 
 void ProcessAccountsKeyDown(WPARAM wp) {
@@ -746,5 +745,5 @@ void ProcessAccountsKeyDown(WPARAM wp) {
         s_focusField = 0;
         s_statusMsg = L"";
     }
-    if (g_mainHwnd) InvalidateRect(g_mainHwnd, NULL, FALSE);
+    if (HWND hw = FindWindowA("RasFocusCore", NULL)) InvalidateRect(hw, NULL, FALSE);
 }
