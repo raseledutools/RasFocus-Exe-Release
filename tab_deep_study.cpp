@@ -5,7 +5,7 @@
 #include <thread>
 
 // --- Premium Feature Gate ---
-extern bool g_isPremium;
+extern bool g_isPremiumUser;
 extern bool g_showUpgradePopup;
 #include <mmsystem.h>
 #include <cmath>
@@ -962,7 +962,7 @@ void ProcessDeepStudyMouseClick(float x, float y) {
         ds_isWebAct = ds_hovWebInp; ds_isAppAct = ds_hovAppInp;
 
         if (ds_hovStart) {
-            if (!g_isPremium) { g_showUpgradePopup = true; return; }
+            if (!g_isPremiumUser) { g_showUpgradePopup = true; return; }
             ds_isFocusMode = !ds_isFocusMode;
             if (ds_isFocusMode) {
                 ds_startTime = GetTickCount64(); ds_currentSession = 1; ds_isBreak = false;
