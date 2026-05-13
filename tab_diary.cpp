@@ -25,9 +25,11 @@ using namespace Microsoft::WRL;
 
 // =========================================================================
 // PREMIUM LOCAL HTML UI (0% Lag, C++ Memory Rendered)
+// FIX [C2026]: HTML string was too large for a single literal (MSVC limit: ~16380 chars).
+// Split into multiple parts and joined at runtime via GetPremiumUIHtml().
 // =========================================================================
-const wchar_t* PREMIUM_UI_HTML = LR"HTML(
-<!DOCTYPE html>
+
+static const wchar_t* HTML_PART1 = LR"HTML(<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -36,47 +38,36 @@ const wchar_t* PREMIUM_UI_HTML = LR"HTML(
     <style>
         * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
         body { margin: 0; background-color: #212121; color: #ececec; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
-        
         #chat-history { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 20px; }
         .msg { display: flex; max-width: 80%; line-height: 1.6; font-size: 16px; padding: 15px 20px; border-radius: 18px; white-space: pre-wrap; word-wrap: break-word; }
         .user-msg { background-color: #2f2f2f; align-self: flex-end; border-bottom-right-radius: 4px; border: 1px solid #444; }
         .ai-msg { background-color: transparent; align-self: flex-start; }
         .sent-img { max-width: 250px; border-radius: 10px; margin-top: 10px; display: block; border: 1px solid #555; }
-
         #input-wrapper { padding: 20px; display: flex; justify-content: center; background: linear-gradient(to top, #212121 80%, transparent); }
         .input-container { width: 100%; max-width: 800px; background-color: #2f2f2f; border-radius: 20px; padding: 12px; border: 1px solid #444; position: relative; transition: 0.2s; }
         .input-container.dragover { background-color: #3b3b3b; border-color: #00ADB5; }
-
         #attachment-area { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 5px; }
         .file-card { width: 120px; height: 120px; background-color: #212121; border: 1px solid #444; border-radius: 12px; padding: 10px; position: relative; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; }
         .file-card .remove-btn { position: absolute; top: 5px; right: 5px; background: #444; color: white; border: none; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-size: 12px; display: flex; align-items: center; justify-content: center; }
         .file-card .remove-btn:hover { background: #ff4d4d; }
-        
         .text-card-content { font-size: 10px; color: #888; overflow: hidden; height: 70px; word-break: break-all; }
         .text-card-label { background: #333; color: #ccc; font-size: 11px; padding: 3px 8px; border-radius: 6px; align-self: flex-start; font-weight: bold; border: 1px solid #555; }
         .img-card-preview { width: 100%; height: 70px; object-fit: cover; border-radius: 6px; }
-
         .input-row { display: flex; align-items: flex-end; gap: 10px; }
         #add-btn { background: transparent; border: none; color: #aaa; font-size: 24px; cursor: pointer; padding: 5px 10px; display: flex; align-items: center; justify-content: center; border-radius: 50%; height: 40px; width: 40px; }
         #add-btn:hover { background: #444; color: white; }
-        
         textarea { flex: 1; background: transparent; border: none; color: white; font-size: 16px; padding: 8px 0; resize: none; outline: none; max-height: 200px; min-height: 24px; overflow-y: auto; }
-        
         #send-btn { background: #444; color: #aaa; border: none; padding: 8px 12px; border-radius: 10px; cursor: pointer; font-weight: bold; height: 36px; display: flex; align-items: center; justify-content: center; transition: 0.2s; }
         #send-btn.active { background: #d9d9e3; color: #111; }
         #file-input { display: none; }
-        
         .thinking { color: #00ADB5; font-style: italic; font-size: 14px; margin-left: 10px; display: none; }
     </style>
 </head>
 <body>
-
     <div id="chat-history">
-        <div class="msg ai-msg">Welcome to RasFocus Native AI! 🚀<br>Powered by <b>Llama-4 Scout</b>. Drag files, paste images, or paste large code blocks to test me.</div>
+        <div class="msg ai-msg">Welcome to RasFocus Native AI! &#x1F680;<br>Powered by <b>Llama-4 Scout</b>. Drag files, paste images, or paste large code blocks to test me.</div>
     </div>
-    
     <div id="thinking-indicator" class="thinking" style="text-align:center;">AI is analyzing... please wait.</div>
-
     <div id="input-wrapper">
         <div class="input-container" id="drop-zone">
             <div id="attachment-area"></div>
@@ -84,11 +75,12 @@ const wchar_t* PREMIUM_UI_HTML = LR"HTML(
                 <input type="file" id="file-input" accept="image/*" multiple>
                 <button id="add-btn" onclick="document.getElementById('file-input').click()">+</button>
                 <textarea id="chat-input" placeholder="Message AI..."></textarea>
-                <button id="send-btn">↑</button>
+                <button id="send-btn">&#x2191;</button>
             </div>
         </div>
-    </div>
+    </div>)HTML";
 
+static const wchar_t* HTML_PART2 = LR"HTML(
     <script>
         const API_KEY = "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";
         const MODEL_NAME = "meta-llama/llama-4-scout-17b-16e-instruct";
@@ -166,10 +158,9 @@ const wchar_t* PREMIUM_UI_HTML = LR"HTML(
                 let innerContent = att.type === 'text' 
                     ? `<div class="text-card-content">${att.data.substring(0, 80)}...</div><div class="text-card-label">PASTED</div>`
                     : `<img src="${att.data}" class="img-card-preview"><div class="text-card-label">IMAGE</div>`;
-
                 attachmentArea.innerHTML += `
                     <div class="file-card">
-                        <button class="remove-btn" onclick="removeAttachment(${att.id})">✕</button>
+                        <button class="remove-btn" onclick="removeAttachment(${att.id})">&#x2715;</button>
                         ${innerContent}
                     </div>`;
             });
@@ -244,8 +235,13 @@ const wchar_t* PREMIUM_UI_HTML = LR"HTML(
         });
     </script>
 </body>
-</html>
-)HTML";
+</html>)HTML";
+
+// Helper function to build the full HTML string at runtime.
+// Call this instead of using PREMIUM_UI_HTML directly.
+static std::wstring GetPremiumUIHtml() {
+    return std::wstring(HTML_PART1) + HTML_PART2;
+}
 
 // --- Global States ---
 static float s_contentX = 0, s_contentY = 0, s_contentW = 800, s_contentH = 600;
@@ -295,7 +291,8 @@ public:
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override {
         if (!ppv) return E_POINTER;
         static const IID IID_ICoreWebView2CreateCoreWebView2ControllerCompletedHandler_Local = { 0x6c4819f3, 0xc9b7, 0x4260, { 0x81, 0x27, 0xc9, 0xf5, 0xbd, 0xe7, 0xf6, 0x8c } };
-        if (riid == IID_IUnknown_Local || riid == IID_ICoreWebView2CreateCoreWebView2ControllerCompletedHandler_Local) { *ppv = this; AddRef(); return S_OK; }
+        // FIX [C2065]: 'IID_IUnknown_Local' was undeclared. Use standard IID_IUnknown from <objbase.h>.
+        if (riid == IID_IUnknown || riid == IID_ICoreWebView2CreateCoreWebView2ControllerCompletedHandler_Local) { *ppv = this; AddRef(); return S_OK; }
         *ppv = nullptr; return E_NOINTERFACE;
     }
     ULONG STDMETHODCALLTYPE AddRef() override { return InterlockedIncrement(&m_refCount); }
@@ -309,7 +306,8 @@ public:
 
             // Load Content based on Selected Mode
             if (g_webViewMode == 1) {
-                webView->NavigateToString(PREMIUM_UI_HTML);
+                std::wstring html = GetPremiumUIHtml();
+                webView->NavigateToString(html.c_str());
             } else if (g_webViewMode == 2) {
                 webView->Navigate(L"https://gemini.google.com/?authuser=0");
             }
@@ -324,7 +322,8 @@ public:
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override {
         if (!ppv) return E_POINTER;
         static const IID IID_ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler_Local = { 0x4e8a3389, 0xc9d8, 0x4bd2, { 0xb6, 0xb5, 0x12, 0x4f, 0xee, 0x6c, 0xc1, 0x4d } };
-        if (riid == IID_IUnknown_Local || riid == IID_ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler_Local) { *ppv = this; AddRef(); return S_OK; }
+        // FIX [C2065]: 'IID_IUnknown_Local' was undeclared. Use standard IID_IUnknown from <objbase.h>.
+        if (riid == IID_IUnknown || riid == IID_ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler_Local) { *ppv = this; AddRef(); return S_OK; }
         *ppv = nullptr; return E_NOINTERFACE;
     }
     ULONG STDMETHODCALLTYPE AddRef() override { return InterlockedIncrement(&m_refCount); }
@@ -463,7 +462,10 @@ void ProcessGeminiMouseClick(float x, float y) {
                 auto options = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
                 CreateCoreWebView2EnvironmentWithOptions(nullptr, userDataFolder.c_str(), options.Get(), new EnvCompletedHandler());
             } else {
-                if (g_webViewMode == 1) webView->NavigateToString(PREMIUM_UI_HTML);
+                if (g_webViewMode == 1) {
+                    std::wstring html = GetPremiumUIHtml();
+                    webView->NavigateToString(html.c_str());
+                }
                 else webView->Navigate(L"https://gemini.google.com/?authuser=0");
                 webViewController->put_IsVisible(TRUE);
             }
