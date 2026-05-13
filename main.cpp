@@ -599,12 +599,14 @@ void DrawTitleBar(Graphics& g, int w) {
 
     // ── লোগো (title bar) ──
     const int TB_LOGO_SIZE = 16;
+    int tbActualSize = max(16, (int)(TB_LOGO_SIZE * g_scaleFactor));
     HICON hIconSm = (HICON)LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APP_ICON),
-                                     IMAGE_ICON, TB_LOGO_SIZE, TB_LOGO_SIZE, LR_SHARED);
+                                     IMAGE_ICON, tbActualSize, tbActualSize, LR_DEFAULTCOLOR);
     if (hIconSm) {
         Bitmap bmp(hIconSm);
         float iconY = (TITLEBAR_HEIGHT - TB_LOGO_SIZE) / 2.0f;
         g.DrawImage(&bmp, 10.0f, iconY, (float)TB_LOGO_SIZE, (float)TB_LOGO_SIZE);
+        DestroyIcon(hIconSm);
     }
 
     // ── App Name & Subscription Status ──
@@ -689,13 +691,15 @@ void DrawSubHeader(Graphics& g, int w) {
 
     // ── বড় লোগো সাব-হেডারে ──
     const int LOGO_SIZE = 26; 
+    int actualLogoSize = max(26, (int)(LOGO_SIZE * g_scaleFactor));
     HICON hIconLg = (HICON)LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APP_ICON),
-                                     IMAGE_ICON, LOGO_SIZE, LOGO_SIZE, LR_SHARED);
+                                     IMAGE_ICON, actualLogoSize, actualLogoSize, LR_DEFAULTCOLOR);
     if (hIconLg) {
         Bitmap bmp(hIconLg);
         float iconX = 16.0f;
         float iconY = subY + (subH - LOGO_SIZE) / 2.0f;
         g.DrawImage(&bmp, iconX, iconY, (float)LOGO_SIZE, (float)LOGO_SIZE);
+        DestroyIcon(hIconLg);
     }
 
     // ── App Name + Version (UPDATED NAME) ──
