@@ -23,6 +23,14 @@ static int  stat_currentTab  = 0; // 0 = Live, 1 = Weekly, 2 = Monthly
 static float stat_hovAppIdx  = -1.0f; 
 
 // ============================================================
+//  AI COACH STATES (NEW)
+// ============================================================
+static bool  stat_showAICoach     = false;
+static bool  stat_hovAICoachBtn   = false;
+static bool  stat_hovAICloseBtn   = false;
+static float stat_aiAnimProgress  = 0.0f;
+
+// ============================================================
 //  ANIMATION STATE
 // ============================================================
 static float stat_animProgress = 0.0f;
@@ -162,7 +170,7 @@ static void FillCircle(Graphics& g, SolidBrush& br, float cx, float cy, float r)
 // ============================================================
 struct TabRect { wstring lbl; float x; float w; };
 TabRect GetTabRect(int idx, float cx, float cw) {
-    float startX = cx + cw - 330.0f;
+    float startX = cx + cw - 460.0f; // Adjusted to make room for AI Coach btn
     if (idx == 0) return { L"Today",     startX, 80.0f };
     if (idx == 1) return { L"This Week", startX + 90.0f, 90.0f };
     if (idx == 2) return { L"Monthly",   startX + 190.0f, 80.0f };
@@ -243,6 +251,14 @@ void DrawStatisticsTab(Graphics& g, float cx, float cy, float cw, float ch)
     RoundRect(g, &bExp, &pBrd, btnX, btnY, btnS, btnS, 4);
     g.DrawString(L"\x2B07", -1, &fBody, RectF(btnX, btnY, btnS, btnS), &fmtC, &bTextMain);
 
+    // AI Coach Button
+    float aiBtnW = 95.0f;
+    float aiBtnX = btnX - aiBtnW - 12.0f;
+    SolidBrush bAiBg(stat_hovAICoachBtn ? Color(255, 129, 140, 248) : Color(255, 99, 102, 241)); // Indigo 500/400
+    SolidBrush bAiTxt(Color(255, 255, 255, 255));
+    RoundRect(g, &bAiBg, nullptr, aiBtnX, btnY, aiBtnW, btnS, 4);
+    g.DrawString(L"\x2728 AI Coach", -1, &fBold, RectF(aiBtnX, btnY, aiBtnW, btnS), &fmtC, &bAiTxt);
+
     // ================================================================
     //  2. RESPONSIVE LAYOUT ENGINE
     // ================================================================
@@ -280,7 +296,7 @@ void DrawStatisticsTab(Graphics& g, float cx, float cy, float cw, float ch)
 
     for (int i = 0; i < 4; i++) {
         float mx = cx + PAD + i * (mcW + mcGap);
-        RoundRect(g, &bCard, &pBrd, mx, mcY, mcW, r1H, 8); // Sharper corners for stricter look
+        RoundRect(g, &bCard, &pBrd, mx, mcY, mcW, r1H, 8); 
         
         RectF gradRect(mx, mcY + 16.0f, 5.0f, r1H - 32.0f);
         LinearGradientBrush gradBr(gradRect, mc[i].startC, mc[i].endC, LinearGradientModeVertical);
@@ -347,7 +363,6 @@ void DrawStatisticsTab(Graphics& g, float cx, float cy, float cw, float ch)
         wstringstream wss; wss << sites[i].blockedCount << L" Blocked";
         g.DrawString(wss.str().c_str(), -1, &fSm, RectF(rightX + halfW - 148.0f, sy + 6.0f, 60.0f, 20.0f), &fmtR, &bTextMuted);
         
-        // Solid Red Bar for strictness
         DrawGradientProgressBar(g, rightX + halfW - 80.0f, sy + 14.0f, 66.0f, 6.0f, sites[i].barPct * stat_animProgress, Color(255, 239, 68, 68), Color(255, 185, 28, 28));
     }
 
@@ -390,7 +405,6 @@ void DrawStatisticsTab(Graphics& g, float cx, float cy, float cw, float ch)
 
         if (curH > barW) {
             RectF gradRect(bx, by, barW, curH);
-            // Emerald to Teal gradient for deep work
             LinearGradientBrush barBr(gradRect, Color(255, 16, 185, 129), Color(255, 14, 165, 233), LinearGradientModeVertical);
             GraphicsPath bp;
             bp.AddArc(bx, by, barW, barW, 180, 90);
@@ -424,6 +438,57 @@ void DrawStatisticsTab(Graphics& g, float cx, float cy, float cw, float ch)
     
     wstring pTxt = to_wstring((int)(93 * stat_animProgress));
     g.DrawString(pTxt.c_str(), -1, &fMed, RectF(dCenX - dRad, dCenY - 14.0f, dRad * 2, 28.0f), &fmtC, &bTextMain);
+
+    // ================================================================
+    //  6. AI FOCUS COACH MODAL (OVERLAY)
+    // ================================================================
+    if (stat_showAICoach) {
+        if (stat_aiAnimProgress < 1.0f) stat_aiAnimProgress += 0.08f;
+        if (stat_aiAnimProgress > 1.0f) stat_aiAnimProgress = 1.0f;
+
+        // Semi-transparent dark background
+        SolidBrush overlay(Color(160, 15, 23, 42)); 
+        g.FillRectangle(&overlay, cx, cy, cw, ch);
+
+        float modW = 560.0f;
+        float modH = 340.0f;
+        float modX = cx + (cw - modW) / 2.0f;
+        // Slide up animation effect
+        float modY = cy + (ch - modH) / 2.0f + ((1.0f - stat_aiAnimProgress) * 30.0f); 
+
+        // Modal Background
+        SolidBrush modBg(Color(255, 255, 255, 255));
+        Pen modPen(Color(255, 99, 102, 241), 2.0f); // Indigo border
+        RoundRect(g, &modBg, &modPen, modX, modY, modW, modH, 12);
+
+        // Header Area
+        SolidBrush headerBg(Color(255, 238, 242, 255)); // Light Indigo
+        RoundRect(g, &headerBg, nullptr, modX, modY, modW, 70.0f, 12);
+        // Fix bottom corners to be square for the header
+        g.FillRectangle(&headerBg, modX, modY + 50.0f, modW, 20.0f);
+        
+        g.DrawString(L"RasFocus AI Insights", -1, &fH2, RectF(modX + 24.0f, modY, modW, 70.0f), &fmtL, &bTextMain);
+        g.DrawString(L"Personalized report based on your real activity", -1, &fSm, RectF(modX + 24.0f, modY + 40.0f, modW, 20.0f), &fmtL, &bTextMuted);
+
+        // Body Content (AI Generated Insights Simulation)
+        float bodyY = modY + 90.0f;
+        
+        g.DrawString(L"\x2022  Context Switching: Excellent. You are staying focused on Dev tools.", -1, &fBody, RectF(modX + 24.0f, bodyY, modW - 48.0f, 25.0f), &fmtL, &bTextMain);
+        g.DrawString(L"\x2022  Marathon Session Detected: You've been coding for 2h 15m straight.", -1, &fBody, RectF(modX + 24.0f, bodyY + 35.0f, modW - 48.0f, 25.0f), &fmtL, &bTextMain);
+        g.DrawString(L"    Recommendation: Take a 5-minute eye rest immediately.", -1, &fSm, RectF(modX + 36.0f, bodyY + 60.0f, modW - 48.0f, 20.0f), &fmtL, &bCrimson);
+        g.DrawString(L"\x2022  Protection Status: Halal Guard successfully blocked 127 distractions.", -1, &fBody, RectF(modX + 24.0f, bodyY + 95.0f, modW - 48.0f, 25.0f), &fmtL, &bTextMain);
+        g.DrawString(L"\x2022  Next Goal: Maintain current strict limits to achieve 15-Day Streak.", -1, &fBody, RectF(modX + 24.0f, bodyY + 130.0f, modW - 48.0f, 25.0f), &fmtL, &bTextMain);
+
+        // Close Button
+        float clsBtnW = 120.0f;
+        float clsBtnH = 36.0f;
+        float clsBtnX = modX + (modW - clsBtnW) / 2.0f;
+        float clsBtnY = modY + modH - 24.0f - clsBtnH;
+
+        SolidBrush btnBg(stat_hovAICloseBtn ? Color(255, 79, 70, 229) : Color(255, 99, 102, 241));
+        RoundRect(g, &btnBg, nullptr, clsBtnX, clsBtnY, clsBtnW, clsBtnH, 6);
+        g.DrawString(L"Got It", -1, &fBold, RectF(clsBtnX, clsBtnY, clsBtnW, clsBtnH), &fmtC, &bCard);
+    }
 }
 
 // ============================================================
@@ -431,11 +496,38 @@ void DrawStatisticsTab(Graphics& g, float cx, float cy, float cw, float ch)
 // ============================================================
 void ProcessStatisticsMouseMove(float x, float y, float cx, float cw, float cy)
 {
-    stat_hovExport  = false;
-    stat_hovTab = -1;
+    stat_hovExport     = false;
+    stat_hovTab        = -1;
+    stat_hovAICoachBtn = false;
+    stat_hovAICloseBtn = false;
+
+    float ch = 700.0f; // Approx total height if needed for overlay math
+    
+    // IF AI MODAL IS OPEN, BLOCK UNDERLYING HOVERS
+    if (stat_showAICoach) {
+        float modW = 560.0f;
+        float modH = 340.0f;
+        float modX = cx + (cw - modW) / 2.0f;
+        float modY = cy + (ch - modH) / 2.0f; // Simplified hit box for hover
+        
+        float clsBtnW = 120.0f;
+        float clsBtnH = 36.0f;
+        float clsBtnX = modX + (modW - clsBtnW) / 2.0f;
+        float clsBtnY = modY + modH - 24.0f - clsBtnH;
+
+        if (x >= clsBtnX && x <= clsBtnX + clsBtnW && y >= clsBtnY && y <= clsBtnY + clsBtnH) {
+            stat_hovAICloseBtn = true;
+        }
+        return; // Early return to prevent background hover
+    }
 
     float btnX = cx + cw - 24.0f - 36.0f, btnY = cy + 20.0f, btnS = 28.0f;
     if (x >= btnX && x <= btnX + btnS && y >= btnY && y <= btnY + btnS) stat_hovExport = true;
+
+    // AI Coach Btn Hover
+    float aiBtnW = 95.0f;
+    float aiBtnX = btnX - aiBtnW - 12.0f;
+    if (x >= aiBtnX && x <= aiBtnX + aiBtnW && y >= btnY && y <= btnY + btnS) stat_hovAICoachBtn = true;
 
     for (int i = 0; i < 3; i++) {
         TabRect tr = GetTabRect(i, cx, cw);
@@ -450,9 +542,37 @@ void ProcessStatisticsMouseMove(float x, float y, float cx, float cw, float cy)
 // ============================================================
 void ProcessStatisticsMouseClick(float x, float y, float cx, float cw, float cy)
 {
+    float ch = 700.0f; // Approx height
+
+    // IF AI MODAL IS OPEN, BLOCK UNDERLYING CLICKS AND HANDLE MODAL CLICKS
+    if (stat_showAICoach) {
+        float modW = 560.0f;
+        float modH = 340.0f;
+        float modX = cx + (cw - modW) / 2.0f;
+        float modY = cy + (ch - modH) / 2.0f; 
+        
+        float clsBtnW = 120.0f;
+        float clsBtnH = 36.0f;
+        float clsBtnX = modX + (modW - clsBtnW) / 2.0f;
+        float clsBtnY = modY + modH - 24.0f - clsBtnH;
+
+        if (x >= clsBtnX && x <= clsBtnX + clsBtnW && y >= clsBtnY && y <= clsBtnY + clsBtnH) {
+            stat_showAICoach = false; // Close modal
+            stat_aiAnimProgress = 0.0f;
+        }
+        return; // Prevent background clicks
+    }
+
     float btnX = cx + cw - 24.0f - 36.0f, btnY = cy + 20.0f, btnS = 28.0f;
     if (x >= btnX && x <= btnX + btnS && y >= btnY && y <= btnY + btnS) {
         MessageBoxW(NULL, L"Analytics Data Export Feature Coming Soon!", L"RasFocus Pro Max", MB_OK | MB_ICONINFORMATION);
+    }
+
+    // AI Coach Btn Click
+    float aiBtnW = 95.0f;
+    float aiBtnX = btnX - aiBtnW - 12.0f;
+    if (x >= aiBtnX && x <= aiBtnX + aiBtnW && y >= btnY && y <= btnY + btnS) {
+        stat_showAICoach = true; // Open Modal
     }
 
     for (int i = 0; i < 3; i++) {
@@ -474,6 +594,8 @@ void ResetStatisticsAnimation()
 {
     stat_animProgress = 0.0f;
     stat_firstLoad    = true;
+    stat_showAICoach  = false;
+    stat_aiAnimProgress = 0.0f;
 }
 
 // ============================================================
@@ -481,6 +603,5 @@ void ResetStatisticsAnimation()
 // ============================================================
 void ProcessStatisticsMouseWheel(int delta)
 {
-    // Statistics tab mouse wheel handling (if needed in future)
-    // Currently placeholder to fix linker error
+    // Statistics tab mouse wheel handling
 }
