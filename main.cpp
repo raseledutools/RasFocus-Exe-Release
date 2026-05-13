@@ -18,6 +18,7 @@ HWND hParentWnd = NULL;
 #include <fstream>
 #include <process.h>
 #include <wininet.h>
+#include <chrono>
 
 #pragma comment(lib, "wininet.lib")
 
@@ -67,6 +68,14 @@ wstring currentWorkspacePdf = L"";
 
 // Premium status — accounts.h/cpp must expose this
 extern bool g_isPremiumUser;   // set to true after successful premium login
+extern string g_loggedInUserUid; // Firebase auth UID from accounts.h
+
+// ==========================================
+// SUBSCRIPTION & PACKAGE STATE (NEW)
+// ==========================================
+string g_currentPackage = "FREE_BASIC"; // FREE_BASIC, STUDENT, PREMIUM, PARENTAL, TRIAL
+int g_daysLeft = 0;
+wstring g_packageStatusText = L"Checking Subscription Status...";
 
 NOTIFYICONDATA nid = {};
 
@@ -74,8 +83,8 @@ NOTIFYICONDATA nid = {};
 // LAYOUT
 // ==========================================
 extern const int SIDEBAR_WIDTH      = 170;
-extern const int TITLEBAR_HEIGHT    = 28;   // আপডেটেড (লোগো সুন্দর করে বসানোর জন্য)
-extern const int SUBHEADER_HEIGHT   = 45;   // আপডেটেড (প্রফেশনাল সাইজ)
+extern const int TITLEBAR_HEIGHT    = 28;   
+extern const int SUBHEADER_HEIGHT   = 45;   
 
 // UI State
 int selectedTab  = 0;
@@ -93,7 +102,7 @@ int feedbackFocusField = 0;
 bool hoverFeedbackSubmit = false;
 bool hoverFeedbackClose  = false;
 
-// Sidebar tabs (Special ট্যাব যোগ করা হয়েছে)
+// Sidebar tabs
 vector<wstring> sidebarTabs = {
     L"Dashboard", L"Blocks", L"Deep Study", L"Special", L"Statistics", L"Settings"
 };
@@ -126,6 +135,56 @@ bool RequestParentalAccess(HWND hwnd);
 bool g_isAppDisabledByAdmin = false;
 
 // ==========================================
+// HARDWARE ID GENERATOR (NEW)
+// ==========================================
+string GetHardwareID() {
+    DWORD volSerial = 0;
+    GetVolumeInformationA("C:\\", NULL, 0, &volSerial, NULL, NULL, NULL, 0);
+    char hexStr[32];
+    sprintf(hexStr, "%X", volSerial);
+    return "device_" + string(hexStr);
+}
+
+// ==========================================
+// SUBSCRIPTION CHECK THREAD (NEW)
+// ==========================================
+void __cdecl SubscriptionCheckThread(void* p) {
+    // This thread simulates or fetches real data from Firebase REST to update the Title Bar
+    Sleep(2000); // Wait for UI to load
+    
+    // Example Logic to update Title Bar Status
+    string pc_id = GetHardwareID();
+    
+    if (g_isPremiumUser) {
+        g_currentPackage = "PREMIUM";
+        g_packageStatusText = L"Premium User (Active)";
+    } 
+    else if (!g_loggedInUserUid.empty()) {
+        // If logged in but not premium, assume Student or Free Basic
+        // Call Firebase REST here to get accurate package using UID
+        g_currentPackage = "STUDENT"; 
+        g_packageStatusText = L"Student Package (Expires in 90 Days)";
+    } 
+    else {
+        // No login -> PC Trial Check Mode
+        // Call Firebase REST to check 'devices/' + pc_id
+        // Dummy calculation for demonstration:
+        g_currentPackage = "TRIAL";
+        g_daysLeft = 14; 
+        
+        if (g_daysLeft > 0) {
+            g_packageStatusText = L"Trial Active (" + to_wstring(g_daysLeft) + L" Days Left)";
+        } else {
+            g_currentPackage = "FREE_BASIC";
+            g_packageStatusText = L"Free Basic Version";
+        }
+    }
+    
+    if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
+    _endthread();
+}
+
+// ==========================================
 // FIREBASE KILL SWITCH
 // ==========================================
 void __cdecl FirebaseKillThread(void* p) {
@@ -147,7 +206,7 @@ void __cdecl FirebaseKillThread(void* p) {
                 g_isAppDisabledByAdmin = true;
                 if (hParentWnd) ShowWindow(hParentWnd, SW_HIDE);
                 MessageBoxA(NULL, "This application has been disabled by the server administrator.",
-                    "RasFocus Pro - Access Denied", MB_OK | MB_ICONERROR | MB_TOPMOST);
+                    "RasFocus Pro Max - Access Denied", MB_OK | MB_ICONERROR | MB_TOPMOST);
             } else if (!isDisabled && g_isAppDisabledByAdmin) {
                 g_isAppDisabledByAdmin = false;
                 if (hParentWnd) {
@@ -155,7 +214,7 @@ void __cdecl FirebaseKillThread(void* p) {
                     SetForegroundWindow(hParentWnd);
                 }
                 MessageBoxA(NULL, "Application access has been restored by admin.",
-                    "RasFocus Pro", MB_OK | MB_ICONINFORMATION | MB_TOPMOST);
+                    "RasFocus Pro Max", MB_OK | MB_ICONINFORMATION | MB_TOPMOST);
             }
         }
         Sleep(5000);
@@ -270,7 +329,7 @@ void __cdecl SilentUpdateThread(void* p) {
                         HRESULT hrExe = URLDownloadToFileA(NULL, exeUrl.c_str(), updateExePath.c_str(), 0, NULL);
                         if (hrExe == S_OK) {
                             isUpdateReady = true;
-                            HWND hWnd = FindWindowA("RasFocusCore", "RasFocus Pro");
+                            HWND hWnd = FindWindowA("RasFocusCore", "RasFocus Pro Max");
                             if (hWnd) InvalidateRect(hWnd, NULL, FALSE);
                         }
                     }
@@ -329,7 +388,7 @@ bool IsRunAsAdmin() {
 void CreateDesktopShortcut() {
     char desktopPath[MAX_PATH];
     if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_DESKTOPDIRECTORY, NULL, 0, desktopPath))) {
-        string mainShortcutPath      = string(desktopPath) + "\\RasFocus Pro.lnk";
+        string mainShortcutPath      = string(desktopPath) + "\\RasFocus Pro Max.lnk";
         string miniBrowserShortcutPath = string(desktopPath) + "\\RasFocus Mini Browser.lnk";
         string exePath = GetExePath();
         CoInitialize(NULL);
@@ -339,7 +398,7 @@ void CreateDesktopShortcut() {
                 IPersistFile* ppf;
                 psl->SetPath("C:\\Windows\\System32\\schtasks.exe");
                 psl->SetArguments("/run /tn \"RasFocusPro_AutoStart\"");
-                psl->SetDescription("RasFocus Pro - Block Apps & Adult Content");
+                psl->SetDescription("RasFocus Pro Max - Block Apps & Adult Content");
                 psl->SetIconLocation(exePath.c_str(), 0);
                 if (SUCCEEDED(psl->QueryInterface(IID_IPersistFile, (LPVOID*)&ppf))) {
                     WCHAR wsz[MAX_PATH];
@@ -480,7 +539,7 @@ void AddTrayIcon(HWND hWnd) {
     nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     nid.uCallbackMessage = WM_TRAYICON;
     nid.hIcon  = LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APP_ICON));
-    lstrcpy(nid.szTip, "RasFocus Pro is running...");
+    lstrcpy(nid.szTip, "RasFocus Pro Max is running...");
     Shell_NotifyIcon(NIM_ADD, &nid);
 }
 
@@ -526,7 +585,7 @@ void SubmitFeedbackToFirebase(const wstring& email, const wstring& message) {
 // ==========================================
 
 // ------------------------------------------
-// 1. TITLE BAR
+// 1. TITLE BAR (UPDATED FOR PACKAGE STATUS)
 // ------------------------------------------
 void DrawTitleBar(Graphics& g, int w) {
     SolidBrush bgWhite(ColTitleBar);
@@ -548,14 +607,17 @@ void DrawTitleBar(Graphics& g, int w) {
         g.DrawImage(&bmp, 10.0f, iconY, (float)TB_LOGO_SIZE, (float)TB_LOGO_SIZE);
     }
 
-    // ── App Name ──
+    // ── App Name & Subscription Status ──
     Font fTitle(&ff, 11, FontStyleBold, UnitPixel);
     SolidBrush textDark(ColTitleBarText);
     StringFormat fmtL;
     fmtL.SetAlignment(StringAlignmentNear);
     fmtL.SetLineAlignment(StringAlignmentCenter);
-    g.DrawString(L"RasFocus+", -1, &fTitle,
-                 RectF(34.0f, 0.0f, 280.0f, (float)TITLEBAR_HEIGHT),
+    
+    // ডাইনামিক প্যাকেজ স্ট্যাটাস যোগ করা হলো
+    wstring fullTitleStr = L"RasFocus Pro Max - " + g_packageStatusText;
+    g.DrawString(fullTitleStr.c_str(), -1, &fTitle,
+                 RectF(34.0f, 0.0f, 500.0f, (float)TITLEBAR_HEIGHT),
                  &fmtL, &textDark);
 
     // ── Window Controls ──
@@ -625,7 +687,7 @@ void DrawSubHeader(Graphics& g, int w) {
     fmtTL.SetAlignment(StringAlignmentNear);
     fmtTL.SetLineAlignment(StringAlignmentCenter);
 
-    // ── বড় লোগো সাব-হেডারে ──
+    // ── বড় লোগো সাব-হেডারে ──
     const int LOGO_SIZE = 26; 
     HICON hIconLg = (HICON)LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APP_ICON),
                                      IMAGE_ICON, LOGO_SIZE, LOGO_SIZE, LR_SHARED);
@@ -636,16 +698,16 @@ void DrawSubHeader(Graphics& g, int w) {
         g.DrawImage(&bmp, iconX, iconY, (float)LOGO_SIZE, (float)LOGO_SIZE);
     }
 
-    // ── App Name + Version ──
+    // ── App Name + Version (UPDATED NAME) ──
     Font fAppName(&ff, 18, FontStyleBold, UnitPixel); 
     Font fVersion(&ff, 11, FontStyleRegular, UnitPixel);
     SolidBrush whiteAlpha(Color(200, 255, 255, 255));
     
     float textX = 16.0f + LOGO_SIZE + 10.0f; 
-    g.DrawString(L"RasFocus+", -1, &fAppName, RectF(textX, subY, 110.0f, subH), &fmtTL, &white);
+    g.DrawString(L"RasFocus Pro Max", -1, &fAppName, RectF(textX, subY, 150.0f, subH), &fmtTL, &white);
     
     wstring wVer(CURRENT_VERSION.begin(), CURRENT_VERSION.end());
-    g.DrawString(wVer.c_str(), -1, &fVersion, RectF(textX + 90.0f, subY + 2.0f, 60.0f, subH), &fmtTL, &whiteAlpha);
+    g.DrawString(wVer.c_str(), -1, &fVersion, RectF(textX + 135.0f, subY + 2.0f, 60.0f, subH), &fmtTL, &whiteAlpha);
 
     // ── ডান পাশে: Feedback icon + My Account button ──
     float rightPad = 20.0f;
@@ -698,7 +760,7 @@ void DrawSubHeader(Graphics& g, int w) {
 }
 
 // ------------------------------------------
-// 3. SIDEBAR
+// 3. SIDEBAR (UPDATED)
 // ------------------------------------------
 void DrawSidebar(Graphics& g, int h) {
     float sideX = 0.0f;
@@ -743,8 +805,8 @@ void DrawSidebar(Graphics& g, int h) {
         }
     }
 
-    // ── Upgrade Button — premium হলে লুকানো ──
-    if (!g_isPremiumUser) {
+    // ── Upgrade Button — শুধু Free Basic ইউজার হলে আপগ্রেড বাটন দেখাবে ──
+    if (g_currentPackage == "FREE_BASIC") {
         float upgH  = 38.0f;
         float upgY  = (float)h - upgH - 16.0f;
         float upgMX = 15.0f;
@@ -842,7 +904,7 @@ void DrawMainArea(Graphics& g, int w, int h) {
     float contentW = (float)(w - SIDEBAR_WIDTH);
     float contentH = (float)(h - TITLEBAR_HEIGHT - SUBHEADER_HEIGHT);
 
-    // ট্যাবের ইন্ডেক্সিং ঠিক করা হয়েছে
+    // ট্যাবের ইন্ডেক্সিং ঠিক করা হয়েছে
     if      (selectedTab == 0) { DrawDashboardTab    (g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 1) { DrawBlocksTab       (g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 2) { DrawDeepStudyTab    (g, contentX, contentY, contentW, contentH); }
@@ -1067,7 +1129,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
         if (oldTab != hoveredTab) redraw = true;
 
-        if (!g_isPremiumUser) {
+        if (g_currentPackage == "FREE_BASIC") {
             bool oldUpg = hoverUpgrade;
             float upgH  = 38.0f;
             float upgBtnY = scaledH - upgH - 16.0f;
@@ -1076,7 +1138,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             if (oldUpg != hoverUpgrade) redraw = true;
         }
 
-        // ট্যাবের ইন্ডেক্সিং ঠিক করা হয়েছে
+        // ট্যাবের ইন্ডেক্সিং ঠিক করা হয়েছে
         if      (selectedTab == 0) { ProcessDashboardMouseMove(x, y);   redraw = true; }
         else if (selectedTab == 1) { ProcessBlocksMouseMove(x, y);      redraw = true; }
         else if (selectedTab == 2) { ProcessDeepStudyMouseMove(x, y);   redraw = true; }
@@ -1129,9 +1191,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
                     showFeedbackBox = false;
                     ZeroMemory(feedbackEmail,   sizeof(feedbackEmail));
                     ZeroMemory(feedbackMessage, sizeof(feedbackMessage));
-                    MessageBoxA(hWnd, "Feedback submitted! Thank you.", "RasFocus Pro", MB_OK | MB_ICONINFORMATION);
+                    MessageBoxA(hWnd, "Feedback submitted! Thank you.", "RasFocus Pro Max", MB_OK | MB_ICONINFORMATION);
                 } else {
-                    MessageBoxA(hWnd, "Please fill in both email and message.", "RasFocus Pro", MB_OK | MB_ICONWARNING);
+                    MessageBoxA(hWnd, "Please fill in both email and message.", "RasFocus Pro Max", MB_OK | MB_ICONWARNING);
                 }
                 InvalidateRect(hWnd, NULL, FALSE); break;
             }
@@ -1172,8 +1234,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             }
         }
 
-        // ← Upgrade Now বাটনে ক্লিক করলে এখন লগিন পেজে না গিয়ে সরাসরি Upgrade Popup ওপেন হবে
-        if (!g_isPremiumUser && hoverUpgrade) {
+        // ← Upgrade Now বাটনে ক্লিক করলে এখন লগিন পেজে না গিয়ে সরাসরি Upgrade Popup ওপেন হবে
+        if (g_currentPackage == "FREE_BASIC" && hoverUpgrade) {
             g_showUpgradePopup = true; 
             InvalidateRect(hWnd, NULL, FALSE);
             break;
@@ -1185,7 +1247,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             break;
         }
 
-        // ট্যাবের ইন্ডেক্সিং ঠিক করা হয়েছে
+        // ট্যাবের ইন্ডেক্সিং ঠিক করা হয়েছে
         if      (selectedTab == 0) { ProcessDashboardMouseClick(x, y, selectedTab); }
         else if (selectedTab == 1) { ProcessBlocksMouseClick(x, y); }
         else if (selectedTab == 2) { ProcessDeepStudyMouseClick(x, y); }
@@ -1287,6 +1349,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 // ==========================================
 int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
     _beginthread(FirebaseKillThread, 0, NULL);
+    _beginthread(SubscriptionCheckThread, 0, NULL); // ← NEW SUBSCRIPTION THREAD
 
     firebase::AppOptions options;
     options.set_project_id   ("rasfocus-c746d");
@@ -1319,7 +1382,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
     if (!g_isPureViewerMode) {
         hMutex = CreateMutexA(NULL, FALSE, "RasFocusPro_SingleInstance_Mutex");
         if (GetLastError() == ERROR_ALREADY_EXISTS) {
-            HWND hExistingWnd = FindWindowA("RasFocusCore", "RasFocus Pro");
+            HWND hExistingWnd = FindWindowA("RasFocusCore", "RasFocus Pro Max");
             if (hExistingWnd) { ShowWindow(hExistingWnd, SW_RESTORE); ShowWindow(hExistingWnd, SW_SHOW); SetForegroundWindow(hExistingWnd); }
             CloseHandle(hMutex);
             return 0;
@@ -1358,7 +1421,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
     SystemParametersInfo(SPI_GETWORKAREA, 0, &workArea, 0);
 
     HWND hWnd = CreateWindowEx(
-        WS_EX_APPWINDOW, "RasFocusCore", "RasFocus Pro",
+        WS_EX_APPWINDOW, "RasFocusCore", "RasFocus Pro Max",
         WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
         CW_USEDEFAULT, CW_USEDEFAULT, sw, sh, NULL, NULL, hInst, NULL
     );
@@ -1386,7 +1449,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
     } else if (cmdLine.find("-silent") != string::npos) {
         ShowWindow(hWnd, SW_HIDE);
         int response = MessageBoxA(NULL, "Start your day with high productivity",
-            "RasFocus Pro", MB_YESNO | MB_ICONINFORMATION | MB_TOPMOST | MB_SETFOREGROUND);
+            "RasFocus Pro Max", MB_YESNO | MB_ICONINFORMATION | MB_TOPMOST | MB_SETFOREGROUND);
         if (response == IDYES) { ShowWindow(hWnd, SW_SHOWMAXIMIZED); SetForegroundWindow(hWnd); }
     } else {
         ShowWindow(hWnd, SW_SHOWMAXIMIZED);
