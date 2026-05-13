@@ -150,13 +150,13 @@ void SendGroqChatRequestAsync(std::wstring prompt, std::wstring imgPath) {
         }
     }
 
-    HINTERNET hSession = InternetOpen(L"RasFocusClient/1.0", INTERNET_OPEN_TYPE_DIRECT, NULL, NULL, 0);
-    HINTERNET hConnect = InternetConnect(hSession, L"api.groq.com", INTERNET_DEFAULT_HTTPS_PORT, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
-    HINTERNET hRequest = HttpOpenRequest(hConnect, L"POST", L"/openai/v1/chat/completions", NULL, NULL, NULL, INTERNET_FLAG_SECURE, 0);
+    HINTERNET hSession = InternetOpenW(L"RasFocusClient/1.0", INTERNET_OPEN_TYPE_DIRECT, NULL, NULL, 0);
+    HINTERNET hConnect = InternetConnectW(hSession, L"api.groq.com", INTERNET_DEFAULT_HTTPS_PORT, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
+    HINTERNET hRequest = HttpOpenRequestW(hConnect, L"POST", L"/openai/v1/chat/completions", NULL, NULL, NULL, INTERNET_FLAG_SECURE, 0);
 
     // TODO: Replace with your actual Groq API Key
     std::wstring headers = L"Authorization: Bearer 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\r\nContent-Type: application/json\r\n";
-    HttpAddRequestHeaders(hRequest, headers.c_str(), -1, HTTP_ADDREQ_FLAG_ADD);
+    HttpAddRequestHeadersW(hRequest, headers.c_str(), -1, HTTP_ADDREQ_FLAG_ADD);
 
     if (HttpSendRequest(hRequest, NULL, 0, (LPVOID)jsonData.c_str(), jsonData.length())) {
         std::string response = "";
