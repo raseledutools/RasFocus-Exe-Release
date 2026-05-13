@@ -18,6 +18,13 @@ jobs:
     - name: Setup MSVC Compiler Environment
       uses: ilammy/msvc-dev-cmd@v1
 
+    # 🟢 Clear old object files to prevent stale cache issues
+    - name: Clean Build Artifacts
+      run: |
+        Remove-Item -Force -ErrorAction SilentlyContinue *.obj
+        Remove-Item -Force -ErrorAction SilentlyContinue *.exe
+        Write-Host "✅ Cleaned old build artifacts"
+
     # 🟢 1. WebView2 Caching (বারবার ডাউনলোড ঠেকানোর জন্য)
     - name: Cache WebView2 SDK
       id: cache-webview2
