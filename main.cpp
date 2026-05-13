@@ -146,41 +146,106 @@ string GetHardwareID() {
 }
 
 // ==========================================
-// SUBSCRIPTION CHECK THREAD (NEW)
+// FIRESTORE HTTP HELPER FUNCTION (NEW)
+// ==========================================
+std::string SendFirestoreRequest(const std::string& method, const std::string& path, const std::string& payload = "") {
+    std::string response = "";
+    HINTERNET hInternet = InternetOpenA("RasFocus/1.0", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
+    if (!hInternet) return response;
+
+    HINTERNET hConnect = InternetConnectA(hInternet, "firestore.googleapis.com", INTERNET_DEFAULT_HTTPS_PORT, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
+    if (hConnect) {
+        HINTERNET hRequest = HttpOpenRequestA(hConnect, method.c_str(), path.c_str(), NULL, NULL, NULL, INTERNET_FLAG_SECURE | INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE, 0);
+        if (hRequest) {
+            if (method == "PATCH" || method == "POST") {
+                std::string headers = "Content-Type: application/json\r\n";
+                HttpSendRequestA(hRequest, headers.c_str(), headers.length(), (LPVOID)payload.c_str(), payload.length());
+            } else {
+                HttpSendRequestA(hRequest, NULL, 0, NULL, 0);
+            }
+
+            char buffer[1024];
+            DWORD bytesRead = 0;
+            while (InternetReadFile(hRequest, buffer, sizeof(buffer) - 1, &bytesRead) && bytesRead > 0) {
+                buffer[bytesRead] = '\0';
+                response += buffer;
+            }
+            InternetCloseHandle(hRequest);
+        }
+        InternetCloseHandle(hConnect);
+    }
+    InternetCloseHandle(hInternet);
+    return response;
+}
+
+// ==========================================
+// SUBSCRIPTION CHECK THREAD (UPDATED REALTIME)
 // ==========================================
 void __cdecl SubscriptionCheckThread(void* p) {
-    // This thread simulates or fetches real data from Firebase REST to update the Title Bar
-    Sleep(2000); // Wait for UI to load
+    Sleep(3000); // UI লোড হওয়ার জন্য একটু অপেক্ষা
+    std::string pc_id = GetHardwareID();
     
-    // Example Logic to update Title Bar Status
-    string pc_id = GetHardwareID();
-    
-    if (g_isPremiumUser) {
-        g_currentPackage = "PREMIUM";
-        g_packageStatusText = L"Premium User (Active)";
-    } 
-    else if (!g_loggedInUserUid.empty()) {
-        // If logged in but not premium, assume Student or Free Basic
-        // Call Firebase REST here to get accurate package using UID
-        g_currentPackage = "STUDENT"; 
-        g_packageStatusText = L"Student Package (Expires in 90 Days)";
-    } 
-    else {
-        // No login -> PC Trial Check Mode
-        // Call Firebase REST to check 'devices/' + pc_id
-        // Dummy calculation for demonstration:
-        g_currentPackage = "TRIAL";
-        g_daysLeft = 14; 
+    while(true) {
+        std::string path;
+        bool isUser = false;
         
-        if (g_daysLeft > 0) {
-            g_packageStatusText = L"Trial Active (" + to_wstring(g_daysLeft) + L" Days Left)";
-        } else {
-            g_currentPackage = "FREE_BASIC";
-            g_packageStatusText = L"Free Basic Version";
+        // যদি ইউজার লগইন করা থাকে
+        if (!g_loggedInUserUid.empty()) {
+            path = "/v1/projects/rasfocus-c746d/databases/(default)/documents/users/" + g_loggedInUserUid;
+            isUser = true;
+        } 
+        // লগইন না থাকলে পিসির হার্ডওয়্যার আইডি দিয়ে ডিভাইস চেক করবে
+        else {
+            path = "/v1/projects/rasfocus-c746d/databases/(default)/documents/devices/" + pc_id;
+            isUser = false;
         }
+        
+        // ফায়ারবেস থেকে ডেটা ফেচ করা
+        std::string response = SendFirestoreRequest("GET", path);
+        
+        // যদি 404 Not Found হয় (মানে নতুন ইন্সটল), তাহলে ডেটাবেসে নতুন এন্ট্রি তৈরি করবে
+        if (response.find("\"error\"") != std::string::npos && response.find("NOT_FOUND") != std::string::npos) {
+            std::string newPkg = isUser ? "FREE_BASIC" : "TRIAL";
+            
+            // JSON পেলোড তৈরি (নতুন ইউজারের জন্য)
+            std::string payload = "{\"fields\": {\"current_package\": {\"stringValue\": \"" + newPkg + "\"}}}";
+            
+            // ফায়ারবেসে ডেটা পুশ করা (অ্যাডমিন প্যানেলে শো করার জন্য)
+            SendFirestoreRequest("PATCH", path, payload);
+            
+            g_currentPackage = newPkg;
+            if (newPkg == "TRIAL") g_packageStatusText = L"Trial Active (14 Days Left)";
+            else g_packageStatusText = L"Free Basic Version";
+        } 
+        // যদি ডেটাবেসে ইউজার আগে থেকেই থাকে, তাহলে তার বর্তমান প্যাকেজ বের করবে
+        else {
+            std::string searchKey = "\"current_package\":";
+            size_t pos = response.find(searchKey);
+            if (pos != std::string::npos) {
+                size_t valStart = response.find("stringValue\": \"", pos);
+                if (valStart != std::string::npos) {
+                    valStart += 15; // stringValue": " এর লেন্থ
+                    size_t valEnd = response.find("\"", valStart);
+                    if (valEnd != std::string::npos) {
+                        g_currentPackage = response.substr(valStart, valEnd - valStart);
+                        
+                        // টাইটেল বার আপডেট লজিক
+                        if (g_currentPackage == "PREMIUM") g_packageStatusText = L"Premium Access Active";
+                        else if (g_currentPackage == "STUDENT") g_packageStatusText = L"Student Offer Active";
+                        else if (g_currentPackage == "PARENTAL") g_packageStatusText = L"Parental Control Active";
+                        else if (g_currentPackage == "TRIAL") g_packageStatusText = L"Trial Active";
+                        else g_packageStatusText = L"Free Basic Version";
+                    }
+                }
+            }
+        }
+        
+        // UI রিফ্রেশ করা
+        if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
+        
+        // প্রতি ১ মিনিট (৬০ সেকেন্ড) পরপর ফায়ারবেস চেক করবে অ্যাডমিন প্যাকেজ আপডেট করেছে কি না
+        Sleep(60000); 
     }
-    
-    if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
     _endthread();
 }
 
