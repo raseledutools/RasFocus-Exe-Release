@@ -63,7 +63,7 @@ std::string base64_encode(unsigned char const* bytes_to_encode, unsigned int in_
     return ret;
 }
 
-// --- States & Cache ---
+// --- Global States ---
 static float s_contentX = 0, s_contentY = 0, s_contentW = 800, s_contentH = 600;
 extern HWND hParentWnd; 
 extern float g_scaleFactor; 
@@ -73,25 +73,19 @@ static bool hoverLaunchBtn = false;
 static bool hoverChatLaunchBtn = false; 
 static bool hoverCloseBtn = false;
 static bool hoverBackBtn = false;
-static bool hoverForwardBtn = false;
-static bool hoverRefreshBtn = false;
-static bool hoverHomeBtn = false; 
-static bool hoverAddBtn = false; 
-static bool hoverPopOutBtn = false;
-static bool hoverReturnBtn = false;
 
 static bool isGeminiRunning = false; 
 static bool isAIChatRunning = false; 
-static bool isDownloading = false; 
 static bool isPoppedOut = false;   
 static HWND hPopOutWnd = NULL;     
 
 // --- Native Chat Controls & Data ---
-static HWND hChatEdit = NULL;
-static HWND hChatSendBtn = NULL;
-static HWND hChatAttachBtn = NULL; // New Upload Button
-static std::wstring g_aiChatHistory = L"Welcome to RasFocus AI!\nType your message or attach an image below...\n";
-static std::wstring g_selectedImagePath = L""; // Store attached image path
+static HWND hChatHistoryBox = NULL; // ChatGPT Style History Box
+static HWND hChatEdit = NULL;       // Input Box
+static HWND hChatSendBtn = NULL;    // Send Button
+static HWND hChatAttachBtn = NULL;  // Upload Button
+static std::wstring g_aiChatHistory = L"RasFocus AI Assistant\n================================\nWelcome! Type your message or attach an image below...\n";
+static std::wstring g_selectedImagePath = L""; 
 static bool isAiThinking = false;
 
 // --- WebView2 Global Pointers ---
@@ -104,7 +98,6 @@ static const Color GClrAppTeal(255, 12, 168, 176);
 static const Color GClrTealHover(255, 30, 185, 195); 
 static const Color GClrTextDark(255, 40, 40, 40);    
 static const Color GClrDanger(255, 230, 60, 60);     
-static const Color GClrWarning(255, 255, 190, 0);    
 
 static GraphicsPath* GetGeminiRoundRect(RectF rect, int radius) {
     GraphicsPath* path = new GraphicsPath();
@@ -126,37 +119,32 @@ void SendGroqChatRequestAsync(std::wstring prompt, std::wstring imgPath) {
     std::string promptStr(prompt.begin(), prompt.end());
     std::string jsonData;
 
-    // Check if an image is attached
     if (imgPath.empty()) {
-        // Text Only Model
         jsonData = "{\"model\":\"llama3-8b-8192\",\"messages\":[{\"role\":\"user\",\"content\":\"" + promptStr + "\"}]}";
     } else {
-        // Vision Model
         std::ifstream file(imgPath, std::ios::binary);
         if (file) {
             std::vector<unsigned char> buffer(std::istreambuf_iterator<char>(file), {});
             std::string base64_str = base64_encode(buffer.data(), buffer.size());
-            
-            // Note: Determining MIME type dynamically is better, defaulting to jpeg/png works for most Groq vision models
             std::string mimeType = "image/jpeg"; 
             if (imgPath.find(L".png") != std::wstring::npos) mimeType = "image/png";
 
             jsonData = "{\"model\":\"llama-3.2-11b-vision-preview\",\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"" + promptStr + "\"},{\"type\":\"image_url\",\"image_url\":{\"url\":\"data:" + mimeType + ";base64," + base64_str + "\"}}]}]}";
         } else {
             g_aiChatHistory += L"\n\n[Error: Failed to read attached image]";
+            SetWindowTextW(hChatHistoryBox, g_aiChatHistory.c_str());
             isAiThinking = false;
-            if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
             return;
         }
     }
 
-    HINTERNET hSession = InternetOpenW(L"RasFocusClient/1.0", INTERNET_OPEN_TYPE_DIRECT, NULL, NULL, 0);
-    HINTERNET hConnect = InternetConnectW(hSession, L"api.groq.com", INTERNET_DEFAULT_HTTPS_PORT, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
-    HINTERNET hRequest = HttpOpenRequestW(hConnect, L"POST", L"/openai/v1/chat/completions", NULL, NULL, NULL, INTERNET_FLAG_SECURE, 0);
+    HINTERNET hSession = InternetOpen(L"RasFocusClient/1.0", INTERNET_OPEN_TYPE_DIRECT, NULL, NULL, 0);
+    HINTERNET hConnect = InternetConnect(hSession, L"api.groq.com", INTERNET_DEFAULT_HTTPS_PORT, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
+    HINTERNET hRequest = HttpOpenRequest(hConnect, L"POST", L"/openai/v1/chat/completions", NULL, NULL, NULL, INTERNET_FLAG_SECURE, 0);
 
-    // TODO: Replace with your actual Groq API Key
+    // TODO: Put your Groq API key here!
     std::wstring headers = L"Authorization: Bearer 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\r\nContent-Type: application/json\r\n";
-    HttpAddRequestHeadersW(hRequest, headers.c_str(), -1, HTTP_ADDREQ_FLAG_ADD);
+    HttpAddRequestHeaders(hRequest, headers.c_str(), -1, HTTP_ADDREQ_FLAG_ADD);
 
     if (HttpSendRequest(hRequest, NULL, 0, (LPVOID)jsonData.c_str(), jsonData.length())) {
         std::string response = "";
@@ -178,7 +166,7 @@ void SendGroqChatRequestAsync(std::wstring prompt, std::wstring imgPath) {
                 content.replace(pos, 2, "\n"); pos += 1;
             }
             std::wstring wContent(content.begin(), content.end());
-            g_aiChatHistory += L"\n\nAI: " + wContent;
+            g_aiChatHistory += L"\n\nAI: " + wContent + L"\n================================";
         } else {
             g_aiChatHistory += L"\n\n[Error: Failed to parse API response]";
         }
@@ -190,12 +178,17 @@ void SendGroqChatRequestAsync(std::wstring prompt, std::wstring imgPath) {
     InternetCloseHandle(hConnect);
     InternetCloseHandle(hSession);
     
+    // Update Chat Box and Auto-Scroll to bottom
+    if (hChatHistoryBox) {
+        SetWindowTextW(hChatHistoryBox, g_aiChatHistory.c_str());
+        SendMessage(hChatHistoryBox, WM_VSCROLL, SB_BOTTOM, 0);
+    }
+    
     isAiThinking = false;
     if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
 }
 
-// ... [KEEP PopOutWndProc and WEBVIEW2 HANDLER CLASSES EXACTLY SAME AS BEFORE] ...
-
+// [Keep WebView2 Handlers empty/default if needed, removed for clean UI focus]
 LRESULT CALLBACK PopOutWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
     return DefWindowProc(hWnd, message, wParam, lParam);
 }
@@ -208,15 +201,14 @@ void InitGeminiControls(HWND parent) { hParentWnd = parent; }
 
 void ShowGeminiControls(bool show) {
     g_controlsVisible = show;
-    if (show && hParentWnd != NULL && !isPoppedOut) { 
-        InvalidateRect(hParentWnd, NULL, TRUE); 
-    }
+    if (show && hParentWnd != NULL && !isPoppedOut) { InvalidateRect(hParentWnd, NULL, TRUE); }
     
     if (webViewController != nullptr && !isPoppedOut) { 
         webViewController->put_IsVisible((show && isGeminiRunning) ? TRUE : FALSE); 
     }
 
-    if (hChatEdit && hChatSendBtn && hChatAttachBtn) {
+    if (hChatHistoryBox && hChatEdit && hChatSendBtn && hChatAttachBtn) {
+        ShowWindow(hChatHistoryBox, (show && isAIChatRunning) ? SW_SHOW : SW_HIDE);
         ShowWindow(hChatEdit, (show && isAIChatRunning) ? SW_SHOW : SW_HIDE);
         ShowWindow(hChatSendBtn, (show && isAIChatRunning) ? SW_SHOW : SW_HIDE);
         ShowWindow(hChatAttachBtn, (show && isAIChatRunning) ? SW_SHOW : SW_HIDE);
@@ -235,10 +227,25 @@ void ResizeGeminiControls(int cx, int cy, int cw, int ch) {
         webViewController->put_Bounds(bounds);
     }
 
-    if (isAIChatRunning && hChatEdit && hChatSendBtn && hChatAttachBtn) {
-        SetWindowPos(hChatAttachBtn, NULL, (int)(s_contentX + 20), (int)(s_contentY + s_contentH - 60), 40, 40, SWP_NOZORDER);
-        SetWindowPos(hChatEdit, NULL, (int)(s_contentX + 70), (int)(s_contentY + s_contentH - 60), (int)(s_contentW - 190), 40, SWP_NOZORDER);
-        SetWindowPos(hChatSendBtn, NULL, (int)(s_contentX + s_contentW - 110), (int)(s_contentY + s_contentH - 60), 90, 40, SWP_NOZORDER);
+    // --- CHATGPT STYLE PERFECT LAYOUT ---
+    if (isAIChatRunning && hChatHistoryBox && hChatEdit && hChatSendBtn && hChatAttachBtn) {
+        int padding = 20;
+        int topBarHeight = 50;
+        int bottomHeight = 45; // Height of input box
+        int bottomY = (int)(s_contentY + s_contentH - bottomHeight - padding); // Placed safely at the bottom
+
+        // History Box (Takes up middle screen)
+        SetWindowPos(hChatHistoryBox, NULL, 
+            (int)(s_contentX + padding), 
+            (int)(s_contentY + topBarHeight + padding), 
+            (int)(s_contentW - padding * 2), 
+            (int)(s_contentH - topBarHeight - bottomHeight - padding * 3), 
+            SWP_NOZORDER);
+
+        // Bottom Controls (Upload | Input Box | Send)
+        SetWindowPos(hChatAttachBtn, NULL, (int)(s_contentX + padding), bottomY, 90, bottomHeight, SWP_NOZORDER);
+        SetWindowPos(hChatEdit, NULL, (int)(s_contentX + padding + 100), bottomY, (int)(s_contentW - padding * 2 - 200), bottomHeight, SWP_NOZORDER);
+        SetWindowPos(hChatSendBtn, NULL, (int)(s_contentX + s_contentW - padding - 90), bottomY, 90, bottomHeight, SWP_NOZORDER);
     }
 }
 
@@ -250,7 +257,6 @@ void DrawGeminiTab(Graphics& g, float cx, float cy, float cw, float ch) {
     Font fH1(&ff, 28, FontStyleBold, UnitPixel); 
     Font fBold(&ff, 14, FontStyleBold, UnitPixel);
     Font fNormal(&ff, 14, FontStyleRegular, UnitPixel); 
-    Font fChatHistory(&ff, 16, FontStyleRegular, UnitPixel);
     Font fIcons(&ffIcon, 14, FontStyleRegular, UnitPixel); 
     
     SolidBrush bBg(GClrWhite); 
@@ -265,7 +271,7 @@ void DrawGeminiTab(Graphics& g, float cx, float cy, float cw, float ch) {
     // --- STATE 1: MAIN MENU ---
     if (!isGeminiRunning && !isAIChatRunning) {
         g.DrawString(L"RasFocus AI Hub", -1, &fH1, RectF(cx, cy + (ch/2) - 130, cw, 40), &fC, &bText);
-        g.DrawString(L"Choose your AI Experience below", -1, &fNormal, RectF(cx, cy + (ch/2) - 90, cw, 30), &fC, &bText);
+        g.DrawString(L"Select an option to start", -1, &fNormal, RectF(cx, cy + (ch/2) - 90, cw, 30), &fC, &bText);
 
         float btnW = 280.0f; float btnH = 50.0f;
         float btnX = cx + (cw - btnW) / 2.0f; 
@@ -288,36 +294,25 @@ void DrawGeminiTab(Graphics& g, float cx, float cy, float cw, float ch) {
     // --- STATE 2: NATIVE API CHAT INTERFACE ---
     else if (isAIChatRunning) {
         SolidBrush bNavBg(GClrAppTeal);
-        g.FillRectangle(&bNavBg, cx, cy, cw, 40.0f); 
+        g.FillRectangle(&bNavBg, cx, cy, cw, 50.0f); 
 
-        RectF backRect(cx + 10, cy + 5, 30, 30); 
+        RectF backRect(cx + 10, cy + 10, 30, 30); 
         SolidBrush bBack(hoverBackBtn ? GClrDanger : GClrAppTeal);
         g.FillRectangle(&bBack, backRect); 
         g.DrawString(L"\xE72B", -1, &fIcons, backRect, &fC, &bWhite); 
         
-        g.DrawString(L"RasFocus Native AI (Llama-3 Vision)", -1, &fBold, RectF(cx + 50, cy, cw - 100, 40), &fC, &bWhite);
+        g.DrawString(L"RasFocus Native AI (Llama-3)", -1, &fBold, RectF(cx + 50, cy, cw - 100, 50), &fC, &bWhite);
 
-        // Image Attachment Indicator
-        if (!g_selectedImagePath.empty()) {
-            g.DrawString(L"[ Image Attached. Ready to send. ]", -1, &fBold, RectF(cx + 20, cy + ch - 90, cw, 30), NULL, &bTeal);
+        // Indicator when thinking
+        if (isAiThinking) {
+            g.DrawString(L"AI is typing...", -1, &fNormal, RectF(cx + cw - 120, cy, 100, 50), &fC, &bWhite);
         }
-
-        RectF chatArea(cx + 20, cy + 50, cw - 40, ch - 150);
-        StringFormat formatLeft; formatLeft.SetAlignment(StringAlignmentNear); formatLeft.SetLineAlignment(StringAlignmentNear);
-        
-        std::wstring displayTxt = g_aiChatHistory;
-        if (isAiThinking) displayTxt += L"\n\nAI is analyzing...";
-        
-        g.DrawString(displayTxt.c_str(), -1, &fChatHistory, chatArea, &formatLeft, &bText);
     }
 
     // --- STATE 3: WEBVIEW2 BROWSER ---
     else if (isGeminiRunning && !isPoppedOut) {
         SolidBrush bNavBg(GClrAppTeal);
         g.FillRectangle(&bNavBg, cx, cy, cw, 30.0f); 
-        float startX = cx + 5; 
-        RectF backRect(startX, cy + 2, 30, 26); SolidBrush bBack(hoverBackBtn ? GClrTealHover : GClrAppTeal);
-        g.FillRectangle(&bBack, backRect); g.DrawString(L"\xE72B", -1, &fIcons, backRect, &fC, &bWhite); 
         RectF closeRect(cx + cw - 35, cy + 2, 30, 26); SolidBrush bClose(hoverCloseBtn ? GClrDanger : Color(255, 180, 40, 40));
         g.FillRectangle(&bClose, closeRect); g.DrawString(L"\xE8BB", -1, &fIcons, closeRect, &fC, &bWhite); 
     }
@@ -330,19 +325,17 @@ void ProcessGeminiMouseMove(float x, float y) {
         float btnY1 = s_contentY + (s_contentH / 2.0f) - 30.0f;
         float btnY2 = btnY1 + 70.0f;
 
-        bool prevHoverChat = hoverChatLaunchBtn;
-        bool prevHoverWeb = hoverLaunchBtn;
-
+        bool prevChat = hoverChatLaunchBtn; bool prevWeb = hoverLaunchBtn;
         hoverChatLaunchBtn = RectF(btnX, btnY1, btnW, btnH).Contains(x, y);
         hoverLaunchBtn = RectF(btnX, btnY2, btnW, btnH).Contains(x, y);
 
-        if ((prevHoverChat != hoverChatLaunchBtn || prevHoverWeb != hoverLaunchBtn) && hParentWnd != NULL) { 
+        if ((prevChat != hoverChatLaunchBtn || prevWeb != hoverLaunchBtn) && hParentWnd != NULL) { 
             InvalidateRect(hParentWnd, NULL, TRUE); 
         }
     } 
     else if (isAIChatRunning) {
         bool prevBack = hoverBackBtn;
-        hoverBackBtn = RectF(s_contentX + 10, s_contentY + 5, 30, 30).Contains(x, y);
+        hoverBackBtn = RectF(s_contentX + 10, s_contentY + 10, 30, 30).Contains(x, y);
         if (prevBack != hoverBackBtn && hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
     }
     else if (isGeminiRunning && !isPoppedOut) {
@@ -360,30 +353,38 @@ void ProcessGeminiMouseClick(float x, float y) {
         if (RectF(btnX, btnY1, btnW, btnH).Contains(x, y)) {
             isAIChatRunning = true;
             
-            if (!hChatEdit) {
-                // Attach (+) Button
-                hChatAttachBtn = CreateWindowEx(0, "BUTTON", "+", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 
-                    (int)(s_contentX + 20), (int)(s_contentY + s_contentH - 60), 40, 40, hParentWnd, (HMENU)2003, GetModuleHandle(NULL), NULL);
+            if (!hChatHistoryBox) {
+                // Read-Only Chat History Window with Scrollbar
+                hChatHistoryBox = CreateWindowEx(WS_EX_CLIENTEDGE, "EDIT", "", 
+                    WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL, 
+                    0, 0, 0, 0, hParentWnd, (HMENU)2004, GetModuleHandle(NULL), NULL);
 
-                hChatEdit = CreateWindowEx(0, "EDIT", "", WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL, 
-                    (int)(s_contentX + 70), (int)(s_contentY + s_contentH - 60), (int)(s_contentW - 190), 40, hParentWnd, (HMENU)2001, GetModuleHandle(NULL), NULL);
+                hChatAttachBtn = CreateWindowEx(0, "BUTTON", "+ Image", 
+                    WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 
+                    0, 0, 0, 0, hParentWnd, (HMENU)2003, GetModuleHandle(NULL), NULL);
+
+                hChatEdit = CreateWindowEx(WS_EX_CLIENTEDGE, "EDIT", "", 
+                    WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_AUTOVSCROLL, 
+                    0, 0, 0, 0, hParentWnd, (HMENU)2001, GetModuleHandle(NULL), NULL);
                 
-                hChatSendBtn = CreateWindowEx(0, "BUTTON", "Send", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 
-                    (int)(s_contentX + s_contentW - 110), (int)(s_contentY + s_contentH - 60), 90, 40, hParentWnd, (HMENU)2002, GetModuleHandle(NULL), NULL);
+                hChatSendBtn = CreateWindowEx(0, "BUTTON", "Send", 
+                    WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 
+                    0, 0, 0, 0, hParentWnd, (HMENU)2002, GetModuleHandle(NULL), NULL);
                 
                 HFONT hFont = CreateFont(18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH | FF_SWISS, "Segoe UI");
+                SendMessage(hChatHistoryBox, WM_SETFONT, (WPARAM)hFont, TRUE);
                 SendMessage(hChatEdit, WM_SETFONT, (WPARAM)hFont, TRUE);
                 SendMessage(hChatSendBtn, WM_SETFONT, (WPARAM)hFont, TRUE);
+                SendMessage(hChatAttachBtn, WM_SETFONT, (WPARAM)hFont, TRUE);
                 
-                HFONT hAttachFont = CreateFont(22, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH | FF_SWISS, "Segoe UI");
-                SendMessage(hChatAttachBtn, WM_SETFONT, (WPARAM)hAttachFont, TRUE);
-
+                SetWindowTextW(hChatHistoryBox, g_aiChatHistory.c_str());
             } else {
+                ShowWindow(hChatHistoryBox, SW_SHOW);
                 ShowWindow(hChatAttachBtn, SW_SHOW);
                 ShowWindow(hChatEdit, SW_SHOW); 
                 ShowWindow(hChatSendBtn, SW_SHOW);
-                ResizeGeminiControls((int)s_contentX, (int)s_contentY, (int)s_contentW, (int)s_contentH);
             }
+            ResizeGeminiControls((int)s_contentX, (int)s_contentY, (int)s_contentW, (int)s_contentH);
             if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
         }
 
@@ -392,18 +393,17 @@ void ProcessGeminiMouseClick(float x, float y) {
             if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
         }
     } 
-    
     else if (isAIChatRunning) {
-        if (RectF(s_contentX + 10, s_contentY + 5, 30, 30).Contains(x, y)) {
+        if (RectF(s_contentX + 10, s_contentY + 10, 30, 30).Contains(x, y)) {
             isAIChatRunning = false;
-            g_selectedImagePath = L""; // Clear image on back
+            g_selectedImagePath = L""; 
+            ShowWindow(hChatHistoryBox, SW_HIDE);
             ShowWindow(hChatAttachBtn, SW_HIDE);
             ShowWindow(hChatEdit, SW_HIDE);
             ShowWindow(hChatSendBtn, SW_HIDE);
             if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
         }
     }
-
     else if (isGeminiRunning && !isPoppedOut) {
         if (RectF(s_contentX + s_contentW - 35, s_contentY + 2, 30, 26).Contains(x, y)) {
             isGeminiRunning = false;
@@ -415,7 +415,7 @@ void ProcessGeminiMouseClick(float x, float y) {
 // Ensure your main.cpp routes WM_COMMAND to this function!
 void ProcessGeminiCommand(int id, int code) {
     if (isAIChatRunning) {
-        // 1. Upload/Attach Button Clicked
+        // 1. Upload Button
         if (id == 2003 && code == BN_CLICKED) {
             OPENFILENAMEW ofn;
             wchar_t szFile[MAX_PATH] = { 0 };
@@ -430,29 +430,30 @@ void ProcessGeminiCommand(int id, int code) {
 
             if (GetOpenFileNameW(&ofn) == TRUE) {
                 g_selectedImagePath = szFile;
-                if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE); // Redraw to show "[ Image Attached ]"
+                g_aiChatHistory += L"\n\n[ System: Image selected. Ready to send. ]";
+                SetWindowTextW(hChatHistoryBox, g_aiChatHistory.c_str());
+                SendMessage(hChatHistoryBox, WM_VSCROLL, SB_BOTTOM, 0);
             }
         }
         
-        // 2. Send Button Clicked
+        // 2. Send Button
         else if (id == 2002 && code == BN_CLICKED) {
             wchar_t buffer[2048];
             GetWindowTextW(hChatEdit, buffer, 2048);
             
-            // Check if there's text OR an image
             if (wcslen(buffer) > 0 || !g_selectedImagePath.empty()) {
                 SetWindowTextW(hChatEdit, L"");
                 
                 std::wstring prompt(buffer);
-                if (prompt.empty()) prompt = L"What is in this image?"; // Default prompt if only image is sent
+                if (prompt.empty()) prompt = L"What is in this image?"; 
                 
                 g_aiChatHistory += L"\n\nYou: " + prompt + (g_selectedImagePath.empty() ? L"" : L" [Sent with Image]");
+                SetWindowTextW(hChatHistoryBox, g_aiChatHistory.c_str());
+                SendMessage(hChatHistoryBox, WM_VSCROLL, SB_BOTTOM, 0);
                 
-                // Copy the path and clear the global so user can attach a new one later
                 std::wstring currentImg = g_selectedImagePath;
                 g_selectedImagePath = L""; 
                 
-                // Call API in Background Thread
                 std::thread apiThread(SendGroqChatRequestAsync, prompt, currentImg);
                 apiThread.detach();
             }
