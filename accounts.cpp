@@ -23,10 +23,12 @@ using namespace std;
 // ============================================================
 //  GLOBALS
 // ============================================================
-bool    g_isPremiumUser  = false;
-wstring g_loggedInEmail  = L"";
+bool    g_isPremiumUser    = false;
+wstring g_loggedInEmail    = L"";
+string  g_loggedInUserUid  = "";
 
 static firebase::App* s_firebaseApp = nullptr;
+extern HWND g_mainHwnd;  // main.cpp থেকে — cursor blink repaint এর জন্য
 
 // ── UI State ──
 static wchar_t s_email   [512]  = {};
@@ -196,7 +198,8 @@ void __cdecl LoginThread(void* param) {
 
         wchar_t emailW[512] = {};
         MultiByteToWideChar(CP_UTF8, 0, res.email.c_str(), -1, emailW, 511);
-        g_loggedInEmail = emailW;
+        g_loggedInEmail   = emailW;
+        g_loggedInUserUid = res.localId;  // UID save করা হচ্ছে
 
         if (data->saveLogin) {
             wchar_t passW[512] = {};
@@ -465,14 +468,28 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
     wstring emailStr(s_email);
     SolidBrush inputColor(emailStr.empty() ? Color(255, 160, 170, 180) : Color(255, 50, 50, 50));
     float textX = L.fieldX + 32.0f;
-    if (!emailStr.empty()) {
-        g.DrawString(emailStr.c_str(), -1, &fInput, RectF(textX, L.emailY, L.fieldW - 40.0f, L.fldH), &fmtL, &inputColor);
-    } else if (emailFocused) {
+
+    // Cursor blink update (always when focused)
+    if (emailFocused) {
         DWORD currentTime = GetTickCount();
         if (currentTime - s_lastBlinkTime > 500) {
             s_cursorVisible = !s_cursorVisible;
             s_lastBlinkTime = currentTime;
         }
+    }
+
+    if (!emailStr.empty()) {
+        g.DrawString(emailStr.c_str(), -1, &fInput, RectF(textX, L.emailY, L.fieldW - 40.0f, L.fldH), &fmtL, &inputColor);
+        // text এর শেষে cursor দেখানো
+        if (emailFocused && s_cursorVisible) {
+            RectF bbox;
+            g.MeasureString(emailStr.c_str(), -1, &fInput, PointF(textX, L.emailY), &fmtL, &bbox);
+            float curX = textX + bbox.Width;
+            if (curX > L.fieldX + L.fieldW - 12.0f) curX = L.fieldX + L.fieldW - 12.0f;
+            Pen cursorPen(Color(255, 0, 150, 160), 2.0f);
+            g.DrawLine(&cursorPen, curX, L.emailY + 6.0f, curX, L.emailY + L.fldH - 6.0f);
+        }
+    } else if (emailFocused) {
         if (s_cursorVisible) {
             Pen cursorPen(Color(255, 0, 150, 160), 2.0f);
             g.DrawLine(&cursorPen, textX, L.emailY + 8.0f, textX, L.emailY + L.fldH - 8.0f);
@@ -493,16 +510,30 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
 
     wstring passStr(s_password);
     float passTextX = L.fieldX + 32.0f;
-    if (!passStr.empty()) {
-        wstring passDisplay = s_showPassword ? passStr : wstring(passStr.size(), L'•');
-        SolidBrush passColorVal(Color(255, 50, 50, 50));
-        g.DrawString(passDisplay.c_str(), -1, &fInput, RectF(passTextX, L.passY, L.fieldW - 65.0f, L.fldH), &fmtL, &passColorVal);
-    } else if (passFocused) {
+
+    // Password cursor blink update
+    if (passFocused) {
         DWORD currentTime = GetTickCount();
         if (currentTime - s_lastBlinkTime > 500) {
             s_cursorVisible = !s_cursorVisible;
             s_lastBlinkTime = currentTime;
         }
+    }
+
+    if (!passStr.empty()) {
+        wstring passDisplay = s_showPassword ? passStr : wstring(passStr.size(), L'•');
+        SolidBrush passColorVal(Color(255, 50, 50, 50));
+        g.DrawString(passDisplay.c_str(), -1, &fInput, RectF(passTextX, L.passY, L.fieldW - 65.0f, L.fldH), &fmtL, &passColorVal);
+        // text এর শেষে cursor দেখানো
+        if (passFocused && s_cursorVisible) {
+            RectF bbox;
+            g.MeasureString(passDisplay.c_str(), -1, &fInput, PointF(passTextX, L.passY), &fmtL, &bbox);
+            float curX = passTextX + bbox.Width;
+            if (curX > L.fieldX + L.fieldW - 40.0f) curX = L.fieldX + L.fieldW - 40.0f;
+            Pen cursorPen(Color(255, 0, 150, 160), 2.0f);
+            g.DrawLine(&cursorPen, curX, L.passY + 6.0f, curX, L.passY + L.fldH - 6.0f);
+        }
+    } else if (passFocused) {
         if (s_cursorVisible) {
             Pen cursorPen(Color(255, 0, 150, 160), 2.0f);
             g.DrawLine(&cursorPen, passTextX, L.passY + 8.0f, passTextX, L.passY + L.fldH - 8.0f);
@@ -616,8 +647,9 @@ void ProcessAccountsMouseClick(float x, float y, HWND hWnd) {
         float logoutX = L.cardX + (L.cardW - logoutW) / 2.0f;
         float logoutY = L.cardY + L.cardH - 60.0f;
         if (HitRect(x, y, logoutX, logoutY, logoutW, logoutH)) {
-            g_loggedInEmail = L"";
-            g_isPremiumUser = false;
+            g_loggedInEmail   = L"";
+            g_loggedInUserUid = "";
+            g_isPremiumUser   = false;
             ZeroMemory(s_email,    sizeof(s_email));
             ZeroMemory(s_password, sizeof(s_password));
             s_statusMsg = L"Logged out successfully.";
@@ -696,6 +728,7 @@ void ProcessAccountsChar(wchar_t c) {
         s_cursorVisible = true;
         s_lastBlinkTime = GetTickCount();
     }
+    if (g_mainHwnd) InvalidateRect(g_mainHwnd, NULL, FALSE);
 }
 
 void ProcessAccountsKeyDown(WPARAM wp) {
@@ -713,4 +746,5 @@ void ProcessAccountsKeyDown(WPARAM wp) {
         s_focusField = 0;
         s_statusMsg = L"";
     }
+    if (g_mainHwnd) InvalidateRect(g_mainHwnd, NULL, FALSE);
 }

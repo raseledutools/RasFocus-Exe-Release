@@ -10,6 +10,8 @@ using namespace std;
 // ── Global premium status (main.cpp reads this) ──
 extern bool g_isPremiumUser;
 extern wstring g_loggedInEmail;   // login হলে email থাকবে
+extern string g_loggedInUserUid;  // login হলে Firebase UID থাকবে
+extern HWND g_mainHwnd;           // cursor blink repaint এর জন্য
 
 // ── Called from WinMain after Firebase is created ──
 void InitAccountsModule(firebase::App* app);
