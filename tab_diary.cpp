@@ -12,12 +12,6 @@
 #include <process.h>
 #include <shlwapi.h>
 #include <algorithm>
-#include <wininet.h>  
-#include <thread>     
-#include <fstream>
-#include <sstream>
-
-#pragma comment(lib, "wininet.lib") 
 
 // --- WebView2 Headers ---
 #include "WebView2.h"
@@ -29,64 +23,244 @@ using namespace Gdiplus;
 using namespace std;
 using namespace Microsoft::WRL; 
 
-// --- Base64 Encoder Function for Images ---
-static const std::string base64_chars = 
-             "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-             "abcdefghijklmnopqrstuvwxyz"
-             "0123456789+/";
+// =========================================================================
+// PREMIUM LOCAL HTML UI (0% Lag, C++ Memory Rendered)
+// =========================================================================
+const wchar_t* PREMIUM_UI_HTML = LR"HTML(
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RasFocus AI - Premium UI</title>
+    <style>
+        * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        body { margin: 0; background-color: #212121; color: #ececec; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        
+        #chat-history { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 20px; }
+        .msg { display: flex; max-width: 80%; line-height: 1.6; font-size: 16px; padding: 15px 20px; border-radius: 18px; white-space: pre-wrap; word-wrap: break-word; }
+        .user-msg { background-color: #2f2f2f; align-self: flex-end; border-bottom-right-radius: 4px; border: 1px solid #444; }
+        .ai-msg { background-color: transparent; align-self: flex-start; }
+        .sent-img { max-width: 250px; border-radius: 10px; margin-top: 10px; display: block; border: 1px solid #555; }
 
-std::string base64_encode(unsigned char const* bytes_to_encode, unsigned int in_len) {
-    std::string ret;
-    int i = 0, j = 0;
-    unsigned char char_array_3[3];
-    unsigned char char_array_4[4];
+        #input-wrapper { padding: 20px; display: flex; justify-content: center; background: linear-gradient(to top, #212121 80%, transparent); }
+        .input-container { width: 100%; max-width: 800px; background-color: #2f2f2f; border-radius: 20px; padding: 12px; border: 1px solid #444; position: relative; transition: 0.2s; }
+        .input-container.dragover { background-color: #3b3b3b; border-color: #00ADB5; }
 
-    while (in_len--) {
-        char_array_3[i++] = *(bytes_to_encode++);
-        if (i == 3) {
-            char_array_4[0] = (char_array_3[0] & 0xfc) >> 2;
-            char_array_4[1] = ((char_array_3[0] & 0x03) << 4) + ((char_array_3[1] & 0xf0) >> 4);
-            char_array_4[2] = ((char_array_3[1] & 0x0f) << 2) + ((char_array_3[2] & 0xc0) >> 6);
-            char_array_4[3] = char_array_3[2] & 0x3f;
-            for(i = 0; (i <4) ; i++) ret += base64_chars[char_array_4[i]];
-            i = 0;
+        #attachment-area { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 5px; }
+        .file-card { width: 120px; height: 120px; background-color: #212121; border: 1px solid #444; border-radius: 12px; padding: 10px; position: relative; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; }
+        .file-card .remove-btn { position: absolute; top: 5px; right: 5px; background: #444; color: white; border: none; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-size: 12px; display: flex; align-items: center; justify-content: center; }
+        .file-card .remove-btn:hover { background: #ff4d4d; }
+        
+        .text-card-content { font-size: 10px; color: #888; overflow: hidden; height: 70px; word-break: break-all; }
+        .text-card-label { background: #333; color: #ccc; font-size: 11px; padding: 3px 8px; border-radius: 6px; align-self: flex-start; font-weight: bold; border: 1px solid #555; }
+        .img-card-preview { width: 100%; height: 70px; object-fit: cover; border-radius: 6px; }
+
+        .input-row { display: flex; align-items: flex-end; gap: 10px; }
+        #add-btn { background: transparent; border: none; color: #aaa; font-size: 24px; cursor: pointer; padding: 5px 10px; display: flex; align-items: center; justify-content: center; border-radius: 50%; height: 40px; width: 40px; }
+        #add-btn:hover { background: #444; color: white; }
+        
+        textarea { flex: 1; background: transparent; border: none; color: white; font-size: 16px; padding: 8px 0; resize: none; outline: none; max-height: 200px; min-height: 24px; overflow-y: auto; }
+        
+        #send-btn { background: #444; color: #aaa; border: none; padding: 8px 12px; border-radius: 10px; cursor: pointer; font-weight: bold; height: 36px; display: flex; align-items: center; justify-content: center; transition: 0.2s; }
+        #send-btn.active { background: #d9d9e3; color: #111; }
+        #file-input { display: none; }
+        
+        .thinking { color: #00ADB5; font-style: italic; font-size: 14px; margin-left: 10px; display: none; }
+    </style>
+</head>
+<body>
+
+    <div id="chat-history">
+        <div class="msg ai-msg">Welcome to RasFocus Native AI! 🚀<br>Powered by <b>Llama-4 Scout</b>. Drag files, paste images, or paste large code blocks to test me.</div>
+    </div>
+    
+    <div id="thinking-indicator" class="thinking" style="text-align:center;">AI is analyzing... please wait.</div>
+
+    <div id="input-wrapper">
+        <div class="input-container" id="drop-zone">
+            <div id="attachment-area"></div>
+            <div class="input-row">
+                <input type="file" id="file-input" accept="image/*" multiple>
+                <button id="add-btn" onclick="document.getElementById('file-input').click()">+</button>
+                <textarea id="chat-input" placeholder="Message AI..."></textarea>
+                <button id="send-btn">↑</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_KEY = "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";
+        const MODEL_NAME = "meta-llama/llama-4-scout-17b-16e-instruct";
+
+        const inputContainer = document.getElementById('drop-zone');
+        const chatInput = document.getElementById('chat-input');
+        const attachmentArea = document.getElementById('attachment-area');
+        const sendBtn = document.getElementById('send-btn');
+        const chatHistory = document.getElementById('chat-history');
+        const thinkingIndicator = document.getElementById('thinking-indicator');
+
+        let attachments = [];
+
+        chatInput.addEventListener('input', function() {
+            this.style.height = '24px';
+            this.style.height = (this.scrollHeight) + 'px';
+            toggleSendButton();
+        });
+
+        function toggleSendButton() {
+            if (chatInput.value.trim().length > 0 || attachments.length > 0) {
+                sendBtn.classList.add('active');
+            } else {
+                sendBtn.classList.remove('active');
+            }
         }
-    }
-    if (i) {
-        for(j = i; j < 3; j++) char_array_3[j] = '\0';
-        char_array_4[0] = (char_array_3[0] & 0xfc) >> 2;
-        char_array_4[1] = ((char_array_3[0] & 0x03) << 4) + ((char_array_3[1] & 0xf0) >> 4);
-        char_array_4[2] = ((char_array_3[1] & 0x0f) << 2) + ((char_array_3[2] & 0xc0) >> 6);
-        for (j = 0; (j < i + 1); j++) ret += base64_chars[char_array_4[j]];
-        while((i++ < 3)) ret += '=';
-    }
-    return ret;
-}
+
+        function addTextAttachment(textData) {
+            attachments.push({ id: Date.now(), type: 'text', data: textData });
+            renderAttachments();
+        }
+
+        function addImageAttachment(file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                attachments.push({ id: Date.now(), type: 'image', data: e.target.result, file: file });
+                renderAttachments();
+            };
+            reader.readAsDataURL(file);
+        }
+
+        chatInput.addEventListener('paste', (e) => {
+            const items = (e.clipboardData || window.clipboardData).items;
+            for (let item of items) {
+                if (item.type.indexOf('image') !== -1) {
+                    e.preventDefault();
+                    addImageAttachment(item.getAsFile());
+                    return;
+                }
+            }
+            let text = (e.clipboardData || window.clipboardData).getData('text');
+            if (text.length > 300) { 
+                e.preventDefault(); 
+                addTextAttachment(text); 
+            }
+        });
+
+        inputContainer.addEventListener('dragover', (e) => { e.preventDefault(); inputContainer.classList.add('dragover'); });
+        inputContainer.addEventListener('dragleave', (e) => { e.preventDefault(); inputContainer.classList.remove('dragover'); });
+        inputContainer.addEventListener('drop', (e) => {
+            e.preventDefault(); inputContainer.classList.remove('dragover');
+            for(let file of e.dataTransfer.files) {
+                if (file.type.startsWith('image/')) addImageAttachment(file);
+            }
+        });
+
+        document.getElementById('file-input').addEventListener('change', function(e) {
+            for(let file of this.files) { if (file.type.startsWith('image/')) addImageAttachment(file); }
+            this.value = ''; 
+        });
+
+        function renderAttachments() {
+            attachmentArea.innerHTML = '';
+            attachments.forEach(att => {
+                let innerContent = att.type === 'text' 
+                    ? `<div class="text-card-content">${att.data.substring(0, 80)}...</div><div class="text-card-label">PASTED</div>`
+                    : `<img src="${att.data}" class="img-card-preview"><div class="text-card-label">IMAGE</div>`;
+
+                attachmentArea.innerHTML += `
+                    <div class="file-card">
+                        <button class="remove-btn" onclick="removeAttachment(${att.id})">✕</button>
+                        ${innerContent}
+                    </div>`;
+            });
+            toggleSendButton();
+        }
+
+        window.removeAttachment = function(id) {
+            attachments = attachments.filter(a => a.id !== id);
+            renderAttachments();
+        }
+
+        sendBtn.addEventListener('click', async () => {
+            if (!sendBtn.classList.contains('active')) return;
+
+            let promptText = chatInput.value.trim();
+            let hasImages = attachments.filter(a => a.type === 'image');
+            let hasTextAtts = attachments.filter(a => a.type === 'text');
+            
+            let finalPrompt = promptText;
+            hasTextAtts.forEach(t => { finalPrompt += "\n\n[Context]:\n" + t.data; });
+            if (!finalPrompt && hasImages.length > 0) finalPrompt = "Analyze this image.";
+
+            let userMsgHtml = `<div class="msg user-msg"><div>${promptText}</div>`;
+            hasTextAtts.forEach(t => { userMsgHtml += `<div style="font-size:12px; color:#888; background:#222; padding:5px; margin-top:5px; border-radius:5px;">[ Attached Text ]</div>`; });
+            hasImages.forEach(img => { userMsgHtml += `<img src="${img.data}" class="sent-img">`; });
+            userMsgHtml += `</div>`;
+            
+            chatHistory.innerHTML += userMsgHtml;
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+
+            chatInput.value = '';
+            chatInput.style.height = '24px';
+            attachments = [];
+            renderAttachments();
+            thinkingIndicator.style.display = "block";
+
+            let messagesPayload = [];
+            if (hasImages.length > 0) {
+                let contentArray = [{ type: "text", text: finalPrompt }];
+                hasImages.forEach(img => {
+                    contentArray.push({ type: "image_url", image_url: { url: img.data } });
+                });
+                messagesPayload.push({ role: "user", content: contentArray });
+            } else {
+                messagesPayload.push({ role: "user", content: finalPrompt });
+            }
+
+            try {
+                const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+                    method: "POST",
+                    headers: { "Authorization": `Bearer ${API_KEY}`, "Content-Type": "application/json" },
+                    body: JSON.stringify({ model: MODEL_NAME, messages: messagesPayload })
+                });
+
+                const data = await response.json();
+                thinkingIndicator.style.display = "none";
+
+                if (response.ok) {
+                    chatHistory.innerHTML += `<div class="msg ai-msg">${data.choices[0].message.content}</div>`;
+                } else {
+                    chatHistory.innerHTML += `<div class="msg ai-msg" style="color:#ff4d4d;">Error: ${JSON.stringify(data.error.message)}</div>`;
+                }
+            } catch (error) {
+                thinkingIndicator.style.display = "none";
+                chatHistory.innerHTML += `<div class="msg ai-msg" style="color:#ff4d4d;">Network Error.</div>`;
+            }
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+        });
+
+        chatInput.addEventListener("keydown", function(e) {
+            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendBtn.click(); }
+        });
+    </script>
+</body>
+</html>
+)HTML";
 
 // --- Global States ---
 static float s_contentX = 0, s_contentY = 0, s_contentW = 800, s_contentH = 600;
 extern HWND hParentWnd; 
 extern float g_scaleFactor; 
-static bool g_controlsVisible = false;
 
+static int g_webViewMode = 0; // 0 = Home, 1 = Local Premium AI, 2 = Web Browser
 static bool hoverLaunchBtn = false;
 static bool hoverChatLaunchBtn = false; 
 static bool hoverCloseBtn = false;
 static bool hoverBackBtn = false;
-
-static bool isGeminiRunning = false; 
-static bool isAIChatRunning = false; 
+static bool hoverHomeBtn = false; 
+static bool hoverPopOutBtn = false;
 static bool isPoppedOut = false;   
 static HWND hPopOutWnd = NULL;     
-
-// --- Native Chat Controls & Data ---
-static HWND hChatHistoryBox = NULL; // ChatGPT Style History Box
-static HWND hChatEdit = NULL;       // Input Box
-static HWND hChatSendBtn = NULL;    // Send Button
-static HWND hChatAttachBtn = NULL;  // Upload Button
-static std::wstring g_aiChatHistory = L"RasFocus AI Assistant\n================================\nWelcome! Type your message or attach an image below...\n";
-static std::wstring g_selectedImagePath = L""; 
-static bool isAiThinking = false;
 
 // --- WebView2 Global Pointers ---
 static ComPtr<ICoreWebView2Controller> webViewController;
@@ -109,89 +283,59 @@ static GraphicsPath* GetGeminiRoundRect(RectF rect, int radius) {
     path->CloseFigure(); return path;
 }
 
-// =========================================================================
-// API Request Thread Function (Vision & Text)
-// =========================================================================
-void SendGroqChatRequestAsync(std::wstring prompt, std::wstring imgPath) {
-    isAiThinking = true;
-    if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
-
-    std::string promptStr(prompt.begin(), prompt.end());
-    std::string jsonData;
-
-    if (imgPath.empty()) {
-        jsonData = "{\"model\":\"llama3-8b-8192\",\"messages\":[{\"role\":\"user\",\"content\":\"" + promptStr + "\"}]}";
-    } else {
-        std::ifstream file(imgPath, std::ios::binary);
-        if (file) {
-            std::vector<unsigned char> buffer(std::istreambuf_iterator<char>(file), {});
-            std::string base64_str = base64_encode(buffer.data(), buffer.size());
-            std::string mimeType = "image/jpeg"; 
-            if (imgPath.find(L".png") != std::wstring::npos) mimeType = "image/png";
-
-            jsonData = "{\"model\":\"llama-3.2-11b-vision-preview\",\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"" + promptStr + "\"},{\"type\":\"image_url\",\"image_url\":{\"url\":\"data:" + mimeType + ";base64," + base64_str + "\"}}]}]}";
-        } else {
-            g_aiChatHistory += L"\n\n[Error: Failed to read attached image]";
-            SetWindowTextW(hChatHistoryBox, g_aiChatHistory.c_str());
-            isAiThinking = false;
-            return;
-        }
-    }
-
-    HINTERNET hSession = InternetOpen(L"RasFocusClient/1.0", INTERNET_OPEN_TYPE_DIRECT, NULL, NULL, 0);
-    HINTERNET hConnect = InternetConnect(hSession, L"api.groq.com", INTERNET_DEFAULT_HTTPS_PORT, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
-    HINTERNET hRequest = HttpOpenRequest(hConnect, L"POST", L"/openai/v1/chat/completions", NULL, NULL, NULL, INTERNET_FLAG_SECURE, 0);
-
-    // TODO: Put your Groq API key here!
-    std::wstring headers = L"Authorization: Bearer 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\r\nContent-Type: application/json\r\n";
-    HttpAddRequestHeaders(hRequest, headers.c_str(), -1, HTTP_ADDREQ_FLAG_ADD);
-
-    if (HttpSendRequest(hRequest, NULL, 0, (LPVOID)jsonData.c_str(), jsonData.length())) {
-        std::string response = "";
-        char buffer[4096];
-        DWORD bytesRead = 0;
-        while (InternetReadFile(hRequest, buffer, sizeof(buffer) - 1, &bytesRead) && bytesRead > 0) {
-            buffer[bytesRead] = '\0';
-            response += buffer;
-        }
-
-        size_t startPos = response.find("\"content\":\"");
-        if (startPos != std::string::npos) {
-            startPos += 11;
-            size_t endPos = response.find("\"", startPos);
-            std::string content = response.substr(startPos, endPos - startPos);
-            
-            size_t pos = 0;
-            while ((pos = content.find("\\n", pos)) != std::string::npos) {
-                content.replace(pos, 2, "\n"); pos += 1;
-            }
-            std::wstring wContent(content.begin(), content.end());
-            g_aiChatHistory += L"\n\nAI: " + wContent + L"\n================================";
-        } else {
-            g_aiChatHistory += L"\n\n[Error: Failed to parse API response]";
-        }
-    } else {
-        g_aiChatHistory += L"\n\n[Error: Check Internet Connection or API Key]";
-    }
-
-    InternetCloseHandle(hRequest);
-    InternetCloseHandle(hConnect);
-    InternetCloseHandle(hSession);
-    
-    // Update Chat Box and Auto-Scroll to bottom
-    if (hChatHistoryBox) {
-        SetWindowTextW(hChatHistoryBox, g_aiChatHistory.c_str());
-        SendMessage(hChatHistoryBox, WM_VSCROLL, SB_BOTTOM, 0);
-    }
-    
-    isAiThinking = false;
-    if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
-}
-
-// [Keep WebView2 Handlers empty/default if needed, removed for clean UI focus]
+// [KEEP PopOutWndProc EXACTLY SAME AS BEFORE]
 LRESULT CALLBACK PopOutWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
     return DefWindowProc(hWnd, message, wParam, lParam);
 }
+
+// --- Controller Completed Handler ---
+class ControllerCompletedHandler : public ICoreWebView2CreateCoreWebView2ControllerCompletedHandler {
+    ULONG m_refCount = 1;
+public:
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override {
+        if (!ppv) return E_POINTER;
+        static const IID IID_ICoreWebView2CreateCoreWebView2ControllerCompletedHandler_Local = { 0x6c4819f3, 0xc9b7, 0x4260, { 0x81, 0x27, 0xc9, 0xf5, 0xbd, 0xe7, 0xf6, 0x8c } };
+        if (riid == IID_IUnknown_Local || riid == IID_ICoreWebView2CreateCoreWebView2ControllerCompletedHandler_Local) { *ppv = this; AddRef(); return S_OK; }
+        *ppv = nullptr; return E_NOINTERFACE;
+    }
+    ULONG STDMETHODCALLTYPE AddRef() override { return InterlockedIncrement(&m_refCount); }
+    ULONG STDMETHODCALLTYPE Release() override { ULONG r = InterlockedDecrement(&m_refCount); if (r == 0) delete this; return r; }
+    
+    HRESULT STDMETHODCALLTYPE Invoke(HRESULT result, ICoreWebView2Controller* controller) override {
+        if (controller != nullptr) {
+            webViewController = controller;
+            webViewController->get_CoreWebView2(&webView);
+            webViewController->put_IsVisible(TRUE);
+
+            // Load Content based on Selected Mode
+            if (g_webViewMode == 1) {
+                webView->NavigateToString(PREMIUM_UI_HTML);
+            } else if (g_webViewMode == 2) {
+                webView->Navigate(L"https://gemini.google.com/?authuser=0");
+            }
+        }
+        return S_OK;
+    }
+};
+
+class EnvCompletedHandler : public ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler {
+    ULONG m_refCount = 1;
+public:
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override {
+        if (!ppv) return E_POINTER;
+        static const IID IID_ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler_Local = { 0x4e8a3389, 0xc9d8, 0x4bd2, { 0xb6, 0xb5, 0x12, 0x4f, 0xee, 0x6c, 0xc1, 0x4d } };
+        if (riid == IID_IUnknown_Local || riid == IID_ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler_Local) { *ppv = this; AddRef(); return S_OK; }
+        *ppv = nullptr; return E_NOINTERFACE;
+    }
+    ULONG STDMETHODCALLTYPE AddRef() override { return InterlockedIncrement(&m_refCount); }
+    ULONG STDMETHODCALLTYPE Release() override { ULONG r = InterlockedDecrement(&m_refCount); if (r == 0) delete this; return r; }
+    HRESULT STDMETHODCALLTYPE Invoke(HRESULT result, ICoreWebView2Environment* env) override {
+        if (env != nullptr) {
+            env->CreateCoreWebView2Controller(hParentWnd, new ControllerCompletedHandler());
+        }
+        return S_OK;
+    }
+};
 
 // =========================================================================
 // Main UI Functions
@@ -200,52 +344,20 @@ LRESULT CALLBACK PopOutWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lP
 void InitGeminiControls(HWND parent) { hParentWnd = parent; }
 
 void ShowGeminiControls(bool show) {
-    g_controlsVisible = show;
     if (show && hParentWnd != NULL && !isPoppedOut) { InvalidateRect(hParentWnd, NULL, TRUE); }
-    
-    if (webViewController != nullptr && !isPoppedOut) { 
-        webViewController->put_IsVisible((show && isGeminiRunning) ? TRUE : FALSE); 
-    }
-
-    if (hChatHistoryBox && hChatEdit && hChatSendBtn && hChatAttachBtn) {
-        ShowWindow(hChatHistoryBox, (show && isAIChatRunning) ? SW_SHOW : SW_HIDE);
-        ShowWindow(hChatEdit, (show && isAIChatRunning) ? SW_SHOW : SW_HIDE);
-        ShowWindow(hChatSendBtn, (show && isAIChatRunning) ? SW_SHOW : SW_HIDE);
-        ShowWindow(hChatAttachBtn, (show && isAIChatRunning) ? SW_SHOW : SW_HIDE);
-    }
+    if (webViewController != nullptr && !isPoppedOut) { webViewController->put_IsVisible((show && g_webViewMode > 0) ? TRUE : FALSE); }
 }
 
 void ResizeGeminiControls(int cx, int cy, int cw, int ch) {
     s_contentX = (float)cx; s_contentY = (float)cy; s_contentW = (float)cw; s_contentH = (float)ch;
     
-    if (webViewController != nullptr && isGeminiRunning && !isPoppedOut) {
+    if (webViewController != nullptr && g_webViewMode > 0 && !isPoppedOut) {
         RECT bounds;
         bounds.left = (LONG)(cx * g_scaleFactor);
         bounds.top = (LONG)((cy + 30) * g_scaleFactor); 
         bounds.right = (LONG)((cx + cw) * g_scaleFactor);
         bounds.bottom = (LONG)((cy + ch) * g_scaleFactor);
         webViewController->put_Bounds(bounds);
-    }
-
-    // --- CHATGPT STYLE PERFECT LAYOUT ---
-    if (isAIChatRunning && hChatHistoryBox && hChatEdit && hChatSendBtn && hChatAttachBtn) {
-        int padding = 20;
-        int topBarHeight = 50;
-        int bottomHeight = 45; // Height of input box
-        int bottomY = (int)(s_contentY + s_contentH - bottomHeight - padding); // Placed safely at the bottom
-
-        // History Box (Takes up middle screen)
-        SetWindowPos(hChatHistoryBox, NULL, 
-            (int)(s_contentX + padding), 
-            (int)(s_contentY + topBarHeight + padding), 
-            (int)(s_contentW - padding * 2), 
-            (int)(s_contentH - topBarHeight - bottomHeight - padding * 3), 
-            SWP_NOZORDER);
-
-        // Bottom Controls (Upload | Input Box | Send)
-        SetWindowPos(hChatAttachBtn, NULL, (int)(s_contentX + padding), bottomY, 90, bottomHeight, SWP_NOZORDER);
-        SetWindowPos(hChatEdit, NULL, (int)(s_contentX + padding + 100), bottomY, (int)(s_contentW - padding * 2 - 200), bottomHeight, SWP_NOZORDER);
-        SetWindowPos(hChatSendBtn, NULL, (int)(s_contentX + s_contentW - padding - 90), bottomY, 90, bottomHeight, SWP_NOZORDER);
     }
 }
 
@@ -262,16 +374,15 @@ void DrawGeminiTab(Graphics& g, float cx, float cy, float cw, float ch) {
     SolidBrush bBg(GClrWhite); 
     SolidBrush bText(GClrTextDark); 
     SolidBrush bWhite(GClrWhite);
-    SolidBrush bTeal(GClrAppTeal);
     
     StringFormat fC; fC.SetAlignment(StringAlignmentCenter); fC.SetLineAlignment(StringAlignmentCenter);
 
     g.FillRectangle(&bBg, cx, cy, cw, ch);
 
-    // --- STATE 1: MAIN MENU ---
-    if (!isGeminiRunning && !isAIChatRunning) {
+    // --- STATE 1: HOME MENU ---
+    if (g_webViewMode == 0) {
         g.DrawString(L"RasFocus AI Hub", -1, &fH1, RectF(cx, cy + (ch/2) - 130, cw, 40), &fC, &bText);
-        g.DrawString(L"Select an option to start", -1, &fNormal, RectF(cx, cy + (ch/2) - 90, cw, 30), &fC, &bText);
+        g.DrawString(L"Select an option below", -1, &fNormal, RectF(cx, cy + (ch/2) - 90, cw, 30), &fC, &bText);
 
         float btnW = 280.0f; float btnH = 50.0f;
         float btnX = cx + (cw - btnW) / 2.0f; 
@@ -281,7 +392,7 @@ void DrawGeminiTab(Graphics& g, float cx, float cy, float cw, float ch) {
         GraphicsPath* bp1 = GetGeminiRoundRect(btnRect1, 25);
         SolidBrush btnBrush1(hoverChatLaunchBtn ? GClrTealHover : GClrAppTeal);
         g.FillPath(&btnBrush1, bp1); delete bp1;
-        g.DrawString(L"Chat with AI (Vision & Text)", -1, &fBold, btnRect1, &fC, &bWhite);
+        g.DrawString(L"Chat with AI (Premium UI)", -1, &fBold, btnRect1, &fC, &bWhite);
 
         float btnY2 = btnY1 + 70.0f;
         RectF btnRect2(btnX, btnY2, btnW, btnH);
@@ -290,36 +401,25 @@ void DrawGeminiTab(Graphics& g, float cx, float cy, float cw, float ch) {
         g.FillPath(&btnBrush2, bp2); delete bp2;
         g.DrawString(L"Open AI Web Browser", -1, &fBold, btnRect2, &fC, &bWhite);
     } 
-    
-    // --- STATE 2: NATIVE API CHAT INTERFACE ---
-    else if (isAIChatRunning) {
-        SolidBrush bNavBg(GClrAppTeal);
-        g.FillRectangle(&bNavBg, cx, cy, cw, 50.0f); 
-
-        RectF backRect(cx + 10, cy + 10, 30, 30); 
-        SolidBrush bBack(hoverBackBtn ? GClrDanger : GClrAppTeal);
-        g.FillRectangle(&bBack, backRect); 
-        g.DrawString(L"\xE72B", -1, &fIcons, backRect, &fC, &bWhite); 
-        
-        g.DrawString(L"RasFocus Native AI (Llama-3)", -1, &fBold, RectF(cx + 50, cy, cw - 100, 50), &fC, &bWhite);
-
-        // Indicator when thinking
-        if (isAiThinking) {
-            g.DrawString(L"AI is typing...", -1, &fNormal, RectF(cx + cw - 120, cy, 100, 50), &fC, &bWhite);
-        }
-    }
-
-    // --- STATE 3: WEBVIEW2 BROWSER ---
-    else if (isGeminiRunning && !isPoppedOut) {
+    // --- STATE 2 & 3: RUNNING MODE ---
+    else if (!isPoppedOut) {
         SolidBrush bNavBg(GClrAppTeal);
         g.FillRectangle(&bNavBg, cx, cy, cw, 30.0f); 
+
+        float startX = cx + 5; 
+        
+        // Back to Menu Button
+        RectF homeRect(startX, cy + 2, 30, 26); SolidBrush bHome(hoverHomeBtn ? GClrTealHover : GClrAppTeal);
+        g.FillRectangle(&bHome, homeRect); g.DrawString(L"\xE80F", -1, &fIcons, homeRect, &fC, &bWhite); 
+
+        // Close Button
         RectF closeRect(cx + cw - 35, cy + 2, 30, 26); SolidBrush bClose(hoverCloseBtn ? GClrDanger : Color(255, 180, 40, 40));
         g.FillRectangle(&bClose, closeRect); g.DrawString(L"\xE8BB", -1, &fIcons, closeRect, &fC, &bWhite); 
     }
 }
 
 void ProcessGeminiMouseMove(float x, float y) {
-    if (!isGeminiRunning && !isAIChatRunning) {
+    if (g_webViewMode == 0) {
         float btnW = 280.0f; float btnH = 50.0f;
         float btnX = s_contentX + (s_contentW - btnW) / 2.0f; 
         float btnY1 = s_contentY + (s_contentH / 2.0f) - 30.0f;
@@ -332,131 +432,58 @@ void ProcessGeminiMouseMove(float x, float y) {
         if ((prevChat != hoverChatLaunchBtn || prevWeb != hoverLaunchBtn) && hParentWnd != NULL) { 
             InvalidateRect(hParentWnd, NULL, TRUE); 
         }
-    } 
-    else if (isAIChatRunning) {
-        bool prevBack = hoverBackBtn;
-        hoverBackBtn = RectF(s_contentX + 10, s_contentY + 10, 30, 30).Contains(x, y);
-        if (prevBack != hoverBackBtn && hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
-    }
-    else if (isGeminiRunning && !isPoppedOut) {
+    } else if (!isPoppedOut) {
+        bool prevHome = hoverHomeBtn; bool prevClose = hoverCloseBtn;
+        hoverHomeBtn = RectF(s_contentX + 5, s_contentY + 2, 30, 26).Contains(x, y);
         hoverCloseBtn = RectF(s_contentX + s_contentW - 35, s_contentY + 2, 30, 26).Contains(x, y);
+
+        if (prevHome != hoverHomeBtn || prevClose != hoverCloseBtn) {
+            if (hParentWnd != NULL) InvalidateRect(hParentWnd, NULL, TRUE);
+        }
     }
 }
 
 void ProcessGeminiMouseClick(float x, float y) {
-    if (!isGeminiRunning && !isAIChatRunning) {
+    if (g_webViewMode == 0) {
         float btnW = 280.0f; float btnH = 50.0f;
         float btnX = s_contentX + (s_contentW - btnW) / 2.0f; 
         float btnY1 = s_contentY + (s_contentH / 2.0f) - 30.0f;
         float btnY2 = btnY1 + 70.0f;
 
         if (RectF(btnX, btnY1, btnW, btnH).Contains(x, y)) {
-            isAIChatRunning = true;
-            
-            if (!hChatHistoryBox) {
-                // Read-Only Chat History Window with Scrollbar
-                hChatHistoryBox = CreateWindowEx(WS_EX_CLIENTEDGE, "EDIT", "", 
-                    WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL, 
-                    0, 0, 0, 0, hParentWnd, (HMENU)2004, GetModuleHandle(NULL), NULL);
-
-                hChatAttachBtn = CreateWindowEx(0, "BUTTON", "+ Image", 
-                    WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 
-                    0, 0, 0, 0, hParentWnd, (HMENU)2003, GetModuleHandle(NULL), NULL);
-
-                hChatEdit = CreateWindowEx(WS_EX_CLIENTEDGE, "EDIT", "", 
-                    WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_AUTOVSCROLL, 
-                    0, 0, 0, 0, hParentWnd, (HMENU)2001, GetModuleHandle(NULL), NULL);
-                
-                hChatSendBtn = CreateWindowEx(0, "BUTTON", "Send", 
-                    WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 
-                    0, 0, 0, 0, hParentWnd, (HMENU)2002, GetModuleHandle(NULL), NULL);
-                
-                HFONT hFont = CreateFont(18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH | FF_SWISS, "Segoe UI");
-                SendMessage(hChatHistoryBox, WM_SETFONT, (WPARAM)hFont, TRUE);
-                SendMessage(hChatEdit, WM_SETFONT, (WPARAM)hFont, TRUE);
-                SendMessage(hChatSendBtn, WM_SETFONT, (WPARAM)hFont, TRUE);
-                SendMessage(hChatAttachBtn, WM_SETFONT, (WPARAM)hFont, TRUE);
-                
-                SetWindowTextW(hChatHistoryBox, g_aiChatHistory.c_str());
-            } else {
-                ShowWindow(hChatHistoryBox, SW_SHOW);
-                ShowWindow(hChatAttachBtn, SW_SHOW);
-                ShowWindow(hChatEdit, SW_SHOW); 
-                ShowWindow(hChatSendBtn, SW_SHOW);
-            }
-            ResizeGeminiControls((int)s_contentX, (int)s_contentY, (int)s_contentW, (int)s_contentH);
-            if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
+            g_webViewMode = 1; // Local AI Mode
+        } else if (RectF(btnX, btnY2, btnW, btnH).Contains(x, y)) {
+            g_webViewMode = 2; // Web Browser Mode
         }
 
-        else if (RectF(btnX, btnY2, btnW, btnH).Contains(x, y)) {
-            isGeminiRunning = true;
+        if (g_webViewMode > 0) {
+            if (webView == nullptr) {
+                CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+                std::wstring userDataFolder = L"C:\\Users\\" + std::wstring(_wgetenv(L"USERNAME")) + L"\\AppData\\Local\\RasFocus\\User_Data";
+                auto options = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
+                CreateCoreWebView2EnvironmentWithOptions(nullptr, userDataFolder.c_str(), options.Get(), new EnvCompletedHandler());
+            } else {
+                if (g_webViewMode == 1) webView->NavigateToString(PREMIUM_UI_HTML);
+                else webView->Navigate(L"https://gemini.google.com/?authuser=0");
+                webViewController->put_IsVisible(TRUE);
+            }
             if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
         }
     } 
-    else if (isAIChatRunning) {
-        if (RectF(s_contentX + 10, s_contentY + 10, 30, 30).Contains(x, y)) {
-            isAIChatRunning = false;
-            g_selectedImagePath = L""; 
-            ShowWindow(hChatHistoryBox, SW_HIDE);
-            ShowWindow(hChatAttachBtn, SW_HIDE);
-            ShowWindow(hChatEdit, SW_HIDE);
-            ShowWindow(hChatSendBtn, SW_HIDE);
+    else if (!isPoppedOut) {
+        // Home Button (Go back to Menu)
+        if (RectF(s_contentX + 5, s_contentY + 2, 30, 26).Contains(x, y)) {
+            g_webViewMode = 0;
+            if (webViewController) webViewController->put_IsVisible(FALSE);
             if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
         }
-    }
-    else if (isGeminiRunning && !isPoppedOut) {
-        if (RectF(s_contentX + s_contentW - 35, s_contentY + 2, 30, 26).Contains(x, y)) {
-            isGeminiRunning = false;
+        // Close Button
+        else if (RectF(s_contentX + s_contentW - 35, s_contentY + 2, 30, 26).Contains(x, y)) {
+            if (webViewController != nullptr) { webViewController->Close(); webViewController = nullptr; webView = nullptr; }
+            g_webViewMode = 0;
             if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
         }
     }
 }
 
-// Ensure your main.cpp routes WM_COMMAND to this function!
-void ProcessGeminiCommand(int id, int code) {
-    if (isAIChatRunning) {
-        // 1. Upload Button
-        if (id == 2003 && code == BN_CLICKED) {
-            OPENFILENAMEW ofn;
-            wchar_t szFile[MAX_PATH] = { 0 };
-            ZeroMemory(&ofn, sizeof(ofn));
-            ofn.lStructSize = sizeof(ofn);
-            ofn.hwndOwner = hParentWnd;
-            ofn.lpstrFile = szFile;
-            ofn.nMaxFile = sizeof(szFile);
-            ofn.lpstrFilter = L"Images\0*.png;*.jpg;*.jpeg;*.webp\0All Files\0*.*\0";
-            ofn.nFilterIndex = 1;
-            ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
-
-            if (GetOpenFileNameW(&ofn) == TRUE) {
-                g_selectedImagePath = szFile;
-                g_aiChatHistory += L"\n\n[ System: Image selected. Ready to send. ]";
-                SetWindowTextW(hChatHistoryBox, g_aiChatHistory.c_str());
-                SendMessage(hChatHistoryBox, WM_VSCROLL, SB_BOTTOM, 0);
-            }
-        }
-        
-        // 2. Send Button
-        else if (id == 2002 && code == BN_CLICKED) {
-            wchar_t buffer[2048];
-            GetWindowTextW(hChatEdit, buffer, 2048);
-            
-            if (wcslen(buffer) > 0 || !g_selectedImagePath.empty()) {
-                SetWindowTextW(hChatEdit, L"");
-                
-                std::wstring prompt(buffer);
-                if (prompt.empty()) prompt = L"What is in this image?"; 
-                
-                g_aiChatHistory += L"\n\nYou: " + prompt + (g_selectedImagePath.empty() ? L"" : L" [Sent with Image]");
-                SetWindowTextW(hChatHistoryBox, g_aiChatHistory.c_str());
-                SendMessage(hChatHistoryBox, WM_VSCROLL, SB_BOTTOM, 0);
-                
-                std::wstring currentImg = g_selectedImagePath;
-                g_selectedImagePath = L""; 
-                
-                std::thread apiThread(SendGroqChatRequestAsync, prompt, currentImg);
-                apiThread.detach();
-            }
-        }
-    }
-}
+void ProcessGeminiCommand(int id, int code) {}
