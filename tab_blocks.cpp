@@ -41,7 +41,7 @@ using namespace std;
 
 
 // --- Premium Gate (defined in upgrade.cpp) ---
-extern bool g_isPremium;
+extern bool g_isPremiumUser;
 extern bool g_showUpgradePopup;
 
 
@@ -1413,7 +1413,7 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
     StringFormat fmtLCenter; fmtLCenter.SetAlignment(StringAlignmentCenter); fmtLCenter.SetLineAlignment(StringAlignmentCenter);
     g.DrawString(L"Schedule Blocks", -1, &fTopTab, RectF(tab2X, tabY, tabW - 22.0f, tabH), &fmtLCenter, &bT2);
 
-    if (!g_isPremium) DrawPremiumCrown(g, tab2X + tabW - 24.0f, tabY + 11.0f, &fSmallIcon);
+    if (!g_isPremiumUser) DrawPremiumCrown(g, tab2X + tabW - 24.0f, tabY + 11.0f, &fSmallIcon);
 
 
 
@@ -1429,7 +1429,7 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
 
     g.DrawString(L"Device Block", -1, &fTopTab, RectF(tab4X, tabY, tabW - 22.0f, tabH), &fmtLCenter, &bT4);
 
-    if (!g_isPremium) DrawPremiumCrown(g, tab4X + tabW - 24.0f, tabY + 11.0f, &fSmallIcon);
+    if (!g_isPremiumUser) DrawPremiumCrown(g, tab4X + tabW - 24.0f, tabY + 11.0f, &fSmallIcon);
 
 
 
@@ -1856,7 +1856,7 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
 
         {
 
-            bool isPrem = g_isPremium;
+            bool isPrem = g_isPremiumUser;
 
             Color btnClr = isPrem ? (hoverAddStoreApp ? Color(255,100,190,25) : Color(255,90,170,20))
 
@@ -1880,7 +1880,7 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
 
         {
 
-            bool isPrem = g_isPremium;
+            bool isPrem = g_isPremiumUser;
 
             Color btnClr = isPrem ? (hoverAddWindowTitle ? Color(255,100,190,25) : Color(255,90,170,20))
 
@@ -2034,11 +2034,11 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
 
             g.FillRectangle(&opt2Bg, RectF(listRect.X + 2.0f, listY + 40.0f, listRect.Width - 4.0f, 38.0f));
 
-            SolidBrush parentsTxtBrush(g_isPremium ? SClrDark : SClrGoldDark);
+            SolidBrush parentsTxtBrush(g_isPremiumUser ? SClrDark : SClrGoldDark);
 
             g.DrawString(L"Parents Control", -1, &fBold, RectF(listRect.X + 15.0f, listY + 40.0f, listRect.Width - 30.0f, 38.0f), &fmtL, &parentsTxtBrush);
 
-            if (!g_isPremium) DrawPremiumCrown(g, listRect.X + listRect.Width - 24.0f, listY + 50.0f, &fSmallIcon);
+            if (!g_isPremiumUser) DrawPremiumCrown(g, listRect.X + listRect.Width - 24.0f, listY + 50.0f, &fSmallIcon);
 
 
 
@@ -2047,11 +2047,11 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
 
             g.FillRectangle(&opt3Bg, RectF(listRect.X + 2.0f, listY + 78.0f, listRect.Width - 4.0f, 38.0f));
 
-            SolidBrush longTxtBrush(g_isPremium ? SClrDark : SClrGoldDark);
+            SolidBrush longTxtBrush(g_isPremiumUser ? SClrDark : SClrGoldDark);
 
             g.DrawString(L"Long Text", -1, &fBold, RectF(listRect.X + 15.0f, listY + 78.0f, listRect.Width - 30.0f, 38.0f), &fmtL, &longTxtBrush);
 
-            if (!g_isPremium) DrawPremiumCrown(g, listRect.X + listRect.Width - 24.0f, listY + 88.0f, &fSmallIcon);
+            if (!g_isPremiumUser) DrawPremiumCrown(g, listRect.X + listRect.Width - 24.0f, listY + 88.0f, &fSmallIcon);
 
         }
 
@@ -2065,7 +2065,7 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
 
     else if (currentBlockTab == 1) {
 
-        if (!g_isPremium) {
+        if (!g_isPremiumUser) {
 
             // Draw a friendly locked screen instead of the real tab content
 
@@ -2161,7 +2161,7 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
 
     else if (currentBlockTab == 3) {
 
-        if (!g_isPremium) {
+        if (!g_isPremiumUser) {
 
             SolidBrush premBg(Color(255, 255, 251, 230));
 
@@ -2907,7 +2907,7 @@ void ProcessBlocksMouseMove(float x, float y) {
 
     else if (currentBlockTab == 1) {
 
-        if (g_isPremium) ProcessScheduleBlocksMouseMove(x, y);
+        if (g_isPremiumUser) ProcessScheduleBlocksMouseMove(x, y);
 
     }
 
@@ -2919,7 +2919,7 @@ void ProcessBlocksMouseMove(float x, float y) {
 
     else if (currentBlockTab == 3) {
 
-        if (g_isPremium) ProcessDeviceBlockMouseMove(x, y);
+        if (g_isPremiumUser) ProcessDeviceBlockMouseMove(x, y);
 
     }
 
@@ -3132,7 +3132,7 @@ void ProcessBlocksMouseClick(float x, float y) {
             // Parents Control — Premium gate
             if (hoverOptParents) {
 
-                if (!g_isPremium) { g_showUpgradePopup = true; isControlDropdownOpen = false; return; }
+                if (!g_isPremiumUser) { g_showUpgradePopup = true; isControlDropdownOpen = false; return; }
 
                 controlMode = 1;
 
@@ -3143,7 +3143,7 @@ void ProcessBlocksMouseClick(float x, float y) {
             // Long Text Control — Premium gate
             if (hoverOptLongText) {
 
-                if (!g_isPremium) { g_showUpgradePopup = true; isControlDropdownOpen = false; return; }
+                if (!g_isPremiumUser) { g_showUpgradePopup = true; isControlDropdownOpen = false; return; }
 
                 controlMode = 2;
 
@@ -3249,7 +3249,7 @@ void ProcessBlocksMouseClick(float x, float y) {
 
         if (hoverAddStoreApp) {
 
-            if (!g_isPremium) { g_showUpgradePopup = true; return; }
+            if (!g_isPremiumUser) { g_showUpgradePopup = true; return; }
 
             RefreshRunningApps(); tStoreScrollY = cStoreScrollY = 0; showStoreOverlay = true;
 
@@ -3259,7 +3259,7 @@ void ProcessBlocksMouseClick(float x, float y) {
 
         if (hoverAddWindowTitle) {
 
-            if (!g_isPremium) { g_showUpgradePopup = true; return; }
+            if (!g_isPremiumUser) { g_showUpgradePopup = true; return; }
 
             showTitleOverlay = true; isTitleInputActive = true;
 
@@ -3293,7 +3293,7 @@ void ProcessBlocksMouseClick(float x, float y) {
 
         // Premium locked screen "Upgrade" button hit-test
 
-        if (!g_isPremium) {
+        if (!g_isPremiumUser) {
 
             float boxX = s_contentX + 30.0f;
 
@@ -3329,7 +3329,7 @@ void ProcessBlocksMouseClick(float x, float y) {
 
         // Premium locked screen "Upgrade" button hit-test
 
-        if (!g_isPremium) {
+        if (!g_isPremiumUser) {
 
             float boxX = s_contentX + 30.0f;
 
@@ -3391,7 +3391,7 @@ void ProcessBlocksKeyPress(wchar_t c) {
 
             if (isAppInputActive && c >= 32 && c <= 126 && appInputText.length() < 40) appInputText += c;
 
-        } else if (currentBlockTab == 1 && g_isPremium) {
+        } else if (currentBlockTab == 1 && g_isPremiumUser) {
 
             ProcessScheduleBlocksKeyPress(c);
 
@@ -3399,7 +3399,7 @@ void ProcessBlocksKeyPress(wchar_t c) {
 
             ProcessAdultBlockKeyPress(c);
 
-        } else if (currentBlockTab == 3 && g_isPremium) {
+        } else if (currentBlockTab == 3 && g_isPremiumUser) {
 
             ProcessDeviceBlockKeyPress(c);
 
@@ -3477,7 +3477,7 @@ void ProcessBlocksKeyDown(WPARAM key) {
 
             }
 
-        } else if (currentBlockTab == 1 && g_isPremium) {
+        } else if (currentBlockTab == 1 && g_isPremiumUser) {
 
             ProcessScheduleBlocksKeyDown(key);
 
@@ -3485,7 +3485,7 @@ void ProcessBlocksKeyDown(WPARAM key) {
 
             ProcessAdultBlockKeyDown(key);
 
-        } else if (currentBlockTab == 3 && g_isPremium) {
+        } else if (currentBlockTab == 3 && g_isPremiumUser) {
 
             ProcessDeviceBlockKeyDown(key);
 
@@ -3567,7 +3567,7 @@ void ProcessBlocksMouseWheel(float x, float y, int delta) {
 
             }
 
-        } else if (currentBlockTab == 1 && g_isPremium) {
+        } else if (currentBlockTab == 1 && g_isPremiumUser) {
 
             ProcessScheduleBlocksMouseWheel(x, y, delta);
 
@@ -3575,7 +3575,7 @@ void ProcessBlocksMouseWheel(float x, float y, int delta) {
 
             ProcessAdultBlockMouseWheel(x, y, delta);
 
-        } else if (currentBlockTab == 3 && g_isPremium) {
+        } else if (currentBlockTab == 3 && g_isPremiumUser) {
 
             ProcessDeviceBlockMouseWheel(x, y, delta);
 
