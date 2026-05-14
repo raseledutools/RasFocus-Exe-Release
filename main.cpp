@@ -74,7 +74,8 @@ extern string g_loggedInUserUid; // Firebase auth UID from accounts.h
 // ==========================================
 // SUBSCRIPTION & PACKAGE STATE
 // ==========================================
-string g_currentPackage = "FREE_BASIC"; // FREE_BASIC, STUDENT, PREMIUM, PARENTAL, TRIAL
+// NOTE: g_currentPackage is defined in accounts.cpp — extern here to avoid LNK2005
+extern string g_currentPackage; // FREE_BASIC, STUDENT, PREMIUM, PARENTAL, TRIAL
 int g_daysLeft = 0;
 wstring g_packageStatusText = L"Checking Subscription Status...";
 
