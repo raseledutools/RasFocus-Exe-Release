@@ -71,7 +71,7 @@ extern bool g_isPremiumUser;   // set to true after successful premium login
 extern string g_loggedInUserUid; // Firebase auth UID from accounts.h
 
 // ==========================================
-// SUBSCRIPTION & PACKAGE STATE (NEW)
+// SUBSCRIPTION & PACKAGE STATE
 // ==========================================
 string g_currentPackage = "FREE_BASIC"; // FREE_BASIC, STUDENT, PREMIUM, PARENTAL, TRIAL
 int g_daysLeft = 0;
@@ -135,7 +135,7 @@ bool RequestParentalAccess(HWND hwnd);
 bool g_isAppDisabledByAdmin = false;
 
 // ==========================================
-// HARDWARE ID GENERATOR (NEW)
+// HARDWARE ID GENERATOR
 // ==========================================
 string GetHardwareID() {
     DWORD volSerial = 0;
@@ -146,7 +146,7 @@ string GetHardwareID() {
 }
 
 // ==========================================
-// FIRESTORE HTTP HELPER FUNCTION (NEW)
+// FIRESTORE HTTP HELPER FUNCTION
 // ==========================================
 std::string SendFirestoreRequest(const std::string& method, const std::string& path, const std::string& payload = "") {
     std::string response = "";
@@ -179,50 +179,44 @@ std::string SendFirestoreRequest(const std::string& method, const std::string& p
 }
 
 // ==========================================
-// SUBSCRIPTION CHECK THREAD (SECURE & READ-ONLY)
+// SUBSCRIPTION CHECK THREAD
 // ==========================================
 void __cdecl SubscriptionCheckThread(void* p) {
-    Sleep(3000); // UI লোড হওয়ার জন্য একটু অপেক্ষা
+    Sleep(3000); 
     std::string pc_id = GetHardwareID();
     
     while(true) {
         std::string path;
         bool isUser = false;
         
-        // যদি ইউজার লগইন করা থাকে
         if (!g_loggedInUserUid.empty()) {
             path = "/v1/projects/rasfocus-c746d/databases/(default)/documents/users/" + g_loggedInUserUid;
             isUser = true;
         } 
-        // লগইন না থাকলে পিসির হার্ডওয়্যার আইডি দিয়ে ডিভাইস চেক করবে
         else {
             path = "/v1/projects/rasfocus-c746d/databases/(default)/documents/devices/" + pc_id;
             isUser = false;
         }
         
-        // ফায়ারবেস থেকে ডেটা ফেচ করা (শুধুমাত্র GET রিকোয়েস্ট)
         std::string response = SendFirestoreRequest("GET", path);
         
-        // যদি 404 Not Found হয়, তাহলে ডেটাবেসে কোনো রাইট/PATCH করবে না। শুধু লোকালি ভেরিয়েবল সেট করবে।
         if (response.find("\"error\"") != std::string::npos && response.find("NOT_FOUND") != std::string::npos) {
             g_currentPackage = isUser ? "FREE_BASIC" : "TRIAL";
             
             if (g_currentPackage == "TRIAL") g_packageStatusText = L"Trial Active (14 Days Left)";
             else g_packageStatusText = L"Free Basic Version";
         } 
-        // যদি ডেটাবেসে ইউজার আগে থেকেই থাকে, তাহলে তার বর্তমান প্যাকেজ বের করবে
         else {
             std::string searchKey = "\"current_package\":";
             size_t pos = response.find(searchKey);
             if (pos != std::string::npos) {
                 size_t valStart = response.find("stringValue\": \"", pos);
                 if (valStart != std::string::npos) {
-                    valStart += 15; // stringValue": " এর লেন্থ
+                    valStart += 15; 
                     size_t valEnd = response.find("\"", valStart);
                     if (valEnd != std::string::npos) {
                         g_currentPackage = response.substr(valStart, valEnd - valStart);
                         
-                        // টাইটেল বার আপডেট লজিক
                         if (g_currentPackage == "PREMIUM") g_packageStatusText = L"Premium Access Active";
                         else if (g_currentPackage == "STUDENT") g_packageStatusText = L"Student Offer Active";
                         else if (g_currentPackage == "PARENTAL") g_packageStatusText = L"Parental Control Active";
@@ -233,10 +227,7 @@ void __cdecl SubscriptionCheckThread(void* p) {
             }
         }
         
-        // UI রিফ্রেশ করা
         if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
-        
-        // প্রতি ১ মিনিট (৬০ সেকেন্ড) পরপর ফায়ারবেস চেক করবে অ্যাডমিন প্যাকেজ আপডেট করেছে কি না
         Sleep(60000); 
     }
     _endthread();
@@ -643,7 +634,7 @@ void SubmitFeedbackToFirebase(const wstring& email, const wstring& message) {
 // ==========================================
 
 // ------------------------------------------
-// 1. TITLE BAR (UPDATED FOR PACKAGE STATUS)
+// 1. TITLE BAR
 // ------------------------------------------
 void DrawTitleBar(Graphics& g, int w) {
     SolidBrush bgWhite(ColTitleBar);
@@ -655,7 +646,6 @@ void DrawTitleBar(Graphics& g, int w) {
     FontFamily ff(L"Segoe UI");
     FontFamily ffIcons(L"Segoe MDL2 Assets");
 
-    // ── লোগো (title bar) ──
     const int TB_LOGO_SIZE = 16;
     int tbActualSize = max(16, (int)(TB_LOGO_SIZE * g_scaleFactor));
     HICON hIconSm = (HICON)LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APP_ICON),
@@ -667,20 +657,17 @@ void DrawTitleBar(Graphics& g, int w) {
         DestroyIcon(hIconSm);
     }
 
-    // ── App Name & Subscription Status ──
     Font fTitle(&ff, 11, FontStyleBold, UnitPixel);
     SolidBrush textDark(ColTitleBarText);
     StringFormat fmtL;
     fmtL.SetAlignment(StringAlignmentNear);
     fmtL.SetLineAlignment(StringAlignmentCenter);
     
-    // ডাইনামিক প্যাকেজ স্ট্যাটাস যোগ করা হলো
     wstring fullTitleStr = L"RasFocus Pro Max - " + g_packageStatusText;
     g.DrawString(fullTitleStr.c_str(), -1, &fTitle,
                  RectF(34.0f, 0.0f, 500.0f, (float)TITLEBAR_HEIGHT),
                  &fmtL, &textDark);
 
-    // ── Window Controls ──
     float btnW = 42.0f;
     float btnH = (float)TITLEBAR_HEIGHT;
     float startX = (float)w - (btnW * 3);
@@ -702,7 +689,6 @@ void DrawTitleBar(Graphics& g, int w) {
     g.DrawString(L"\xE8BB", -1, &fIcons, RectF(startX + (btnW * 2), 0.0f, btnW, btnH),
                  &fmtC, hoverClose ? &iconWhite : &iconColor);
 
-    // ── Update Button ──
     if (isUpdateReady) {
         float upgW = 150.0f;
         float upgH = (float)TITLEBAR_HEIGHT - 6.0f;
@@ -747,7 +733,6 @@ void DrawSubHeader(Graphics& g, int w) {
     fmtTL.SetAlignment(StringAlignmentNear);
     fmtTL.SetLineAlignment(StringAlignmentCenter);
 
-    // ── বড় লোগো সাব-হেডারে ──
     const int LOGO_SIZE = 26; 
     int actualLogoSize = max(26, (int)(LOGO_SIZE * g_scaleFactor));
     HICON hIconLg = (HICON)LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APP_ICON),
@@ -760,7 +745,6 @@ void DrawSubHeader(Graphics& g, int w) {
         DestroyIcon(hIconLg);
     }
 
-    // ── App Name + Version (UPDATED NAME) ──
     Font fAppName(&ff, 18, FontStyleBold, UnitPixel); 
     Font fVersion(&ff, 11, FontStyleRegular, UnitPixel);
     SolidBrush whiteAlpha(Color(200, 255, 255, 255));
@@ -771,12 +755,10 @@ void DrawSubHeader(Graphics& g, int w) {
     wstring wVer(CURRENT_VERSION.begin(), CURRENT_VERSION.end());
     g.DrawString(wVer.c_str(), -1, &fVersion, RectF(textX + 135.0f, subY + 2.0f, 60.0f, subH), &fmtTL, &whiteAlpha);
 
-    // ── ডান পাশে: Feedback icon + My Account button ──
     float rightPad = 20.0f;
     float btnH     = 28.0f; 
     float btnY     = subY + (subH - btnH) / 2.0f;
 
-    // My Account বাটন
     float acBtnW  = 110.0f; 
     float acBtnX  = (float)w - rightPad - acBtnW;
 
@@ -799,7 +781,6 @@ void DrawSubHeader(Graphics& g, int w) {
     Font fBtnTxt(&ff, 11, FontStyleBold, UnitPixel);
     g.DrawString(L"My Account", -1, &fBtnTxt, RectF(acBtnX + 28.0f, btnY, acBtnW - 30.0f, btnH), &fmtTL, &white);
 
-    // Feedback icon with Text
     float fbIconW = 60.0f;
     float fbIconX = acBtnX - fbIconW - 10.0f;
     
@@ -822,7 +803,7 @@ void DrawSubHeader(Graphics& g, int w) {
 }
 
 // ------------------------------------------
-// 3. SIDEBAR (UPDATED)
+// 3. SIDEBAR (WITH UPGRADE BUTTON)
 // ------------------------------------------
 void DrawSidebar(Graphics& g, int h) {
     float sideX = 0.0f;
@@ -867,7 +848,7 @@ void DrawSidebar(Graphics& g, int h) {
         }
     }
 
-    // ── Upgrade Button — শুধু Free Basic ইউজার হলে আপগ্রেড বাটন দেখাবে ──
+    // ── Upgrade Button ──
     if (g_currentPackage == "FREE_BASIC") {
         float upgH  = 38.0f;
         float upgY  = (float)h - upgH - 16.0f;
@@ -880,8 +861,10 @@ void DrawSidebar(Graphics& g, int h) {
         upgPath.AddArc(upgMX + upgW - d, upgY + upgH - d, d, d, 0.0f, 90.0f);
         upgPath.AddArc(upgMX, upgY + upgH - d, d, d, 90.0f, 90.0f);
         upgPath.CloseFigure();
+        
         SolidBrush btnColor(hoverUpgrade ? ColUpgradeHover : ColUpgradeBtn);
         g.FillPath(&btnColor, &upgPath);
+        
         Font fUpg(&ff, 13, FontStyleBold, UnitPixel);
         g.DrawString(L"\u2B06  Upgrade Now", -1, &fUpg, RectF(upgMX, upgY, upgW, upgH), &fmtIC, &white);
     }
@@ -966,11 +949,10 @@ void DrawMainArea(Graphics& g, int w, int h) {
     float contentW = (float)(w - SIDEBAR_WIDTH);
     float contentH = (float)(h - TITLEBAR_HEIGHT - SUBHEADER_HEIGHT);
 
-    // ট্যাবের ইন্ডেক্সিং ঠিক করা হয়েছে
     if      (selectedTab == 0) { DrawDashboardTab    (g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 1) { DrawBlocksTab       (g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 2) { DrawDeepStudyTab    (g, contentX, contentY, contentW, contentH); }
-    else if (selectedTab == 3) { DrawSpecialFeatureTab(g, contentX, contentY, contentW, contentH); } // ← Special Tab Added
+    else if (selectedTab == 3) { DrawSpecialFeatureTab(g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 4) { DrawStatisticsTab   (g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 5) { DrawSettingsTab     (g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 6) { DrawPdfWorkspaceTab (g, contentX, contentY, contentW, contentH); }
@@ -1200,11 +1182,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             if (oldUpg != hoverUpgrade) redraw = true;
         }
 
-        // ট্যাবের ইন্ডেক্সিং ঠিক করা হয়েছে
         if      (selectedTab == 0) { ProcessDashboardMouseMove(x, y);   redraw = true; }
         else if (selectedTab == 1) { ProcessBlocksMouseMove(x, y);      redraw = true; }
         else if (selectedTab == 2) { ProcessDeepStudyMouseMove(x, y);   redraw = true; }
-        else if (selectedTab == 3) { ProcessSpecialFeatureMouseMove(x, y);     redraw = true; } // ← Special Tab
+        else if (selectedTab == 3) { ProcessSpecialFeatureMouseMove(x, y);     redraw = true; } 
         else if (selectedTab == 5) { ProcessSettingsMouseMove(x, y);    redraw = true; }
         else if (selectedTab == 4) {
             float cX = (float)SIDEBAR_WIDTH, cY = (float)(TITLEBAR_HEIGHT + SUBHEADER_HEIGHT);
@@ -1296,7 +1277,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             }
         }
 
-        // ← Upgrade Now বাটনে ক্লিক করলে এখন লগিন পেজে না গিয়ে সরাসরি Upgrade Popup ওপেন হবে
+        // ← Upgrade Now বাটনে ক্লিক
         if (g_currentPackage == "FREE_BASIC" && hoverUpgrade) {
             g_showUpgradePopup = true; 
             InvalidateRect(hWnd, NULL, FALSE);
@@ -1309,11 +1290,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             break;
         }
 
-        // ট্যাবের ইন্ডেক্সিং ঠিক করা হয়েছে
         if      (selectedTab == 0) { ProcessDashboardMouseClick(x, y, selectedTab); }
         else if (selectedTab == 1) { ProcessBlocksMouseClick(x, y); }
         else if (selectedTab == 2) { ProcessDeepStudyMouseClick(x, y); }
-        else if (selectedTab == 3) { ProcessSpecialFeatureMouseClick(x, y); } // ← Special Tab
+        else if (selectedTab == 3) { ProcessSpecialFeatureMouseClick(x, y); } 
         else if (selectedTab == 4) {
             float cX = (float)SIDEBAR_WIDTH, cY = (float)(TITLEBAR_HEIGHT + SUBHEADER_HEIGHT);
             float cW = scaledW - cX, cH = scaledH - cY;
