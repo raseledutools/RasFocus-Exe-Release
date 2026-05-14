@@ -25,6 +25,7 @@ using namespace std;
 // ============================================================
 bool    g_isPremiumUser    = false;
 wstring g_loggedInEmail    = L"";
+wstring g_loggedInName     = L"";
 string  g_loggedInUserUid  = "";
 
 static firebase::App* s_firebaseApp = nullptr;
@@ -49,6 +50,8 @@ static bool s_hoverPrivacy    = false;
 static bool s_hoverSaveCheck  = false;
 static bool s_hoverEye        = false;
 static bool s_hoverLogout     = false;
+static bool s_hoverClose      = false;   // ← close (X) button
+static bool s_hoverUpgrade    = false;   // ← upgrade button
 
 // ── Sign Up State ──
 static bool    s_showSignup         = false;
@@ -323,9 +326,29 @@ static bool CheckPremiumFromFirebase(const string& uid, const string& idToken) {
     string headers = "Authorization: Bearer " + idToken + "\r\n";
     HttpSendRequestA(hReq, headers.c_str(), headers.length(), NULL, 0);
 
-    string response = ""; char buf[1024]; DWORD br = 0;
+    string response = ""; char buf[4096]; DWORD br = 0;
     while (InternetReadFile(hReq, buf, sizeof(buf) - 1, &br) && br > 0) { buf[br] = '\0'; response += buf; }
     InternetCloseHandle(hReq); InternetCloseHandle(hConn); InternetCloseHandle(hInet);
+
+    // ── Firestore response এ নাম খোঁজা: "name":{"stringValue":"John Doe"} ──
+    size_t namePos = response.find("\"name\"");
+    if (namePos != string::npos) {
+        size_t svPos = response.find("\"stringValue\"", namePos);
+        if (svPos != string::npos) {
+            size_t q1 = response.find("\"", svPos + 14);
+            if (q1 != string::npos) {
+                size_t q2 = response.find("\"", q1 + 1);
+                if (q2 != string::npos) {
+                    string nameA = response.substr(q1 + 1, q2 - q1 - 1);
+                    if (!nameA.empty()) {
+                        wchar_t nameW[512] = {};
+                        MultiByteToWideChar(CP_UTF8, 0, nameA.c_str(), -1, nameW, 511);
+                        g_loggedInName = nameW;
+                    }
+                }
+            }
+        }
+    }
 
     return (response.find("\"current_package\"") != string::npos && 
            (response.find("\"PREMIUM\"") != string::npos || response.find("\"STUDENT\"") != string::npos));
@@ -654,6 +677,19 @@ static void DrawSignUpForm(Graphics& g, float cx, float cy, float cw, float ch) 
 // ============================================================
 //  DRAW
 // ============================================================
+
+// ── Plan label helper ──
+static const wchar_t* GetPlanLabel(const wstring& pkg) {
+    if (pkg == L"PREMIUM")  return L"★ Premium";
+    if (pkg == L"STUDENT")  return L"★ Student";
+    if (pkg == L"PARENTAL") return L"Parental";
+    if (pkg == L"TRIAL")    return L"Trial";
+    return L"Free Basic";
+}
+
+extern wstring g_packageStatusWide; // declared below via extern
+extern string  g_currentPackage;    // from main.cpp
+
 void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
     if (s_showSignup) { DrawSignUpForm(g, cx, cy, cw, ch); return; }
 
@@ -661,25 +697,30 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
     g.FillRectangle(&bgBrush, cx, cy, cw, ch);
 
     if (!g_loggedInEmail.empty()) {
-        CardLayout L = GetLayout(cx, cy, cw, ch);
-        GraphicsPath card;
+        // ── Wider card to fit all info ──
+        float cardW = 420.0f, cardH = 520.0f;
+        float cardX = cx + (cw - cardW) / 2.0f;
+        float cardY = cy + (ch - cardH) / 2.0f;
+
         float rc = 12.0f, dc = rc * 2.0f;
-        card.AddArc(L.cardX, L.cardY, dc, dc, 180.0f, 90.0f);
-        card.AddArc(L.cardX + L.cardW - dc, L.cardY, dc, dc, 270.0f, 90.0f);
-        card.AddArc(L.cardX + L.cardW - dc, L.cardY + L.cardH - dc, dc, dc, 0.0f, 90.0f);
-        card.AddArc(L.cardX, L.cardY + L.cardH - dc, dc, dc, 90.0f, 90.0f);
+        GraphicsPath card;
+        card.AddArc(cardX, cardY, dc, dc, 180.0f, 90.0f);
+        card.AddArc(cardX + cardW - dc, cardY, dc, dc, 270.0f, 90.0f);
+        card.AddArc(cardX + cardW - dc, cardY + cardH - dc, dc, dc, 0.0f, 90.0f);
+        card.AddArc(cardX, cardY + cardH - dc, dc, dc, 90.0f, 90.0f);
         card.CloseFigure();
         SolidBrush cardBg(Color(255, 255, 255, 255));
         g.FillPath(&cardBg, &card);
         Pen cardShadow(Color(30, 0, 100, 180), 1.5f);
         g.DrawPath(&cardShadow, &card);
 
+        // ── Header ──
         GraphicsPath hdrPath;
-        hdrPath.AddArc(L.cardX, L.cardY, dc, dc, 180.0f, 90.0f);
-        hdrPath.AddArc(L.cardX + L.cardW - dc, L.cardY, dc, dc, 270.0f, 90.0f);
-        hdrPath.AddLine(L.cardX + L.cardW, L.cardY + 90.0f, L.cardX, L.cardY + 90.0f);
+        hdrPath.AddArc(cardX, cardY, dc, dc, 180.0f, 90.0f);
+        hdrPath.AddArc(cardX + cardW - dc, cardY, dc, dc, 270.0f, 90.0f);
+        hdrPath.AddLine(cardX + cardW, cardY + 90.0f, cardX, cardY + 90.0f);
         hdrPath.CloseFigure();
-        LinearGradientBrush hdrBg(PointF(L.cardX, L.cardY), PointF(L.cardX + L.cardW, L.cardY + 90.0f),
+        LinearGradientBrush hdrBg(PointF(cardX, cardY), PointF(cardX + cardW, cardY + 90.0f),
             Color(255, 0, 120, 160), Color(255, 0, 180, 200));
         g.FillPath(&hdrBg, &hdrPath);
 
@@ -691,56 +732,145 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
         SolidBrush gray(Color(255, 120, 130, 140));
         StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
         StringFormat fmtL; fmtL.SetAlignment(StringAlignmentNear);   fmtL.SetLineAlignment(StringAlignmentCenter);
+        StringFormat fmtR; fmtR.SetAlignment(StringAlignmentFar);    fmtR.SetLineAlignment(StringAlignmentCenter);
 
-        float avR = 45.0f;
-        float avCX = L.cardX + L.cardW / 2.0f;
-        float avCY = L.cardY + 90.0f;
+        // ── ✕ Close button (top-right of card) ──
+        float closeSize = 26.0f;
+        float closeX = cardX + cardW - closeSize - 8.0f;
+        float closeY = cardY + 8.0f;
+        SolidBrush closeBg(s_hoverClose ? Color(200, 255, 255, 255) : Color(80, 255, 255, 255));
+        GraphicsPath closePath;
+        closePath.AddEllipse(closeX, closeY, closeSize, closeSize);
+        g.FillPath(&closeBg, &closePath);
+        Font fClose(&ffIcons, 11, FontStyleRegular, UnitPixel);
+        g.DrawString(L"\xE711", -1, &fClose, RectF(closeX, closeY, closeSize, closeSize), &fmtC, &white);
+
+        // ── Avatar ──
+        float avR  = 40.0f;
+        float avCX = cardX + cardW / 2.0f;
+        float avCY = cardY + 90.0f;
         SolidBrush avBg(Color(255, 255, 255, 255));
         g.FillEllipse(&avBg, avCX - avR, avCY - avR, avR * 2.0f, avR * 2.0f);
-        Pen avBorder(Color(255, 0, 150, 180), 3.5f);
+        Pen avBorder(Color(255, 0, 150, 180), 3.0f);
         g.DrawEllipse(&avBorder, avCX - avR, avCY - avR, avR * 2.0f, avR * 2.0f);
-        Font fAvIcon(&ffIcons, 36, FontStyleRegular, UnitPixel);
+        Font fAvIcon(&ffIcons, 30, FontStyleRegular, UnitPixel);
         g.DrawString(L"\xE77B", -1, &fAvIcon, RectF(avCX - avR, avCY - avR, avR * 2.0f, avR * 2.0f), &fmtC, &teal);
 
-        Font fHdrTitle(&ff, 18, FontStyleBold, UnitPixel);
-        g.DrawString(L"My Account", -1, &fHdrTitle, RectF(L.cardX, L.cardY, L.cardW, 55.0f), &fmtC, &white);
+        Font fHdrTitle(&ff, 16, FontStyleBold, UnitPixel);
+        g.DrawString(L"My Account", -1, &fHdrTitle, RectF(cardX, cardY, cardW, 55.0f), &fmtC, &white);
 
-        float infoY = avCY + avR + 25.0f;
-        Font fLabel(&ff, 12, FontStyleRegular, UnitPixel);
-        Font fValue(&ff, 14, FontStyleBold, UnitPixel);
+        // ── Info rows ──
+        float fieldX = cardX + 35.0f;
+        float fieldW = cardW - 70.0f;
+        float infoY  = avCY + avR + 20.0f;
+        Font fLabel(&ff, 11, FontStyleRegular, UnitPixel);
+        Font fValue(&ff, 13, FontStyleBold,    UnitPixel);
 
-        g.DrawString(L"Email", -1, &fLabel, RectF(L.fieldX, infoY, L.fieldW, 20.0f), &fmtL, &gray);
-        g.DrawString(g_loggedInEmail.c_str(), -1, &fValue, RectF(L.fieldX, infoY + 20.0f, L.fieldW, 24.0f), &fmtL, &dark);
+        // Name
+        if (!g_loggedInName.empty()) {
+            g.DrawString(L"Name", -1, &fLabel, RectF(fieldX, infoY, fieldW, 18.0f), &fmtL, &gray);
+            g.DrawString(g_loggedInName.c_str(), -1, &fValue, RectF(fieldX, infoY + 18.0f, fieldW, 22.0f), &fmtL, &dark);
+            infoY += 50.0f;
+        }
 
-        float badgeY = infoY + 65.0f;
-        g.DrawString(L"Plan", -1, &fLabel, RectF(L.fieldX, badgeY, L.fieldW, 20.0f), &fmtL, &gray);
+        // Email
+        g.DrawString(L"Email", -1, &fLabel, RectF(fieldX, infoY, fieldW, 18.0f), &fmtL, &gray);
+        g.DrawString(g_loggedInEmail.c_str(), -1, &fValue, RectF(fieldX, infoY + 18.0f, fieldW, 22.0f), &fmtL, &dark);
+        infoY += 50.0f;
 
-        float badgeW = 120.0f, badgeH = 30.0f;
+        // Unique ID (Firebase UID shortened)
+        g.DrawString(L"User ID", -1, &fLabel, RectF(fieldX, infoY, fieldW, 18.0f), &fmtL, &gray);
+        wstring uid28;
+        if (!g_loggedInUserUid.empty()) {
+            // show first 8 chars + ... + last 6 chars
+            string uid = g_loggedInUserUid;
+            string shortUid = uid.size() > 16 ? uid.substr(0,8) + "..." + uid.substr(uid.size()-6) : uid;
+            wchar_t uidW[64] = {};
+            MultiByteToWideChar(CP_UTF8, 0, shortUid.c_str(), -1, uidW, 63);
+            uid28 = uidW;
+        } else {
+            uid28 = L"N/A";
+        }
+        Font fUid(&ff, 12, FontStyleRegular, UnitPixel);
+        SolidBrush uidColor(Color(255, 80, 80, 100));
+        g.DrawString(uid28.c_str(), -1, &fUid, RectF(fieldX, infoY + 18.0f, fieldW, 22.0f), &fmtL, &uidColor);
+        infoY += 50.0f;
+
+        // ── Plan badge ──
+        g.DrawString(L"Current Plan", -1, &fLabel, RectF(fieldX, infoY, fieldW, 18.0f), &fmtL, &gray);
+
+        // Determine plan color
+        wstring pkgW;
+        { wchar_t tmp[32]={}; MultiByteToWideChar(CP_UTF8,0,g_currentPackage.c_str(),-1,tmp,31); pkgW=tmp; }
+        bool isPrem  = (g_currentPackage=="PREMIUM"||g_currentPackage=="STUDENT"||g_currentPackage=="PARENTAL");
+        bool isTrial = (g_currentPackage=="TRIAL");
+        Color badgeColor = isPrem ? Color(255,255,140,0) : isTrial ? Color(255,80,160,80) : Color(255,0,150,180);
+
+        float badgeW=130.0f, badgeH=26.0f;
+        float br=6.0f, bd=br*2.0f;
+        float badgeDrawY = infoY + 20.0f;
         GraphicsPath badge;
-        float br = 6.0f, bd = br * 2.0f;
-        badge.AddArc(L.fieldX, badgeY + 22.0f, bd, bd, 180.0f, 90.0f);
-        badge.AddArc(L.fieldX + badgeW - bd, badgeY + 22.0f, bd, bd, 270.0f, 90.0f);
-        badge.AddArc(L.fieldX + badgeW - bd, badgeY + 22.0f + badgeH - bd, bd, bd, 0.0f, 90.0f);
-        badge.AddArc(L.fieldX, badgeY + 22.0f + badgeH - bd, bd, bd, 90.0f, 90.0f);
+        badge.AddArc(fieldX, badgeDrawY, bd, bd, 180.0f, 90.0f);
+        badge.AddArc(fieldX+badgeW-bd, badgeDrawY, bd, bd, 270.0f, 90.0f);
+        badge.AddArc(fieldX+badgeW-bd, badgeDrawY+badgeH-bd, bd, bd, 0.0f, 90.0f);
+        badge.AddArc(fieldX, badgeDrawY+badgeH-bd, bd, bd, 90.0f, 90.0f);
         badge.CloseFigure();
-        SolidBrush badgeBg(g_isPremiumUser ? Color(255, 255, 140, 0) : Color(255, 0, 150, 180));
+        SolidBrush badgeBg(badgeColor);
         g.FillPath(&badgeBg, &badge);
-        Font fBadge(&ff, 12, FontStyleBold, UnitPixel);
-        g.DrawString(g_isPremiumUser ? L"★ Premium" : L"Free Plan", -1, &fBadge, RectF(L.fieldX, badgeY + 22.0f, badgeW, badgeH), &fmtC, &white);
+        Font fBadge(&ff, 11, FontStyleBold, UnitPixel);
+        g.DrawString(GetPlanLabel(pkgW), -1, &fBadge, RectF(fieldX, badgeDrawY, badgeW, badgeH), &fmtC, &white);
 
-        float logoutW = 150.0f, logoutH = 40.0f;
-        float logoutX = L.cardX + (L.cardW - logoutW) / 2.0f;
-        float logoutY = L.cardY + L.cardH - 65.0f;
-        GraphicsPath lPath;
-        lPath.AddArc(logoutX, logoutY, bd, bd, 180.0f, 90.0f);
-        lPath.AddArc(logoutX + logoutW - bd, logoutY, bd, bd, 270.0f, 90.0f);
-        lPath.AddArc(logoutX + logoutW - bd, logoutY + logoutH - bd, bd, bd, 0.0f, 90.0f);
-        lPath.AddArc(logoutX, logoutY + logoutH - bd, bd, bd, 90.0f, 90.0f);
-        lPath.CloseFigure();
-        SolidBrush lBg(s_hoverLogout ? Color(255, 180, 20, 20) : Color(255, 220, 50, 50));
-        g.FillPath(&lBg, &lPath);
-        Font fLogout(&ff, 13, FontStyleBold, UnitPixel);
-        g.DrawString(L"\xE7E8 Log Out", -1, &fLogout, RectF(logoutX, logoutY, logoutW, logoutH), &fmtC, &white);
+        infoY += 58.0f;
+
+        float br2=6.0f, bd2=br2*2.0f;
+
+        // ── Upgrade button (only if not premium/parental) ──
+        if (!isPrem) {
+            float upW=160.0f, upH=36.0f;
+            float upX=cardX+(cardW-upW)/2.0f - 85.0f;
+            float upY=infoY;
+            GraphicsPath upPath;
+            upPath.AddArc(upX, upY, bd2, bd2, 180.0f, 90.0f);
+            upPath.AddArc(upX+upW-bd2, upY, bd2, bd2, 270.0f, 90.0f);
+            upPath.AddArc(upX+upW-bd2, upY+upH-bd2, bd2, bd2, 0.0f, 90.0f);
+            upPath.AddArc(upX, upY+upH-bd2, bd2, bd2, 90.0f, 90.0f);
+            upPath.CloseFigure();
+            LinearGradientBrush upBg(PointF(upX,upY), PointF(upX+upW,upY+upH),
+                Color(255,243,156,18), Color(255,230,100,0));
+            SolidBrush upHov(Color(255,200,80,0));
+            if (s_hoverUpgrade) g.FillPath(&upHov, &upPath); else g.FillPath(&upBg, &upPath);
+            Font fUp(&ff, 12, FontStyleBold, UnitPixel);
+            g.DrawString(L"\xE8EC  Upgrade Now", -1, &fUp, RectF(upX, upY, upW, upH), &fmtC, &white);
+
+            // Logout button next to upgrade
+            float logW=120.0f, logH=36.0f;
+            float logX=upX+upW+10.0f, logY=upY;
+            GraphicsPath lPath;
+            lPath.AddArc(logX, logY, bd2, bd2, 180.0f, 90.0f);
+            lPath.AddArc(logX+logW-bd2, logY, bd2, bd2, 270.0f, 90.0f);
+            lPath.AddArc(logX+logW-bd2, logY+logH-bd2, bd2, bd2, 0.0f, 90.0f);
+            lPath.AddArc(logX, logY+logH-bd2, bd2, bd2, 90.0f, 90.0f);
+            lPath.CloseFigure();
+            SolidBrush lBg(s_hoverLogout ? Color(255,180,20,20) : Color(255,220,50,50));
+            g.FillPath(&lBg, &lPath);
+            Font fLogout(&ff, 12, FontStyleBold, UnitPixel);
+            g.DrawString(L"\xE7E8 Log Out", -1, &fLogout, RectF(logX, logY, logW, logH), &fmtC, &white);
+        } else {
+            // Premium: only logout, centered
+            float logW=150.0f, logH=38.0f;
+            float logX=cardX+(cardW-logW)/2.0f, logY=infoY;
+            GraphicsPath lPath;
+            lPath.AddArc(logX, logY, bd2, bd2, 180.0f, 90.0f);
+            lPath.AddArc(logX+logW-bd2, logY, bd2, bd2, 270.0f, 90.0f);
+            lPath.AddArc(logX+logW-bd2, logY+logH-bd2, bd2, bd2, 0.0f, 90.0f);
+            lPath.AddArc(logX, logY+logH-bd2, bd2, bd2, 90.0f, 90.0f);
+            lPath.CloseFigure();
+            SolidBrush lBg(s_hoverLogout ? Color(255,180,20,20) : Color(255,220,50,50));
+            g.FillPath(&lBg, &lPath);
+            Font fLogout(&ff, 13, FontStyleBold, UnitPixel);
+            g.DrawString(L"\xE7E8 Log Out", -1, &fLogout, RectF(logX, logY, logW, logH), &fmtC, &white);
+        }
+
         return;
     }
 
@@ -1093,6 +1223,7 @@ void ProcessAccountsMouseClick(float x, float y, HWND hWnd) {
         float logoutY = L.cardY + L.cardH - 65.0f;
         if (HitRect(x, y, logoutX, logoutY, logoutW, logoutH)) {
             g_loggedInEmail   = L"";
+            g_loggedInName    = L"";
             g_loggedInUserUid = "";
             g_isPremiumUser   = false;
             ZeroMemory(s_email,    sizeof(s_email));

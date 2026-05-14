@@ -84,8 +84,8 @@ NOTIFYICONDATA nid = {};
 // LAYOUT
 // ==========================================
 extern const int SIDEBAR_WIDTH      = 170;
-extern const int TITLEBAR_HEIGHT    = 28;   
-extern const int SUBHEADER_HEIGHT   = 45;   
+extern const int TITLEBAR_HEIGHT    = 28;
+extern const int SUBHEADER_HEIGHT   = 45;
 
 // UI State
 int selectedTab  = 0;
@@ -180,31 +180,34 @@ std::string SendFirestoreRequest(const std::string& method, const std::string& p
 }
 
 // ==========================================
-// SUBSCRIPTION CHECK THREAD
+// SUBSCRIPTION CHECK THREAD  (সম্পূর্ণ নতুন — Bug Fixed)
 // ==========================================
 void __cdecl SubscriptionCheckThread(void* p) {
-    Sleep(3000); 
+    Sleep(3000);
     std::string pc_id = GetHardwareID();
-    
-    while(true) {
+
+    while (true) {
+
+        // ── 1. কোন path থেকে data আনব? ──────────────────────────────
         std::string path;
-        bool isUser = false;
-        
-        if (!g_loggedInUserUid.empty()) {
-            path = "/v1/projects/rasfocus-c746d/databases/(default)/documents/users/" + g_loggedInUserUid;
-            isUser = true;
-        } 
-        else {
-            path = "/v1/projects/rasfocus-c746d/databases/(default)/documents/devices/" + pc_id;
-            isUser = false;
-        }
-        
+        bool isUser = !g_loggedInUserUid.empty();
+
+        if (isUser)
+            path = "/v1/projects/rasfocus-c746d/databases/(default)/documents/users/"
+                   + g_loggedInUserUid;
+        else
+            path = "/v1/projects/rasfocus-c746d/databases/(default)/documents/devices/"
+                   + pc_id;
+
         std::string response = SendFirestoreRequest("GET", path);
-        
-        if (response.find("\"error\"") != std::string::npos && response.find("NOT_FOUND") != std::string::npos) {
+
+        // ── 2. Document পাওয়া যায়নি (প্রথমবার) ──────────────────────
+        if (response.find("\"error\"") != std::string::npos &&
+            response.find("NOT_FOUND") != std::string::npos)
+        {
             if (!isUser) {
-                // First run on this device — create Firestore document with trial_start_date
-                long long now = (long long)time(nullptr);
+                // Device-এ প্রথমবার — TRIAL শুরু
+                long long now      = (long long)time(nullptr);
                 std::string nowStr = std::to_string(now);
                 std::string payload =
                     "{\"fields\":{"
@@ -212,76 +215,158 @@ void __cdecl SubscriptionCheckThread(void* p) {
                     "\"trial_start_date\":{\"integerValue\":\"" + nowStr + "\"}"
                     "}}";
                 SendFirestoreRequest("PATCH", path, payload);
-                g_currentPackage = "TRIAL";
-                g_daysLeft = 14;
+
+                g_currentPackage    = "TRIAL";
+                g_isPremiumUser     = false;   // Trial শুরুতে প্রথমে false
+                g_daysLeft          = 14;
                 g_packageStatusText = L"Trial Active (14 Days Left)";
+
+                // Trial শুরু হলে সাথে সাথে premium দাও
+                g_isPremiumUser = true;
             } else {
-                g_currentPackage = "FREE_BASIC";
+                g_currentPackage    = "FREE_BASIC";
+                g_isPremiumUser     = false;
                 g_packageStatusText = L"Free Basic Version";
             }
-        } 
-        else {
-            // Parse current_package
-            std::string searchKey = "\"current_package\":";
-            size_t pos = response.find(searchKey);
+
+            if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
+            Sleep(60000);
+            continue;
+        }
+
+        // ── 3. current_package parse ───────────────────────────────────
+        {
+            size_t pos = response.find("\"current_package\":");
             if (pos != std::string::npos) {
-                size_t valStart = response.find("stringValue\": \"", pos);
-                if (valStart != std::string::npos) {
-                    valStart += 15;
-                    size_t valEnd = response.find("\"", valStart);
-                    if (valEnd != std::string::npos) {
-                        g_currentPackage = response.substr(valStart, valEnd - valStart);
-                    }
+                size_t vs = response.find("stringValue\": \"", pos);
+                if (vs != std::string::npos) {
+                    vs += 15;
+                    size_t ve = response.find("\"", vs);
+                    if (ve != std::string::npos)
+                        g_currentPackage = response.substr(vs, ve - vs);
+                }
+            }
+        }
+
+        // ── 4. PREMIUM / 1 Month Pro / 1 Year Ultimate / STUDENT / PARENTAL
+        //       → g_isPremiumUser = true + expiry check ────────────────
+        bool isPaidPackage = (g_currentPackage == "PREMIUM"          ||
+                              g_currentPackage == "1 Month Pro"       ||
+                              g_currentPackage == "1 Year Ultimate"   ||
+                              g_currentPackage == "STUDENT"           ||
+                              g_currentPackage == "PARENTAL");
+
+        if (isPaidPackage) {
+            // expiryDate parse (Firestore integerValue)
+            long long expiryTs = 0;
+            size_t ep = response.find("\"expiryDate\":");
+            if (ep != std::string::npos) {
+                size_t iv = response.find("integerValue\": \"", ep);
+                if (iv != std::string::npos) {
+                    iv += 16;
+                    size_t ive = response.find("\"", iv);
+                    if (ive != std::string::npos)
+                        expiryTs = std::stoll(response.substr(iv, ive - iv));
                 }
             }
 
-            // If TRIAL, calculate remaining days from trial_start_date
-            if (g_currentPackage == "TRIAL") {
-                long long trialStart = 0;
-                std::string tsKey = "\"trial_start_date\":";
-                size_t tsPos = response.find(tsKey);
-                if (tsPos != std::string::npos) {
-                    // Firestore integerValue
-                    size_t ivPos = response.find("integerValue\": \"", tsPos);
-                    if (ivPos != std::string::npos) {
-                        ivPos += 16;
-                        size_t ivEnd = response.find("\"", ivPos);
-                        if (ivEnd != std::string::npos)
-                            trialStart = std::stoll(response.substr(ivPos, ivEnd - ivPos));
-                    }
+            long long now = (long long)time(nullptr);
+
+            if (expiryTs > 0 && now > expiryTs) {
+                // ── মেয়াদ শেষ → FREE_BASIC তে নামানো ──────────────
+                g_currentPackage    = "FREE_BASIC";
+                g_isPremiumUser     = false;   // ← মেইন সুইচ OFF
+                g_packageStatusText = L"Subscription Expired — Free Basic";
+
+                std::string upd =
+                    "{\"fields\":{"
+                    "\"current_package\":{\"stringValue\":\"FREE_BASIC\"}"
+                    "}}";
+                SendFirestoreRequest("PATCH", path, upd);
+
+            } else {
+                // ── মেয়াদ আছে → সব ফিচার আনলক ──────────────────────
+                g_isPremiumUser = true;   // ← মেইন সুইচ ON
+
+                if (g_currentPackage == "PREMIUM"          ||
+                    g_currentPackage == "1 Month Pro"       ||
+                    g_currentPackage == "1 Year Ultimate")
+                {
+                    long long daysLeft = (expiryTs > 0)
+                                        ? (expiryTs - now) / 86400
+                                        : -1;
+                    if (daysLeft >= 0)
+                        g_packageStatusText = L"Premium Active ("
+                                              + std::to_wstring(daysLeft)
+                                              + L" Days Left)";
+                    else
+                        g_packageStatusText = L"Premium Access Active";
                 }
-                if (trialStart > 0) {
-                    long long now = (long long)time(nullptr);
-                    long long elapsed = (now - trialStart) / 86400; // days elapsed
-                    long long left = 14 - elapsed;
-                    if (left < 0) left = 0;
-                    g_daysLeft = (int)left;
-                    if (left > 0) {
-                        std::wstring ws = L"Trial Active (" + std::to_wstring(left) + L" Days Left)";
-                        g_packageStatusText = ws;
-                    } else {
-                        // Trial expired — downgrade to FREE_BASIC
-                        g_currentPackage = "FREE_BASIC";
-                        g_packageStatusText = L"Trial Expired — Free Basic";
-                        // Update Firestore
-                        std::string upd =
-                            "{\"fields\":{"
-                            "\"current_package\":{\"stringValue\":\"FREE_BASIC\"},"
-                            "\"trial_start_date\":{\"integerValue\":\"" + std::to_string(trialStart) + "\"}"
-                            "}}";
-                        SendFirestoreRequest("PATCH", path, upd);
-                    }
-                } else {
-                    g_packageStatusText = L"Trial Active";
-                }
-            } else if (g_currentPackage == "PREMIUM")  g_packageStatusText = L"Premium Access Active";
-            else if (g_currentPackage == "STUDENT")    g_packageStatusText = L"Student Offer Active";
-            else if (g_currentPackage == "PARENTAL")   g_packageStatusText = L"Parental Control Active";
-            else                                        g_packageStatusText = L"Free Basic Version";
+                else if (g_currentPackage == "STUDENT")
+                    g_packageStatusText = L"Student Offer Active";
+                else if (g_currentPackage == "PARENTAL")
+                    g_packageStatusText = L"Parental Control Active";
+            }
         }
-        
+
+        // ── 5. TRIAL → remaining days check ───────────────────────────
+        else if (g_currentPackage == "TRIAL") {
+            long long trialStart = 0;
+            size_t tsPos = response.find("\"trial_start_date\":");
+            if (tsPos != std::string::npos) {
+                size_t iv = response.find("integerValue\": \"", tsPos);
+                if (iv != std::string::npos) {
+                    iv += 16;
+                    size_t ive = response.find("\"", iv);
+                    if (ive != std::string::npos)
+                        trialStart = std::stoll(response.substr(iv, ive - iv));
+                }
+            }
+
+            if (trialStart > 0) {
+                long long now     = (long long)time(nullptr);
+                long long elapsed = (now - trialStart) / 86400;
+                long long left    = 14 - elapsed;
+
+                if (left > 0) {
+                    // Trial এখনো চলছে → সব ফিচার আনলক
+                    g_isPremiumUser     = true;   // ← মেইন সুইচ ON
+                    g_daysLeft          = (int)left;
+                    g_packageStatusText = L"Trial Active ("
+                                         + std::to_wstring(left)
+                                         + L" Days Left)";
+                } else {
+                    // Trial শেষ → FREE_BASIC তে নামানো
+                    g_isPremiumUser     = false;   // ← মেইন সুইচ OFF
+                    g_currentPackage    = "FREE_BASIC";
+                    g_daysLeft          = 0;
+                    g_packageStatusText = L"Trial Expired — Free Basic";
+
+                    std::string upd =
+                        "{\"fields\":{"
+                        "\"current_package\":{\"stringValue\":\"FREE_BASIC\"},"
+                        "\"trial_start_date\":{\"integerValue\":\""
+                        + std::to_string(trialStart) + "\"}"
+                        "}}";
+                    SendFirestoreRequest("PATCH", path, upd);
+                }
+            } else {
+                // trial_start_date নেই — safe fallback, premium দাও
+                g_isPremiumUser     = true;   // ← মেইন সুইচ ON
+                g_packageStatusText = L"Trial Active";
+            }
+        }
+
+        // ── 6. FREE_BASIC বা অচেনা package ───────────────────────────
+        else {
+            g_isPremiumUser     = false;   // ← মেইন সুইচ OFF
+            g_currentPackage    = "FREE_BASIC";
+            g_packageStatusText = L"Free Basic Version";
+        }
+
+        // ── 7. UI রিফ্রেশ ─────────────────────────────────────────────
         if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
-        Sleep(60000); 
+        Sleep(60000);
     }
     _endthread();
 }
@@ -715,7 +800,7 @@ void DrawTitleBar(Graphics& g, int w) {
     StringFormat fmtL;
     fmtL.SetAlignment(StringAlignmentNear);
     fmtL.SetLineAlignment(StringAlignmentCenter);
-    
+
     wstring fullTitleStr = L"RasFocus Pro Max - " + g_packageStatusText;
     g.DrawString(fullTitleStr.c_str(), -1, &fTitle,
                  RectF(34.0f, 0.0f, 500.0f, (float)TITLEBAR_HEIGHT),
@@ -786,7 +871,7 @@ void DrawSubHeader(Graphics& g, int w) {
     fmtTL.SetAlignment(StringAlignmentNear);
     fmtTL.SetLineAlignment(StringAlignmentCenter);
 
-    const int LOGO_SIZE = 26; 
+    const int LOGO_SIZE = 26;
     int actualLogoSize = max(26, (int)(LOGO_SIZE * g_scaleFactor));
     HICON hIconLg = (HICON)LoadImage(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APP_ICON),
                                      IMAGE_ICON, actualLogoSize, actualLogoSize, LR_DEFAULTCOLOR);
@@ -798,21 +883,21 @@ void DrawSubHeader(Graphics& g, int w) {
         DestroyIcon(hIconLg);
     }
 
-    Font fAppName(&ff, 18, FontStyleBold, UnitPixel); 
+    Font fAppName(&ff, 18, FontStyleBold, UnitPixel);
     Font fVersion(&ff, 11, FontStyleRegular, UnitPixel);
     SolidBrush whiteAlpha(Color(200, 255, 255, 255));
-    
-    float textX = 16.0f + LOGO_SIZE + 10.0f; 
+
+    float textX = 16.0f + LOGO_SIZE + 10.0f;
     g.DrawString(L"RasFocus Pro Max", -1, &fAppName, RectF(textX, subY, 150.0f, subH), &fmtTL, &white);
-    
+
     wstring wVer(CURRENT_VERSION.begin(), CURRENT_VERSION.end());
     g.DrawString(wVer.c_str(), -1, &fVersion, RectF(textX + 135.0f, subY + 2.0f, 60.0f, subH), &fmtTL, &whiteAlpha);
 
     float rightPad = 20.0f;
-    float btnH     = 28.0f; 
+    float btnH     = 28.0f;
     float btnY     = subY + (subH - btnH) / 2.0f;
 
-    float acBtnW  = 110.0f; 
+    float acBtnW  = 110.0f;
     float acBtnX  = (float)w - rightPad - acBtnW;
 
     GraphicsPath acPath;
@@ -836,7 +921,7 @@ void DrawSubHeader(Graphics& g, int w) {
 
     float fbIconW = 60.0f;
     float fbIconX = acBtnX - fbIconW - 10.0f;
-    
+
     if (hoverFeedback) {
         SolidBrush fbHover(Color(50, 255, 255, 255));
         GraphicsPath fbPath;
@@ -847,10 +932,10 @@ void DrawSubHeader(Graphics& g, int w) {
         fbPath.CloseFigure();
         g.FillPath(&fbHover, &fbPath);
     }
-    
-    Font fFbIcon(&ffIcons, 16, FontStyleRegular, UnitPixel); 
+
+    Font fFbIcon(&ffIcons, 16, FontStyleRegular, UnitPixel);
     Font fFbTxt(&ff, 9, FontStyleRegular, UnitPixel);
-    
+
     g.DrawString(L"\xE8C3", -1, &fFbIcon, RectF(fbIconX, btnY + 1.0f, fbIconW, 14.0f), &fmtC, &white);
     g.DrawString(L"Feedback", -1, &fFbTxt, RectF(fbIconX, btnY + 15.0f, fbIconW, 14.0f), &fmtC, &whiteAlpha);
 }
@@ -904,7 +989,7 @@ void DrawSidebar(Graphics& g, int h) {
     // ── Upgrade Button ──
     if (g_currentPackage == "FREE_BASIC" || g_currentPackage == "TRIAL") {
         float upgH  = 38.0f;
-        float upgY  = sideY + sideH - upgH - 16.0f;   // relative to sidebar content area
+        float upgY  = sideY + sideH - upgH - 16.0f;
         float upgMX = 15.0f;
         float upgW  = (float)SIDEBAR_WIDTH - upgMX * 2.0f;
         GraphicsPath upgPath;
@@ -914,10 +999,10 @@ void DrawSidebar(Graphics& g, int h) {
         upgPath.AddArc(upgMX + upgW - d, upgY + upgH - d, d, d, 0.0f, 90.0f);
         upgPath.AddArc(upgMX, upgY + upgH - d, d, d, 90.0f, 90.0f);
         upgPath.CloseFigure();
-        
+
         SolidBrush btnColor(hoverUpgrade ? ColUpgradeHover : ColUpgradeBtn);
         g.FillPath(&btnColor, &upgPath);
-        
+
         Font fUpg(&ff, 13, FontStyleBold, UnitPixel);
         g.DrawString(L"\u2B06  Upgrade Now", -1, &fUpg, RectF(upgMX, upgY, upgW, upgH), &fmtIC, &white);
     }
@@ -1036,7 +1121,7 @@ void OnPaint(HWND hWnd, HDC hdc) {
     DrawSidebar   (g, scaledH);
     DrawSubHeader (g, scaledW);
     DrawTitleBar  (g, scaledW);
-    
+
     DrawFeedbackPopup(g, scaledW, scaledH);
     DrawUpgradePopup(g, scaledW, scaledH); // ← Upgrade Popup Draw Call
 
@@ -1240,7 +1325,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         if      (selectedTab == 0) { ProcessDashboardMouseMove(x, y);   redraw = true; }
         else if (selectedTab == 1) { ProcessBlocksMouseMove(x, y);      redraw = true; }
         else if (selectedTab == 2) { ProcessDeepStudyMouseMove(x, y);   redraw = true; }
-        else if (selectedTab == 3) { ProcessSpecialFeatureMouseMove(x, y);     redraw = true; } 
+        else if (selectedTab == 3) { ProcessSpecialFeatureMouseMove(x, y);     redraw = true; }
         else if (selectedTab == 5) { ProcessSettingsMouseMove(x, y);    redraw = true; }
         else if (selectedTab == 4) {
             float cX = (float)SIDEBAR_WIDTH, cY = (float)(TITLEBAR_HEIGHT + SUBHEADER_HEIGHT);
@@ -1334,7 +1419,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 
         // ← Upgrade Now বাটনে ক্লিক
         if ((g_currentPackage == "FREE_BASIC" || g_currentPackage == "TRIAL") && hoverUpgrade) {
-            g_showUpgradePopup = true; 
+            g_showUpgradePopup = true;
             InvalidateRect(hWnd, NULL, FALSE);
             break;
         }
@@ -1348,7 +1433,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         if      (selectedTab == 0) { ProcessDashboardMouseClick(x, y, selectedTab); }
         else if (selectedTab == 1) { ProcessBlocksMouseClick(x, y); }
         else if (selectedTab == 2) { ProcessDeepStudyMouseClick(x, y); }
-        else if (selectedTab == 3) { ProcessSpecialFeatureMouseClick(x, y); } 
+        else if (selectedTab == 3) { ProcessSpecialFeatureMouseClick(x, y); }
         else if (selectedTab == 4) {
             float cX = (float)SIDEBAR_WIDTH, cY = (float)(TITLEBAR_HEIGHT + SUBHEADER_HEIGHT);
             float cW = scaledW - cX, cH = scaledH - cY;
