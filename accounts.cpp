@@ -27,7 +27,10 @@ bool    g_isPremiumUser    = false;
 wstring g_loggedInEmail    = L"";
 wstring g_loggedInName     = L"";
 string  g_loggedInUserUid  = "";
+string  g_currentPackage   = "FREE_BASIC"; // প্যাকেজের নাম সেভ রাখার জন্য
 bool    g_openCheckoutAfterLogin = false; // signup → auto-login → checkout
+
+extern int selectedTab; // My Account Tab Close করার জন্য
 
 static firebase::App* s_firebaseApp = nullptr;
 
@@ -132,7 +135,7 @@ struct LoginResult {
     string  errorMsg;
 };
 
-// 🔥 (FIXED) এটি স্পেস থাকলেও JSON ডেটা পড়তে পারবে
+// JSON থেকে বেসিক ভ্যালু বের করার ফাংশন
 static string JsonExtract(const string& json, const string& key) {
     string search = "\"" + key + "\"";
     size_t pos = json.find(search);
@@ -147,6 +150,21 @@ static string JsonExtract(const string& json, const string& key) {
     size_t endQuote = json.find("\"", startQuote + 1);
     if (endQuote == string::npos) return "";
     
+    return json.substr(startQuote + 1, endQuote - startQuote - 1);
+}
+
+// 🔥 [BUG 2 FIX]: Firestore এর "stringValue" ডাইনামিক্যালি বের করার পারফেক্ট ফাংশন
+static string FirestoreExtractString(const string& json, const string& fieldName) {
+    string search = "\"" + fieldName + "\"";
+    size_t pos = json.find(search);
+    if (pos == string::npos) return "";
+    size_t svPos = json.find("\"stringValue\"", pos);
+    if (svPos == string::npos) return "";
+    size_t colon = json.find(":", svPos);
+    size_t startQuote = json.find("\"", colon);
+    if (startQuote == string::npos) return "";
+    size_t endQuote = json.find("\"", startQuote + 1);
+    if (endQuote == string::npos) return "";
     return json.substr(startQuote + 1, endQuote - startQuote - 1);
 }
 
@@ -195,7 +213,6 @@ static LoginResult FirebaseLogin(const string& email, const string& password) {
         if (!res.success) res.errorMsg = "Login failed. Please try again.";
     }
 
-    // 🔥 DEBUGGER: যদি ফেইল হয়, তাহলে স্ক্রিনে আসল মেসেজটি পপ-আপ করে দেখাবে
     if (!res.success) {
         string dbg = "RAW SERVER RESPONSE:\n\n" + response;
         MessageBoxA(NULL, dbg.c_str(), "Firebase Login Debugger", MB_OK | MB_ICONWARNING);
@@ -251,7 +268,6 @@ static LoginResult FirebaseSignUp(const string& email, const string& password) {
         if (!res.success) res.errorMsg = "Sign up failed. Please try again.";
     }
 
-    // 🔥 DEBUGGER: যদি ফেইল হয়, তাহলে স্ক্রিনে আসল মেসেজটি পপ-আপ করে দেখাবে
     if (!res.success) {
         string dbg = "RAW SERVER RESPONSE:\n\n" + response;
         MessageBoxA(NULL, dbg.c_str(), "Firebase SignUp Debugger", MB_OK | MB_ICONWARNING);
@@ -333,41 +349,29 @@ static bool CheckPremiumFromFirebase(const string& uid, const string& idToken) {
     while (InternetReadFile(hReq, buf, sizeof(buf) - 1, &br) && br > 0) { buf[br] = '\0'; response += buf; }
     InternetCloseHandle(hReq); InternetCloseHandle(hConn); InternetCloseHandle(hInet);
 
-    // ── Firestore response এ নাম খোঁজা: "name":{"stringValue":"John Doe"} ──
-    size_t namePos = response.find("\"name\"");
-    if (namePos != string::npos) {
-        size_t svPos = response.find("\"stringValue\"", namePos);
-        if (svPos != string::npos) {
-            size_t q1 = response.find("\"", svPos + 14);
-            if (q1 != string::npos) {
-                size_t q2 = response.find("\"", q1 + 1);
-                if (q2 != string::npos) {
-                    string nameA = response.substr(q1 + 1, q2 - q1 - 1);
-                    if (!nameA.empty()) {
-                        wchar_t nameW[512] = {};
-                        MultiByteToWideChar(CP_UTF8, 0, nameA.c_str(), -1, nameW, 511);
-                        g_loggedInName = nameW;
-                    }
-                }
-            }
-        }
+    // 🔥 [BUG 2 FIX]: FirestoreExtractString ব্যবহার করে একদম সঠিক নাম বের করা
+    string nameA = FirestoreExtractString(response, "name");
+    if (!nameA.empty()) {
+        wchar_t nameW[512] = {};
+        MultiByteToWideChar(CP_UTF8, 0, nameA.c_str(), -1, nameW, 511);
+        g_loggedInName = nameW;
     }
 
-    // [TASK 2 FIX] সব প্রিমিয়াম package নাম চেক করো + g_isPremiumUser সেট করো
-    bool isPremium = false;
-    if (response.find("\"current_package\"") != string::npos) {
-        // সব valid premium package নাম
-        if (response.find("\"PREMIUM\"")          != string::npos ||
-            response.find("\"1 Month Pro\"")       != string::npos ||
-            response.find("\"6 Month Saver\"")     != string::npos ||
-            response.find("\"1 Year Ultimate\"")   != string::npos ||
-            response.find("\"STUDENT\"")           != string::npos ||
-            response.find("\"PARENTAL\"")          != string::npos)
-        {
-            isPremium = true;
-        }
+    // 🔥 [BUG 3 FIX]: প্যাকেজের আসল নাম বের করে সেভ করা
+    string pkgName = FirestoreExtractString(response, "current_package");
+    if (!pkgName.empty()) {
+        g_currentPackage = pkgName;
+    } else {
+        g_currentPackage = "FREE_BASIC";
     }
-    // Global switch সেট করো — এই ফাংশনে login এর সাথে সাথে ঠিক হয়ে যাবে
+
+    bool isPremium = false;
+    if (pkgName == "PREMIUM" || pkgName == "1 Month Pro" || pkgName == "6 Month Saver" || 
+        pkgName == "1 Year Ultimate" || pkgName == "STUDENT" || pkgName == "PARENTAL") 
+    {
+        isPremium = true;
+    }
+    
     g_isPremiumUser = isPremium;
     return isPremium;
 }
@@ -380,7 +384,6 @@ void __cdecl LoginThread(void* param) {
 
     if (res.success) {
         bool isPremium = CheckPremiumFromFirebase(res.localId, res.idToken);
-        // g_isPremiumUser ইতিমধ্যে CheckPremiumFromFirebase-এর ভেতরে set হয়ে গেছে [TASK 2]
 
         wchar_t emailW[512] = {};
         MultiByteToWideChar(CP_UTF8, 0, res.email.c_str(), -1, emailW, 511);
@@ -398,10 +401,10 @@ void __cdecl LoginThread(void* param) {
         s_isError   = false;
         ZeroMemory(s_password, sizeof(s_password));
 
-        // signup এর পরে auto-login হলে checkout খুলবে
+        // 🔥 [BUG 1 FIX]: নতুন ডোমেইনের পেমেন্ট পেজে রিডাইরেক্ট
         if (g_openCheckoutAfterLogin && !g_loggedInUserUid.empty()) {
             g_openCheckoutAfterLogin = false;
-            string urlStr = "https://raseledutools.github.io/checkout.html?uid=" + g_loggedInUserUid;
+            string urlStr = "https://rasfocusplus.me/?uid=" + g_loggedInUserUid;
             wstring wUrl(urlStr.begin(), urlStr.end());
             ShellExecuteW(NULL, L"open", wUrl.c_str(), NULL, NULL, SW_SHOWNORMAL);
         }
@@ -699,7 +702,6 @@ static void DrawSignUpForm(Graphics& g, float cx, float cy, float cw, float ch) 
     g.DrawPath(&backPen, &bp2);
     g.DrawString(L"Back to Login", -1, &fBtn, RectF(backBtnX, btnY, btnW, btnH), &fmtC, &teal);
 
-    // ── "Already have an account? Log In" লিংক ──
     wstring loginPart1 = L"Already have an account? ";
     wstring loginPart2 = L"Log In";
     Font fSmall(&ff, 11, FontStyleRegular, UnitPixel);
@@ -722,20 +724,19 @@ static void DrawSignUpForm(Graphics& g, float cx, float cy, float cw, float ch) 
 //  DRAW
 // ============================================================
 
-// ── Plan label helper ──
-static const wchar_t* GetPlanLabel(const wstring& pkg) {
-    if (pkg == L"PREMIUM")  return L"★ Premium";
-    if (pkg == L"STUDENT")  return L"★ Student";
-    if (pkg == L"PARENTAL") return L"Parental";
-    if (pkg == L"TRIAL")    return L"Trial";
+// 🔥 [BUG 3 FIX]: ডায়নামিক প্যাকেজের নাম দেখানো
+static wstring GetPlanLabel(const wstring& pkg) {
+    if (pkg == L"PREMIUM")           return L"★ Premium";
+    if (pkg == L"1 Month Pro")       return L"★ 1 Month Pro";
+    if (pkg == L"6 Month Saver")     return L"★ 6 Month Saver";
+    if (pkg == L"1 Year Ultimate")   return L"★ 1 Year Ultimate";
+    if (pkg == L"STUDENT")           return L"★ Student";
+    if (pkg == L"PARENTAL")          return L"Parental";
+    if (pkg == L"TRIAL" || pkg == L"14_DAY_TRIAL") return L"14-Day Trial";
     return L"Free Basic";
 }
 
-extern wstring g_packageStatusWide; // declared below via extern
-extern string  g_currentPackage;    // from main.cpp
-
 void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
-    // upgrade popup থেকে এলে signup form সরাসরি খুলে দাও
     if (g_showSignupFromUpgrade) {
         g_showSignupFromUpgrade = false;
         s_showSignup            = true;
@@ -750,7 +751,6 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
     g.FillRectangle(&bgBrush, cx, cy, cw, ch);
 
     if (!g_loggedInEmail.empty()) {
-        // ── Wider card to fit all info ──
         float cardW = 420.0f, cardH = 520.0f;
         float cardX = cx + (cw - cardW) / 2.0f;
         float cardY = cy + (ch - cardH) / 2.0f;
@@ -767,7 +767,6 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
         Pen cardShadow(Color(30, 0, 100, 180), 1.5f);
         g.DrawPath(&cardShadow, &card);
 
-        // ── Header ──
         GraphicsPath hdrPath;
         hdrPath.AddArc(cardX, cardY, dc, dc, 180.0f, 90.0f);
         hdrPath.AddArc(cardX + cardW - dc, cardY, dc, dc, 270.0f, 90.0f);
@@ -785,9 +784,7 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
         SolidBrush gray(Color(255, 120, 130, 140));
         StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
         StringFormat fmtL; fmtL.SetAlignment(StringAlignmentNear);   fmtL.SetLineAlignment(StringAlignmentCenter);
-        StringFormat fmtR; fmtR.SetAlignment(StringAlignmentFar);    fmtR.SetLineAlignment(StringAlignmentCenter);
 
-        // ── ✕ Close button (top-right of card) ──
         float closeSize = 26.0f;
         float closeX = cardX + cardW - closeSize - 8.0f;
         float closeY = cardY + 8.0f;
@@ -798,7 +795,6 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
         Font fClose(&ffIcons, 11, FontStyleRegular, UnitPixel);
         g.DrawString(L"\xE711", -1, &fClose, RectF(closeX, closeY, closeSize, closeSize), &fmtC, &white);
 
-        // ── Avatar ──
         float avR  = 40.0f;
         float avCX = cardX + cardW / 2.0f;
         float avCY = cardY + 90.0f;
@@ -812,30 +808,25 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
         Font fHdrTitle(&ff, 16, FontStyleBold, UnitPixel);
         g.DrawString(L"My Account", -1, &fHdrTitle, RectF(cardX, cardY, cardW, 55.0f), &fmtC, &white);
 
-        // ── Info rows ──
         float fieldX = cardX + 35.0f;
         float fieldW = cardW - 70.0f;
         float infoY  = avCY + avR + 20.0f;
         Font fLabel(&ff, 11, FontStyleRegular, UnitPixel);
         Font fValue(&ff, 13, FontStyleBold,    UnitPixel);
 
-        // Name
         if (!g_loggedInName.empty()) {
             g.DrawString(L"Name", -1, &fLabel, RectF(fieldX, infoY, fieldW, 18.0f), &fmtL, &gray);
             g.DrawString(g_loggedInName.c_str(), -1, &fValue, RectF(fieldX, infoY + 18.0f, fieldW, 22.0f), &fmtL, &dark);
             infoY += 50.0f;
         }
 
-        // Email
         g.DrawString(L"Email", -1, &fLabel, RectF(fieldX, infoY, fieldW, 18.0f), &fmtL, &gray);
         g.DrawString(g_loggedInEmail.c_str(), -1, &fValue, RectF(fieldX, infoY + 18.0f, fieldW, 22.0f), &fmtL, &dark);
         infoY += 50.0f;
 
-        // Unique ID (Firebase UID shortened)
         g.DrawString(L"User ID", -1, &fLabel, RectF(fieldX, infoY, fieldW, 18.0f), &fmtL, &gray);
         wstring uid28;
         if (!g_loggedInUserUid.empty()) {
-            // show first 8 chars + ... + last 6 chars
             string uid = g_loggedInUserUid;
             string shortUid = uid.size() > 16 ? uid.substr(0,8) + "..." + uid.substr(uid.size()-6) : uid;
             wchar_t uidW[64] = {};
@@ -849,14 +840,12 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
         g.DrawString(uid28.c_str(), -1, &fUid, RectF(fieldX, infoY + 18.0f, fieldW, 22.0f), &fmtL, &uidColor);
         infoY += 50.0f;
 
-        // ── Plan badge ──
         g.DrawString(L"Current Plan", -1, &fLabel, RectF(fieldX, infoY, fieldW, 18.0f), &fmtL, &gray);
 
-        // Determine plan color
         wstring pkgW;
-        { wchar_t tmp[32]={}; MultiByteToWideChar(CP_UTF8,0,g_currentPackage.c_str(),-1,tmp,31); pkgW=tmp; }
-        bool isPrem  = (g_currentPackage=="PREMIUM"||g_currentPackage=="STUDENT"||g_currentPackage=="PARENTAL");
-        bool isTrial = (g_currentPackage=="TRIAL");
+        { wchar_t tmp[128]={}; MultiByteToWideChar(CP_UTF8,0,g_currentPackage.c_str(),-1,tmp,127); pkgW=tmp; }
+        bool isPrem  = (g_currentPackage == "PREMIUM" || g_currentPackage == "1 Month Pro" || g_currentPackage == "6 Month Saver" || g_currentPackage == "1 Year Ultimate" || g_currentPackage == "STUDENT" || g_currentPackage == "PARENTAL");
+        bool isTrial = (g_currentPackage=="TRIAL" || g_currentPackage=="14_DAY_TRIAL");
         Color badgeColor = isPrem ? Color(255,255,140,0) : isTrial ? Color(255,80,160,80) : Color(255,0,150,180);
 
         float badgeW=130.0f, badgeH=26.0f;
@@ -871,13 +860,12 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
         SolidBrush badgeBg(badgeColor);
         g.FillPath(&badgeBg, &badge);
         Font fBadge(&ff, 11, FontStyleBold, UnitPixel);
-        g.DrawString(GetPlanLabel(pkgW), -1, &fBadge, RectF(fieldX, badgeDrawY, badgeW, badgeH), &fmtC, &white);
+        g.DrawString(GetPlanLabel(pkgW).c_str(), -1, &fBadge, RectF(fieldX, badgeDrawY, badgeW, badgeH), &fmtC, &white);
 
         infoY += 58.0f;
 
         float br2=6.0f, bd2=br2*2.0f;
 
-        // ── Upgrade button (only if not premium/parental) ──
         if (!isPrem) {
             float upW=160.0f, upH=36.0f;
             float upX=cardX+(cardW-upW)/2.0f - 85.0f;
@@ -895,7 +883,6 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
             Font fUp(&ff, 12, FontStyleBold, UnitPixel);
             g.DrawString(L"\xE8EC  Upgrade Now", -1, &fUp, RectF(upX, upY, upW, upH), &fmtC, &white);
 
-            // Logout button next to upgrade
             float logW=120.0f, logH=36.0f;
             float logX=upX+upW+10.0f, logY=upY;
             GraphicsPath lPath;
@@ -909,7 +896,6 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
             Font fLogout(&ff, 12, FontStyleBold, UnitPixel);
             g.DrawString(L"\xE7E8 Log Out", -1, &fLogout, RectF(logX, logY, logW, logH), &fmtC, &white);
         } else {
-            // Premium: only logout, centered
             float logW=150.0f, logH=38.0f;
             float logX=cardX+(cardW-logW)/2.0f, logY=infoY;
             GraphicsPath lPath;
@@ -1148,15 +1134,55 @@ void ProcessAccountsMouseMove(float x, float y) {
         return;
     }
 
+    // 🔥 [BUG 2 FIX]: লগইন অবস্থায় সমস্ত বাটনের হোভার চেক লজিক আপডেট করা হলো
     if (!g_loggedInEmail.empty()) {
-        CardLayout L = GetCurrentLayout();
-        float logoutW = 150.0f, logoutH = 40.0f;
-        float logoutX = L.cardX + (L.cardW - logoutW) / 2.0f;
-        float logoutY = L.cardY + L.cardH - 65.0f;
-        s_hoverLogout = HitRect(x, y, logoutX, logoutY, logoutW, logoutH);
-        
-        if (s_hoverLogout) SetCursor(LoadCursor(NULL, IDC_HAND));
+        float scaledW = (float)windowWidth  / g_scaleFactor;
+        float scaledH = (float)windowHeight / g_scaleFactor;
+        float cx = (float)SIDEBAR_WIDTH;
+        float cy = (float)(TITLEBAR_HEIGHT + SUBHEADER_HEIGHT);
+        float cw = scaledW - cx, ch = scaledH - cy;
+
+        float cardW = 420.0f, cardH = 520.0f;
+        float cardX = cx + (cw - cardW) / 2.0f;
+        float cardY = cy + (ch - cardH) / 2.0f;
+
+        float closeSize = 26.0f;
+        float closeX = cardX + cardW - closeSize - 8.0f;
+        float closeY = cardY + 8.0f;
+        s_hoverClose = HitRect(x, y, closeX, closeY, closeSize, closeSize);
+
+        float avR  = 40.0f;
+        float avCY = cardY + 90.0f;
+        float infoY  = avCY + avR + 20.0f;
+        if (!g_loggedInName.empty()) { infoY += 50.0f; }
+        infoY += 50.0f; // Email
+        infoY += 50.0f; // UID
+        infoY += 58.0f; // Badge
+
+        bool isPrem = (g_currentPackage=="PREMIUM" || g_currentPackage=="1 Month Pro" || g_currentPackage=="6 Month Saver" || g_currentPackage=="1 Year Ultimate" || g_currentPackage=="STUDENT" || g_currentPackage=="PARENTAL");
+
+        s_hoverUpgrade = false;
+        s_hoverLogout = false;
+
+        if (!isPrem) {
+            float upW = 160.0f, upH = 36.0f;
+            float upX = cardX + (cardW - upW) / 2.0f - 85.0f;
+            float upY = infoY;
+            s_hoverUpgrade = HitRect(x, y, upX, upY, upW, upH);
+
+            float logW = 120.0f, logH = 36.0f;
+            float logX = upX + upW + 10.0f, logY = upY;
+            s_hoverLogout = HitRect(x, y, logX, logY, logW, logH);
+        } else {
+            float logW = 150.0f, logH = 38.0f;
+            float logX = cardX + (cardW - logW) / 2.0f, logY = infoY;
+            s_hoverLogout = HitRect(x, y, logX, logY, logW, logH);
+        }
+
+        if (s_hoverClose || s_hoverLogout || s_hoverUpgrade) SetCursor(LoadCursor(NULL, IDC_HAND));
         else SetCursor(LoadCursor(NULL, IDC_ARROW));
+
+        if (HWND hw = FindWindowA("RasFocusCore", NULL)) InvalidateRect(hw, NULL, FALSE);
         return;
     }
 
@@ -1207,43 +1233,39 @@ void ProcessAccountsMouseClick(float x, float y, HWND hWnd) {
             float lbW = 160.0f, lbH = 38.0f;
             float lbX = cardX + (cardW - lbW) / 2.0f;
             float lbY = cardY + cardH / 2.0f + 30.0f;
-        if (HitRect(x, y, lbX, lbY, lbW, lbH)) {
-            // signup এর পরে auto-login করো
-            char emailA[512] = {}, passA[512] = {};
-            WideCharToMultiByte(CP_UTF8, 0, s_su_email, -1, emailA, 511, NULL, NULL);
-            WideCharToMultiByte(CP_UTF8, 0, s_su_pass,  -1, passA,  511, NULL, NULL);
+            if (HitRect(x, y, lbX, lbY, lbW, lbH)) {
+                char emailA[512] = {}, passA[512] = {};
+                WideCharToMultiByte(CP_UTF8, 0, s_su_email, -1, emailA, 511, NULL, NULL);
+                WideCharToMultiByte(CP_UTF8, 0, s_su_pass,  -1, passA,  511, NULL, NULL);
 
-            bool doCheckout = s_pendingCheckoutAfterSignup;
-            s_pendingCheckoutAfterSignup = false;
+                bool doCheckout = s_pendingCheckoutAfterSignup;
+                s_pendingCheckoutAfterSignup = false;
 
-            s_showSignup = false;
-            s_su_success = false;
-            ZeroMemory(s_su_name,    sizeof(s_su_name));
-            ZeroMemory(s_su_email,   sizeof(s_su_email));
-            ZeroMemory(s_su_pass,    sizeof(s_su_pass));
-            ZeroMemory(s_su_confirm, sizeof(s_su_confirm));
-            s_su_statusMsg = L"";
-            s_su_focus     = 0;
+                s_showSignup = false;
+                s_su_success = false;
+                ZeroMemory(s_su_name,    sizeof(s_su_name));
+                ZeroMemory(s_su_email,   sizeof(s_su_email));
+                ZeroMemory(s_su_pass,    sizeof(s_su_pass));
+                ZeroMemory(s_su_confirm, sizeof(s_su_confirm));
+                s_su_statusMsg = L"";
+                s_su_focus     = 0;
 
-            if (strlen(emailA) > 0 && strlen(passA) > 0) {
-                s_isLoading = true;
-                LoginThreadData* ld = new LoginThreadData();
-                ld->hWnd      = hWnd;
-                ld->email     = emailA;
-                ld->password  = passA;
-                ld->saveLogin = false;
-                // checkout করতে হলে thread শেষে খুলবে — flag দিয়ে রাখি
-                if (doCheckout) {
-                    // checkout URL পরে g_loggedInUserUid দিয়ে খুলবে
-                    // LoginThread শেষ হলে WM_APP+1 পাঠাবো
-                    extern bool g_openCheckoutAfterLogin;
-                    g_openCheckoutAfterLogin = true;
+                if (strlen(emailA) > 0 && strlen(passA) > 0) {
+                    s_isLoading = true;
+                    LoginThreadData* ld = new LoginThreadData();
+                    ld->hWnd      = hWnd;
+                    ld->email     = emailA;
+                    ld->password  = passA;
+                    ld->saveLogin = false;
+                    
+                    if (doCheckout) {
+                        g_openCheckoutAfterLogin = true;
+                    }
+                    _beginthread(LoginThread, 0, ld);
                 }
-                _beginthread(LoginThread, 0, ld);
-            }
 
-            InvalidateRect(hWnd, NULL, FALSE);
-        }
+                InvalidateRect(hWnd, NULL, FALSE);
+            }
             return;
         }
 
@@ -1264,11 +1286,10 @@ void ProcessAccountsMouseClick(float x, float y, HWND hWnd) {
             return;
         }
 
-        // "Already have an account? Log In" লিংক ক্লিক
         {
             float linkY = btnY + btnH + 12.0f;
             float linkH = 18.0f;
-            float linkX = cardX + 30.0f; // approximate — পুরো নিচের row ই হিটযোগ্য
+            float linkX = cardX + 30.0f;
             float linkW = cardW - 60.0f;
             if (HitRect(x, y, linkX, linkY, linkW, linkH)) {
                 s_showSignup = false;
@@ -1281,7 +1302,8 @@ void ProcessAccountsMouseClick(float x, float y, HWND hWnd) {
         }
 
         if (HitRect(x, y, suBtnX, btnY, btnW, btnH)) {
-            wstring nameW(s_su_name), emailW(s_su_email), passW(s_su_pass), confirmW(s_su_confirm);            if (nameW.empty() || emailW.empty() || passW.empty() || confirmW.empty()) {
+            wstring nameW(s_su_name), emailW(s_su_email), passW(s_su_pass), confirmW(s_su_confirm);            
+            if (nameW.empty() || emailW.empty() || passW.empty() || confirmW.empty()) {
                 s_su_statusMsg = L"Please fill in all fields."; s_su_isError = true;
                 InvalidateRect(hWnd, NULL, FALSE); return;
             }
@@ -1312,16 +1334,67 @@ void ProcessAccountsMouseClick(float x, float y, HWND hWnd) {
         return;
     }
 
+    // 🔥 [BUG 2 FIX]: লগইন অবস্থায় সমস্ত বাটনের ক্লিক ইভেন্ট অ্যাক্টিভ করা হলো
     if (!g_loggedInEmail.empty()) {
-        CardLayout L = GetCurrentLayout();
-        float logoutW = 150.0f, logoutH = 40.0f;
-        float logoutX = L.cardX + (L.cardW - logoutW) / 2.0f;
-        float logoutY = L.cardY + L.cardH - 65.0f;
-        if (HitRect(x, y, logoutX, logoutY, logoutW, logoutH)) {
+        float scaledW = (float)windowWidth  / g_scaleFactor;
+        float scaledH = (float)windowHeight / g_scaleFactor;
+        float cx = (float)SIDEBAR_WIDTH;
+        float cy = (float)(TITLEBAR_HEIGHT + SUBHEADER_HEIGHT);
+        float cw = scaledW - cx, ch = scaledH - cy;
+
+        float cardW = 420.0f, cardH = 520.0f;
+        float cardX = cx + (cw - cardW) / 2.0f;
+        float cardY = cy + (ch - cardH) / 2.0f;
+
+        float closeSize = 26.0f;
+        float closeX = cardX + cardW - closeSize - 8.0f;
+        float closeY = cardY + 8.0f;
+        
+        // 1. Close Button Click (Back to main tab/home)
+        if (HitRect(x, y, closeX, closeY, closeSize, closeSize)) {
+            selectedTab = 1; // Tab 1 বা Home এ ফেরত যাওয়ার জন্য
+            InvalidateRect(hWnd, NULL, FALSE);
+            return;
+        }
+
+        float avR  = 40.0f;
+        float avCY = cardY + 90.0f;
+        float infoY  = avCY + avR + 20.0f;
+        if (!g_loggedInName.empty()) { infoY += 50.0f; }
+        infoY += 50.0f; // Email
+        infoY += 50.0f; // UID
+        infoY += 58.0f; // Badge
+
+        bool isPrem = (g_currentPackage=="PREMIUM" || g_currentPackage=="1 Month Pro" || g_currentPackage=="6 Month Saver" || g_currentPackage=="1 Year Ultimate" || g_currentPackage=="STUDENT" || g_currentPackage=="PARENTAL");
+
+        float upW = 160.0f, upH = 36.0f, upX = 0, upY = 0;
+        float logW = 0, logH = 0, logX = 0, logY = 0;
+
+        if (!isPrem) {
+            upX = cardX + (cardW - upW) / 2.0f - 85.0f;
+            upY = infoY;
+            logW = 120.0f; logH = 36.0f;
+            logX = upX + upW + 10.0f; logY = upY;
+            
+            // 2. Upgrade Button Click
+            if (HitRect(x, y, upX, upY, upW, upH)) {
+                string urlStr = "https://rasfocusplus.me/?uid=" + g_loggedInUserUid;
+                wstring wUrl(urlStr.begin(), urlStr.end());
+                ShellExecuteW(NULL, L"open", wUrl.c_str(), NULL, NULL, SW_SHOWNORMAL);
+                return;
+            }
+        } else {
+            logW = 150.0f; logH = 38.0f;
+            logX = cardX + (cardW - logW) / 2.0f; logY = infoY;
+        }
+
+        // 3. Log Out Button Click
+        if (HitRect(x, y, logX, logY, logW, logH)) {
             g_loggedInEmail   = L"";
             g_loggedInName    = L"";
             g_loggedInUserUid = "";
             g_isPremiumUser   = false;
+            g_currentPackage  = "FREE_BASIC";
             ZeroMemory(s_email,    sizeof(s_email));
             ZeroMemory(s_password, sizeof(s_password));
             s_statusMsg = L"Logged out successfully.";

@@ -180,7 +180,7 @@ std::string SendFirestoreRequest(const std::string& method, const std::string& p
 }
 
 // ==========================================
-// SUBSCRIPTION CHECK THREAD  (সম্পূর্ণ নতুন — Bug Fixed)
+// SUBSCRIPTION CHECK THREAD  (Bug Fixed)
 // ==========================================
 void __cdecl SubscriptionCheckThread(void* p) {
     Sleep(3000);
@@ -248,12 +248,13 @@ void __cdecl SubscriptionCheckThread(void* p) {
             }
         }
 
-        // ── 4. PREMIUM / 1 Month Pro / 1 Year Ultimate / STUDENT / PARENTAL
+        // ── 4. PREMIUM / 1 Month Pro / 6 Month Saver / 1 Year Ultimate / STUDENT / PARENTAL
         //       → g_isPremiumUser = true + expiry check ────────────────
         bool isPaidPackage = (g_currentPackage == "PREMIUM"          ||
-                              g_currentPackage == "1 Month Pro"       ||
-                              g_currentPackage == "1 Year Ultimate"   ||
-                              g_currentPackage == "STUDENT"           ||
+                              g_currentPackage == "1 Month Pro"      ||
+                              g_currentPackage == "6 Month Saver"    || // <-- Added 6 Month Saver
+                              g_currentPackage == "1 Year Ultimate"  ||
+                              g_currentPackage == "STUDENT"          ||
                               g_currentPackage == "PARENTAL");
 
         if (isPaidPackage) {
@@ -289,7 +290,8 @@ void __cdecl SubscriptionCheckThread(void* p) {
                 g_isPremiumUser = true;   // ← মেইন সুইচ ON
 
                 if (g_currentPackage == "PREMIUM"          ||
-                    g_currentPackage == "1 Month Pro"       ||
+                    g_currentPackage == "1 Month Pro"      ||
+                    g_currentPackage == "6 Month Saver"    || // <-- Added 6 Month Saver
                     g_currentPackage == "1 Year Ultimate")
                 {
                     long long daysLeft = (expiryTs > 0)
@@ -393,7 +395,7 @@ void __cdecl FirebaseKillThread(void* p) {
                 g_isAppDisabledByAdmin = true;
                 if (hParentWnd) ShowWindow(hParentWnd, SW_HIDE);
                 MessageBoxA(NULL, "This application has been disabled by the server administrator.",
-                    "RasFocus Pro Max - Access Denied", MB_OK | MB_ICONERROR | MB_TOPMOST);
+                    "RasFocus+ - Access Denied", MB_OK | MB_ICONERROR | MB_TOPMOST);
             } else if (!isDisabled && g_isAppDisabledByAdmin) {
                 g_isAppDisabledByAdmin = false;
                 if (hParentWnd) {
@@ -401,7 +403,7 @@ void __cdecl FirebaseKillThread(void* p) {
                     SetForegroundWindow(hParentWnd);
                 }
                 MessageBoxA(NULL, "Application access has been restored by admin.",
-                    "RasFocus Pro Max", MB_OK | MB_ICONINFORMATION | MB_TOPMOST);
+                    "RasFocus+", MB_OK | MB_ICONINFORMATION | MB_TOPMOST);
             }
         }
         Sleep(5000);
@@ -477,10 +479,10 @@ void RegisterFileAssociation(const string& ext, const string& progId, const stri
 }
 
 void SetupDefaultViewer() {
-    RegisterFileAssociation(".pdf",  "RasFocus.PDF",   "RasFocus PDF Document");
-    RegisterFileAssociation(".jpg",  "RasFocus.Image", "RasFocus Image File");
-    RegisterFileAssociation(".png",  "RasFocus.Image", "RasFocus Image File");
-    RegisterFileAssociation(".jpeg", "RasFocus.Image", "RasFocus Image File");
+    RegisterFileAssociation(".pdf",  "RasFocus.PDF",   "RasFocus+ PDF Document");
+    RegisterFileAssociation(".jpg",  "RasFocus.Image", "RasFocus+ Image File");
+    RegisterFileAssociation(".png",  "RasFocus.Image", "RasFocus+ Image File");
+    RegisterFileAssociation(".jpeg", "RasFocus.Image", "RasFocus+ Image File");
     SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, NULL, NULL);
 }
 
@@ -516,7 +518,7 @@ void __cdecl SilentUpdateThread(void* p) {
                         HRESULT hrExe = URLDownloadToFileA(NULL, exeUrl.c_str(), updateExePath.c_str(), 0, NULL);
                         if (hrExe == S_OK) {
                             isUpdateReady = true;
-                            HWND hWnd = FindWindowA("RasFocusCore", "RasFocus Pro Max");
+                            HWND hWnd = FindWindowA("RasFocusCore", "RasFocus+");
                             if (hWnd) InvalidateRect(hWnd, NULL, FALSE);
                         }
                     }
@@ -575,8 +577,8 @@ bool IsRunAsAdmin() {
 void CreateDesktopShortcut() {
     char desktopPath[MAX_PATH];
     if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_DESKTOPDIRECTORY, NULL, 0, desktopPath))) {
-        string mainShortcutPath      = string(desktopPath) + "\\RasFocus Pro Max.lnk";
-        string miniBrowserShortcutPath = string(desktopPath) + "\\RasFocus Mini Browser.lnk";
+        string mainShortcutPath      = string(desktopPath) + "\\RasFocus+.lnk";
+        string miniBrowserShortcutPath = string(desktopPath) + "\\RasFocus+ Mini Browser.lnk";
         string exePath = GetExePath();
         CoInitialize(NULL);
         IShellLink* psl;
@@ -585,7 +587,7 @@ void CreateDesktopShortcut() {
                 IPersistFile* ppf;
                 psl->SetPath("C:\\Windows\\System32\\schtasks.exe");
                 psl->SetArguments("/run /tn \"RasFocusPro_AutoStart\"");
-                psl->SetDescription("RasFocus Pro Max - Block Apps & Adult Content");
+                psl->SetDescription("RasFocus+ - Block Apps & Adult Content");
                 psl->SetIconLocation(exePath.c_str(), 0);
                 if (SUCCEEDED(psl->QueryInterface(IID_IPersistFile, (LPVOID*)&ppf))) {
                     WCHAR wsz[MAX_PATH];
@@ -601,7 +603,7 @@ void CreateDesktopShortcut() {
                 IPersistFile* ppf;
                 psl->SetPath(exePath.c_str());
                 psl->SetArguments("-minibrowser");
-                psl->SetDescription("RasFocus Safe Mini Browser");
+                psl->SetDescription("RasFocus+ Safe Mini Browser");
                 psl->SetIconLocation(exePath.c_str(), 0);
                 if (SUCCEEDED(psl->QueryInterface(IID_IPersistFile, (LPVOID*)&ppf))) {
                     WCHAR wsz[MAX_PATH];
@@ -726,7 +728,7 @@ void AddTrayIcon(HWND hWnd) {
     nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     nid.uCallbackMessage = WM_TRAYICON;
     nid.hIcon  = LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(IDI_APP_ICON));
-    lstrcpy(nid.szTip, "RasFocus Pro Max is running...");
+    lstrcpy(nid.szTip, "RasFocus+ is running...");
     Shell_NotifyIcon(NIM_ADD, &nid);
 }
 
@@ -801,7 +803,7 @@ void DrawTitleBar(Graphics& g, int w) {
     fmtL.SetAlignment(StringAlignmentNear);
     fmtL.SetLineAlignment(StringAlignmentCenter);
 
-    wstring fullTitleStr = L"RasFocus Pro Max - " + g_packageStatusText;
+    wstring fullTitleStr = L"RasFocus+ - " + g_packageStatusText;
     g.DrawString(fullTitleStr.c_str(), -1, &fTitle,
                  RectF(34.0f, 0.0f, 500.0f, (float)TITLEBAR_HEIGHT),
                  &fmtL, &textDark);
@@ -888,10 +890,10 @@ void DrawSubHeader(Graphics& g, int w) {
     SolidBrush whiteAlpha(Color(200, 255, 255, 255));
 
     float textX = 16.0f + LOGO_SIZE + 10.0f;
-    g.DrawString(L"RasFocus Pro Max", -1, &fAppName, RectF(textX, subY, 150.0f, subH), &fmtTL, &white);
+    g.DrawString(L"RasFocus+", -1, &fAppName, RectF(textX, subY, 150.0f, subH), &fmtTL, &white);
 
     wstring wVer(CURRENT_VERSION.begin(), CURRENT_VERSION.end());
-    g.DrawString(wVer.c_str(), -1, &fVersion, RectF(textX + 135.0f, subY + 2.0f, 60.0f, subH), &fmtTL, &whiteAlpha);
+    g.DrawString(wVer.c_str(), -1, &fVersion, RectF(textX + 100.0f, subY + 2.0f, 60.0f, subH), &fmtTL, &whiteAlpha);
 
     float rightPad = 20.0f;
     float btnH     = 28.0f;
@@ -1110,7 +1112,11 @@ void OnPaint(HWND hWnd, HDC hdc) {
     SelectObject(mdc, mbmp);
 
     Graphics g(mdc);
-    g.SetSmoothingMode(SmoothingModeHighQuality);
+    
+    // 🔥 IMAGE QUALITY FIX: লোগো বা ছবিগুলো একদম ভেক্টরের মতো ক্রিস্প দেখাবে
+    g.SetSmoothingMode(SmoothingModeAntiAlias);
+    g.SetInterpolationMode(InterpolationModeHighQualityBicubic);
+    g.SetPixelOffsetMode(PixelOffsetModeHighQuality);
     g.SetTextRenderingHint(TextRenderingHintClearTypeGridFit);
 
     g.ScaleTransform(g_scaleFactor, g_scaleFactor);
@@ -1374,9 +1380,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
                     showFeedbackBox = false;
                     ZeroMemory(feedbackEmail,   sizeof(feedbackEmail));
                     ZeroMemory(feedbackMessage, sizeof(feedbackMessage));
-                    MessageBoxA(hWnd, "Feedback submitted! Thank you.", "RasFocus Pro Max", MB_OK | MB_ICONINFORMATION);
+                    MessageBoxA(hWnd, "Feedback submitted! Thank you.", "RasFocus+", MB_OK | MB_ICONINFORMATION);
                 } else {
-                    MessageBoxA(hWnd, "Please fill in both email and message.", "RasFocus Pro Max", MB_OK | MB_ICONWARNING);
+                    MessageBoxA(hWnd, "Please fill in both email and message.", "RasFocus+", MB_OK | MB_ICONWARNING);
                 }
                 InvalidateRect(hWnd, NULL, FALSE); break;
             }
@@ -1552,10 +1558,10 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
         for (int i = 1; i < argc; ++i) {
             wstring arg = argv[i], argLower = arg;
             for (auto& k : argLower) k = towlower(k);
-            if (argLower == L"-minibrowser") { g_isPureViewerMode = true; viewerUrl = L"https://www.google.com"; viewerTitle = L"RasFocus Mini Browser"; break; }
-            else if (argLower.length() > 4 && argLower.substr(argLower.length()-4) == L".pdf") { g_isPureViewerMode = true; viewerUrl = arg; viewerTitle = L"RasFocus PDF Viewer"; break; }
-            else if (argLower.length() > 4 && (argLower.substr(argLower.length()-4) == L".jpg" || argLower.substr(argLower.length()-4) == L".png" || argLower.substr(argLower.length()-5) == L".jpeg")) { g_isPureViewerMode = true; viewerUrl = arg; viewerTitle = L"RasFocus Photo Viewer"; break; }
-            else if (argLower.find(L"http://") == 0 || argLower.find(L"https://") == 0) { g_isPureViewerMode = true; viewerUrl = arg; viewerTitle = L"RasFocus Web Viewer"; break; }
+            if (argLower == L"-minibrowser") { g_isPureViewerMode = true; viewerUrl = L"https://www.google.com"; viewerTitle = L"RasFocus+ Mini Browser"; break; }
+            else if (argLower.length() > 4 && argLower.substr(argLower.length()-4) == L".pdf") { g_isPureViewerMode = true; viewerUrl = arg; viewerTitle = L"RasFocus+ PDF Viewer"; break; }
+            else if (argLower.length() > 4 && (argLower.substr(argLower.length()-4) == L".jpg" || argLower.substr(argLower.length()-4) == L".png" || argLower.substr(argLower.length()-5) == L".jpeg")) { g_isPureViewerMode = true; viewerUrl = arg; viewerTitle = L"RasFocus+ Photo Viewer"; break; }
+            else if (argLower.find(L"http://") == 0 || argLower.find(L"https://") == 0) { g_isPureViewerMode = true; viewerUrl = arg; viewerTitle = L"RasFocus+ Web Viewer"; break; }
         }
     }
     if (argv) LocalFree(argv);
@@ -1564,7 +1570,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
     if (!g_isPureViewerMode) {
         hMutex = CreateMutexA(NULL, FALSE, "RasFocusPro_SingleInstance_Mutex");
         if (GetLastError() == ERROR_ALREADY_EXISTS) {
-            HWND hExistingWnd = FindWindowA("RasFocusCore", "RasFocus Pro Max");
+            HWND hExistingWnd = FindWindowA("RasFocusCore", "RasFocus+");
             if (hExistingWnd) { ShowWindow(hExistingWnd, SW_RESTORE); ShowWindow(hExistingWnd, SW_SHOW); SetForegroundWindow(hExistingWnd); }
             CloseHandle(hMutex);
             return 0;
@@ -1603,7 +1609,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
     SystemParametersInfo(SPI_GETWORKAREA, 0, &workArea, 0);
 
     HWND hWnd = CreateWindowEx(
-        WS_EX_APPWINDOW, "RasFocusCore", "RasFocus Pro Max",
+        WS_EX_APPWINDOW, "RasFocusCore", "RasFocus+",
         WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
         CW_USEDEFAULT, CW_USEDEFAULT, sw, sh, NULL, NULL, hInst, NULL
     );
@@ -1631,7 +1637,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
     } else if (cmdLine.find("-silent") != string::npos) {
         ShowWindow(hWnd, SW_HIDE);
         int response = MessageBoxA(NULL, "Start your day with high productivity",
-            "RasFocus Pro Max", MB_YESNO | MB_ICONINFORMATION | MB_TOPMOST | MB_SETFOREGROUND);
+            "RasFocus+", MB_YESNO | MB_ICONINFORMATION | MB_TOPMOST | MB_SETFOREGROUND);
         if (response == IDYES) { ShowWindow(hWnd, SW_SHOWMAXIMIZED); SetForegroundWindow(hWnd); }
     } else {
         ShowWindow(hWnd, SW_SHOWMAXIMIZED);
