@@ -34,7 +34,7 @@ static wchar_t s_email   [512]  = {};
 static wchar_t s_password[512]  = {};
 static bool    s_saveLogin      = false;
 static bool    s_showPassword   = false;
-static int     s_focusField     = 0;       // 1=email 2=password 0=none
+static int     s_focusField     = 0;       
 static bool    s_isLoading      = false;
 static wstring s_statusMsg      = L"";
 static bool    s_isError        = false;
@@ -56,7 +56,7 @@ static wchar_t s_su_name    [512]   = {};
 static wchar_t s_su_email   [512]   = {};
 static wchar_t s_su_pass    [512]   = {};
 static wchar_t s_su_confirm [512]   = {};
-static int     s_su_focus           = 0;   // 1=name 2=email 3=pass 4=confirm
+static int     s_su_focus           = 0;   
 static bool    s_su_showPass        = false;
 static bool    s_su_showConfirm     = false;
 static bool    s_su_isLoading       = false;
@@ -76,7 +76,6 @@ static string GetCredsPath() {
     return "rasfocus_creds.dat";
 }
 
-// ── Simple XOR obfuscation for saved creds ──
 static string XorStr(const string& s) {
     const char key[] = "RasFocus2024!@#$";
     string out = s;
@@ -127,14 +126,22 @@ struct LoginResult {
     string  errorMsg;
 };
 
+// 🔥 (FIXED) এটি স্পেস থাকলেও JSON ডেটা পড়তে পারবে
 static string JsonExtract(const string& json, const string& key) {
-    string search = "\"" + key + "\":\"";
+    string search = "\"" + key + "\"";
     size_t pos = json.find(search);
     if (pos == string::npos) return "";
-    pos += search.size();
-    size_t end = json.find("\"", pos);
-    if (end == string::npos) return "";
-    return json.substr(pos, end - pos);
+    
+    size_t colon = json.find(":", pos);
+    if (colon == string::npos) return "";
+    
+    size_t startQuote = json.find("\"", colon);
+    if (startQuote == string::npos) return "";
+    
+    size_t endQuote = json.find("\"", startQuote + 1);
+    if (endQuote == string::npos) return "";
+    
+    return json.substr(startQuote + 1, endQuote - startQuote - 1);
 }
 
 static LoginResult FirebaseLogin(const string& email, const string& password) {
@@ -166,21 +173,28 @@ static LoginResult FirebaseLogin(const string& email, const string& password) {
     InternetCloseHandle(hReq); InternetCloseHandle(hConn); InternetCloseHandle(hInet);
 
     if (response.empty()) { res.errorMsg = "Empty server response."; return res; }
-    if (response.find("\"error\"") != string::npos) {
+    
+    if (response.find("\"error\"") != string::npos || response.find("\"errors\"") != string::npos) {
         string msg = JsonExtract(response, "message");
         if (msg == "EMAIL_NOT_FOUND" || msg == "INVALID_EMAIL") res.errorMsg = "Email not found. Please sign up first.";
-        else if (msg == "INVALID_PASSWORD" || msg == "INVALID_LOGIN_CREDENTIALS") res.errorMsg = "Wrong password. Please try again.";
+        else if (msg == "INVALID_PASSWORD" || msg == "INVALID_LOGIN_CREDENTIALS" || msg.find("INVALID_LOGIN_CREDENTIALS") != string::npos) res.errorMsg = "Wrong password or email. Please try again.";
         else if (msg == "USER_DISABLED") res.errorMsg = "This account has been disabled.";
-        else if (msg == "TOO_MANY_ATTEMPTS_TRY_LATER") res.errorMsg = "Too many attempts. Try later.";
+        else if (msg == "TOO_MANY_ATTEMPTS_TRY_LATER" || msg.find("TOO_MANY_ATTEMPTS") != string::npos) res.errorMsg = "Too many attempts. Try later.";
         else res.errorMsg = "Login failed: " + msg;
-        return res;
+    } else {
+        res.idToken = JsonExtract(response, "idToken");
+        res.localId = JsonExtract(response, "localId");
+        res.email   = JsonExtract(response, "email");
+        res.success = !res.localId.empty();
+        if (!res.success) res.errorMsg = "Login failed. Please try again.";
     }
 
-    res.idToken = JsonExtract(response, "idToken");
-    res.localId = JsonExtract(response, "localId");
-    res.email   = JsonExtract(response, "email");
-    res.success = !res.idToken.empty();
-    if (!res.success) res.errorMsg = "Login failed. Please try again.";
+    // 🔥 DEBUGGER: যদি ফেইল হয়, তাহলে স্ক্রিনে আসল মেসেজটি পপ-আপ করে দেখাবে
+    if (!res.success) {
+        string dbg = "RAW SERVER RESPONSE:\n\n" + response;
+        MessageBoxA(NULL, dbg.c_str(), "Firebase Login Debugger", MB_OK | MB_ICONWARNING);
+    }
+
     return res;
 }
 
@@ -214,7 +228,8 @@ static LoginResult FirebaseSignUp(const string& email, const string& password) {
     InternetCloseHandle(hReq); InternetCloseHandle(hConn); InternetCloseHandle(hInet);
 
     if (response.empty()) { res.errorMsg = "Empty server response."; return res; }
-    if (response.find("\"error\"") != string::npos) {
+    
+    if (response.find("\"error\"") != string::npos || response.find("\"errors\"") != string::npos) {
         string msg = JsonExtract(response, "message");
         if (msg == "EMAIL_EXISTS")                    res.errorMsg = "This email is already registered.";
         else if (msg == "INVALID_EMAIL")              res.errorMsg = "Invalid email address.";
@@ -222,25 +237,30 @@ static LoginResult FirebaseSignUp(const string& email, const string& password) {
                  msg.find("WEAK_PASSWORD") != string::npos) res.errorMsg = "Password must be at least 6 characters.";
         else if (msg == "TOO_MANY_ATTEMPTS_TRY_LATER") res.errorMsg = "Too many attempts. Try later.";
         else                                           res.errorMsg = "Sign up failed: " + msg;
-        return res;
+    } else {
+        res.idToken = JsonExtract(response, "idToken");
+        res.localId = JsonExtract(response, "localId");
+        res.email   = JsonExtract(response, "email");
+        res.success = !res.localId.empty();
+        if (!res.success) res.errorMsg = "Sign up failed. Please try again.";
     }
-    res.idToken = JsonExtract(response, "idToken");
-    res.localId = JsonExtract(response, "localId");
-    res.email   = JsonExtract(response, "email");
-    res.success = !res.idToken.empty();
-    if (!res.success) res.errorMsg = "Sign up failed. Please try again.";
+
+    // 🔥 DEBUGGER: যদি ফেইল হয়, তাহলে স্ক্রিনে আসল মেসেজটি পপ-আপ করে দেখাবে
+    if (!res.success) {
+        string dbg = "RAW SERVER RESPONSE:\n\n" + response;
+        MessageBoxA(NULL, dbg.c_str(), "Firebase SignUp Debugger", MB_OK | MB_ICONWARNING);
+    }
+
     return res;
 }
 
 struct SignUpThreadData { HWND hWnd; string email; string password; string name; };
 
-// Write basic user doc to Firestore after signup
 static void CreateFirestoreUserDoc(const string& uid, const string& idToken,
                                    const string& email, const string& name) {
     string host = "firestore.googleapis.com";
     string path = "/v1/projects/rasfocus-c746d/databases/(default)/documents/users/" + uid;
 
-    // Build Firestore REST document body
     string body =
         "{"
         "\"fields\":{"
@@ -255,7 +275,6 @@ static void CreateFirestoreUserDoc(const string& uid, const string& idToken,
     if (!hInet) return;
     HINTERNET hConn = InternetConnectA(hInet, host.c_str(), INTERNET_DEFAULT_HTTPS_PORT, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
     if (!hConn) { InternetCloseHandle(hInet); return; }
-    // PATCH creates or overwrites the document at the exact UID path
     HINTERNET hReq = HttpOpenRequestA(hConn, "PATCH", path.c_str(), NULL, NULL, NULL,
         INTERNET_FLAG_SECURE | INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE, 0);
     if (!hReq) { InternetCloseHandle(hConn); InternetCloseHandle(hInet); return; }
@@ -271,8 +290,8 @@ void __cdecl SignUpThread(void* param) {
     LoginResult res = FirebaseSignUp(data->email, data->password);
     s_su_isLoading = false;
     if (res.success) {
-        // Save user document to Firestore
-        CreateFirestoreUserDoc(res.localId, res.idToken, res.email, data->name);
+        if (!res.idToken.empty() && !res.localId.empty())
+            CreateFirestoreUserDoc(res.localId, res.idToken, res.email, data->name);
 
         s_su_success   = true;
         s_su_statusMsg = L"";
@@ -288,7 +307,6 @@ void __cdecl SignUpThread(void* param) {
     _endthread();
 }
 
-// ── FIRESTORE SUBSCRIPTION CHECK ──
 static bool CheckPremiumFromFirebase(const string& uid, const string& idToken) {
     string host = "firestore.googleapis.com";
     string path = "/v1/projects/rasfocus-c746d/databases/(default)/documents/users/" + uid;
@@ -351,9 +369,6 @@ void __cdecl LoginThread(void* param) {
     _endthread();
 }
 
-// ============================================================
-//  CURSOR BLINK THREAD (Fixes typing cursor issue natively)
-// ============================================================
 void __cdecl CursorBlinkThread(void* p) {
     while (true) {
         if (s_focusField != 0) {
@@ -366,13 +381,10 @@ void __cdecl CursorBlinkThread(void* p) {
     _endthread();
 }
 
-// ============================================================
-//  INIT
-// ============================================================
 void InitAccountsModule(firebase::App* app) {
     s_firebaseApp = app;
     if (LoadSavedCredentials()) s_statusMsg = L"";
-    _beginthread(CursorBlinkThread, 0, NULL); // Start auto cursor blinker
+    _beginthread(CursorBlinkThread, 0, NULL);
 }
 
 // ============================================================
@@ -404,52 +416,40 @@ static CardLayout GetLayout(float cx, float cy, float cw, float ch) {
     L.cardH = 440.0f;
     L.cardX = cx + (cw - L.cardW) / 2.0f;
     L.cardY = cy + (ch - L.cardH) / 2.0f;
-
     L.logoSz = 56.0f;
     L.logoX  = L.cardX + (L.cardW - L.logoSz) / 2.0f;
     L.logoY  = L.cardY + 25.0f;
-
     L.fieldW = L.cardW - 70.0f;
     L.fieldX = L.cardX + 35.0f;
     L.fldH   = 36.0f;
-
     L.emailY = L.logoY + L.logoSz + 45.0f;
     L.passY  = L.emailY + L.fldH + 15.0f;
-
     L.eyeW   = 32.0f;
     L.eyeX   = L.fieldX + L.fieldW - L.eyeW;
     L.eyeY   = L.passY;
-
     L.checkY = L.passY + L.fldH + 12.0f;
-
     float btnGap = 10.0f;
     L.loginBtnW  = (L.fieldW - btnGap) / 2.0f;
     L.loginBtnH  = 36.0f;
     L.loginBtnX  = L.fieldX;
     L.loginBtnY  = L.checkY + 30.0f;
-
     L.cancelBtnW = L.loginBtnW;
     L.cancelBtnH = L.loginBtnH;
     L.cancelBtnX = L.loginBtnX + L.loginBtnW + btnGap;
     L.cancelBtnY = L.loginBtnY;
-
     L.linksY  = L.loginBtnY + L.loginBtnH + 20.0f;
-
     L.signupX = L.cardX + 40.0f;
     L.signupY = L.linksY;
     L.signupW = 120.0f;
     L.signupH = 20.0f;
-
     L.resetX  = L.cardX + L.cardW - 120.0f;
     L.resetY  = L.linksY;
     L.resetW  = 90.0f;
     L.resetH  = 20.0f;
-
     L.privacyW = 80.0f;
     L.privacyH = 18.0f;
     L.privacyX = L.cardX + (L.cardW - L.privacyW) / 2.0f;
     L.privacyY = L.cardY + L.cardH - 30.0f;
-
     return L;
 }
 
@@ -474,12 +474,10 @@ static void DrawSignUpForm(Graphics& g, float cx, float cy, float cw, float ch) 
     SolidBrush bgBrush(Color(255, 240, 248, 255));
     g.FillRectangle(&bgBrush, cx, cy, cw, ch);
 
-    // Card (taller for more fields)
     float cardW = 400.0f, cardH = 530.0f;
     float cardX = cx + (cw - cardW) / 2.0f;
     float cardY = cy + (ch - cardH) / 2.0f;
 
-    // Shadow
     for (int i = 3; i >= 0; --i) {
         SolidBrush shadowBrush(Color(10 + i * 5, 0, 80, 140));
         GraphicsPath shadowPath;
@@ -493,7 +491,6 @@ static void DrawSignUpForm(Graphics& g, float cx, float cy, float cw, float ch) 
         g.FillPath(&shadowBrush, &shadowPath);
     }
 
-    // Card background
     GraphicsPath cardPath;
     float rc = 12.0f, dc = rc * 2.0f;
     cardPath.AddArc(cardX, cardY, dc, dc, 180.0f, 90.0f);
@@ -529,10 +526,8 @@ static void DrawSignUpForm(Graphics& g, float cx, float cy, float cw, float ch) 
 
     Font fInput(&ff, 12, FontStyleRegular, UnitPixel);
     Font fFieldIcon(&ffIcons, 13, FontStyleRegular, UnitPixel);
-
     bool showCursor = ((GetTickCount() - s_lastBlinkTime) % 1000) < 500;
 
-    // ── Success screen ──
     if (s_su_success) {
         Font fBig(&ff, 16, FontStyleBold, UnitPixel);
         Font fSub(&ff, 12, FontStyleRegular, UnitPixel);
@@ -542,7 +537,6 @@ static void DrawSignUpForm(Graphics& g, float cx, float cy, float cw, float ch) 
         g.DrawString(L"You can now log in with your email.", -1, &fSub,
             RectF(cardX, cardY + cardH / 2.0f - 10.0f, cardW, 24.0f), &fmtC, &gray);
 
-        // "Log In Now" button
         float btnW = 160.0f, btnH = 38.0f;
         float btnX = cardX + (cardW - btnW) / 2.0f;
         float btnY = cardY + cardH / 2.0f + 30.0f;
@@ -561,7 +555,6 @@ static void DrawSignUpForm(Graphics& g, float cx, float cy, float cw, float ch) 
         return;
     }
 
-    // Helper lambda to draw a field
     auto DrawField = [&](float fy, int focusId, const wchar_t* placeholder, wchar_t* buf,
                          bool isPass, bool showPass, bool showEye, bool hoverEye) {
         bool focused = (s_su_focus == focusId);
@@ -601,41 +594,29 @@ static void DrawSignUpForm(Graphics& g, float cx, float cy, float cw, float ch) 
         }
     };
 
-    // Name icon
-    g.DrawString(L"\xE77B", -1, &fFieldIcon, RectF(fieldX + 8.0f, nameY, 24.0f, fldH), &fmtC,
-        wcslen(s_su_name) ? &teal : &gray);
+    g.DrawString(L"\xE77B", -1, &fFieldIcon, RectF(fieldX + 8.0f, nameY, 24.0f, fldH), &fmtC, wcslen(s_su_name) ? &teal : &gray);
     DrawField(nameY, 1, L"Full Name", s_su_name, false, false, false, false);
 
-    // Email icon
-    g.DrawString(L"\xE715", -1, &fFieldIcon, RectF(fieldX + 8.0f, emailY, 24.0f, fldH), &fmtC,
-        wcslen(s_su_email) ? &teal : &gray);
+    g.DrawString(L"\xE715", -1, &fFieldIcon, RectF(fieldX + 8.0f, emailY, 24.0f, fldH), &fmtC, wcslen(s_su_email) ? &teal : &gray);
     DrawField(emailY, 2, L"Email address", s_su_email, false, false, false, false);
 
-    // Password icon
-    g.DrawString(L"\xE72E", -1, &fFieldIcon, RectF(fieldX + 8.0f, passY, 24.0f, fldH), &fmtC,
-        wcslen(s_su_pass) ? &teal : &gray);
+    g.DrawString(L"\xE72E", -1, &fFieldIcon, RectF(fieldX + 8.0f, passY, 24.0f, fldH), &fmtC, wcslen(s_su_pass) ? &teal : &gray);
     DrawField(passY, 3, L"Create Password", s_su_pass, true, s_su_showPass, true, s_hoverSuEye1);
 
-    // Confirm icon
-    g.DrawString(L"\xE72E", -1, &fFieldIcon, RectF(fieldX + 8.0f, confirmY, 24.0f, fldH), &fmtC,
-        wcslen(s_su_confirm) ? &teal : &gray);
+    g.DrawString(L"\xE72E", -1, &fFieldIcon, RectF(fieldX + 8.0f, confirmY, 24.0f, fldH), &fmtC, wcslen(s_su_confirm) ? &teal : &gray);
     DrawField(confirmY, 4, L"Confirm Password", s_su_confirm, true, s_su_showConfirm, true, s_hoverSuEye2);
 
-    // Status message
     float statusY = confirmY + fldH + 8.0f;
     if (!s_su_statusMsg.empty()) {
         SolidBrush statusBrush(s_su_isError ? Color(255, 220, 60, 60) : Color(255, 0, 160, 90));
         Font fStatus(&ff, 11, FontStyleBold, UnitPixel);
-        g.DrawString(s_su_statusMsg.c_str(), -1, &fStatus,
-            RectF(cardX, statusY, cardW, 18.0f), &fmtC, &statusBrush);
+        g.DrawString(s_su_statusMsg.c_str(), -1, &fStatus, RectF(cardX, statusY, cardW, 18.0f), &fmtC, &statusBrush);
     } else if (s_su_isLoading) {
         SolidBrush statusBrush(Color(255, 0, 150, 180));
         Font fStatus(&ff, 11, FontStyleBold, UnitPixel);
-        g.DrawString(L"Creating account...", -1, &fStatus,
-            RectF(cardX, statusY, cardW, 18.0f), &fmtC, &statusBrush);
+        g.DrawString(L"Creating account...", -1, &fStatus, RectF(cardX, statusY, cardW, 18.0f), &fmtC, &statusBrush);
     }
 
-    // Buttons
     float btnY    = statusY + 26.0f;
     float btnGap  = 10.0f;
     float btnW    = (fieldW - btnGap) / 2.0f;
@@ -643,7 +624,6 @@ static void DrawSignUpForm(Graphics& g, float cx, float cy, float cw, float ch) 
     float suBtnX  = fieldX;
     float backBtnX = fieldX + btnW + btnGap;
 
-    // Create Account button
     GraphicsPath bp1;
     float br2 = 6.0f, bd2 = br2 * 2.0f;
     bp1.AddArc(suBtnX, btnY, bd2, bd2, 180.0f, 90.0f);
@@ -658,7 +638,6 @@ static void DrawSignUpForm(Graphics& g, float cx, float cy, float cw, float ch) 
     Font fBtn(&ff, 12, FontStyleBold, UnitPixel);
     g.DrawString(L"Create Account", -1, &fBtn, RectF(suBtnX, btnY, btnW, btnH), &fmtC, &white);
 
-    // Back button
     GraphicsPath bp2;
     bp2.AddArc(backBtnX, btnY, bd2, bd2, 180.0f, 90.0f);
     bp2.AddArc(backBtnX + btnW - bd2, btnY, bd2, bd2, 270.0f, 90.0f);
@@ -947,11 +926,10 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
 }
 
 // ============================================================
-//  MOUSE MOVE (Added custom mouse cursors for Hover)
+//  MOUSE MOVE
 // ============================================================
 void ProcessAccountsMouseMove(float x, float y) {
     if (s_showSignup) {
-        // Calculate signup card layout
         float scaledW = (float)windowWidth  / g_scaleFactor;
         float scaledH = (float)windowHeight / g_scaleFactor;
         float cx = (float)SIDEBAR_WIDTH;
@@ -1012,11 +990,11 @@ void ProcessAccountsMouseMove(float x, float y) {
     bool hoverPassText  = HitRect(x, y, L.fieldX, L.passY, L.fieldW - L.eyeW, L.fldH);
 
     if (hoverEmailText || hoverPassText) {
-        SetCursor(LoadCursor(NULL, IDC_IBEAM)); // Text typing cursor
+        SetCursor(LoadCursor(NULL, IDC_IBEAM)); 
     } else if (s_hoverLogin || s_hoverCancel || s_hoverSignup || s_hoverReset || s_hoverPrivacy || s_hoverSaveCheck || s_hoverEye) {
-        SetCursor(LoadCursor(NULL, IDC_HAND)); // Hand link cursor
+        SetCursor(LoadCursor(NULL, IDC_HAND)); 
     } else {
-        SetCursor(LoadCursor(NULL, IDC_ARROW)); // Normal mouse cursor
+        SetCursor(LoadCursor(NULL, IDC_ARROW)); 
     }
 }
 
@@ -1042,7 +1020,6 @@ void ProcessAccountsMouseClick(float x, float y, HWND hWnd) {
         float suBtnX = fieldX, backBtnX = fieldX + btnW + btnGap;
         float eyeW = 32.0f;
 
-        // Success screen: "Log In Now" button
         if (s_su_success) {
             float lbW = 160.0f, lbH = 38.0f;
             float lbX = cardX + (cardW - lbW) / 2.0f;
@@ -1061,17 +1038,14 @@ void ProcessAccountsMouseClick(float x, float y, HWND hWnd) {
             return;
         }
 
-        // Field focus
         if (HitRect(x, y, fieldX, nameY,    fieldW - eyeW, fldH)) { s_su_focus = 1; s_lastBlinkTime = GetTickCount(); InvalidateRect(hWnd, NULL, FALSE); return; }
         if (HitRect(x, y, fieldX, emailY,   fieldW - eyeW, fldH)) { s_su_focus = 2; s_lastBlinkTime = GetTickCount(); InvalidateRect(hWnd, NULL, FALSE); return; }
         if (HitRect(x, y, fieldX, passY,    fieldW - eyeW, fldH)) { s_su_focus = 3; s_lastBlinkTime = GetTickCount(); InvalidateRect(hWnd, NULL, FALSE); return; }
         if (HitRect(x, y, fieldX, confirmY, fieldW - eyeW, fldH)) { s_su_focus = 4; s_lastBlinkTime = GetTickCount(); InvalidateRect(hWnd, NULL, FALSE); return; }
 
-        // Eye toggles
         if (HitRect(x, y, fieldX + fieldW - eyeW, passY,    eyeW, fldH)) { s_su_showPass    = !s_su_showPass;    InvalidateRect(hWnd, NULL, FALSE); return; }
         if (HitRect(x, y, fieldX + fieldW - eyeW, confirmY, eyeW, fldH)) { s_su_showConfirm = !s_su_showConfirm; InvalidateRect(hWnd, NULL, FALSE); return; }
 
-        // Back button
         if (HitRect(x, y, backBtnX, btnY, btnW, btnH)) {
             s_showSignup = false;
             s_su_statusMsg = L"";
@@ -1080,7 +1054,6 @@ void ProcessAccountsMouseClick(float x, float y, HWND hWnd) {
             return;
         }
 
-        // Create Account button
         if (HitRect(x, y, suBtnX, btnY, btnW, btnH)) {
             wstring nameW(s_su_name), emailW(s_su_email), passW(s_su_pass), confirmW(s_su_confirm);            if (nameW.empty() || emailW.empty() || passW.empty() || confirmW.empty()) {
                 s_su_statusMsg = L"Please fill in all fields."; s_su_isError = true;
@@ -1199,7 +1172,6 @@ void ProcessAccountsMouseClick(float x, float y, HWND hWnd) {
 void ProcessAccountsChar(wchar_t c) {
     if (!g_loggedInEmail.empty()) return;
 
-    // Route to signup form if active
     if (s_showSignup && !s_su_success) {
         wchar_t* buf = nullptr;
         if      (s_su_focus == 1) buf = s_su_name;
