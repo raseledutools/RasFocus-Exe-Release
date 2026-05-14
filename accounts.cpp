@@ -27,6 +27,7 @@ bool    g_isPremiumUser    = false;
 wstring g_loggedInEmail    = L"";
 wstring g_loggedInName     = L"";
 string  g_loggedInUserUid  = "";
+bool    g_openCheckoutAfterLogin = false; // signup → auto-login → checkout
 
 static firebase::App* s_firebaseApp = nullptr;
 
@@ -55,6 +56,8 @@ static bool s_hoverUpgrade    = false;   // ← upgrade button
 
 // ── Sign Up State ──
 static bool    s_showSignup         = false;
+bool           g_showSignupFromUpgrade = false; // upgrade.cpp থেকে সেট হয়
+static bool    s_pendingCheckoutAfterSignup = false; // signup এর পর auto checkout
 static wchar_t s_su_name    [512]   = {};
 static wchar_t s_su_email   [512]   = {};
 static wchar_t s_su_pass    [512]   = {};
@@ -394,6 +397,14 @@ void __cdecl LoginThread(void* param) {
         s_statusMsg = isPremium ? L"Welcome back! Premium account active." : L"Logged in successfully!";
         s_isError   = false;
         ZeroMemory(s_password, sizeof(s_password));
+
+        // signup এর পরে auto-login হলে checkout খুলবে
+        if (g_openCheckoutAfterLogin && !g_loggedInUserUid.empty()) {
+            g_openCheckoutAfterLogin = false;
+            string urlStr = "https://raseledutools.github.io/checkout.html?uid=" + g_loggedInUserUid;
+            wstring wUrl(urlStr.begin(), urlStr.end());
+            ShellExecuteW(NULL, L"open", wUrl.c_str(), NULL, NULL, SW_SHOWNORMAL);
+        }
     } else {
         s_isLoading = false;
         wchar_t errW[512] = {};
@@ -687,6 +698,24 @@ static void DrawSignUpForm(Graphics& g, float cx, float cy, float cw, float ch) 
     Pen backPen(Color(255, 0, 150, 180), 1.5f);
     g.DrawPath(&backPen, &bp2);
     g.DrawString(L"Back to Login", -1, &fBtn, RectF(backBtnX, btnY, btnW, btnH), &fmtC, &teal);
+
+    // ── "Already have an account? Log In" লিংক ──
+    wstring loginPart1 = L"Already have an account? ";
+    wstring loginPart2 = L"Log In";
+    Font fSmall(&ff, 11, FontStyleRegular, UnitPixel);
+    Font fSmallB(&ff, 11, FontStyleBold, UnitPixel);
+    SolidBrush grayLink(Color(255, 130, 140, 150));
+    SolidBrush tealLink(Color(255, 0, 150, 160));
+    StringFormat sfNear; sfNear.SetAlignment(StringAlignmentNear); sfNear.SetLineAlignment(StringAlignmentCenter);
+    RectF m1, m2;
+    g.MeasureString(loginPart1.c_str(), -1, &fSmall,  PointF(0,0), &sfNear, &m1);
+    g.MeasureString(loginPart2.c_str(), -1, &fSmallB, PointF(0,0), &sfNear, &m2);
+    float linkTotalW = m1.Width + m2.Width;
+    float linkStartX = cardX + (cardW - linkTotalW) / 2.0f;
+    float linkY      = btnY + btnH + 12.0f;
+    float linkH      = 18.0f;
+    g.DrawString(loginPart1.c_str(), -1, &fSmall,  RectF(linkStartX,             linkY, m1.Width, linkH), &sfNear, &grayLink);
+    g.DrawString(loginPart2.c_str(), -1, &fSmallB, RectF(linkStartX + m1.Width,  linkY, m2.Width, linkH), &sfNear, &tealLink);
 }
 
 // ============================================================
@@ -706,6 +735,15 @@ extern wstring g_packageStatusWide; // declared below via extern
 extern string  g_currentPackage;    // from main.cpp
 
 void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
+    // upgrade popup থেকে এলে signup form সরাসরি খুলে দাও
+    if (g_showSignupFromUpgrade) {
+        g_showSignupFromUpgrade = false;
+        s_showSignup            = true;
+        s_pendingCheckoutAfterSignup = true;
+        s_su_focus              = 1;
+        s_su_statusMsg          = L"";
+        s_su_success            = false;
+    }
     if (s_showSignup) { DrawSignUpForm(g, cx, cy, cw, ch); return; }
 
     SolidBrush bgBrush(Color(255, 240, 248, 255));
@@ -1169,17 +1207,43 @@ void ProcessAccountsMouseClick(float x, float y, HWND hWnd) {
             float lbW = 160.0f, lbH = 38.0f;
             float lbX = cardX + (cardW - lbW) / 2.0f;
             float lbY = cardY + cardH / 2.0f + 30.0f;
-            if (HitRect(x, y, lbX, lbY, lbW, lbH)) {
-                s_showSignup = false;
-                s_su_success = false;
-                ZeroMemory(s_su_name, sizeof(s_su_name));
-                ZeroMemory(s_su_email, sizeof(s_su_email));
-                ZeroMemory(s_su_pass, sizeof(s_su_pass));
-                ZeroMemory(s_su_confirm, sizeof(s_su_confirm));
-                s_su_statusMsg = L"";
-                s_su_focus = 0;
-                InvalidateRect(hWnd, NULL, FALSE);
+        if (HitRect(x, y, lbX, lbY, lbW, lbH)) {
+            // signup এর পরে auto-login করো
+            char emailA[512] = {}, passA[512] = {};
+            WideCharToMultiByte(CP_UTF8, 0, s_su_email, -1, emailA, 511, NULL, NULL);
+            WideCharToMultiByte(CP_UTF8, 0, s_su_pass,  -1, passA,  511, NULL, NULL);
+
+            bool doCheckout = s_pendingCheckoutAfterSignup;
+            s_pendingCheckoutAfterSignup = false;
+
+            s_showSignup = false;
+            s_su_success = false;
+            ZeroMemory(s_su_name,    sizeof(s_su_name));
+            ZeroMemory(s_su_email,   sizeof(s_su_email));
+            ZeroMemory(s_su_pass,    sizeof(s_su_pass));
+            ZeroMemory(s_su_confirm, sizeof(s_su_confirm));
+            s_su_statusMsg = L"";
+            s_su_focus     = 0;
+
+            if (strlen(emailA) > 0 && strlen(passA) > 0) {
+                s_isLoading = true;
+                LoginThreadData* ld = new LoginThreadData();
+                ld->hWnd      = hWnd;
+                ld->email     = emailA;
+                ld->password  = passA;
+                ld->saveLogin = false;
+                // checkout করতে হলে thread শেষে খুলবে — flag দিয়ে রাখি
+                if (doCheckout) {
+                    // checkout URL পরে g_loggedInUserUid দিয়ে খুলবে
+                    // LoginThread শেষ হলে WM_APP+1 পাঠাবো
+                    extern bool g_openCheckoutAfterLogin;
+                    g_openCheckoutAfterLogin = true;
+                }
+                _beginthread(LoginThread, 0, ld);
             }
+
+            InvalidateRect(hWnd, NULL, FALSE);
+        }
             return;
         }
 
@@ -1193,10 +1257,27 @@ void ProcessAccountsMouseClick(float x, float y, HWND hWnd) {
 
         if (HitRect(x, y, backBtnX, btnY, btnW, btnH)) {
             s_showSignup = false;
+            s_pendingCheckoutAfterSignup = false;
             s_su_statusMsg = L"";
             s_su_focus = 0;
             InvalidateRect(hWnd, NULL, FALSE);
             return;
+        }
+
+        // "Already have an account? Log In" লিংক ক্লিক
+        {
+            float linkY = btnY + btnH + 12.0f;
+            float linkH = 18.0f;
+            float linkX = cardX + 30.0f; // approximate — পুরো নিচের row ই হিটযোগ্য
+            float linkW = cardW - 60.0f;
+            if (HitRect(x, y, linkX, linkY, linkW, linkH)) {
+                s_showSignup = false;
+                s_pendingCheckoutAfterSignup = false;
+                s_su_statusMsg = L"";
+                s_su_focus = 0;
+                InvalidateRect(hWnd, NULL, FALSE);
+                return;
+            }
         }
 
         if (HitRect(x, y, suBtnX, btnY, btnW, btnH)) {

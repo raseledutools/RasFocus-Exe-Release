@@ -229,19 +229,21 @@ void ProcessUpgradeMouseClick(float x, float y, HWND hWnd) {
     }
 
     if (HitRect(x, y, L.upgBtnX, L.upgBtnY, L.upgBtnW, L.upgBtnH)) {
-        // যদি ইউজার লগইন করা না থাকে, তাহলে তাকে লগইন পেজে পাঠাও
+        // যদি ইউজার লগইন করা না থাকে, তাহলে সরাসরি Sign Up পপ-আপ খুলবে
         if (g_loggedInUserUid.empty()) {
-            selectedTab = 7; // My Account Tab
+            extern bool  g_showSignupFromUpgrade; // accounts.cpp তে define করা
+            g_showSignupFromUpgrade = true;
+
+            selectedTab = 7; // My Account Tab এ যেতে হবে যাতে signup form দেখা যায়
             g_showUpgradePopup = false;
-            
+
             extern void HideAllWebViews();
             HideAllWebViews();
-        } 
-        // ইউজার লগইন করা থাকলে তার UID সহ গিটহাব পেজেস-এর চেকআউট লিংকটি ওপেন করো
+        }
+        // ইউজার লগইন করা থাকলে তার UID সহ চেকআউট লিংক ওপেন করো
         else {
             string urlStr = "https://raseledutools.github.io/checkout.html?uid=" + g_loggedInUserUid;
             wstring wUrl(urlStr.begin(), urlStr.end());
-            
             ShellExecuteW(NULL, L"open", wUrl.c_str(), NULL, NULL, SW_SHOWNORMAL);
             g_showUpgradePopup = false;
         }
