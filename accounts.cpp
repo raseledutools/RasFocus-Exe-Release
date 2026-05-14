@@ -350,8 +350,23 @@ static bool CheckPremiumFromFirebase(const string& uid, const string& idToken) {
         }
     }
 
-    return (response.find("\"current_package\"") != string::npos && 
-           (response.find("\"PREMIUM\"") != string::npos || response.find("\"STUDENT\"") != string::npos));
+    // [TASK 2 FIX] সব প্রিমিয়াম package নাম চেক করো + g_isPremiumUser সেট করো
+    bool isPremium = false;
+    if (response.find("\"current_package\"") != string::npos) {
+        // সব valid premium package নাম
+        if (response.find("\"PREMIUM\"")          != string::npos ||
+            response.find("\"1 Month Pro\"")       != string::npos ||
+            response.find("\"6 Month Saver\"")     != string::npos ||
+            response.find("\"1 Year Ultimate\"")   != string::npos ||
+            response.find("\"STUDENT\"")           != string::npos ||
+            response.find("\"PARENTAL\"")          != string::npos)
+        {
+            isPremium = true;
+        }
+    }
+    // Global switch সেট করো — এই ফাংশনে login এর সাথে সাথে ঠিক হয়ে যাবে
+    g_isPremiumUser = isPremium;
+    return isPremium;
 }
 
 struct LoginThreadData { HWND hWnd; string email; string password; bool saveLogin; };
@@ -362,7 +377,7 @@ void __cdecl LoginThread(void* param) {
 
     if (res.success) {
         bool isPremium = CheckPremiumFromFirebase(res.localId, res.idToken);
-        g_isPremiumUser = isPremium;
+        // g_isPremiumUser ইতিমধ্যে CheckPremiumFromFirebase-এর ভেতরে set হয়ে গেছে [TASK 2]
 
         wchar_t emailW[512] = {};
         MultiByteToWideChar(CP_UTF8, 0, res.email.c_str(), -1, emailW, 511);
