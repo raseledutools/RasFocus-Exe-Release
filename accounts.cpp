@@ -50,6 +50,24 @@ static bool s_hoverSaveCheck  = false;
 static bool s_hoverEye        = false;
 static bool s_hoverLogout     = false;
 
+// ── Sign Up State ──
+static bool    s_showSignup         = false;
+static wchar_t s_su_name    [512]   = {};
+static wchar_t s_su_email   [512]   = {};
+static wchar_t s_su_pass    [512]   = {};
+static wchar_t s_su_confirm [512]   = {};
+static int     s_su_focus           = 0;   // 1=name 2=email 3=pass 4=confirm
+static bool    s_su_showPass        = false;
+static bool    s_su_showConfirm     = false;
+static bool    s_su_isLoading       = false;
+static wstring s_su_statusMsg       = L"";
+static bool    s_su_isError         = false;
+static bool    s_su_success         = false;
+static bool    s_hoverSuBtn         = false;
+static bool    s_hoverSuBack        = false;
+static bool    s_hoverSuEye1        = false;
+static bool    s_hoverSuEye2        = false;
+
 // ── Saved credentials path ──
 static string GetCredsPath() {
     char appData[MAX_PATH];
@@ -164,6 +182,110 @@ static LoginResult FirebaseLogin(const string& email, const string& password) {
     res.success = !res.idToken.empty();
     if (!res.success) res.errorMsg = "Login failed. Please try again.";
     return res;
+}
+
+// ── FIREBASE SIGNUP ──
+static LoginResult FirebaseSignUp(const string& email, const string& password) {
+    LoginResult res = { false, "", "", "", "" };
+    const string API_KEY = "AIzaSyBVl3BuW6gfmp_K2IMYd1rbvLEA2l0yinA";
+    const string HOST    = "identitytoolkit.googleapis.com";
+    const string PATH    = "/v1/accounts:signUp?key=" + API_KEY;
+    string body = "{\"email\":\"" + email + "\",\"password\":\"" + password + "\",\"returnSecureToken\":true}";
+
+    HINTERNET hInet = InternetOpenA("RasFocus/1.0", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
+    if (!hInet) { res.errorMsg = "No internet connection."; return res; }
+
+    HINTERNET hConn = InternetConnectA(hInet, HOST.c_str(), INTERNET_DEFAULT_HTTPS_PORT, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
+    if (!hConn) { InternetCloseHandle(hInet); res.errorMsg = "Connection failed."; return res; }
+
+    HINTERNET hReq = HttpOpenRequestA(hConn, "POST", PATH.c_str(), NULL, NULL, NULL, INTERNET_FLAG_SECURE | INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE, 0);
+    if (!hReq) { InternetCloseHandle(hConn); InternetCloseHandle(hInet); res.errorMsg = "Request failed."; return res; }
+
+    string headers = "Content-Type: application/json\r\n";
+    BOOL sent = HttpSendRequestA(hReq, headers.c_str(), (DWORD)headers.size(), (LPVOID)body.c_str(), (DWORD)body.size());
+
+    string response = "";
+    if (sent) {
+        char buf[4096]; DWORD bytesRead = 0;
+        while (InternetReadFile(hReq, buf, sizeof(buf) - 1, &bytesRead) && bytesRead > 0) {
+            buf[bytesRead] = '\0'; response += buf;
+        }
+    }
+    InternetCloseHandle(hReq); InternetCloseHandle(hConn); InternetCloseHandle(hInet);
+
+    if (response.empty()) { res.errorMsg = "Empty server response."; return res; }
+    if (response.find("\"error\"") != string::npos) {
+        string msg = JsonExtract(response, "message");
+        if (msg == "EMAIL_EXISTS")                    res.errorMsg = "This email is already registered.";
+        else if (msg == "INVALID_EMAIL")              res.errorMsg = "Invalid email address.";
+        else if (msg == "WEAK_PASSWORD : Password should be at least 6 characters" ||
+                 msg.find("WEAK_PASSWORD") != string::npos) res.errorMsg = "Password must be at least 6 characters.";
+        else if (msg == "TOO_MANY_ATTEMPTS_TRY_LATER") res.errorMsg = "Too many attempts. Try later.";
+        else                                           res.errorMsg = "Sign up failed: " + msg;
+        return res;
+    }
+    res.idToken = JsonExtract(response, "idToken");
+    res.localId = JsonExtract(response, "localId");
+    res.email   = JsonExtract(response, "email");
+    res.success = !res.idToken.empty();
+    if (!res.success) res.errorMsg = "Sign up failed. Please try again.";
+    return res;
+}
+
+struct SignUpThreadData { HWND hWnd; string email; string password; string name; };
+
+// Write basic user doc to Firestore after signup
+static void CreateFirestoreUserDoc(const string& uid, const string& idToken,
+                                   const string& email, const string& name) {
+    string host = "firestore.googleapis.com";
+    string path = "/v1/projects/rasfocus-c746d/databases/(default)/documents/users/" + uid;
+
+    // Build Firestore REST document body
+    string body =
+        "{"
+        "\"fields\":{"
+          "\"email\":{\"stringValue\":\"" + email + "\"},"
+          "\"name\":{\"stringValue\":\"" + name + "\"},"
+          "\"current_package\":{\"stringValue\":\"FREE_BASIC\"},"
+          "\"created_at\":{\"stringValue\":\"" + to_string(time(nullptr)) + "\"}"
+        "}"
+        "}";
+
+    HINTERNET hInet = InternetOpenA("RasFocus/1.0", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
+    if (!hInet) return;
+    HINTERNET hConn = InternetConnectA(hInet, host.c_str(), INTERNET_DEFAULT_HTTPS_PORT, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
+    if (!hConn) { InternetCloseHandle(hInet); return; }
+    // PATCH creates or overwrites the document at the exact UID path
+    HINTERNET hReq = HttpOpenRequestA(hConn, "PATCH", path.c_str(), NULL, NULL, NULL,
+        INTERNET_FLAG_SECURE | INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE, 0);
+    if (!hReq) { InternetCloseHandle(hConn); InternetCloseHandle(hInet); return; }
+
+    string headers = "Content-Type: application/json\r\nAuthorization: Bearer " + idToken + "\r\n";
+    HttpSendRequestA(hReq, headers.c_str(), (DWORD)headers.size(), (LPVOID)body.c_str(), (DWORD)body.size());
+
+    InternetCloseHandle(hReq); InternetCloseHandle(hConn); InternetCloseHandle(hInet);
+}
+
+void __cdecl SignUpThread(void* param) {
+    SignUpThreadData* data = (SignUpThreadData*)param;
+    LoginResult res = FirebaseSignUp(data->email, data->password);
+    s_su_isLoading = false;
+    if (res.success) {
+        // Save user document to Firestore
+        CreateFirestoreUserDoc(res.localId, res.idToken, res.email, data->name);
+
+        s_su_success   = true;
+        s_su_statusMsg = L"";
+        s_su_isError   = false;
+    } else {
+        wchar_t errW[512] = {};
+        MultiByteToWideChar(CP_UTF8, 0, res.errorMsg.c_str(), -1, errW, 511);
+        s_su_statusMsg = errW;
+        s_su_isError   = true;
+    }
+    if (data->hWnd) InvalidateRect(data->hWnd, NULL, FALSE);
+    delete data;
+    _endthread();
 }
 
 // ── FIRESTORE SUBSCRIPTION CHECK ──
@@ -346,9 +468,216 @@ static bool HitRect(float mx, float my, float x, float y, float w, float h) {
 }
 
 // ============================================================
+//  DRAW SIGN UP FORM
+// ============================================================
+static void DrawSignUpForm(Graphics& g, float cx, float cy, float cw, float ch) {
+    SolidBrush bgBrush(Color(255, 240, 248, 255));
+    g.FillRectangle(&bgBrush, cx, cy, cw, ch);
+
+    // Card (taller for more fields)
+    float cardW = 400.0f, cardH = 530.0f;
+    float cardX = cx + (cw - cardW) / 2.0f;
+    float cardY = cy + (ch - cardH) / 2.0f;
+
+    // Shadow
+    for (int i = 3; i >= 0; --i) {
+        SolidBrush shadowBrush(Color(10 + i * 5, 0, 80, 140));
+        GraphicsPath shadowPath;
+        float sr = 12.0f, sd = sr * 2.0f;
+        float sx = cardX - i, sy = cardY + i, sw2 = cardW + i * 2.0f, sh2 = cardH;
+        shadowPath.AddArc(sx, sy, sd, sd, 180.0f, 90.0f);
+        shadowPath.AddArc(sx + sw2 - sd, sy, sd, sd, 270.0f, 90.0f);
+        shadowPath.AddArc(sx + sw2 - sd, sy + sh2 - sd, sd, sd, 0.0f, 90.0f);
+        shadowPath.AddArc(sx, sy + sh2 - sd, sd, sd, 90.0f, 90.0f);
+        shadowPath.CloseFigure();
+        g.FillPath(&shadowBrush, &shadowPath);
+    }
+
+    // Card background
+    GraphicsPath cardPath;
+    float rc = 12.0f, dc = rc * 2.0f;
+    cardPath.AddArc(cardX, cardY, dc, dc, 180.0f, 90.0f);
+    cardPath.AddArc(cardX + cardW - dc, cardY, dc, dc, 270.0f, 90.0f);
+    cardPath.AddArc(cardX + cardW - dc, cardY + cardH - dc, dc, dc, 0.0f, 90.0f);
+    cardPath.AddArc(cardX, cardY + cardH - dc, dc, dc, 90.0f, 90.0f);
+    cardPath.CloseFigure();
+    SolidBrush cardBg(Color(255, 255, 255, 255));
+    g.FillPath(&cardBg, &cardPath);
+
+    FontFamily ff(L"Segoe UI");
+    FontFamily ffIcons(L"Segoe MDL2 Assets");
+    SolidBrush teal(Color(255, 0, 150, 180));
+    SolidBrush dark(Color(255, 40, 40, 50));
+    SolidBrush gray(Color(255, 130, 140, 150));
+    SolidBrush white(Color(255, 255, 255, 255));
+    SolidBrush fieldBg(Color(255, 248, 250, 252));
+    StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
+    StringFormat fmtL; fmtL.SetAlignment(StringAlignmentNear);   fmtL.SetLineAlignment(StringAlignmentCenter);
+
+    Font fTitle(&ff, 15, FontStyleBold, UnitPixel);
+    g.DrawString(L"Create Account", -1, &fTitle, RectF(cardX, cardY + 22.0f, cardW, 26.0f), &fmtC, &dark);
+
+    float fieldX = cardX + 35.0f;
+    float fieldW = cardW - 70.0f;
+    float fldH   = 36.0f;
+    float eyeW   = 32.0f;
+
+    float nameY    = cardY + 65.0f;
+    float emailY   = nameY  + fldH + 14.0f;
+    float passY    = emailY + fldH + 14.0f;
+    float confirmY = passY  + fldH + 14.0f;
+
+    Font fInput(&ff, 12, FontStyleRegular, UnitPixel);
+    Font fFieldIcon(&ffIcons, 13, FontStyleRegular, UnitPixel);
+
+    bool showCursor = ((GetTickCount() - s_lastBlinkTime) % 1000) < 500;
+
+    // ── Success screen ──
+    if (s_su_success) {
+        Font fBig(&ff, 16, FontStyleBold, UnitPixel);
+        Font fSub(&ff, 12, FontStyleRegular, UnitPixel);
+        SolidBrush green(Color(255, 0, 160, 90));
+        g.DrawString(L"\u2713 Account Created Successfully!", -1, &fBig,
+            RectF(cardX, cardY + cardH / 2.0f - 50.0f, cardW, 30.0f), &fmtC, &green);
+        g.DrawString(L"You can now log in with your email.", -1, &fSub,
+            RectF(cardX, cardY + cardH / 2.0f - 10.0f, cardW, 24.0f), &fmtC, &gray);
+
+        // "Log In Now" button
+        float btnW = 160.0f, btnH = 38.0f;
+        float btnX = cardX + (cardW - btnW) / 2.0f;
+        float btnY = cardY + cardH / 2.0f + 30.0f;
+        GraphicsPath bp;
+        float br2 = 6.0f, bd2 = br2 * 2.0f;
+        bp.AddArc(btnX, btnY, bd2, bd2, 180.0f, 90.0f);
+        bp.AddArc(btnX + btnW - bd2, btnY, bd2, bd2, 270.0f, 90.0f);
+        bp.AddArc(btnX + btnW - bd2, btnY + btnH - bd2, bd2, bd2, 0.0f, 90.0f);
+        bp.AddArc(btnX, btnY + btnH - bd2, bd2, bd2, 90.0f, 90.0f);
+        bp.CloseFigure();
+        LinearGradientBrush btnBg(PointF(btnX, btnY), PointF(btnX + btnW, btnY + btnH),
+            Color(255, 0, 120, 140), Color(255, 0, 180, 200));
+        g.FillPath(&btnBg, &bp);
+        Font fBtn(&ff, 13, FontStyleBold, UnitPixel);
+        g.DrawString(L"Log In Now", -1, &fBtn, RectF(btnX, btnY, btnW, btnH), &fmtC, &white);
+        return;
+    }
+
+    // Helper lambda to draw a field
+    auto DrawField = [&](float fy, int focusId, const wchar_t* placeholder, wchar_t* buf,
+                         bool isPass, bool showPass, bool showEye, bool hoverEye) {
+        bool focused = (s_su_focus == focusId);
+        g.FillRectangle(&fieldBg, fieldX, fy, fieldW, fldH);
+        Pen border(focused ? Color(255, 0, 150, 160) : Color(255, 220, 225, 230), focused ? 1.5f : 1.0f);
+        g.DrawRectangle(&border, fieldX, fy, fieldW, fldH);
+
+        wstring str(buf);
+        float textX = fieldX + 32.0f;
+        float availW = isPass ? fieldW - 65.0f : fieldW - 40.0f;
+        SolidBrush inputColor(str.empty() ? Color(255, 160, 170, 180) : Color(255, 50, 50, 50));
+
+        if (!str.empty()) {
+            wstring display = (isPass && !showPass) ? wstring(str.size(), L'\u2022') : str;
+            g.DrawString(display.c_str(), -1, &fInput, RectF(textX, fy, availW, fldH), &fmtL, &inputColor);
+            if (focused && showCursor) {
+                RectF bbox;
+                g.MeasureString(display.c_str(), -1, &fInput, PointF(textX, fy), &fmtL, &bbox);
+                float curX = textX + bbox.Width;
+                if (curX > fieldX + fieldW - (isPass ? 40.0f : 12.0f)) curX = fieldX + fieldW - (isPass ? 40.0f : 12.0f);
+                Pen cur(Color(255, 0, 150, 160), 2.0f);
+                g.DrawLine(&cur, curX, fy + 6.0f, curX, fy + fldH - 6.0f);
+            }
+        } else {
+            if (focused && showCursor) {
+                Pen cur(Color(255, 0, 150, 160), 2.0f);
+                g.DrawLine(&cur, textX, fy + 8.0f, textX, fy + fldH - 8.0f);
+            }
+            g.DrawString(placeholder, -1, &fInput, RectF(textX, fy, availW, fldH), &fmtL, &inputColor);
+        }
+
+        if (isPass && showEye) {
+            float ex = fieldX + fieldW - eyeW;
+            Font fEye(&ffIcons, 13, FontStyleRegular, UnitPixel);
+            SolidBrush eyeC(hoverEye ? Color(255, 0, 150, 160) : Color(255, 160, 170, 180));
+            g.DrawString(showPass ? L"\xED1A" : L"\xE7B3", -1, &fEye, RectF(ex, fy, eyeW, fldH), &fmtC, &eyeC);
+        }
+    };
+
+    // Name icon
+    g.DrawString(L"\xE77B", -1, &fFieldIcon, RectF(fieldX + 8.0f, nameY, 24.0f, fldH), &fmtC,
+        wcslen(s_su_name) ? &teal : &gray);
+    DrawField(nameY, 1, L"Full Name", s_su_name, false, false, false, false);
+
+    // Email icon
+    g.DrawString(L"\xE715", -1, &fFieldIcon, RectF(fieldX + 8.0f, emailY, 24.0f, fldH), &fmtC,
+        wcslen(s_su_email) ? &teal : &gray);
+    DrawField(emailY, 2, L"Email address", s_su_email, false, false, false, false);
+
+    // Password icon
+    g.DrawString(L"\xE72E", -1, &fFieldIcon, RectF(fieldX + 8.0f, passY, 24.0f, fldH), &fmtC,
+        wcslen(s_su_pass) ? &teal : &gray);
+    DrawField(passY, 3, L"Create Password", s_su_pass, true, s_su_showPass, true, s_hoverSuEye1);
+
+    // Confirm icon
+    g.DrawString(L"\xE72E", -1, &fFieldIcon, RectF(fieldX + 8.0f, confirmY, 24.0f, fldH), &fmtC,
+        wcslen(s_su_confirm) ? &teal : &gray);
+    DrawField(confirmY, 4, L"Confirm Password", s_su_confirm, true, s_su_showConfirm, true, s_hoverSuEye2);
+
+    // Status message
+    float statusY = confirmY + fldH + 8.0f;
+    if (!s_su_statusMsg.empty()) {
+        SolidBrush statusBrush(s_su_isError ? Color(255, 220, 60, 60) : Color(255, 0, 160, 90));
+        Font fStatus(&ff, 11, FontStyleBold, UnitPixel);
+        g.DrawString(s_su_statusMsg.c_str(), -1, &fStatus,
+            RectF(cardX, statusY, cardW, 18.0f), &fmtC, &statusBrush);
+    } else if (s_su_isLoading) {
+        SolidBrush statusBrush(Color(255, 0, 150, 180));
+        Font fStatus(&ff, 11, FontStyleBold, UnitPixel);
+        g.DrawString(L"Creating account...", -1, &fStatus,
+            RectF(cardX, statusY, cardW, 18.0f), &fmtC, &statusBrush);
+    }
+
+    // Buttons
+    float btnY    = statusY + 26.0f;
+    float btnGap  = 10.0f;
+    float btnW    = (fieldW - btnGap) / 2.0f;
+    float btnH    = 38.0f;
+    float suBtnX  = fieldX;
+    float backBtnX = fieldX + btnW + btnGap;
+
+    // Create Account button
+    GraphicsPath bp1;
+    float br2 = 6.0f, bd2 = br2 * 2.0f;
+    bp1.AddArc(suBtnX, btnY, bd2, bd2, 180.0f, 90.0f);
+    bp1.AddArc(suBtnX + btnW - bd2, btnY, bd2, bd2, 270.0f, 90.0f);
+    bp1.AddArc(suBtnX + btnW - bd2, btnY + btnH - bd2, bd2, bd2, 0.0f, 90.0f);
+    bp1.AddArc(suBtnX, btnY + btnH - bd2, bd2, bd2, 90.0f, 90.0f);
+    bp1.CloseFigure();
+    LinearGradientBrush suBg(PointF(suBtnX, btnY), PointF(suBtnX + btnW, btnY + btnH),
+        Color(255, 0, 120, 140), Color(255, 0, 180, 200));
+    SolidBrush suHover(Color(255, 0, 90, 110));
+    if (s_hoverSuBtn) g.FillPath(&suHover, &bp1); else g.FillPath(&suBg, &bp1);
+    Font fBtn(&ff, 12, FontStyleBold, UnitPixel);
+    g.DrawString(L"Create Account", -1, &fBtn, RectF(suBtnX, btnY, btnW, btnH), &fmtC, &white);
+
+    // Back button
+    GraphicsPath bp2;
+    bp2.AddArc(backBtnX, btnY, bd2, bd2, 180.0f, 90.0f);
+    bp2.AddArc(backBtnX + btnW - bd2, btnY, bd2, bd2, 270.0f, 90.0f);
+    bp2.AddArc(backBtnX + btnW - bd2, btnY + btnH - bd2, bd2, bd2, 0.0f, 90.0f);
+    bp2.AddArc(backBtnX, btnY + btnH - bd2, bd2, bd2, 90.0f, 90.0f);
+    bp2.CloseFigure();
+    SolidBrush backBg(s_hoverSuBack ? Color(255, 245, 250, 255) : Color(255, 255, 255, 255));
+    g.FillPath(&backBg, &bp2);
+    Pen backPen(Color(255, 0, 150, 180), 1.5f);
+    g.DrawPath(&backPen, &bp2);
+    g.DrawString(L"Back to Login", -1, &fBtn, RectF(backBtnX, btnY, btnW, btnH), &fmtC, &teal);
+}
+
+// ============================================================
 //  DRAW
 // ============================================================
 void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
+    if (s_showSignup) { DrawSignUpForm(g, cx, cy, cw, ch); return; }
+
     SolidBrush bgBrush(Color(255, 240, 248, 255));
     g.FillRectangle(&bgBrush, cx, cy, cw, ch);
 
@@ -621,6 +950,43 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
 //  MOUSE MOVE (Added custom mouse cursors for Hover)
 // ============================================================
 void ProcessAccountsMouseMove(float x, float y) {
+    if (s_showSignup) {
+        // Calculate signup card layout
+        float scaledW = (float)windowWidth  / g_scaleFactor;
+        float scaledH = (float)windowHeight / g_scaleFactor;
+        float cx = (float)SIDEBAR_WIDTH;
+        float cy = (float)(TITLEBAR_HEIGHT + SUBHEADER_HEIGHT);
+        float cw = scaledW - cx, ch = scaledH - cy;
+        float cardW = 400.0f, cardH = 530.0f;
+        float cardX = cx + (cw - cardW) / 2.0f;
+        float cardY = cy + (ch - cardH) / 2.0f;
+        float fieldX = cardX + 35.0f, fieldW = cardW - 70.0f, fldH = 36.0f;
+        float nameY = cardY + 65.0f, emailY = nameY + fldH + 14.0f;
+        float passY = emailY + fldH + 14.0f, confirmY = passY + fldH + 14.0f;
+        float statusY = confirmY + fldH + 8.0f;
+        float btnY = statusY + 26.0f, btnGap = 10.0f;
+        float btnW = (fieldW - btnGap) / 2.0f, btnH = 38.0f;
+        float suBtnX = fieldX, backBtnX = fieldX + btnW + btnGap;
+        float eyeW = 32.0f;
+
+        s_hoverSuBtn  = HitRect(x, y, suBtnX,   btnY, btnW, btnH);
+        s_hoverSuBack = HitRect(x, y, backBtnX,  btnY, btnW, btnH);
+        s_hoverSuEye1 = HitRect(x, y, fieldX + fieldW - eyeW, passY,    eyeW, fldH);
+        s_hoverSuEye2 = HitRect(x, y, fieldX + fieldW - eyeW, confirmY, eyeW, fldH);
+
+        bool onText = HitRect(x, y, fieldX, nameY, fieldW, fldH) ||
+                      HitRect(x, y, fieldX, emailY, fieldW, fldH) ||
+                      HitRect(x, y, fieldX, passY,  fieldW - eyeW, fldH) ||
+                      HitRect(x, y, fieldX, confirmY, fieldW - eyeW, fldH);
+        if (onText)                                        SetCursor(LoadCursor(NULL, IDC_IBEAM));
+        else if (s_hoverSuBtn || s_hoverSuBack || s_hoverSuEye1 || s_hoverSuEye2)
+                                                           SetCursor(LoadCursor(NULL, IDC_HAND));
+        else                                               SetCursor(LoadCursor(NULL, IDC_ARROW));
+
+        if (HWND hw = FindWindowA("RasFocusCore", NULL)) InvalidateRect(hw, NULL, FALSE);
+        return;
+    }
+
     if (!g_loggedInEmail.empty()) {
         CardLayout L = GetCurrentLayout();
         float logoutW = 150.0f, logoutH = 40.0f;
@@ -658,6 +1024,95 @@ void ProcessAccountsMouseMove(float x, float y) {
 //  MOUSE CLICK
 // ============================================================
 void ProcessAccountsMouseClick(float x, float y, HWND hWnd) {
+    if (s_showSignup) {
+        float scaledW = (float)windowWidth  / g_scaleFactor;
+        float scaledH = (float)windowHeight / g_scaleFactor;
+        float cx = (float)SIDEBAR_WIDTH;
+        float cy = (float)(TITLEBAR_HEIGHT + SUBHEADER_HEIGHT);
+        float cw = scaledW - cx, ch = scaledH - cy;
+        float cardW = 400.0f, cardH = 530.0f;
+        float cardX = cx + (cw - cardW) / 2.0f;
+        float cardY = cy + (ch - cardH) / 2.0f;
+        float fieldX = cardX + 35.0f, fieldW = cardW - 70.0f, fldH = 36.0f;
+        float nameY = cardY + 65.0f, emailY = nameY + fldH + 14.0f;
+        float passY = emailY + fldH + 14.0f, confirmY = passY + fldH + 14.0f;
+        float statusY = confirmY + fldH + 8.0f;
+        float btnY = statusY + 26.0f, btnGap = 10.0f;
+        float btnW = (fieldW - btnGap) / 2.0f, btnH = 38.0f;
+        float suBtnX = fieldX, backBtnX = fieldX + btnW + btnGap;
+        float eyeW = 32.0f;
+
+        // Success screen: "Log In Now" button
+        if (s_su_success) {
+            float lbW = 160.0f, lbH = 38.0f;
+            float lbX = cardX + (cardW - lbW) / 2.0f;
+            float lbY = cardY + cardH / 2.0f + 30.0f;
+            if (HitRect(x, y, lbX, lbY, lbW, lbH)) {
+                s_showSignup = false;
+                s_su_success = false;
+                ZeroMemory(s_su_name, sizeof(s_su_name));
+                ZeroMemory(s_su_email, sizeof(s_su_email));
+                ZeroMemory(s_su_pass, sizeof(s_su_pass));
+                ZeroMemory(s_su_confirm, sizeof(s_su_confirm));
+                s_su_statusMsg = L"";
+                s_su_focus = 0;
+                InvalidateRect(hWnd, NULL, FALSE);
+            }
+            return;
+        }
+
+        // Field focus
+        if (HitRect(x, y, fieldX, nameY,    fieldW - eyeW, fldH)) { s_su_focus = 1; s_lastBlinkTime = GetTickCount(); InvalidateRect(hWnd, NULL, FALSE); return; }
+        if (HitRect(x, y, fieldX, emailY,   fieldW - eyeW, fldH)) { s_su_focus = 2; s_lastBlinkTime = GetTickCount(); InvalidateRect(hWnd, NULL, FALSE); return; }
+        if (HitRect(x, y, fieldX, passY,    fieldW - eyeW, fldH)) { s_su_focus = 3; s_lastBlinkTime = GetTickCount(); InvalidateRect(hWnd, NULL, FALSE); return; }
+        if (HitRect(x, y, fieldX, confirmY, fieldW - eyeW, fldH)) { s_su_focus = 4; s_lastBlinkTime = GetTickCount(); InvalidateRect(hWnd, NULL, FALSE); return; }
+
+        // Eye toggles
+        if (HitRect(x, y, fieldX + fieldW - eyeW, passY,    eyeW, fldH)) { s_su_showPass    = !s_su_showPass;    InvalidateRect(hWnd, NULL, FALSE); return; }
+        if (HitRect(x, y, fieldX + fieldW - eyeW, confirmY, eyeW, fldH)) { s_su_showConfirm = !s_su_showConfirm; InvalidateRect(hWnd, NULL, FALSE); return; }
+
+        // Back button
+        if (HitRect(x, y, backBtnX, btnY, btnW, btnH)) {
+            s_showSignup = false;
+            s_su_statusMsg = L"";
+            s_su_focus = 0;
+            InvalidateRect(hWnd, NULL, FALSE);
+            return;
+        }
+
+        // Create Account button
+        if (HitRect(x, y, suBtnX, btnY, btnW, btnH)) {
+            wstring nameW(s_su_name), emailW(s_su_email), passW(s_su_pass), confirmW(s_su_confirm);            if (nameW.empty() || emailW.empty() || passW.empty() || confirmW.empty()) {
+                s_su_statusMsg = L"Please fill in all fields."; s_su_isError = true;
+                InvalidateRect(hWnd, NULL, FALSE); return;
+            }
+            if (passW != confirmW) {
+                s_su_statusMsg = L"Passwords do not match."; s_su_isError = true;
+                InvalidateRect(hWnd, NULL, FALSE); return;
+            }
+            if (passW.size() < 6) {
+                s_su_statusMsg = L"Password must be at least 6 characters."; s_su_isError = true;
+                InvalidateRect(hWnd, NULL, FALSE); return;
+            }
+            s_su_isLoading = true; s_su_statusMsg = L""; s_su_isError = false;
+            InvalidateRect(hWnd, NULL, FALSE);
+
+            char emailA[512] = {}, passA[512] = {}, nameA[512] = {};
+            WideCharToMultiByte(CP_UTF8, 0, emailW.c_str(), -1, emailA, 511, NULL, NULL);
+            WideCharToMultiByte(CP_UTF8, 0, passW.c_str(),  -1, passA,  511, NULL, NULL);
+            WideCharToMultiByte(CP_UTF8, 0, nameW.c_str(),  -1, nameA,  511, NULL, NULL);
+
+            SignUpThreadData* data = new SignUpThreadData();
+            data->hWnd     = hWnd;
+            data->email    = emailA;
+            data->password = passA;
+            data->name     = nameA;
+            _beginthread(SignUpThread, 0, data);
+            return;
+        }
+        return;
+    }
+
     if (!g_loggedInEmail.empty()) {
         CardLayout L = GetCurrentLayout();
         float logoutW = 150.0f, logoutH = 40.0f;
@@ -695,7 +1150,13 @@ void ProcessAccountsMouseClick(float x, float y, HWND hWnd) {
     }
 
     if (HitRect(x, y, L.signupX, L.signupY, L.signupW, L.signupH)) {
-        ShellExecuteW(NULL, L"open", L"https://rasfocus.com/checkout", NULL, NULL, SW_SHOWNORMAL); return;
+        s_showSignup = true;
+        s_su_focus = 1;
+        s_su_statusMsg = L"";
+        s_su_success = false;
+        s_lastBlinkTime = GetTickCount();
+        InvalidateRect(hWnd, NULL, FALSE);
+        return;
     }
     if (HitRect(x, y, L.resetX, L.resetY, L.resetW, L.resetH)) {
         ShellExecuteW(NULL, L"open", L"https://rasfocus.com/reset-password", NULL, NULL, SW_SHOWNORMAL); return;
@@ -737,6 +1198,29 @@ void ProcessAccountsMouseClick(float x, float y, HWND hWnd) {
 // ============================================================
 void ProcessAccountsChar(wchar_t c) {
     if (!g_loggedInEmail.empty()) return;
+
+    // Route to signup form if active
+    if (s_showSignup && !s_su_success) {
+        wchar_t* buf = nullptr;
+        if      (s_su_focus == 1) buf = s_su_name;
+        else if (s_su_focus == 2) buf = s_su_email;
+        else if (s_su_focus == 3) buf = s_su_pass;
+        else if (s_su_focus == 4) buf = s_su_confirm;
+        if (!buf) return;
+
+        if (c == L'\b') {
+            int len = (int)wcslen(buf); if (len > 0) buf[len-1] = L'\0';
+        } else if (c == L'\r' || c == L'\n') {
+            s_su_focus = (s_su_focus % 4) + 1;
+            s_lastBlinkTime = GetTickCount();
+        } else if (c >= 32) {
+            int len = (int)wcslen(buf); if (len < 510) { buf[len] = c; buf[len+1] = L'\0'; }
+            s_lastBlinkTime = GetTickCount();
+        }
+        if (HWND hw = FindWindowA("RasFocusCore", NULL)) InvalidateRect(hw, NULL, FALSE);
+        return;
+    }
+
     if (c == L'\b') {
         if (s_focusField == 1) { int len = (int)wcslen(s_email);    if (len > 0) s_email[len-1] = L'\0'; }
         if (s_focusField == 2) { int len = (int)wcslen(s_password); if (len > 0) s_password[len-1] = L'\0'; }
@@ -753,6 +1237,21 @@ void ProcessAccountsChar(wchar_t c) {
 
 void ProcessAccountsKeyDown(WPARAM wp) {
     if (!g_loggedInEmail.empty()) return;
+
+    if (s_showSignup && !s_su_success) {
+        wchar_t* buf = nullptr;
+        if      (s_su_focus == 1) buf = s_su_name;
+        else if (s_su_focus == 2) buf = s_su_email;
+        else if (s_su_focus == 3) buf = s_su_pass;
+        else if (s_su_focus == 4) buf = s_su_confirm;
+
+        if (wp == VK_TAB)    { s_su_focus = (s_su_focus % 4) + 1; s_lastBlinkTime = GetTickCount(); }
+        else if (wp == VK_DELETE && buf) ZeroMemory(buf, 512 * sizeof(wchar_t));
+        else if (wp == VK_ESCAPE) { s_su_focus = 0; s_su_statusMsg = L""; }
+        if (HWND hw = FindWindowA("RasFocusCore", NULL)) InvalidateRect(hw, NULL, FALSE);
+        return;
+    }
+
     if (wp == VK_TAB) {
         s_focusField = (s_focusField == 1) ? 2 : 1;
         s_lastBlinkTime = GetTickCount();
