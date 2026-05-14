@@ -8,11 +8,11 @@
 using namespace Gdiplus;
 using namespace std;
 
-// গ্লোবাল ভেরিয়েবল যা দিয়ে পপ-আপ কন্ট্রোল করা হবে
+// গ্লোবাল ভেরিয়েবল যা দিয়ে পপ-আপ কন্ট্রোল করা হবে
 bool g_showUpgradePopup = false;
 
-extern int selectedTab; // main.cpp থেকে লগিন ট্যাবে যাওয়ার জন্য
-extern string g_loggedInUserUid; // accounts.cpp থেকে ইউজারের UID আনার জন্য (NEW)
+extern int selectedTab; // main.cpp থেকে লগিন ট্যাবে যাওয়ার জন্য
+extern string g_loggedInUserUid; // accounts.cpp থেকে ইউজারের UID আনার জন্য
 
 // Hover States
 static bool s_hoverClose   = false;
@@ -237,9 +237,9 @@ void ProcessUpgradeMouseClick(float x, float y, HWND hWnd) {
             extern void HideAllWebViews();
             HideAllWebViews();
         } 
-        // ইউজার লগইন করা থাকলে তার UID সহ পেমেন্ট পেজ ওপেন করো
+        // ইউজার লগইন করা থাকলে তার UID সহ গিটহাব পেজেস-এর চেকআউট লিংকটি ওপেন করো
         else {
-            string urlStr = "https://rasfocus.com/checkout?uid=" + g_loggedInUserUid;
+            string urlStr = "https://raseledutools.github.io/checkout.html?uid=" + g_loggedInUserUid;
             wstring wUrl(urlStr.begin(), urlStr.end());
             
             ShellExecuteW(NULL, L"open", wUrl.c_str(), NULL, NULL, SW_SHOWNORMAL);
@@ -251,7 +251,7 @@ void ProcessUpgradeMouseClick(float x, float y, HWND hWnd) {
     }
 
     if (HitRect(x, y, L.loginX, L.loginY, L.loginW, L.loginH)) {
-        // লগিন ট্যাবে (My Account - Tab 7) নিয়ে যাবে
+        // লগিন ট্যাবে (My Account - Tab 7) নিয়ে যাবে
         selectedTab = 7;
         g_showUpgradePopup = false;
         
