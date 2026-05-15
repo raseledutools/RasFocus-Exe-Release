@@ -16,3 +16,9 @@ void ProcessAdultBlockMouseClick(float x, float y);
 void ProcessAdultBlockKeyPress(wchar_t c);
 void ProcessAdultBlockKeyDown(WPARAM key);
 void ProcessAdultBlockMouseWheel(float x, float y, int delta);
+
+// --- Schedule Integration API ---
+// Schedule Block এই function call করে Adult blocking চালু/বন্ধ করবে।
+// enable=true  → Adult focus active করে, hosts+PAC block enforce করে
+// enable=false → Adult focus deactivate করে, strict protocols তুলে নেয়
+void AdultBlock_ApplyForSchedule(bool enable);

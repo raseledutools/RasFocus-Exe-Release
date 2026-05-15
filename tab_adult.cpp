@@ -1253,3 +1253,35 @@ void ProcessAdultBlockMouseClick(float x, float y)         { ProcessAdultMouseCl
 void ProcessAdultBlockKeyPress(wchar_t c)                  { ProcessAdultKeyPress(c); }
 void ProcessAdultBlockKeyDown(WPARAM key)                  { ProcessAdultKeyDown(key); }
 void ProcessAdultBlockMouseWheel(float x, float y, int d)  { ProcessAdultMouseWheel(x, y, d); }
+
+// ─── Schedule Integration API ─────────────────────────────────────────────
+// tab_schedule_blocks.cpp এর ApplyProfileBlocking() এই function call করে।
+// Adult-এর নিজস্ব state, PAC, hosts — সব এক জায়গা থেকেই controlled থাকে।
+// Schedule Block নিজে adult logic copy করে না — শুধু এখানে delegate করে।
+void AdultBlock_ApplyForSchedule(bool enable) {
+    if (enable) {
+        // Adult block চালু — state set করি, checkbox গুলো activate করি
+        isAdultFocusActive = true;
+        cbAdultWeb  = true;
+        cbHardcore  = true;
+        cbRomantic  = true;
+        // focusEndTime 0 রাখি — Schedule Block নিজে session manage করে,
+        // Adult এর timer এখানে interfere করবে না।
+        focusEndTime = 0;
+        // DNS filter ও safe search enforce করি
+        EnforceStrictProtocols();
+        SaveAdultSettings();
+    } else {
+        // Adult block বন্ধ — শুধু schedule-triggered focus টা তুলে নিই।
+        // User যদি manually adult focus on করে রাখে সেটা touch করব না।
+        // (cb24HourLock active থাকলে সেটাও respect করতে হবে)
+        if (!cb24HourLock) {
+            isAdultFocusActive = false;
+            // Strict protocols re-evaluate করি (cbDnsFilter/cbSafeSearch
+            // user যদি manually on রাখে, সেগুলো এখনও কাজ করবে)
+            EnforceStrictProtocols();
+            SaveAdultSettings();
+        }
+        // cb24HourLock true হলে কিছুই করি না — 24h lock untouchable
+    }
+}

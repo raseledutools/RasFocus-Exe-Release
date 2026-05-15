@@ -3,6 +3,8 @@
 #pragma warning(disable : 4267)
 
 #include "tab_schedule_blocks.h"
+#include "tab_adult.h"   // ← AdultBlock_ApplyForSchedule() এর জন্য
+#include <tlhelp32.h>    // ← CreateToolhelp32Snapshot, KillBlockedApps এর জন্য
 #include <vector>
 #include <string>
 #include <fstream>
@@ -412,10 +414,48 @@ static void ApplyPACFileBlocking(const vector<wstring>& keywords, bool block) {
     }
 }
 
+// ─── App Killing Helper ───────────────────────────────────────────────────
+// Profile active হলে blocked app গুলো kill করে, deactivate হলে কিছু করে না।
+// (app unblock = process কে allow করা, kill করার উল্টো নেই — শুধু future launch block হয় না)
+static void KillBlockedApps(const vector<SchBlockItem>& apps) {
+    if (apps.empty()) return;
+
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE) return;
+
+    PROCESSENTRY32W pe;
+    pe.dwSize = sizeof(pe);
+
+    if (Process32FirstW(snap, &pe)) {
+        do {
+            wstring procName = pe.szExeFile;
+            // Case-insensitive match
+            wstring procLower = procName;
+            transform(procLower.begin(), procLower.end(), procLower.begin(), ::towlower);
+
+            for (const auto& app : apps) {
+                wstring appLower = app.name;
+                transform(appLower.begin(), appLower.end(), appLower.begin(), ::towlower);
+
+                if (procLower == appLower) {
+                    HANDLE hProc = OpenProcess(PROCESS_TERMINATE, FALSE, pe.th32ProcessID);
+                    if (hProc) {
+                        TerminateProcess(hProc, 1);
+                        CloseHandle(hProc);
+                    }
+                    break;
+                }
+            }
+        } while (Process32NextW(snap, &pe));
+    }
+    CloseHandle(snap);
+}
+
 void ApplyProfileBlocking(int profileIdx, bool enable) {
     if (profileIdx < 0 || profileIdx >= (int)g_profiles.size()) return;
     const auto& p = g_profiles[profileIdx];
 
+    // ── 1. Website + Keyword blocking (hosts file + PAC) ──────────────────
     vector<wstring> allPatterns;
     for (const auto& w : p.blockedWebsites) {
         auto pats = GetAllBlockPatterns(w.name);
@@ -427,6 +467,18 @@ void ApplyProfileBlocking(int profileIdx, bool enable) {
 
     ApplyHostsFileBlocking(allPatterns, enable);
     ApplyPACFileBlocking(allPatterns, enable);
+
+    // ── 2. App blocking — enable হলে চলমান processes kill করি ─────────────
+    // Disable হলে kill করার কিছু নেই (ইতোমধ্যে বন্ধ থাকা app allow হয়ে যায়)
+    if (enable && !p.blockedApps.empty()) {
+        KillBlockedApps(p.blockedApps);
+    }
+
+    // ── 3. Adult content blocking — tab_adult এ delegate করি ───────────────
+    // Logic copy করা হয়নি — Adult এর নিজের state/PAC/hosts/DNS সব ওখানেই।
+    if (p.blockAdult) {
+        AdultBlock_ApplyForSchedule(enable);
+    }
 }
 
 // --- Helpers ---
