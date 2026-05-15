@@ -35,6 +35,7 @@ HWND hParentWnd = NULL;
 #include "tab_dashboard.h"
 #include "tab_special.h"
 #include "tab_statistics.h"
+#include "tab_family_link.h" // ← Family Link Tab Header যুক্ত করা হয়েছে
 #include "prewindow.h"
 #include "accounts.h"   // ← My Account tab handler
 #include "upgrade.h"    // ← Upgrade popup handler
@@ -104,12 +105,12 @@ int feedbackFocusField = 0;
 bool hoverFeedbackSubmit = false;
 bool hoverFeedbackClose  = false;
 
-// Sidebar tabs
+// Sidebar tabs (Family Link যোগ করা হয়েছে)
 vector<wstring> sidebarTabs = {
-    L"Dashboard", L"Blocks", L"Deep Study", L"Special", L"Statistics", L"Settings"
+    L"Dashboard", L"Blocks", L"Deep Study", L"Special", L"Statistics", L"Settings", L"Family Link"
 };
 vector<wstring> sidebarIcons = {
-    L"\xE80F", L"\xEA18", L"\xE7B3", L"\xE734", L"\xE9D2", L"\xE713"
+    L"\xE80F", L"\xEA18", L"\xE7B3", L"\xE734", L"\xE9D2", L"\xE713", L"\xE8A5"
 };
 
 // ==========================================
@@ -977,7 +978,9 @@ void DrawSidebar(Graphics& g, int h) {
         float tabY = tabsStartY + (float)i * tabH;
         RectF tabRect(sideX, tabY, (float)SIDEBAR_WIDTH, tabH);
 
-        if (selectedTab == (int)i) {
+        int logicalTab = (i == 6) ? 8 : i; // 6th index is Family Link which is selectedTab == 8
+
+        if (selectedTab == logicalTab) {
             SolidBrush activeBg(ColWhite);
             g.FillRectangle(&activeBg, tabRect);
             SolidBrush accentBar(ColSubHeader);
@@ -1103,6 +1106,7 @@ void DrawMainArea(Graphics& g, int w, int h) {
     else if (selectedTab == 5) { DrawSettingsTab     (g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 6) { DrawPdfWorkspaceTab (g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 7) { DrawAccountsTab     (g, contentX, contentY, contentW, contentH); }
+    else if (selectedTab == 8) { DrawFamilyLinkTab   (g, contentX, contentY, contentW, contentH); } // ← Family Link Tab Draw Call
 }
 
 // ------------------------------------------
@@ -1345,6 +1349,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             ProcessStatisticsMouseMove(x, y, cX, cY, cW);
             redraw = true;
         }
+        else if (selectedTab == 8) { // ← Family Link Mouse Move Handled
+            float cX = (float)SIDEBAR_WIDTH, cY = (float)(TITLEBAR_HEIGHT + SUBHEADER_HEIGHT);
+            ProcessFamilyLinkMouseMove(x, y, cX, cY);
+            redraw = true;
+        }
 
         if (redraw) InvalidateRect(hWnd, NULL, FALSE);
         break;
@@ -1425,7 +1434,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (x >= 0.0f && x <= SIDEBAR_WIDTH && y >= tabsStartY) {
             int idx = (int)((y - tabsStartY) / tabH);
             if (idx >= 0 && idx < (int)sidebarTabs.size()) {
-                if (selectedTab != idx) { selectedTab = idx; HideAllWebViews(); }
+                int logicalTab = (idx == 6) ? 8 : idx; // ← 7th item (index 6) mapped to selectedTab = 8
+                if (selectedTab != logicalTab) { selectedTab = logicalTab; HideAllWebViews(); }
             }
         }
 
@@ -1454,6 +1464,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         else if (selectedTab == 5) { ProcessSettingsMouseClick(x, y); }
         else if (selectedTab == 7) {
             ProcessAccountsMouseClick(x, y, hWnd);
+        }
+        else if (selectedTab == 8) { // ← Family Link Mouse Click Handled
+            float cX = (float)SIDEBAR_WIDTH, cY = (float)(TITLEBAR_HEIGHT + SUBHEADER_HEIGHT);
+            ProcessFamilyLinkMouseClick(x, y, cX, cY, hWnd);
         }
         InvalidateRect(hWnd, NULL, FALSE);
         break;
@@ -1497,6 +1511,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
         if (selectedTab == 1) { extern void ProcessBlocksKeyPress(wchar_t); ProcessBlocksKeyPress((wchar_t)wp); InvalidateRect(hWnd,NULL,FALSE); }
         else if (selectedTab == 2) { ProcessDeepStudyKeyPress((wchar_t)wp); InvalidateRect(hWnd,NULL,FALSE); }
+        else if (selectedTab == 8) { ProcessFamilyLinkChar((wchar_t)wp); InvalidateRect(hWnd, NULL, FALSE); } // ← Family Link Char Input Handled
         break;
     }
 
@@ -1514,6 +1529,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
         if (selectedTab == 1) { extern void ProcessBlocksKeyDown(WPARAM); ProcessBlocksKeyDown(wp); InvalidateRect(hWnd,NULL,FALSE); }
         else if (selectedTab == 2) { ProcessDeepStudyKeyDown(wp); InvalidateRect(hWnd,NULL,FALSE); }
+        else if (selectedTab == 8) { ProcessFamilyLinkKeyDown(wp); InvalidateRect(hWnd, NULL, FALSE); } // ← Family Link KeyDown Handled
         break;
     }
 
