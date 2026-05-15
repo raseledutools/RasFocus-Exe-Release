@@ -41,6 +41,52 @@ static void AddRoundedRectPath(GraphicsPath& path, RectF rect, float r) {
     AddRoundedRectPath(path, rect.X, rect.Y, rect.Width, rect.Height, r);
 }
 
+// Returns a heap-allocated GraphicsPath for a rounded rectangle (caller must delete)
+static GraphicsPath* GetSchRoundRectPath(RectF rect, float r) {
+    GraphicsPath* path = new GraphicsPath();
+    AddRoundedRectPath(*path, rect, r);
+    return path;
+}
+
+static GraphicsPath* GetSchRoundRectPath(float x, float y, float w, float h, float r) {
+    return GetSchRoundRectPath(RectF(x, y, w, h), r);
+}
+
+// Draws a simple +/- spinner control (value box with two arrow buttons)
+static void DrawSchOverlaySpinner(Graphics& g, float x, float y, const wstring& val,
+    bool hMinus, bool hPlus, Font* fIcon, Font* fBold) {
+    Color clrBtnHover(255, 220, 230, 240);
+    Color clrBtnNorm(255, 245, 247, 250);
+    Color clrBorder(255, 200, 210, 220);
+    Color clrDark(255, 40, 40, 40);
+
+    float btnW = 36.0f, btnH = 36.0f, valW = 60.0f;
+    StringFormat fC; fC.SetAlignment(StringAlignmentCenter); fC.SetLineAlignment(StringAlignmentCenter);
+
+    // Minus button
+    RectF minusRect(x, y, btnW, btnH);
+    GraphicsPath* mp = GetSchRoundRectPath(minusRect, 4);
+    SolidBrush minusBrush(hMinus ? clrBtnHover : clrBtnNorm);
+    Pen borderPen(clrBorder, 1.0f);
+    g.FillPath(&minusBrush, mp); g.DrawPath(&borderPen, mp); delete mp;
+    SolidBrush darkBrush(clrDark);
+    g.DrawString(L"\x2212", -1, fIcon, minusRect, &fC, &darkBrush);
+
+    // Value box
+    RectF valRect(x + btnW + 4, y, valW, btnH);
+    GraphicsPath* vp = GetSchRoundRectPath(valRect, 4);
+    SolidBrush valBrush(Color(255, 255, 255, 255));
+    g.FillPath(&valBrush, vp); g.DrawPath(&borderPen, vp); delete vp;
+    g.DrawString(val.c_str(), -1, fBold, valRect, &fC, &darkBrush);
+
+    // Plus button
+    RectF plusRect(x + btnW + 4 + valW + 4, y, btnW, btnH);
+    GraphicsPath* pp = GetSchRoundRectPath(plusRect, 4);
+    SolidBrush plusBrush(hPlus ? clrBtnHover : clrBtnNorm);
+    g.FillPath(&plusBrush, pp); g.DrawPath(&borderPen, pp); delete pp;
+    g.DrawString(L"+", -1, fIcon, plusRect, &fC, &darkBrush);
+}
+
 // Scrollbar Colors
 #define s_hScrollbarThumb Color(255, 180, 180, 180)
 #define s_hScrollbarTrack Color(255, 240, 240, 240)
