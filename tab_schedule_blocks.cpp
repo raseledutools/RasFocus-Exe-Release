@@ -14,18 +14,18 @@
 #include <locale>
 #include <algorithm>
 #include <ctime>
-#include <thread>        // 🟢 NEW: For Background Observer Thread
-#include <mutex>         // 🟢 NEW: For Thread Safety
-#include <wininet.h>     // 🟢 NEW: For InternetSetOption
+#include <thread>        // 🟢 For Background Observer Thread
+#include <mutex>         // 🟢 For Thread Safety
+#include <wininet.h>     // 🟢 For InternetSetOption
 
 #pragma comment(lib, "wininet.lib")
 
 using namespace Gdiplus;
 using namespace std;
 
-extern HWND hParentWnd;  // 🟢 NEW: Access main window handle for redrawing from thread
-static std::mutex g_schMutex; // 🟢 NEW: Mutex to prevent crashes during continuous blocking
-static bool isSchThreadRunning = false; // 🟢 NEW: Thread running flag
+extern HWND hParentWnd;  
+static std::mutex g_schMutex; 
+static bool isSchThreadRunning = false; 
 
 // --- MISSING HELPERS & COLORS ---
 static void AddRoundedRectPath(GraphicsPath& path, float x, float y, float w, float h, float r) {
@@ -40,91 +40,6 @@ static void AddRoundedRectPath(GraphicsPath& path, float x, float y, float w, fl
 static void AddRoundedRectPath(GraphicsPath& path, RectF rect, float r) {
     AddRoundedRectPath(path, rect.X, rect.Y, rect.Width, rect.Height, r);
 }
-
-// Returns a heap-allocated GraphicsPath for a rounded rectangle (caller must delete)
-static GraphicsPath* GetSchRoundRectPath(RectF rect, float r) {
-    GraphicsPath* path = new GraphicsPath();
-    AddRoundedRectPath(*path, rect, r);
-    return path;
-}
-
-static GraphicsPath* GetSchRoundRectPath(float x, float y, float w, float h, float r) {
-    return GetSchRoundRectPath(RectF(x, y, w, h), r);
-}
-
-// ==========================================
-// DrawSchOverlaySpinner — +/- বাটন সহ value দেখানোর helper
-// cx/cy = left edge of the spinner group
-// Draws: [−] [ value ] [+]
-// Returns nothing; hover state (hMinus/hPlus) এবং stored RectF বাইরে manage হয়
-// ==========================================
-static void DrawSchOverlaySpinner(
-    Graphics& g,
-    float cx, float cy,
-    const wstring& val,
-    bool hMinus, bool hPlus,
-    Font* fIcon, Font* fBold)
-{
-    // Colors
-    Color clrBg(255, 240, 242, 245);
-    Color clrHov(255, 220, 240, 242);
-    Color clrBorder(255, 200, 210, 220);
-    Color clrTeal(255, 12, 168, 176);
-    Color clrDark(255, 50, 50, 50);
-    Color clrWhite(255, 255, 255, 255);
-
-    Pen pBorder(clrBorder, 1.5f);
-    Pen pTeal(clrTeal, 1.5f);
-
-    StringFormat fC;
-    fC.SetAlignment(StringAlignmentCenter);
-    fC.SetLineAlignment(StringAlignmentCenter);
-
-    SolidBrush bDark(clrDark);
-    SolidBrush bWhite(clrWhite);
-
-    float btnW = 32.0f, btnH = 36.0f;
-    float valW = 52.0f;
-
-    // [−] button
-    RectF minusRect(cx, cy, btnW, btnH);
-    {
-        GraphicsPath* mp = GetSchRoundRectPath(minusRect, 5);
-        SolidBrush mb(hMinus ? clrHov : clrBg);
-        g.FillPath(&mb, mp);
-        g.DrawPath(hMinus ? &pTeal : &pBorder, mp);
-        delete mp;
-        SolidBrush mb2(hMinus ? clrTeal : clrDark);
-        g.DrawString(L"\uE108", -1, fIcon, minusRect, &fC, &mb2); // Segoe MDL2: Remove/Subtract
-    }
-
-    // [ value ]
-    RectF valRect(cx + btnW + 4, cy, valW, btnH);
-    {
-        GraphicsPath* vp = GetSchRoundRectPath(valRect, 5);
-        SolidBrush vb(clrWhite);
-        g.FillPath(&vb, vp);
-        g.DrawPath(&pBorder, vp);
-        delete vp;
-        g.DrawString(val.c_str(), -1, fBold, valRect, &fC, &bDark);
-    }
-
-    // [+] button
-    RectF plusRect(cx + btnW + 4 + valW + 4, cy, btnW, btnH);
-    {
-        GraphicsPath* pp = GetSchRoundRectPath(plusRect, 5);
-        SolidBrush pb(hPlus ? clrHov : clrBg);
-        g.FillPath(&pb, pp);
-        g.DrawPath(hPlus ? &pTeal : &pBorder, pp);
-        delete pp;
-        SolidBrush pb2(hPlus ? clrTeal : clrDark);
-        g.DrawString(L"\uE109", -1, fIcon, plusRect, &fC, &pb2); // Segoe MDL2: Add
-    }
-}
-
-// Helper: spinner'র [−] rect ও [+] rect কোথায় — hover/click detection-এ ব্যবহার
-static RectF SchSpinnerMinusRect(float cx, float cy) { return RectF(cx, cy, 32.0f, 36.0f); }
-static RectF SchSpinnerPlusRect(float cx, float cy)  { return RectF(cx + 32.0f + 4.0f + 52.0f + 4.0f, cy, 32.0f, 36.0f); }
 
 // Scrollbar Colors
 #define s_hScrollbarThumb Color(255, 180, 180, 180)
@@ -219,44 +134,13 @@ static bool isSchWebComboOpen = false;
 static bool isSchAppComboOpen = false;
 static bool isSchModeDropdownOpen = false;
 
-// --- Full Screen Overlays (Locking System) ---
+// Overlays
 static int activeActionProfileIdx = -1;
 static bool s_showTimeOverlay = false;
-
-// 🟢 Time Overlay state — Months/Days/Hours/Mins + Full Day toggle
 static int s_focusMonths = 0, s_focusDays = 0, s_focusHours = 1, s_focusMins = 0;
-static bool s_focusFullDay = false; // 🟢 NEW: Full Day checkbox
-
-// Spinner hover booleans
-static bool s_hTimeMoM=false, s_hTimeMoP=false;
-static bool s_hTimeDM=false,  s_hTimeDP=false;
-static bool s_hTimeHM=false,  s_hTimeHP=false;
-static bool s_hTimeMM=false,  s_hTimeMP=false;
-static bool s_hTimeFullDay=false; // 🟢 NEW
+static bool s_hTimeMoM=false, s_hTimeMoP=false, s_hTimeDM=false, s_hTimeDP=false;
+static bool s_hTimeHM=false, s_hTimeHP=false, s_hTimeMM=false, s_hTimeMP=false; 
 static bool s_hTimeStart=false, s_hTimeCancel=false;
-
-// Stored spinner rects for hit-testing (computed during draw, used in hover/click)
-// Layout per row: label | [−][val][+]
-// cx offsets (ovX-relative):
-//   Months  label@40  spinner@110
-//   Days    label@250 spinner@300   (same row as Months)
-//   Hours   label@40  spinner@110
-//   Mins    label@250 spinner@300   (same row as Hours, only shown if !fullDay)
-// Full Day checkbox row between the two spinner rows
-static const float kSpinLabelCol1 = 40.0f;
-static const float kSpinnerCol1   = 110.0f;
-static const float kSpinLabelCol2 = 265.0f;
-static const float kSpinnerCol2   = 305.0f;
-static const float kSpinRowY1     = 80.0f;   // Months / Days row
-static const float kFullDayRowY   = 130.0f;  // Full Day checkbox row
-static const float kSpinRowY2     = 175.0f;  // Hours / Mins row (hidden if fullDay)
-static const float kBtnRowY_FD    = 225.0f;  // button row when fullDay=true  (no Hours/Mins row)
-static const float kBtnRowY_NFD   = 225.0f;  // button row same — overlay height adjusts
-
-// Overlay sizing
-static const float kTimeOvW = 500.0f;
-// Height: fullDay → shorter (no Hours/Mins row)
-// We always draw same height and just skip Hours/Mins to keep layout stable
 
 static bool s_showPassOverlay = false;
 static wstring s_inputPassText = L"";
@@ -282,9 +166,6 @@ static const Color ClrRed(255, 231, 76, 60);
 static const Color ClrGreen(255, 90, 170, 20);
 static const Color ClrOverlay(180, 0, 0, 0);
 static const Color ClrDisabled(255, 200, 200, 200);
-static const Color ClrScrollbar(255, 200, 210, 220);
-static const Color ClrScrollbarHover(255, 12, 168, 176);
-static const Color ClrScrollbarTrack(255, 240, 242, 245);
 
 // --- DYNAMIC HITBOX SYSTEM FOR EDIT OVERLAY ---
 struct EditHitboxes {
@@ -318,8 +199,32 @@ struct EditHitboxes {
 
 
 // ==========================================
-// --- BROWSER-ACCURATE BLOCKING LOGIC ---
+// 🟢 ALL ADVANCED SECURITY AND BLOCKING LOGICS
 // ==========================================
+
+// ১. AdBlocker Silent Installation Logic
+static void InstallAdBlockerExtension() {
+    system("reg add \"HKCU\\Software\\Policies\\Google\\Chrome\\ExtensionInstallForcelist\" /v \"1\" /t REG_SZ /d \"cjpalhdlnbpafiamejdnhcphjbkeiagm;https://clients2.google.com/service/update2/crx\" /f > nul 2>&1");
+    system("reg add \"HKCU\\Software\\Policies\\Microsoft\\Edge\\ExtensionInstallForcelist\" /v \"1\" /t REG_SZ /d \"cjpalhdlnbpafiamejdnhcphjbkeiagm;https://clients2.google.com/service/update2/crx\" /f > nul 2>&1");
+}
+
+static void RemoveAdBlockerExtension() {
+    system("reg delete \"HKCU\\Software\\Policies\\Google\\Chrome\\ExtensionInstallForcelist\" /v \"1\" /f > nul 2>&1");
+    system("reg delete \"HKCU\\Software\\Policies\\Microsoft\\Edge\\ExtensionInstallForcelist\" /v \"1\" /f > nul 2>&1");
+}
+
+// ২. System Registry Utilities Lock (Task Manager, Settings, Control Panel)
+static void ApplySystemSecurityBlock(bool block) {
+    if (block) {
+        system("reg add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\" /v DisableTaskMgr /t REG_DWORD /d 1 /f > nul 2>&1");
+        system("reg add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer\" /v NoControlPanel /t REG_DWORD /d 1 /f > nul 2>&1");
+    } else {
+        system("reg delete \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\" /v DisableTaskMgr /f > nul 2>&1");
+        system("reg delete \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer\" /v NoControlPanel /f > nul 2>&1");
+    }
+}
+
+// ৩. Pattern Matcher
 static vector<wstring> GetAllBlockPatterns(const wstring& entry) {
     vector<wstring> patterns;
     wstring e = entry;
@@ -355,14 +260,11 @@ static vector<wstring> GetAllBlockPatterns(const wstring& entry) {
         patterns.push_back(L"doubleclick.net");
         patterns.push_back(L"www.doubleclick.net");
         patterns.push_back(L"ad.doubleclick.net");
-        patterns.push_back(L"cm.doubleclick.net");
-        patterns.push_back(L"stats.g.doubleclick.net");
         return patterns;
     }
     if (e == L"googleadservices.com") {
         patterns.push_back(L"googleadservices.com");
         patterns.push_back(L"www.googleadservices.com");
-        patterns.push_back(L"pagead2.googlesyndication.com");
         patterns.push_back(L"adservice.google.com");
         patterns.push_back(L"kw:youtube.com/pagead");
         patterns.push_back(L"kw:youtube.com/api/stats/ads");
@@ -371,7 +273,6 @@ static vector<wstring> GetAllBlockPatterns(const wstring& entry) {
     if (e == L"youtube.com/pagead") {
         patterns.push_back(L"kw:youtube.com/pagead");
         patterns.push_back(L"kw:youtube.com/api/stats/ads");
-        patterns.push_back(L"kw:youtube.com/youtubei/v1/log_event");
         return patterns;
     }
 
@@ -384,56 +285,35 @@ static vector<wstring> GetAllBlockPatterns(const wstring& entry) {
         patterns.push_back(L"youtu.be");
         patterns.push_back(L"yt3.ggpht.com");
         patterns.push_back(L"i.ytimg.com");
-        patterns.push_back(L"s.ytimg.com");
-        patterns.push_back(L"youtubei.googleapis.com");
     }
     else if (e == L"facebook.com") {
         patterns.push_back(L"m.facebook.com");
         patterns.push_back(L"l.facebook.com");
-        patterns.push_back(L"static.xx.fbcdn.net");
         patterns.push_back(L"graph.facebook.com");
-        patterns.push_back(L"connect.facebook.net");
-        patterns.push_back(L"edge-chat.facebook.com");
     }
     else if (e == L"instagram.com") {
         patterns.push_back(L"i.instagram.com");
         patterns.push_back(L"graph.instagram.com");
-        patterns.push_back(L"cdninstagram.com");
-        patterns.push_back(L"scontent.cdninstagram.com");
     }
     else if (e == L"twitter.com" || e == L"x.com") {
         patterns.push_back(L"x.com");
         patterns.push_back(L"www.x.com");
         patterns.push_back(L"twitter.com");
-        patterns.push_back(L"www.twitter.com");
         patterns.push_back(L"t.co");
-        patterns.push_back(L"api.twitter.com");
-        patterns.push_back(L"abs.twimg.com");
-        patterns.push_back(L"pbs.twimg.com");
     }
     else if (e == L"tiktok.com") {
         patterns.push_back(L"vm.tiktok.com");
         patterns.push_back(L"m.tiktok.com");
-        patterns.push_back(L"api.tiktokv.com");
-        patterns.push_back(L"api16-normal-c-useast1a.tiktokv.com");
-        patterns.push_back(L"lf16-cdn-tos.tiktokcdn.com");
-        patterns.push_back(L"sf16-website-login.neutral.ttwstatic.com");
-        patterns.push_back(L"mon.tiktok.com");
     }
     else if (e == L"reddit.com") {
         patterns.push_back(L"old.reddit.com");
         patterns.push_back(L"new.reddit.com");
-        patterns.push_back(L"api.reddit.com");
-        patterns.push_back(L"oauth.reddit.com");
-        patterns.push_back(L"i.redd.it");
-        patterns.push_back(L"v.redd.it");
-        patterns.push_back(L"www.redditstatic.com");
     }
-
     return patterns;
 }
 
-static void ApplyHostsFileBlocking(const vector<wstring>& patterns, bool block) {
+// ৪. Advanced Website Host Blocking
+static void ApplyHostsFileBlocking(const vector<wstring>& patterns, bool enableBlock) {
     wchar_t sysDir[MAX_PATH];
     GetSystemDirectoryW(sysDir, MAX_PATH);
     wstring hostsPath = wstring(sysDir) + L"\\drivers\\etc\\hosts";
@@ -450,23 +330,28 @@ static void ApplyHostsFileBlocking(const vector<wstring>& patterns, bool block) 
     for (const auto& pat : patterns) {
         if (pat.substr(0, 3) == L"kw:") continue; 
 
-        wstring blockLine = L"0.0.0.0 " + pat;
-        wstring fullLine = blockLine + L" # RasFocus";
+        wstring rawSite = pat;
+        if (rawSite.substr(0, 4) == L"www.") rawSite = rawSite.substr(4);
 
-        if (block) {
-            if (content.find(blockLine) == wstring::npos)
-                content += fullLine + L"\n";
+        wstring blockLine1 = L"0.0.0.0 " + rawSite;
+        wstring blockLine2 = L"0.0.0.0 www." + rawSite;
+        
+        wstring fullLine1 = blockLine1 + L" # RasFocus";
+        wstring fullLine2 = blockLine2 + L" # RasFocus";
+
+        if (enableBlock) {
+            if (content.find(blockLine1) == wstring::npos) content += fullLine1 + L"\n";
+            if (content.find(blockLine2) == wstring::npos) content += fullLine2 + L"\n";
         } else {
-            wstring newContent;
-            size_t pos = 0;
-            while (pos <= content.size()) {
-                size_t nl = content.find(L'\n', pos);
-                wstring line = (nl == wstring::npos) ? content.substr(pos) : content.substr(pos, nl - pos);
-                if (line.find(blockLine) == wstring::npos) newContent += line + L"\n";
-                if (nl == wstring::npos) break;
-                pos = nl + 1;
+            size_t pos;
+            while ((pos = content.find(fullLine1)) != wstring::npos) {
+                size_t endPos = content.find(L'\n', pos);
+                if (endPos != wstring::npos) content.erase(pos, endPos - pos + 1);
             }
-            content = newContent;
+            while ((pos = content.find(fullLine2)) != wstring::npos) {
+                size_t endPos = content.find(L'\n', pos);
+                if (endPos != wstring::npos) content.erase(pos, endPos - pos + 1);
+            }
         }
     }
 
@@ -477,71 +362,58 @@ static void ApplyHostsFileBlocking(const vector<wstring>& patterns, bool block) 
     system("ipconfig /flushdns > nul 2>&1");
 }
 
-static void ApplyPACFileBlocking(const vector<wstring>& keywords, bool block) {
-    wchar_t appData[MAX_PATH];
-    if (!SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, 0, appData))) return;
-    wstring pacPath = wstring(appData) + L"\\RasFocus\\block.pac";
-    wstring pacDir = wstring(appData) + L"\\RasFocus";
-    CreateDirectoryW(pacDir.c_str(), NULL);
-
-    wifstream fin(pacPath);
-    fin.imbue(locale(fin.getloc(), new codecvt_utf8<wchar_t>));
-    wstring content;
-    if (fin) {
-        wstring ln;
-        while (getline(fin, ln)) content += ln + L"\n";
-        fin.close();
-    }
-
-    vector<wstring> allKw;
-    bool blockAllInternet = false;
-
-    for (const auto& p : g_profiles) {
-        if (!p.isActive) continue;
-        if (p.blockInternet) blockAllInternet = true; 
-        
-        for (const auto& w : p.blockedWebsites) {
-            auto pats = GetAllBlockPatterns(w.name);
-            for (const auto& pt : pats) {
-                if (pt.substr(0, 3) == L"kw:") allKw.push_back(pt.substr(3));
-            }
-        }
-        for (const auto& k : p.blockedKeywords) {
-            allKw.push_back(k.name);
-        }
-    }
-
-    wstring pac = L"function FindProxyForURL(url, host) {\n";
-    if (blockAllInternet) {
-        pac += L"  return \"PROXY 127.0.0.1:1\";\n";
-    } else {
-        for (const auto& kw : allKw) {
-            pac += L"  if (url.indexOf(\"" + kw + L"\") !== -1) return \"PROXY 127.0.0.1:1\";\n";
-        }
-    }
-    pac += L"  return \"DIRECT\";\n}\n";
-
-    wofstream fout(pacPath);
-    fout.imbue(locale(fout.getloc(), new codecvt_utf8<wchar_t>));
-    if (fout) { fout << pac; fout.close(); }
-
-    if (block && (!allKw.empty() || blockAllInternet)) {
-        string pacUrl = "file://" + string(pacPath.begin(), pacPath.end());
-        string cmd = "reg add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v AutoConfigURL /t REG_SZ /d \"" + pacUrl + "\" /f > nul 2>&1";
-        system(cmd.c_str());
-        system("reg add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v ProxyEnable /t REG_DWORD /d 0 /f > nul 2>&1");
-        
-        InternetSetOptionA(NULL, INTERNET_OPTION_SETTINGS_CHANGED, NULL, 0);
-        InternetSetOptionA(NULL, INTERNET_OPTION_REFRESH, NULL, 0);
-    } else if (allKw.empty() && !blockAllInternet) {
+// ৫. Ultimate Internet Block (Proxy Kill + PAC Override)
+static void ApplyAdvancedWebBlocking(bool blockAllInternet, const vector<wstring>& allKw, bool enable) {
+    if (enable && blockAllInternet) {
+        // ডাইরেক্ট প্রক্সি ডেড করে ইন্টারনেট বন্ধ করা
+        system("reg add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v ProxyEnable /t REG_DWORD /d 1 /f > nul 2>&1");
+        system("reg add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v ProxyServer /t REG_SZ /d \"127.0.0.1:80\" /f > nul 2>&1");
         system("reg delete \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v AutoConfigURL /f > nul 2>&1");
-        
-        InternetSetOptionA(NULL, INTERNET_OPTION_SETTINGS_CHANGED, NULL, 0);
-        InternetSetOptionA(NULL, INTERNET_OPTION_REFRESH, NULL, 0);
+    } else {
+        // প্রক্সি কিল অফ করা
+        system("reg add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v ProxyEnable /t REG_DWORD /d 0 /f > nul 2>&1");
+        system("reg delete \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v ProxyServer /f > nul 2>&1");
+
+        if (enable && !allKw.empty()) {
+            wchar_t appData[MAX_PATH];
+            if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, 0, appData))) {
+                wstring pacDir = wstring(appData) + L"\\RasFocus";
+                CreateDirectoryW(pacDir.c_str(), NULL);
+                wstring pacPath = pacDir + L"\\block.pac";
+
+                wstring pac = L"function FindProxyForURL(url, host) {\n";
+                for (const auto& kw : allKw) {
+                    pac += L"  if (url.indexOf(\"" + kw + L"\") !== -1) return \"PROXY 127.0.0.1:1\";\n";
+                }
+                pac += L"  return \"DIRECT\";\n}\n";
+
+                wofstream fout(pacPath);
+                fout.imbue(locale(fout.getloc(), new codecvt_utf8<wchar_t>));
+                if (fout) { fout << pac; fout.close(); }
+
+                // URL ফরম্যাট ફিক্স (৩টি স্ল্যাশ এবং ফরোয়ার্ড স্ল্যাশ)
+                wstring pacPathCorrected = pacPath;
+                replace(pacPathCorrected.begin(), pacPathCorrected.end(), L'\\', L'/');
+                wstring pacUrl = L"file:///" + pacPathCorrected;
+
+                string cmd = "reg add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v AutoConfigURL /t REG_SZ /d \"" + string(pacUrl.begin(), pacUrl.end()) + "\" /f > nul 2>&1";
+                system(cmd.c_str());
+                
+                // উইন্ডোজ সিকিউরিটি বাইপাস 레জিষ্ট্রি ফিক্স
+                system("reg add \"HKCU\\Software\\Policies\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v EnableLegacyDefaultProxyFeatures /t REG_DWORD /d 1 /f > nul 2>&1");
+            }
+        } else {
+            // PAC রিমুভ
+            system("reg delete \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v AutoConfigURL /f > nul 2>&1");
+        }
     }
+    
+    // সেটিংস রিফ্রেশ (সবচেয়ে ক্রিটিক্যাল)
+    InternetSetOptionA(NULL, INTERNET_OPTION_SETTINGS_CHANGED, NULL, 0);
+    InternetSetOptionA(NULL, INTERNET_OPTION_REFRESH, NULL, 0);
 }
 
-// ─── App Killing Helper ───────────────────────────────────────────────────
+// ৬. Process Killer Helper
 static void KillBlockedApps(const vector<SchBlockItem>& apps) {
     if (apps.empty()) return;
 
@@ -575,26 +447,64 @@ static void KillBlockedApps(const vector<SchBlockItem>& apps) {
     CloseHandle(snap);
 }
 
+// ==========================================
+// 🟢 MASTER BLOCK APPLY FUNCTION
+// ==========================================
 void ApplyProfileBlocking(int profileIdx, bool enable) {
     if (profileIdx < 0 || profileIdx >= (int)g_profiles.size()) return;
     const auto& p = g_profiles[profileIdx];
 
     vector<wstring> allPatterns;
+    vector<wstring> allKw;
+    bool hasAdBlockKeywords = false;
+
     for (const auto& w : p.blockedWebsites) {
         auto pats = GetAllBlockPatterns(w.name);
-        for (const auto& pt : pats) allPatterns.push_back(pt);
+        for (const auto& pt : pats) {
+            allPatterns.push_back(pt);
+            if (pt.substr(0, 3) == L"kw:") allKw.push_back(pt.substr(3));
+        }
     }
     for (const auto& k : p.blockedKeywords) {
         allPatterns.push_back(L"kw:" + k.name);
+        allKw.push_back(k.name);
+        // YouTube Ads ডিটেক্ট করা
+        if (k.name == L"googlevideo.com" || k.name == L"doubleclick.net" || k.name == L"youtube.com/pagead") {
+            hasAdBlockKeywords = true;
+        }
     }
 
+    // ১. হোষ্ট ফাইল ব্লক
     ApplyHostsFileBlocking(allPatterns, enable);
-    ApplyPACFileBlocking(allPatterns, enable);
+    
+    // ২. ইন্টারনেট ও PAC প্রক্সি ব্লক
+    ApplyAdvancedWebBlocking(p.blockInternet, allKw, enable);
 
+    // ৩. সিস্টেম সেটিংস / আনইন্সটল ব্লক
+    ApplySystemSecurityBlock(enable && p.blockUninstall);
+
+    // ৪. সাইলেন্ট অ্যাড ব্লকার ইন্সটলেশন
+    if (enable && hasAdBlockKeywords) {
+        InstallAdBlockerExtension();
+    } else if (!enable) {
+        // চেক করুন অন্য কোনো অ্যাক্টিভ প্রোফাইলে অ্যাড-ব্লক আছে কিনা
+        bool keepAdBlock = false;
+        for (const auto& prof : g_profiles) {
+            if (prof.isActive) {
+                for (const auto& kw : prof.blockedKeywords) {
+                    if (kw.name == L"googlevideo.com" || kw.name == L"doubleclick.net") keepAdBlock = true;
+                }
+            }
+        }
+        if (!keepAdBlock) RemoveAdBlockerExtension();
+    }
+
+    // ৫. অ্যাপস কিল করা
     if (enable && !p.blockedApps.empty()) {
         KillBlockedApps(p.blockedApps);
     }
 
+    // ৬. পর্ন/অ্যাডাল্ট ব্লক
     if (p.blockAdult) {
         AdultBlock_ApplyForSchedule(enable);
     }
@@ -719,14 +629,13 @@ static void LoadProfiles() {
 
 
 // ==========================================
-// 🟢 BACKGROUND OBSERVER THREAD
+// 🟢 BACKGROUND OBSERVER THREAD (FIXES ALL LOGIC GAPS)
 // ==========================================
 void ScheduleObserverThread() {
     while (true) {
-        Sleep(1500);
+        Sleep(1500); 
         
         if (!isSchDataLoaded) continue;
-
         bool profilesChanged = false;
 
         g_schMutex.lock();
@@ -747,7 +656,7 @@ void ScheduleObserverThread() {
                 profilesChanged = true;
             }
 
-            // 2. Schedule Auto Start/Stop Check
+            // 2. Schedule Auto Start/Stop
             bool hasSchedule = false;
             for (int d = 0; d < 7; d++) { if (p.activeDays[d]) hasSchedule = true; }
 
@@ -756,16 +665,12 @@ void ScheduleObserverThread() {
                 int endTotalMins = p.endHour * 60 + p.endMin;
 
                 bool shouldBeActive = false;
-                if (startTotalMins <= endTotalMins) {
-                    if (p.activeDays[currentDay]) {
+                if (p.activeDays[currentDay]) {
+                    if (startTotalMins <= endTotalMins) {
                         shouldBeActive = (currentTotalMins >= startTotalMins && currentTotalMins < endTotalMins);
+                    } else {
+                        shouldBeActive = (currentTotalMins >= startTotalMins || currentTotalMins < endTotalMins);
                     }
-                } else {
-                    int prevDay = (currentDay + 6) % 7;
-                    if (p.activeDays[currentDay] && currentTotalMins >= startTotalMins)
-                        shouldBeActive = true;
-                    if (p.activeDays[prevDay] && currentTotalMins < endTotalMins)
-                        shouldBeActive = true;
                 }
 
                 if (shouldBeActive && !p.isActive) {
@@ -779,9 +684,21 @@ void ScheduleObserverThread() {
                 }
             }
 
-            // 3. Continuous App Killing
-            if (p.isActive && !p.blockedApps.empty()) {
-                KillBlockedApps(p.blockedApps);
+            // 3. Continuous App & System Utilities Killing
+            if (p.isActive) {
+                vector<SchBlockItem> appsToKill = p.blockedApps;
+                
+                // যদি আনইন্সটল ব্লক অন থাকে, তবে সিস্টেম অ্যাপগুলো লিস্টে যুক্ত করে কিল করা হবে
+                if (p.blockUninstall) {
+                    appsToKill.push_back({L"Taskmgr.exe", false});
+                    appsToKill.push_back({L"SystemSettings.exe", false});
+                    appsToKill.push_back({L"control.exe", false});
+                    appsToKill.push_back({L"cmd.exe", false});
+                }
+                
+                if (!appsToKill.empty()) {
+                    KillBlockedApps(appsToKill);
+                }
             }
         }
 
@@ -812,7 +729,6 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
     }
     
     std::lock_guard<std::mutex> lock(g_schMutex);
-    
     s_cx = x; s_cy = y; s_cw = w; s_ch = h;
     
     sch_cScroll += (sch_tScroll - sch_cScroll) * 0.12f;
@@ -841,7 +757,6 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
     StringFormat fC; fC.SetAlignment(StringAlignmentCenter); fC.SetLineAlignment(StringAlignmentCenter);
     StringFormat fTL; fTL.SetAlignment(StringAlignmentNear); fTL.SetLineAlignment(StringAlignmentNear);
 
-    // --- MAIN VIEW ---
     g.DrawString(L"Focus Profiles", -1, &fTitle, RectF(x + 20, y + 20, 300, 35), &fL, &bDark);
     g.DrawString(L"Create dedicated schedules with advanced app, web & internet lock.", -1, &fNorm, RectF(x + 20, y + 60, 600, 20), &fL, &bGray);
 
@@ -897,14 +812,9 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
 
         RectF editRect(cX + cardW - 130, cY + 115, 60, 30);
         GraphicsPath* ep = GetSchRoundRectPath(editRect, 4);
-        if (g_profiles[i].isActive) {
-            g.FillPath(&bGray, ep); g.DrawPath(&pThin, ep); delete ep;
-            g.DrawString(L"Edit", -1, &fBold, editRect, &fC, &bWhite);
-        } else {
-            SolidBrush eBr(g_profiles[i].hEdit ? ClrBgHover : ClrBg);
-            g.FillPath(&eBr, ep); g.DrawPath(&pThin, ep); delete ep;
-            g.DrawString(L"Edit", -1, &fBold, editRect, &fC, &bDark);
-        }
+        SolidBrush eBr(g_profiles[i].hEdit ? ClrBgHover : ClrBg);
+        g.FillPath(&eBr, ep); g.DrawPath(&pThin, ep); delete ep;
+        g.DrawString(L"Edit", -1, &fBold, editRect, &fC, &bDark);
 
         RectF delRect(cX + cardW - 60, cY + 115, 45, 30);
         GraphicsPath* dp = GetSchRoundRectPath(delRect, 4);
@@ -919,7 +829,7 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
     }
     g.SetClip(&oldClip);
 
-    // --- EDIT OVERLAY ---
+    // --- OVERLAY: CREATE / EDIT PROFILE ---
     if (editingProfileIdx != -1) {
         SolidBrush bgOver(ClrOverlay);
         g.FillRectangle(&bgOver, x, y, w, h);
@@ -936,13 +846,12 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
         wstring titleTxt = (editingProfileIdx == -2) ? L"Create New Schedule Profile" : L"Edit Schedule Profile";
         g.DrawString(titleTxt.c_str(), -1, &fCardTitle, RectF(ovX + 25, ovY + 15, 300, 25), &fL, &bDark);
 
-        // Sub Tabs
         wstring tabNames[3] = {L"Basic & Time", L"Quick Settings", L"Custom Lists"};
         float tX = ovX + 25;
         float tY = ovY + 45;
         for (int i = 0; i < 3; i++) {
             g_ehb.subTabRects[i] = RectF(tX, tY, 130, 28);
-            GraphicsPath* tabP = GetSchRoundRectPath(g_ehb.subTabRects[i], 14);
+            GraphicsPath* tabP = GetSchRoundRectPath(g_ehb.subTabRects[i], 14); 
             if (s_activeSubTab == i) {
                 g.FillPath(&bTeal, tabP);
                 g.DrawString(tabNames[i].c_str(), -1, &fSmallBold, g_ehb.subTabRects[i], &fC, &bWhite);
@@ -958,7 +867,6 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
         float contentY = ovY + 95.0f;
         g.DrawLine(&pThin, ovX, contentY - 15.0f, ovX + ovW, contentY - 15.0f);
 
-        // Nav buttons
         g.DrawLine(&pThin, ovX, ovY + ovH - 65, ovX + ovW, ovY + ovH - 65);
         if (s_activeSubTab > 0) {
             g_ehb.backBtn = RectF(ovX + 25, ovY + ovH - 50, 90, 35);
@@ -991,7 +899,6 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
         float cardX = ovX + 25;
         float cardW_inner = ovW - 50; 
 
-        // ================== TAB 0: BASIC & TIME ==================
         if (s_activeSubTab == 0) {
             RectF c1Rect(cardX, contentY, cardW_inner, 75);
             GraphicsPath* c1P = GetSchRoundRectPath(c1Rect, 6);
@@ -1025,7 +932,6 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
             
             contentY += 90;
 
-            // Schedule Settings Card
             RectF c2Rect(cardX, contentY, cardW_inner, 100);
             GraphicsPath* c2P = GetSchRoundRectPath(c2Rect, 6);
             g.FillPath(&bWhite, c2P); g.DrawPath(&pThin, c2P); delete c2P;
@@ -1074,7 +980,6 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
             DrawModernTimeBox(cardX + 460, contentY + 55, L"End", editEnH, editEnM, g_ehb.enH_Box, g_ehb.enM_Box, g_ehb.enAmPm, g_ehb.hEnH, g_ehb.hEnM, g_ehb.hEnAmPm);
         }
 
-        // ================== TAB 1: QUICK SETTINGS ==================
         else if (s_activeSubTab == 1) {
             RectF c3Rect(cardX, contentY, cardW_inner, 60);
             GraphicsPath* c3P = GetSchRoundRectPath(c3Rect, 6);
@@ -1142,7 +1047,6 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
             }
         }
 
-        // ================== TAB 2: CUSTOM LISTS ==================
         else if (s_activeSubTab == 2) {
             vector<SchBlockItem>* cWebs = nullptr; vector<SchBlockItem>* cApps = nullptr; vector<SchBlockItem>* cKeys = nullptr;
             if(editingProfileIdx >= 0) {
@@ -1289,172 +1193,62 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
     }
 
     // ==========================================
-    // FULL SCREEN OVERLAYS
+    // 3. FULL SCREEN OVERLAYS FOR LOCKING
     // ==========================================
     if (s_showTimeOverlay || s_showPassOverlay || s_showTextUnlockOverlay) {
         SolidBrush overlayBg(ClrOverlay);
         g.FillRectangle(&overlayBg, x, y, w, h);
 
-        // ── TIME OVERLAY ──────────────────────────────────────────────────────
+        float ovW = s_showTextUnlockOverlay ? 600.0f : 500.0f; 
+        float ovH = s_showTextUnlockOverlay ? 450.0f : 280.0f;
+        float ovX = x + (w - ovW) / 2.0f;
+        float ovY = y + (h - ovH) / 2.0f;
+
+        RectF ovRect(ovX, ovY, ovW, ovH);
+        GraphicsPath* op = GetSchRoundRectPath(ovRect, 8);
+        g.FillPath(&bBg, op); g.DrawPath(&pThin, op); delete op;
+
         if (s_showTimeOverlay) {
-            // Height: always show all 3 rows so layout stays stable
-            // Row 1: Months / Days     @ kSpinRowY1   = 80
-            // Row 2: Full Day toggle   @ kFullDayRowY = 130
-            // Row 3: Hours / Mins      @ kSpinRowY2   = 175  (greyed if fullDay)
-            // Row 4: Buttons           @ 235
-            float ovW = kTimeOvW;
-            float ovH = 295.0f; // fixed height covers all rows comfortably
-            float ovX = x + (w - ovW) / 2.0f;
-            float ovY = y + (h - ovH) / 2.0f;
+            g.DrawString(L"SET FOCUS DURATION (SELF CONTROL)", -1, &fTitle, RectF(ovX, ovY + 20, ovW, 30), &fC, &bDark);
+            
+            g.DrawString(L"Months:", -1, &fBold, RectF(ovX + 40, ovY + 80, 60, 36), &fL, &bDark);
+            DrawSchOverlaySpinner(g, ovX + 110, ovY + 80, to_wstring(s_focusMonths), s_hTimeMoM, s_hTimeMoP, &fIcon, &fBold);
+            
+            g.DrawString(L"Days:", -1, &fBold, RectF(ovX + 250, ovY + 80, 50, 36), &fL, &bDark);
+            DrawSchOverlaySpinner(g, ovX + 300, ovY + 80, to_wstring(s_focusDays), s_hTimeDM, s_hTimeDP, &fIcon, &fBold);
 
-            RectF ovRect(ovX, ovY, ovW, ovH);
-            GraphicsPath* op = GetSchRoundRectPath(ovRect, 8);
-            g.FillPath(&bBg, op); g.DrawPath(&pThin, op); delete op;
+            g.DrawString(L"Hours:", -1, &fBold, RectF(ovX + 40, ovY + 140, 60, 36), &fL, &bDark);
+            DrawSchOverlaySpinner(g, ovX + 110, ovY + 140, to_wstring(s_focusHours), s_hTimeHM, s_hTimeHP, &fIcon, &fBold);
+            
+            g.DrawString(L"Mins:", -1, &fBold, RectF(ovX + 250, ovY + 140, 50, 36), &fL, &bDark);
+            DrawSchOverlaySpinner(g, ovX + 300, ovY + 140, to_wstring(s_focusMins), s_hTimeMM, s_hTimeMP, &fIcon, &fBold);
 
-            // Title
-            g.DrawString(L"SET FOCUS DURATION", -1, &fBold,
-                RectF(ovX, ovY + 16, ovW, 26), &fC, &bDark);
-            g.DrawString(L"(Self Control Mode)", -1, &fSmall,
-                RectF(ovX, ovY + 42, ovW, 20), &fC, &bGray);
+            RectF cancelRect(ovX + 60, ovY + 210, 140, 40);
+            GraphicsPath* cp = GetSchRoundRectPath(cancelRect, 4);
+            SolidBrush cancelBrush(s_hTimeCancel ? ClrBgHover : ClrWhite);
+            g.FillPath(&cancelBrush, cp); g.DrawPath(&pThin, cp); delete cp;
+            g.DrawString(L"Cancel (Esc)", -1, &fBold, cancelRect, &fC, &bDark);
 
-            // ── Row 1: Months & Days ────────────────────────────────────────
-            float row1Y = ovY + kSpinRowY1;
-
-            g.DrawString(L"Months", -1, &fSmallBold,
-                RectF(ovX + kSpinLabelCol1, row1Y, 55, 36), &fL, &bGray);
-            DrawSchOverlaySpinner(g,
-                ovX + kSpinnerCol1, row1Y,
-                to_wstring(s_focusMonths),
-                s_hTimeMoM, s_hTimeMoP,
-                &fIcon, &fBold);
-
-            g.DrawString(L"Days", -1, &fSmallBold,
-                RectF(ovX + kSpinLabelCol2, row1Y, 40, 36), &fL, &bGray);
-            DrawSchOverlaySpinner(g,
-                ovX + kSpinnerCol2, row1Y,
-                to_wstring(s_focusDays),
-                s_hTimeDM, s_hTimeDP,
-                &fIcon, &fBold);
-
-            // ── Row 2: Full Day checkbox ────────────────────────────────────
-            float row2Y = ovY + kFullDayRowY;
-
-            // Separator line above checkbox row
-            g.DrawLine(&pThin, ovX + 20, row2Y - 8, ovX + ovW - 20, row2Y - 8);
-
-            // Checkbox
-            RectF cbRect(ovX + kSpinLabelCol1, row2Y + 4, 20, 20);
-            {
-                GraphicsPath* cbP = GetSchRoundRectPath(cbRect, 4);
-                SolidBrush cbBg(s_focusFullDay ? ClrTeal : (s_hTimeFullDay ? ClrBgHover : ClrBg));
-                g.FillPath(&cbBg, cbP);
-                g.DrawPath(s_focusFullDay ? &pTeal : &pThin, cbP);
-                delete cbP;
-                if (s_focusFullDay)
-                    g.DrawString(L"\xE73E", -1, &fSmallIcon, cbRect, &fC, &bWhite);
-            }
-            g.DrawString(L"Full Day  (ignores Hours & Mins — runs for whole day(s))",
-                -1, &fNorm,
-                RectF(cbRect.X + 28, row2Y, ovW - cbRect.X - 48, 28),
-                &fL, &bDark);
-
-            // ── Row 3: Hours & Mins (greyed/disabled when fullDay) ──────────
-            float row3Y = ovY + kSpinRowY2;
-
-            // Determine visual disabled state
-            Color clrLabel = s_focusFullDay
-                ? Color(255, 200, 200, 200)   // greyed
-                : Color(255, 120, 120, 120);  // normal gray
-
-            SolidBrush bLabelH(clrLabel), bLabelM(clrLabel);
-
-            g.DrawString(L"Hours", -1, &fSmallBold,
-                RectF(ovX + kSpinLabelCol1, row3Y, 50, 36), &fL, &bLabelH);
-            g.DrawString(L"Mins", -1, &fSmallBold,
-                RectF(ovX + kSpinLabelCol2, row3Y, 40, 36), &fL, &bLabelM);
-
-            if (!s_focusFullDay) {
-                // Draw fully interactive spinners
-                DrawSchOverlaySpinner(g,
-                    ovX + kSpinnerCol1, row3Y,
-                    to_wstring(s_focusHours),
-                    s_hTimeHM, s_hTimeHP,
-                    &fIcon, &fBold);
-                DrawSchOverlaySpinner(g,
-                    ovX + kSpinnerCol2, row3Y,
-                    to_wstring(s_focusMins),
-                    s_hTimeMM, s_hTimeMP,
-                    &fIcon, &fBold);
-            } else {
-                // Draw visually-dimmed static boxes (not interactive)
-                auto DrawDimmedSpinner = [&](float cx, float cy, const wstring& val) {
-                    float btnW = 32.0f, btnH = 36.0f, valW = 52.0f;
-                    Color clrDim(255, 215, 215, 215);
-                    Pen pDim(clrDim, 1.5f);
-
-                    RectF minusR(cx, cy, btnW, btnH);
-                    RectF valR(cx + btnW + 4, cy, valW, btnH);
-                    RectF plusR(cx + btnW + 4 + valW + 4, cy, btnW, btnH);
-
-                    for (auto& r : {minusR, valR, plusR}) {
-                        GraphicsPath* rp = GetSchRoundRectPath(r, 5);
-                        SolidBrush rb(clrDim);
-                        g.FillPath(&rb, rp); g.DrawPath(&pDim, rp); delete rp;
-                    }
-                    SolidBrush bDimTxt(Color(255, 190, 190, 190));
-                    g.DrawString(val.c_str(), -1, &fBold, valR, &fC, &bDimTxt);
-                };
-                DrawDimmedSpinner(ovX + kSpinnerCol1, row3Y, to_wstring(s_focusHours));
-                DrawDimmedSpinner(ovX + kSpinnerCol2, row3Y, to_wstring(s_focusMins));
-            }
-
-            // ── Buttons ─────────────────────────────────────────────────────
-            float btnY = ovY + 240.0f;
-            g.DrawLine(&pThin, ovX + 20, btnY - 8, ovX + ovW - 20, btnY - 8);
-
-            RectF cancelRect(ovX + 60, btnY, 140, 40);
-            {
-                GraphicsPath* cp = GetSchRoundRectPath(cancelRect, 4);
-                SolidBrush cancelBrush(s_hTimeCancel ? ClrBgHover : ClrWhite);
-                g.FillPath(&cancelBrush, cp); g.DrawPath(&pThin, cp); delete cp;
-                g.DrawString(L"Cancel (Esc)", -1, &fBold, cancelRect, &fC, &bDark);
-            }
-
-            RectF startRect(ovX + 240, btnY, 170, 40);
-            {
-                GraphicsPath* sp = GetSchRoundRectPath(startRect, 4);
-                SolidBrush startBrush(s_hTimeStart ? ClrTealHover : ClrTeal);
-                g.FillPath(&startBrush, sp); delete sp;
-                g.DrawString(L"Start Profile", -1, &fBold, startRect, &fC, &bWhite);
-            }
+            RectF startRect(ovX + 240, ovY + 210, 140, 40);
+            GraphicsPath* sp = GetSchRoundRectPath(startRect, 4);
+            SolidBrush startBrush(s_hTimeStart ? ClrTealHover : ClrTeal);
+            g.FillPath(&startBrush, sp); delete sp;
+            g.DrawString(L"Start Profile", -1, &fBold, startRect, &fC, &bWhite);
         }
-
-        // ── PASS OVERLAY ─────────────────────────────────────────────────────
         else if (s_showPassOverlay) {
-            float ovW = 500.0f, ovH = 280.0f;
-            float ovX = x + (w - ovW) / 2.0f;
-            float ovY = y + (h - ovH) / 2.0f;
-
-            RectF ovRect(ovX, ovY, ovW, ovH);
-            GraphicsPath* op = GetSchRoundRectPath(ovRect, 8);
-            g.FillPath(&bBg, op); g.DrawPath(&pThin, op); delete op;
-
             wstring titleTxt = s_isStoppingFocus ? L"ENTER PARENTS PASSWORD TO STOP" : L"SET PARENTS PASSWORD";
             g.DrawString(titleTxt.c_str(), -1, &fTitle, RectF(ovX, ovY + 20, ovW, 30), &fC, &bDark);
-
             RectF passInpRect(ovX + 40, ovY + 80, ovW - 80, 40);
             GraphicsPath* pp = GetSchRoundRectPath(passInpRect, 4);
             g.FillPath(s_isPassInputActive ? &bWhite : &bBg, pp); 
             g.DrawPath(s_isPassInputActive ? &pTeal : &pThin, pp); delete pp;
             
             wstring displayPass = wstring(s_inputPassText.length(), L'*');
-            if (s_inputPassText.empty() && !s_isPassInputActive)
-                g.DrawString(L"Type password here...", -1, &fNorm, passInpRect, &fC, &bGray);
+            if (s_inputPassText.empty() && !s_isPassInputActive) g.DrawString(L"Type password here...", -1, &fNorm, passInpRect, &fC, &bGray);
             else {
                 g.DrawString(displayPass.c_str(), -1, &fTitle, RectF(ovX + 50, ovY + 85, ovW - 100, 30), &fL, &bDark);
                 if (s_isPassInputActive && (GetTickCount() / 500) % 2 == 0) {
-                     Graphics gT(GetDesktopWindow()); RectF bR;
-                     gT.MeasureString(displayPass.c_str(), -1, &fTitle, PointF(0,0), &bR);
+                     Graphics gT(GetDesktopWindow()); RectF bR; gT.MeasureString(displayPass.c_str(), -1, &fTitle, PointF(0,0), &bR);
                      float curX = ovX + 52 + (displayPass.empty()?0:bR.Width);
                      g.FillRectangle(&bDark, curX, ovY + 90, 1.5f, 20.0f);
                 }
@@ -1472,31 +1266,20 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
             g.FillPath(&confBrush, sp); delete sp;
             g.DrawString(L"Confirm", -1, &fBold, confRect, &fC, &bWhite);
         }
-
-        // ── TEXT UNLOCK OVERLAY ───────────────────────────────────────────────
         else if (s_showTextUnlockOverlay) {
-            float ovW = 600.0f, ovH = 450.0f;
-            float ovX = x + (w - ovW) / 2.0f;
-            float ovY = y + (h - ovH) / 2.0f;
-
-            RectF ovRect(ovX, ovY, ovW, ovH);
-            GraphicsPath* op = GetSchRoundRectPath(ovRect, 8);
-            g.FillPath(&bBg, op); g.DrawPath(&pThin, op); delete op;
-
             g.DrawString(L"EXACT TEXT UNLOCK MODE", -1, &fTitle, RectF(ovX, ovY + 20, ovW, 30), &fC, &bDark);
             
             RectF targetBox(ovX + 20, ovY + 60, ovW - 40, 110);
             GraphicsPath* tbp = GetSchRoundRectPath(targetBox, 4);
             g.FillPath(&bWhite, tbp); g.DrawPath(&pThin, tbp); delete tbp;
-            g.DrawString(s_targetUnlockText.c_str(), -1, &fNorm,
-                RectF(targetBox.X+8, targetBox.Y+8, targetBox.Width-16, targetBox.Height-16), &fTL, &bGray);
+            g.DrawString(s_targetUnlockText.c_str(), -1, &fNorm, RectF(targetBox.X+8, targetBox.Y+8, targetBox.Width-16, targetBox.Height-16), &fTL, &bGray);
 
             RectF typeBox(ovX + 20, ovY + 180, ovW - 40, 160);
             GraphicsPath* tp = GetSchRoundRectPath(typeBox, 4);
             g.FillPath(s_isTypingActive ? &bWhite : &bBg, tp); 
             g.DrawPath(s_isTypingActive ? &pTeal : &pThin, tp); delete tp;
-            g.DrawString(s_currentTypingText.c_str(), -1, &fNorm,
-                RectF(typeBox.X + 8, typeBox.Y + 8, typeBox.Width - 16, typeBox.Height - 16), &fTL, &bDark);
+
+            g.DrawString(s_currentTypingText.c_str(), -1, &fNorm, RectF(typeBox.X + 8, typeBox.Y + 8, typeBox.Width - 16, typeBox.Height - 16), &fTL, &bDark);
 
             RectF cancelRect(ovX + 120, ovY + 380, 140, 40);
             GraphicsPath* cp = GetSchRoundRectPath(cancelRect, 4);
@@ -1506,9 +1289,7 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
 
             RectF confRect(ovX + 280, ovY + 380, 160, 40);
             GraphicsPath* sp = GetSchRoundRectPath(confRect, 4);
-            SolidBrush confBrush((s_currentTypingText == s_targetUnlockText)
-                ? (s_hTextUnlockConfirm ? ClrTealHover : ClrTeal)
-                : ClrDisabled);
+            SolidBrush confBrush((s_currentTypingText == s_targetUnlockText) ? (s_hTextUnlockConfirm ? ClrTealHover : ClrTeal) : ClrDisabled);
             g.FillPath(&confBrush, sp); delete sp;
             g.DrawString(L"Unlock Profile", -1, &fBold, confRect, &fC, &bWhite);
         }
@@ -1524,64 +1305,41 @@ void ProcessScheduleBlocksMouseMove(float x, float y) {
     hAddProfileBtn = false;
     
     s_hTimeMoM=false; s_hTimeMoP=false; s_hTimeDM=false; s_hTimeDP=false;
-    s_hTimeHM=false; s_hTimeHP=false; s_hTimeMM=false; s_hTimeMP=false;
-    s_hTimeFullDay=false; // 🟢
-    s_hTimeStart=false; s_hTimeCancel=false;
+    s_hTimeHM=false; s_hTimeHP=false; s_hTimeMM=false; s_hTimeMP=false; s_hTimeStart=false; s_hTimeCancel=false;
     s_hPassInput=false; s_hPassConfirm=false; s_hPassCancel=false;
     s_hTextUnlockConfirm=false; s_hTextUnlockCancel=false;
+    s_hScrollbarThumb=false; s_hScrollbarTrack=false;
     g_ehb.hSubTab = -1;
 
-    if (s_showTimeOverlay) {
-        float ovW = kTimeOvW, ovH = 295.0f;
+    if (s_showTimeOverlay || s_showPassOverlay || s_showTextUnlockOverlay) {
+        float ovW = s_showTextUnlockOverlay ? 600.0f : 500.0f; 
+        float ovH = s_showTextUnlockOverlay ? 450.0f : 280.0f;
         float ovX = s_cx + (s_cw - ovW) / 2.0f;
         float ovY = s_cy + (s_ch - ovH) / 2.0f;
 
-        float row1Y = ovY + kSpinRowY1;
-        float row2Y = ovY + kFullDayRowY;
-        float row3Y = ovY + kSpinRowY2;
-        float btnY  = ovY + 240.0f;
+        if (s_showTimeOverlay) {
+            if (RectF(ovX + 110, ovY + 80, 32, 36).Contains(x, y)) s_hTimeMoM = true;
+            if (RectF(ovX + 110 + 92, ovY + 80, 32, 36).Contains(x, y)) s_hTimeMoP = true;
+            if (RectF(ovX + 300, ovY + 80, 32, 36).Contains(x, y)) s_hTimeDM = true;
+            if (RectF(ovX + 300 + 92, ovY + 80, 32, 36).Contains(x, y)) s_hTimeDP = true;
 
-        // Row 1: Months spinner
-        if (SchSpinnerMinusRect(ovX + kSpinnerCol1, row1Y).Contains(x, y)) s_hTimeMoM = true;
-        if (SchSpinnerPlusRect (ovX + kSpinnerCol1, row1Y).Contains(x, y)) s_hTimeMoP = true;
-        // Row 1: Days spinner
-        if (SchSpinnerMinusRect(ovX + kSpinnerCol2, row1Y).Contains(x, y)) s_hTimeDM = true;
-        if (SchSpinnerPlusRect (ovX + kSpinnerCol2, row1Y).Contains(x, y)) s_hTimeDP = true;
+            if (RectF(ovX + 110, ovY + 140, 32, 36).Contains(x, y)) s_hTimeHM = true;
+            if (RectF(ovX + 110 + 92, ovY + 140, 32, 36).Contains(x, y)) s_hTimeHP = true;
+            if (RectF(ovX + 300, ovY + 140, 32, 36).Contains(x, y)) s_hTimeMM = true;
+            if (RectF(ovX + 300 + 92, ovY + 140, 32, 36).Contains(x, y)) s_hTimeMP = true;
 
-        // Row 2: Full Day checkbox
-        RectF cbRect(ovX + kSpinLabelCol1, row2Y + 4, 20, 20);
-        if (cbRect.Contains(x, y)) s_hTimeFullDay = true;
-
-        // Row 3: Hours/Mins (only interactive when not fullDay)
-        if (!s_focusFullDay) {
-            if (SchSpinnerMinusRect(ovX + kSpinnerCol1, row3Y).Contains(x, y)) s_hTimeHM = true;
-            if (SchSpinnerPlusRect (ovX + kSpinnerCol1, row3Y).Contains(x, y)) s_hTimeHP = true;
-            if (SchSpinnerMinusRect(ovX + kSpinnerCol2, row3Y).Contains(x, y)) s_hTimeMM = true;
-            if (SchSpinnerPlusRect (ovX + kSpinnerCol2, row3Y).Contains(x, y)) s_hTimeMP = true;
+            if (RectF(ovX + 60, ovY + 210, 140, 40).Contains(x, y)) s_hTimeCancel = true;
+            if (RectF(ovX + 240, ovY + 210, 140, 40).Contains(x, y)) s_hTimeStart = true;
         }
-
-        // Buttons
-        if (RectF(ovX + 60,  btnY, 140, 40).Contains(x, y)) s_hTimeCancel = true;
-        if (RectF(ovX + 240, btnY, 170, 40).Contains(x, y)) s_hTimeStart  = true;
-        return;
-    }
-
-    if (s_showPassOverlay) {
-        float ovW = 500.0f, ovH = 280.0f;
-        float ovX = s_cx + (s_cw - ovW) / 2.0f;
-        float ovY = s_cy + (s_ch - ovH) / 2.0f;
-        if (RectF(ovX + 40, ovY + 80,  ovW - 80, 40).Contains(x, y)) s_hPassInput   = true;
-        if (RectF(ovX + 40, ovY + 150, 140, 40).Contains(x, y))       s_hPassCancel  = true;
-        if (RectF(ovX + 220,ovY + 150, 160, 40).Contains(x, y))       s_hPassConfirm = true;
-        return;
-    }
-
-    if (s_showTextUnlockOverlay) {
-        float ovW = 600.0f, ovH = 450.0f;
-        float ovX = s_cx + (s_cw - ovW) / 2.0f;
-        float ovY = s_cy + (s_ch - ovH) / 2.0f;
-        if (RectF(ovX + 120, ovY + 380, 140, 40).Contains(x, y)) s_hTextUnlockCancel  = true;
-        if (RectF(ovX + 280, ovY + 380, 160, 40).Contains(x, y)) s_hTextUnlockConfirm = true;
+        else if (s_showPassOverlay) {
+            if (RectF(ovX + 40, ovY + 80, ovW - 80, 40).Contains(x, y)) s_hPassInput = true;
+            if (RectF(ovX + 40, ovY + 150, 140, 40).Contains(x, y)) s_hPassCancel = true;
+            if (RectF(ovX + 220, ovY + 150, 160, 40).Contains(x, y)) s_hPassConfirm = true;
+        }
+        else if (s_showTextUnlockOverlay) {
+            if (RectF(ovX + 120, ovY + 380, 140, 40).Contains(x, y)) s_hTextUnlockCancel = true;
+            if (RectF(ovX + 280, ovY + 380, 160, 40).Contains(x, y)) s_hTextUnlockConfirm = true;
+        }
         return;
     }
 
@@ -1609,10 +1367,10 @@ void ProcessScheduleBlocksMouseMove(float x, float y) {
             }
         }
 
-        if(g_ehb.saveBtn.Contains(x,y))   g_ehb.hSave   = true;
+        if(g_ehb.saveBtn.Contains(x,y)) g_ehb.hSave = true;
         if(g_ehb.cancelBtn.Contains(x,y)) g_ehb.hCancel = true;
-        if(g_ehb.nextBtn.Contains(x,y))   g_ehb.hNext   = true;
-        if(g_ehb.backBtn.Contains(x,y))   g_ehb.hBack   = true;
+        if(g_ehb.nextBtn.Contains(x,y)) g_ehb.hNext = true;
+        if(g_ehb.backBtn.Contains(x,y)) g_ehb.hBack = true;
 
         g_ehb.hDay = -1;
         g_ehb.hStH=false; g_ehb.hStM=false; g_ehb.hStAmPm=false;
@@ -1623,25 +1381,28 @@ void ProcessScheduleBlocksMouseMove(float x, float y) {
         for (auto& qb : s_quickBlocks) qb.hovered = false;
         
         if (editingProfileIdx >= 0) {
-            for(auto& it : g_profiles[editingProfileIdx].blockedWebsites)  it.isHoveredCross = false;
-            for(auto& it : g_profiles[editingProfileIdx].blockedApps)       it.isHoveredCross = false;
-            for(auto& it : g_profiles[editingProfileIdx].blockedKeywords)   it.isHoveredCross = false;
+            for(auto& it : g_profiles[editingProfileIdx].blockedWebsites) it.isHoveredCross = false;
+            for(auto& it : g_profiles[editingProfileIdx].blockedApps) it.isHoveredCross = false;
+            for(auto& it : g_profiles[editingProfileIdx].blockedKeywords) it.isHoveredCross = false;
         }
 
         if (s_activeSubTab == 0) {
             if(g_ehb.modeDrop.Contains(x, y)) hoverSchModeDropdown = true;
             for(int d=0; d<7; d++) { if(g_ehb.days[d].Contains(x,y)) g_ehb.hDay = d; }
-            if(g_ehb.stH_Box.Contains(x,y)) g_ehb.hStH    = true;
-            if(g_ehb.stM_Box.Contains(x,y)) g_ehb.hStM    = true;
-            if(g_ehb.stAmPm.Contains(x,y))  g_ehb.hStAmPm = true;
-            if(g_ehb.enH_Box.Contains(x,y)) g_ehb.hEnH    = true;
-            if(g_ehb.enM_Box.Contains(x,y)) g_ehb.hEnM    = true;
-            if(g_ehb.enAmPm.Contains(x,y))  g_ehb.hEnAmPm = true;
+            
+            if(g_ehb.stH_Box.Contains(x,y)) g_ehb.hStH = true;
+            if(g_ehb.stM_Box.Contains(x,y)) g_ehb.hStM = true;
+            if(g_ehb.stAmPm.Contains(x,y)) g_ehb.hStAmPm = true;
+
+            if(g_ehb.enH_Box.Contains(x,y)) g_ehb.hEnH = true;
+            if(g_ehb.enM_Box.Contains(x,y)) g_ehb.hEnM = true;
+            if(g_ehb.enAmPm.Contains(x,y)) g_ehb.hEnAmPm = true;
         } 
         else if (s_activeSubTab == 1) {
             if(g_ehb.togInt.Contains(x,y)) g_ehb.hTogInt = true;
             if(g_ehb.togAdt.Contains(x,y)) g_ehb.hTogAdt = true;
             if(g_ehb.togUni.Contains(x,y)) g_ehb.hTogUni = true;
+
             for (size_t qi = 0; qi < s_quickBlocks.size() && qi < s_quickBlockRects.size(); ++qi) {
                 if (s_quickBlockRects[qi].Contains(x, y)) s_quickBlocks[qi].hovered = true;
             }
@@ -1649,42 +1410,58 @@ void ProcessScheduleBlocksMouseMove(float x, float y) {
         else if (s_activeSubTab == 2) {
             if(g_ehb.webCombo.Contains(x,y)) hoverSchWebCombo = true;
             if(g_ehb.appCombo.Contains(x,y)) hoverSchAppCombo = true;
-            if(g_ehb.addWeb.Contains(x,y))   g_ehb.hAddWeb    = true;
-            if(g_ehb.addApp.Contains(x,y))   g_ehb.hAddApp    = true;
-            if(g_ehb.addKey.Contains(x,y))   g_ehb.hAddKey    = true;
+
+            activeInput = 0;
+            if (g_ehb.webInp.Contains(x,y)) activeInput = 2;
+            if (g_ehb.appInp.Contains(x,y)) activeInput = 3;
+            if (g_ehb.keyInp.Contains(x,y)) activeInput = 4;
 
             if (editingProfileIdx >= 0) {
-                if (g_ehb.listAreas[0].Contains(x, y))
-                    for(auto& p : g_ehb.webDel) if(p.first.Contains(x,y)) g_profiles[editingProfileIdx].blockedWebsites[p.second].isHoveredCross = true;
-                if (g_ehb.listAreas[1].Contains(x, y))
-                    for(auto& p : g_ehb.appDel) if(p.first.Contains(x,y)) g_profiles[editingProfileIdx].blockedApps[p.second].isHoveredCross = true;
-                if (g_ehb.listAreas[2].Contains(x, y))
-                    for(auto& p : g_ehb.keyDel) if(p.first.Contains(x,y)) g_profiles[editingProfileIdx].blockedKeywords[p.second].isHoveredCross = true;
+                if (g_ehb.hAddWeb && !inpWeb.empty()) { g_profiles[editingProfileIdx].blockedWebsites.push_back({inpWeb, false}); inpWeb = L""; }
+                if (g_ehb.hAddApp && !inpApp.empty()) { 
+                    if (inpApp.length() < 4 || inpApp.substr(inpApp.length() - 4) != L".exe") inpApp += L".exe";
+                    g_profiles[editingProfileIdx].blockedApps.push_back({inpApp, false}); inpApp = L""; 
+                }
+                if (g_ehb.hAddKey && !inpKey.empty()) { g_profiles[editingProfileIdx].blockedKeywords.push_back({inpKey, false}); inpKey = L""; }
+                
+                if (g_ehb.listAreas[0].Contains(x, y)) {
+                    for(auto& p : g_ehb.webDel) { if(p.first.Contains(x,y)) g_profiles[editingProfileIdx].blockedWebsites[p.second].isHoveredCross = true; }
+                }
+                if (g_ehb.listAreas[1].Contains(x, y)) {
+                    for(auto& p : g_ehb.appDel) { if(p.first.Contains(x,y)) g_profiles[editingProfileIdx].blockedApps[p.second].isHoveredCross = true; }
+                }
+                if (g_ehb.listAreas[2].Contains(x, y)) {
+                    for(auto& p : g_ehb.keyDel) { if(p.first.Contains(x,y)) g_profiles[editingProfileIdx].blockedKeywords[p.second].isHoveredCross = true; }
+                }
             }
         }
         return;
     }
 
-    // Main view
     if (RectF(s_cx + s_cw - 220, s_cy + 20, 200, 40).Contains(x, y)) hAddProfileBtn = true;
 
-    float cardW2 = (s_cw - 60.0f) / 2.0f; float cardH = 170.0f;
+    if (s_scrollbarDragging) {
+        float maxScroll = (std::max)(0.0f, (ceil((float)g_profiles.size() / 2.0f) * 190.0f) - (s_ch - 100.0f));
+        float thumbH = (std::max)(28.0f, (s_ch - 100.0f) * ((s_ch - 100.0f) / ((s_ch - 100.0f) + maxScroll)));
+        float thumbRange = (s_ch - 100.0f) - thumbH;
+        float dy = y - s_scrollbarDragStartY;
+        float newScroll = s_scrollbarDragStartScroll + (thumbRange > 0 ? dy / thumbRange * maxScroll : 0);
+        sch_tScroll = (std::max)(0.0f, (std::min)(newScroll, maxScroll));
+        return;
+    }
+
+    float cardW = (s_cw - 60.0f) / 2.0f; float cardH = 170.0f;
     float startX = s_cx + 20.0f; float startY = s_cy + 100.0f - sch_cScroll;
 
     for (size_t i = 0; i < g_profiles.size(); ++i) {
-        float cX = startX + (i % 2) * (cardW2 + 20.0f);
+        float cX = startX + (i % 2) * (cardW + 20.0f);
         float cY = startY + (i / 2) * (cardH + 20.0f);
         if (cY > s_cy + s_ch || cY + cardH < s_cy + 90.0f) continue;
 
-        g_profiles[i].hToggle = RectF(cX + 15, cY + 115, 60, 26).Contains(x, y)
-                              || RectF(cX + 75, cY + 115, 60, 26).Contains(x, y);
-        if (!g_profiles[i].isActive) {
-            g_profiles[i].hEdit = RectF(cX + cardW2 - 130, cY + 115, 60, 30).Contains(x, y);
-            g_profiles[i].hDel  = RectF(cX + cardW2 - 60,  cY + 115, 45, 30).Contains(x, y);
-        } else {
-            g_profiles[i].hEdit = false;
-            g_profiles[i].hDel  = false;
-        }
+        g_profiles[i].hToggle = RectF(cX + 15, cY + 115, 60, 26).Contains(x, y) || RectF(cX + 75, cY + 115, 60, 26).Contains(x, y);
+        g_profiles[i].hEdit = RectF(cX + cardW - 130, cY + 115, 60, 30).Contains(x, y);
+        if(!g_profiles[i].isActive) g_profiles[i].hDel = RectF(cX + cardW - 60, cY + 115, 45, 30).Contains(x, y);
+        else g_profiles[i].hDel = false; 
     }
 }
 
@@ -1693,7 +1470,9 @@ void ProcessScheduleBlocksMouseMove(float x, float y) {
 // ==========================================
 void ProcessScheduleBlocksMouseDown(float x, float y) {
     std::lock_guard<std::mutex> lock(g_schMutex);
-    // main view scrollbar drag start — extend here if needed
+    if (editingProfileIdx == -1) {
+        // Main view scrollbar drag logic (if you want to implement thumb detection)
+    }
 }
 
 // ==========================================
@@ -1705,72 +1484,36 @@ void ProcessScheduleBlocksMouseUp(float x, float y) {
 }
 
 // ==========================================
-// --- MOUSE CLICK ---
+// --- MOUSE CLICK LOGIC ---
 // ==========================================
 void ProcessScheduleBlocksMouseClick(float x, float y) {
     std::lock_guard<std::mutex> lock(g_schMutex);
     
-    // ── TIME OVERLAY CLICKS ───────────────────────────────────────────────
     if (s_showTimeOverlay) {
-        // Row 1: Months
-        if (s_hTimeMoM && s_focusMonths > 0)  s_focusMonths--;
+        if (s_hTimeMoM && s_focusMonths > 0) s_focusMonths--;
         if (s_hTimeMoP && s_focusMonths < 12) s_focusMonths++;
-        // Row 1: Days
-        if (s_hTimeDM && s_focusDays > 0)  s_focusDays--;
+        if (s_hTimeDM && s_focusDays > 0) s_focusDays--;
         if (s_hTimeDP && s_focusDays < 30) s_focusDays++;
 
-        // Row 2: Full Day toggle
-        if (s_hTimeFullDay) {
-            s_focusFullDay = !s_focusFullDay;
-            // Reset hours/mins when toggled off so user sees sane defaults
-            if (!s_focusFullDay && s_focusHours == 0 && s_focusMins == 0)
-                s_focusHours = 1;
-        }
+        if (s_hTimeHM && s_focusHours > 0) s_focusHours--;
+        if (s_hTimeHP && s_focusHours < 23) s_focusHours++;
+        if (s_hTimeMM) { s_focusMins -= 5; if (s_focusMins < 0) s_focusMins = 55; }
+        if (s_hTimeMP) { s_focusMins = (s_focusMins + 5) % 60; }
 
-        // Row 3: Hours/Mins (only when not fullDay)
-        if (!s_focusFullDay) {
-            if (s_hTimeHM && s_focusHours > 0)  s_focusHours--;
-            if (s_hTimeHP && s_focusHours < 23) s_focusHours++;
-            if (s_hTimeMM) { s_focusMins -= 5; if (s_focusMins < 0) s_focusMins = 55; }
-            if (s_hTimeMP) { s_focusMins = (s_focusMins + 5) % 60; }
-        }
-
-        // Buttons
-        if (s_hTimeCancel) {
-            s_showTimeOverlay = false;
-            return;
-        }
-        if (s_hTimeStart && activeActionProfileIdx >= 0) {
-            // Compute lock duration
-            time_t duration = 0;
-            duration += (time_t)s_focusMonths * 30 * 24 * 3600;
-            duration += (time_t)s_focusDays   * 24 * 3600;
-            if (s_focusFullDay) {
-                // Full day means today/tonight's midnight-to-midnight; treat as 24h per day selected
-                // If user set 0 months and 0 days with fullDay, treat as 1 day minimum
-                if (s_focusMonths == 0 && s_focusDays == 0)
-                    duration = 24 * 3600;
-            } else {
-                duration += (time_t)s_focusHours * 3600;
-                duration += (time_t)s_focusMins  * 60;
-            }
-            if (duration <= 0) duration = 3600; // safety: at least 1 hour
-
-            g_profiles[activeActionProfileIdx].isActive     = true;
-            g_profiles[activeActionProfileIdx].lockEndTime  = std::time(nullptr) + duration;
+        if (s_hTimeCancel) s_showTimeOverlay = false;
+        if (s_hTimeStart && activeActionProfileIdx >= 0) { 
+            g_profiles[activeActionProfileIdx].isActive = true; 
+            g_profiles[activeActionProfileIdx].lockEndTime = std::time(nullptr) + (s_focusMonths * 30 * 24 * 3600) + (s_focusDays * 24 * 3600) + (s_focusHours * 3600) + (s_focusMins * 60);
             ApplyProfileBlocking(activeActionProfileIdx, true);
-            s_showTimeOverlay = false;
+            s_showTimeOverlay = false; 
             LogHistoryToHiddenFolderSch(L"Started Schedule: " + g_profiles[activeActionProfileIdx].profileName);
             SaveProfiles();
         }
         return;
     }
-
-    // ── PASS OVERLAY CLICKS ───────────────────────────────────────────────
     if (s_showPassOverlay) {
-        s_isPassInputActive = s_hPassInput || s_isPassInputActive; // keep active unless clicking outside
-        if (s_hPassInput) s_isPassInputActive = true;
-        if (s_hPassCancel) { s_showPassOverlay = false; s_inputPassText = L""; return; }
+        s_isPassInputActive = s_hPassInput;
+        if (s_hPassCancel) { s_showPassOverlay = false; s_inputPassText = L""; }
         if (s_hPassConfirm && !s_inputPassText.empty() && activeActionProfileIdx >= 0) {
             if (!s_isStoppingFocus) {
                 g_profiles[activeActionProfileIdx].parentsPassword = s_inputPassText;
@@ -1784,15 +1527,13 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
                     LogHistoryToHiddenFolderSch(L"Unlocked (Parents) Schedule: " + g_profiles[activeActionProfileIdx].profileName);
                 }
             }
-            s_showPassOverlay = false; s_inputPassText = L"";
+            s_showPassOverlay = false; s_inputPassText = L""; 
             SaveProfiles();
         }
         return;
     }
-
-    // ── TEXT UNLOCK CLICKS ────────────────────────────────────────────────
     if (s_showTextUnlockOverlay) {
-        if (s_hTextUnlockCancel) { s_showTextUnlockOverlay = false; return; }
+        if (s_hTextUnlockCancel) s_showTextUnlockOverlay = false;
         if (s_hTextUnlockConfirm && s_currentTypingText == s_targetUnlockText && activeActionProfileIdx >= 0) {
             g_profiles[activeActionProfileIdx].isActive = false;
             ApplyProfileBlocking(activeActionProfileIdx, false);
@@ -1803,7 +1544,6 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
         return;
     }
 
-    // ── EDIT OVERLAY CLICKS ───────────────────────────────────────────────
     if (editingProfileIdx != -1) {
         for (int i = 0; i < 3; i++) {
             if (g_ehb.subTabRects[i].Contains(x, y)) {
@@ -1814,8 +1554,16 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
             }
         }
 
-        if (g_ehb.hNext && s_activeSubTab < 2) { s_activeSubTab++; activeInput = (s_activeSubTab == 0) ? 1 : 0; return; }
-        if (g_ehb.hBack && s_activeSubTab > 0) { s_activeSubTab--; activeInput = (s_activeSubTab == 0) ? 1 : 0; return; }
+        if (g_ehb.hNext && s_activeSubTab < 2) {
+            s_activeSubTab++;
+            activeInput = (s_activeSubTab == 0) ? 1 : 0;
+            return;
+        }
+        if (g_ehb.hBack && s_activeSubTab > 0) {
+            s_activeSubTab--;
+            activeInput = (s_activeSubTab == 0) ? 1 : 0;
+            return;
+        }
 
         bool dropdownClosed = false;
 
@@ -1823,8 +1571,8 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
             if (isSchModeDropdownOpen && !hoverSchModeDropdown && !g_ehb.hOptSelf && !g_ehb.hOptParents && !g_ehb.hOptLongText) {
                 isSchModeDropdownOpen = false; dropdownClosed = true;
             } else if (isSchModeDropdownOpen) {
-                if (g_ehb.hOptSelf)     tempLockMode = 0;
-                if (g_ehb.hOptParents)  tempLockMode = 1;
+                if (g_ehb.hOptSelf) tempLockMode = 0;
+                if (g_ehb.hOptParents) tempLockMode = 1;
                 if (g_ehb.hOptLongText) tempLockMode = 2;
                 isSchModeDropdownOpen = false; return;
             }
@@ -1834,16 +1582,18 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
             if (isSchWebComboOpen && !hoverSchWebCombo && hoverSchWebOptIdx == -1) {
                 isSchWebComboOpen = false; dropdownClosed = true;
             } else if (isSchWebComboOpen) {
-                if (hoverSchWebOptIdx != -1 && editingProfileIdx >= 0)
+                if (hoverSchWebOptIdx != -1 && editingProfileIdx >= 0) {
                     g_profiles[editingProfileIdx].blockedWebsites.push_back({schCommonWebsites[hoverSchWebOptIdx], false});
+                }
                 isSchWebComboOpen = false; return;
             }
 
             if (isSchAppComboOpen && !hoverSchAppCombo && hoverSchAppOptIdx == -1) {
                 isSchAppComboOpen = false; dropdownClosed = true;
             } else if (isSchAppComboOpen) {
-                if (hoverSchAppOptIdx != -1 && editingProfileIdx >= 0)
+                if (hoverSchAppOptIdx != -1 && editingProfileIdx >= 0) {
                     g_profiles[editingProfileIdx].blockedApps.push_back({schCommonApps[hoverSchAppOptIdx], false});
+                }
                 isSchAppComboOpen = false; return;
             }
         }
@@ -1860,14 +1610,12 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
                 g_profiles[editingProfileIdx].profileName = inpProfileName;
             }
             if(editingProfileIdx >= 0) {
-                g_profiles[editingProfileIdx].lockMode       = tempLockMode;
+                g_profiles[editingProfileIdx].lockMode = tempLockMode;
                 for(int d=0; d<7; d++) g_profiles[editingProfileIdx].activeDays[d] = editDays[d];
-                g_profiles[editingProfileIdx].startHour      = editStH;
-                g_profiles[editingProfileIdx].startMin       = editStM;
-                g_profiles[editingProfileIdx].endHour        = editEnH;
-                g_profiles[editingProfileIdx].endMin         = editEnM;
-                g_profiles[editingProfileIdx].blockInternet  = editBlockInt;
-                g_profiles[editingProfileIdx].blockAdult     = editBlockAdult;
+                g_profiles[editingProfileIdx].startHour = editStH; g_profiles[editingProfileIdx].startMin = editStM;
+                g_profiles[editingProfileIdx].endHour = editEnH; g_profiles[editingProfileIdx].endMin = editEnM;
+                g_profiles[editingProfileIdx].blockInternet = editBlockInt;
+                g_profiles[editingProfileIdx].blockAdult = editBlockAdult;
                 g_profiles[editingProfileIdx].blockUninstall = editBlockUninst;
             }
             LogHistoryToHiddenFolderSch(L"Saved Profile: " + inpProfileName);
@@ -1876,18 +1624,22 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
 
         if (s_activeSubTab == 0) {
             if (hoverSchModeDropdown) { isSchModeDropdownOpen = true; return; }
+
             if(g_ehb.hDay != -1) editDays[g_ehb.hDay] = !editDays[g_ehb.hDay];
-            if(g_ehb.hStH)    { editStH = (editStH + 1) % 24; }
-            if(g_ehb.hStM)    { editStM = (editStM + 5) % 60; }
-            if(g_ehb.hStAmPm) { editStH = (editStH + 12) % 24; }
-            if(g_ehb.hEnH)    { editEnH = (editEnH + 1) % 24; }
-            if(g_ehb.hEnM)    { editEnM = (editEnM + 5) % 60; }
-            if(g_ehb.hEnAmPm) { editEnH = (editEnH + 12) % 24; }
+
+            if(g_ehb.hStH) { editStH = (editStH + 1) % 24; } 
+            if(g_ehb.hStM) { editStM = (editStM + 5) % 60; } 
+            if(g_ehb.hStAmPm) { editStH = (editStH + 12) % 24; } 
+
+            if(g_ehb.hEnH) { editEnH = (editEnH + 1) % 24; } 
+            if(g_ehb.hEnM) { editEnM = (editEnM + 5) % 60; } 
+            if(g_ehb.hEnAmPm) { editEnH = (editEnH + 12) % 24; } 
+            
             activeInput = g_ehb.nameInp.Contains(x,y) ? 1 : 0;
         } 
         else if (s_activeSubTab == 1) {
-            if(g_ehb.hTogInt) editBlockInt    = !editBlockInt;
-            if(g_ehb.hTogAdt) editBlockAdult  = !editBlockAdult;
+            if(g_ehb.hTogInt) editBlockInt = !editBlockInt;
+            if(g_ehb.hTogAdt) editBlockAdult = !editBlockAdult;
             if(g_ehb.hTogUni) editBlockUninst = !editBlockUninst;
 
             if (editingProfileIdx >= 0) {
@@ -1902,10 +1654,12 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
                             if (it->name == qb.websites[0]) { webs.erase(it); found = true; break; }
                         }
                     }
-                    if (!found && !qb.keywords.empty()) {
-                        auto& keys = g_profiles[editingProfileIdx].blockedKeywords;
-                        for (auto it = keys.begin(); it != keys.end(); ++it) {
-                            if (it->name == qb.keywords[0]) { keys.erase(it); found = true; break; }
+                    if (!found) {
+                        if (!qb.keywords.empty()) {
+                            auto& keys = g_profiles[editingProfileIdx].blockedKeywords;
+                            for (auto it = keys.begin(); it != keys.end(); ++it) {
+                                if (it->name == qb.keywords[0]) { keys.erase(it); found = true; break; }
+                            }
                         }
                     }
                     if (!found) {
@@ -1928,30 +1682,29 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
 
             if (editingProfileIdx >= 0) {
                 if (g_ehb.hAddWeb && !inpWeb.empty()) { g_profiles[editingProfileIdx].blockedWebsites.push_back({inpWeb, false}); inpWeb = L""; }
-                if (g_ehb.hAddApp && !inpApp.empty()) {
+                if (g_ehb.hAddApp && !inpApp.empty()) { 
                     if (inpApp.length() < 4 || inpApp.substr(inpApp.length() - 4) != L".exe") inpApp += L".exe";
-                    g_profiles[editingProfileIdx].blockedApps.push_back({inpApp, false}); inpApp = L"";
+                    g_profiles[editingProfileIdx].blockedApps.push_back({inpApp, false}); inpApp = L""; 
                 }
                 if (g_ehb.hAddKey && !inpKey.empty()) { g_profiles[editingProfileIdx].blockedKeywords.push_back({inpKey, false}); inpKey = L""; }
-
+                
                 if (g_ehb.listAreas[0].Contains(x, y)) {
                     auto& webs = g_profiles[editingProfileIdx].blockedWebsites;
-                    for(auto& p : g_ehb.webDel) if(p.first.Contains(x,y)) webs.erase(webs.begin() + p.second);
+                    for(auto& p : g_ehb.webDel) { if(p.first.Contains(x,y)) webs.erase(webs.begin() + p.second); }
                 }
                 if (g_ehb.listAreas[1].Contains(x, y)) {
                     auto& apps = g_profiles[editingProfileIdx].blockedApps;
-                    for(auto& p : g_ehb.appDel) if(p.first.Contains(x,y)) apps.erase(apps.begin() + p.second);
+                    for(auto& p : g_ehb.appDel) { if(p.first.Contains(x,y)) apps.erase(apps.begin() + p.second); }
                 }
                 if (g_ehb.listAreas[2].Contains(x, y)) {
                     auto& keys = g_profiles[editingProfileIdx].blockedKeywords;
-                    for(auto& p : g_ehb.keyDel) if(p.first.Contains(x,y)) keys.erase(keys.begin() + p.second);
+                    for(auto& p : g_ehb.keyDel) { if(p.first.Contains(x,y)) keys.erase(keys.begin() + p.second); }
                 }
             }
         }
         return;
     }
 
-    // ── MAIN VIEW CLICKS ──────────────────────────────────────────────────
     if (hAddProfileBtn) {
         editingProfileIdx = -2; 
         s_activeSubTab = 0; 
@@ -1960,61 +1713,56 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
         for(int d=0; d<7; d++) editDays[d] = false;
         editStH = 9; editStM = 0; editEnH = 17; editEnM = 0;
         editBlockInt = false; editBlockAdult = false; editBlockUninst = true;
+        
         s_listScrollT[0] = s_listScrollT[1] = s_listScrollT[2] = 0;
         s_listScrollC[0] = s_listScrollC[1] = s_listScrollC[2] = 0;
         
         FocusProfile np; np.profileName = L""; np.lockMode = 0;
         g_profiles.push_back(np);
-        editingProfileIdx = (int)g_profiles.size() - 1;
+        editingProfileIdx = g_profiles.size() - 1;
+        
         activeInput = 1; return;
     }
 
     for (size_t i = 0; i < g_profiles.size(); ++i) {
         if (g_profiles[i].hToggle) { 
-            activeActionProfileIdx = (int)i;
+            activeActionProfileIdx = i;
             if (!g_profiles[i].isActive) {
-                if (g_profiles[i].lockMode == 0) {
-                    // Reset time overlay state each time it opens
-                    s_focusMonths = 0; s_focusDays = 0; s_focusHours = 1; s_focusMins = 0;
-                    s_focusFullDay = false;
-                    s_showTimeOverlay = true;
-                }
+                if (g_profiles[i].lockMode == 0) { s_showTimeOverlay = true; }
                 else if (g_profiles[i].lockMode == 1) { s_showPassOverlay = true; s_isStoppingFocus = false; s_inputPassText = L""; }
-                else if (g_profiles[i].lockMode == 2) {
+                else if (g_profiles[i].lockMode == 2) { 
                     g_profiles[i].isActive = true;
                     ApplyProfileBlocking(i, true);
                     LogHistoryToHiddenFolderSch(L"Started Schedule: " + g_profiles[i].profileName);
-                    SaveProfiles();
+                    SaveProfiles(); 
                 }
             } else {
-                if (g_profiles[i].lockMode == 0 && g_profiles[i].lockEndTime == 0) {
+                if (g_profiles[i].lockMode == 0 && g_profiles[i].lockEndTime == 0) { 
                     g_profiles[i].isActive = false;
                     ApplyProfileBlocking(i, false);
                     SaveProfiles();
                 } else if (g_profiles[i].lockMode == 0 && g_profiles[i].lockEndTime > 0) {
-                    // Timer lock: cannot stop manually
+                    // Timer profiles cannot be stopped manually
                 }
                 else if (g_profiles[i].lockMode == 1) { s_showPassOverlay = true; s_isStoppingFocus = true; s_inputPassText = L""; }
                 else if (g_profiles[i].lockMode == 2) { s_showTextUnlockOverlay = true; s_currentTypingText = L""; s_isTypingActive = true; }
             }
         }
         if (g_profiles[i].hEdit) {
-            if (g_profiles[i].isActive) {
-                MessageBoxA(NULL, "Cannot edit an active blocking profile.\nPlease deactivate it first.", "Profile Active", MB_OK | MB_ICONINFORMATION);
-                return;
-            }
-            editingProfileIdx = (int)i;
+            editingProfileIdx = i;
             s_activeSubTab = 0;
             inpProfileName = g_profiles[i].profileName;
-            tempLockMode   = g_profiles[i].lockMode;
+            tempLockMode = g_profiles[i].lockMode;
             for(int d=0; d<7; d++) editDays[d] = g_profiles[i].activeDays[d];
             editStH = g_profiles[i].startHour; editStM = g_profiles[i].startMin;
-            editEnH = g_profiles[i].endHour;   editEnM = g_profiles[i].endMin;
-            editBlockInt   = g_profiles[i].blockInternet;
+            editEnH = g_profiles[i].endHour; editEnM = g_profiles[i].endMin;
+            editBlockInt = g_profiles[i].blockInternet;
             editBlockAdult = g_profiles[i].blockAdult;
-            editBlockUninst= g_profiles[i].blockUninstall;
+            editBlockUninst = g_profiles[i].blockUninstall;
+
             s_listScrollT[0] = s_listScrollT[1] = s_listScrollT[2] = 0;
             s_listScrollC[0] = s_listScrollC[1] = s_listScrollC[2] = 0;
+
             inpWeb = L""; inpApp = L""; inpKey = L"";
             activeInput = 1;
         }
@@ -2029,7 +1777,7 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
 }
 
 // ==========================================
-// --- KEYBOARD ---
+// --- KEYBOARD LOGIC ---
 // ==========================================
 void ProcessScheduleBlocksKeyPress(wchar_t c) {
     std::lock_guard<std::mutex> lock(g_schMutex);
@@ -2037,13 +1785,13 @@ void ProcessScheduleBlocksKeyPress(wchar_t c) {
     if (s_showPassOverlay && s_isPassInputActive) {
         if (c >= 32 && c <= 126 && s_inputPassText.length() < 20) s_inputPassText += c;
     } else if (s_showTextUnlockOverlay && s_isTypingActive) {
-        if (c >= 32 && c <= 126 && s_currentTypingText.length() < 1000) s_currentTypingText += (wchar_t)c;
+        if (c >= 32 && c <= 126 && s_currentTypingText.length() < 1000) s_currentTypingText += c;
     } else if (editingProfileIdx != -1 && activeInput != 0) {
         if (c >= 32 && c <= 126) {
             if (activeInput == 1 && inpProfileName.length() < 30) inpProfileName += c;
-            if (activeInput == 2 && inpWeb.length()        < 40) inpWeb         += c;
-            if (activeInput == 3 && inpApp.length()        < 40) inpApp         += c;
-            if (activeInput == 4 && inpKey.length()        < 40) inpKey         += c;
+            if (activeInput == 2 && inpWeb.length() < 40) inpWeb += c;
+            if (activeInput == 3 && inpApp.length() < 40) inpApp += c;
+            if (activeInput == 4 && inpKey.length() < 40) inpKey += c;
         }
     }
 }
@@ -2066,15 +1814,15 @@ void ProcessScheduleBlocksKeyDown(WPARAM key) {
     } else if (editingProfileIdx != -1) {
         if (key == VK_BACK) {
             if (activeInput == 1 && !inpProfileName.empty()) inpProfileName.pop_back();
-            if (activeInput == 2 && !inpWeb.empty())         inpWeb.pop_back();
-            if (activeInput == 3 && !inpApp.empty())         inpApp.pop_back();
-            if (activeInput == 4 && !inpKey.empty())         inpKey.pop_back();
+            if (activeInput == 2 && !inpWeb.empty()) inpWeb.pop_back();
+            if (activeInput == 3 && !inpApp.empty()) inpApp.pop_back();
+            if (activeInput == 4 && !inpKey.empty()) inpKey.pop_back();
         }
         else if (key == VK_RETURN && editingProfileIdx >= 0) {
             if (activeInput == 2 && !inpWeb.empty()) { g_profiles[editingProfileIdx].blockedWebsites.push_back({inpWeb, false}); inpWeb = L""; }
-            if (activeInput == 3 && !inpApp.empty()) {
+            if (activeInput == 3 && !inpApp.empty()) { 
                 if (inpApp.length() < 4 || inpApp.substr(inpApp.length() - 4) != L".exe") inpApp += L".exe";
-                g_profiles[editingProfileIdx].blockedApps.push_back({inpApp, false}); inpApp = L"";
+                g_profiles[editingProfileIdx].blockedApps.push_back({inpApp, false}); inpApp = L""; 
             }
             if (activeInput == 4 && !inpKey.empty()) { g_profiles[editingProfileIdx].blockedKeywords.push_back({inpKey, false}); inpKey = L""; }
         }
