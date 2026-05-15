@@ -404,7 +404,7 @@ void __cdecl LoginThread(void* param) {
         // 🔥 [BUG 1 FIX]: নতুন ডোমেইনের পেমেন্ট পেজে রিডাইরেক্ট
         if (g_openCheckoutAfterLogin && !g_loggedInUserUid.empty()) {
             g_openCheckoutAfterLogin = false;
-            string urlStr = "https://rasfocusplus.me/?uid=" + g_loggedInUserUid;
+            string urlStr = "https://raseledutools.github.io/checkout.html/?uid=" + g_loggedInUserUid;
             wstring wUrl(urlStr.begin(), urlStr.end());
             ShellExecuteW(NULL, L"open", wUrl.c_str(), NULL, NULL, SW_SHOWNORMAL);
         }

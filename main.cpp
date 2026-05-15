@@ -74,7 +74,8 @@ extern string g_loggedInUserUid; // Firebase auth UID from accounts.h
 // ==========================================
 // SUBSCRIPTION & PACKAGE STATE
 // ==========================================
-string g_currentPackage = "FREE_BASIC"; // FREE_BASIC, STUDENT, PREMIUM, PARENTAL, TRIAL
+// NOTE: g_currentPackage is defined in accounts.cpp — extern here to avoid LNK2005
+extern string g_currentPackage; // FREE_BASIC, STUDENT, PREMIUM, PARENTAL, TRIAL
 int g_daysLeft = 0;
 wstring g_packageStatusText = L"Checking Subscription Status...";
 
@@ -735,38 +736,43 @@ void AddTrayIcon(HWND hWnd) {
 void RemoveTrayIcon() { Shell_NotifyIcon(NIM_DELETE, &nid); }
 
 // ==========================================
-// FIREBASE FEEDBACK SUBMIT (via REST)
+// FIREBASE FEEDBACK SUBMIT (Firestore REST)
 // ==========================================
+// ⚠ CHANGED: Realtime Database থেকে Firestore এ move করা হয়েছে
+//            user UID + package + timestamp সহ feedback collection এ save হবে
 void SubmitFeedbackToFirebase(const wstring& email, const wstring& message) {
     char emailA[512] = {}, msgA[2048] = {};
-    WideCharToMultiByte(CP_UTF8, 0, email.c_str(),   -1, emailA, 511, NULL, NULL);
+    WideCharToMultiByte(CP_UTF8, 0, email.c_str(),   -1, emailA, 511,  NULL, NULL);
     WideCharToMultiByte(CP_UTF8, 0, message.c_str(), -1, msgA,  2047, NULL, NULL);
 
-    string jsonBody = "{\"email\":\"" + string(emailA) + "\",\"message\":\"" + string(msgA) + "\"}";
+    // Timestamp
+    long long ts  = (long long)time(nullptr);
+    string tsStr  = to_string(ts);
 
-    HINTERNET hInternet = InternetOpenA("RasFocus/1.0", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
-    if (!hInternet) return;
+    // UID — logged in হলে user UID, না হলে device ID
+    string uid = g_loggedInUserUid.empty() ? GetHardwareID() : g_loggedInUserUid;
 
-    HINTERNET hConnect = InternetConnectA(hInternet,
-        "rasfocus-c746d-default-rtdb.firebaseio.com",
-        INTERNET_DEFAULT_HTTPS_PORT,
-        NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
+    // Unique document ID: timestamp_uid
+    string docId = tsStr + "_" + uid;
 
-    if (hConnect) {
-        HINTERNET hRequest = HttpOpenRequestA(hConnect, "POST",
-            "/feedback.json",
-            NULL, NULL, NULL,
-            INTERNET_FLAG_SECURE | INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE,
-            0);
-        if (hRequest) {
-            string headers = "Content-Type: application/json\r\n";
-            HttpSendRequestA(hRequest, headers.c_str(), (DWORD)headers.size(),
-                             (LPVOID)jsonBody.c_str(), (DWORD)jsonBody.size());
-            InternetCloseHandle(hRequest);
-        }
-        InternetCloseHandle(hConnect);
-    }
-    InternetCloseHandle(hInternet);
+    // Firestore path — feedback collection এ
+    string path = "/v1/projects/rasfocus-c746d/databases/(default)/documents/feedback/" + docId;
+
+    // Firestore JSON body (fields format)
+    string jsonBody =
+        "{\"fields\":{"
+        "\"email\":{\"stringValue\":\"" + string(emailA) + "\"},"
+        "\"message\":{\"stringValue\":\"" + string(msgA) + "\"},"
+        "\"uid\":{\"stringValue\":\"" + uid + "\"},"
+        "\"package\":{\"stringValue\":\"" + g_currentPackage + "\"},"
+        "\"timestamp\":{\"integerValue\":\"" + tsStr + "\"}"
+        "}}";
+
+    string response = SendFirestoreRequest("PATCH", path, jsonBody);
+
+    // Debug log (production এ সরিয়ে দিতে পারেন)
+    wstring wResp(response.begin(), response.end());
+    OutputDebugStringW((L"[Feedback] " + wResp + L"\n").c_str());
 }
 
 // ==========================================
@@ -1112,7 +1118,7 @@ void OnPaint(HWND hWnd, HDC hdc) {
     SelectObject(mdc, mbmp);
 
     Graphics g(mdc);
-    
+
     // 🔥 IMAGE QUALITY FIX: লোগো বা ছবিগুলো একদম ভেক্টরের মতো ক্রিস্প দেখাবে
     g.SetSmoothingMode(SmoothingModeAntiAlias);
     g.SetInterpolationMode(InterpolationModeHighQualityBicubic);

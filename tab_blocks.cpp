@@ -3197,15 +3197,15 @@ void ProcessBlocksMouseClick(float x, float y) {
 
 
 
-        if (hoverControlDropdown && !isFocusActive) { isControlDropdownOpen = true; return; }
+        if (hoverControlDropdown && !isFocusActive) { isControlDropdownOpen = true; isModeDropdownOpen = false; isWebComboOpen = false; isAppComboOpen = false; isLangDropdownOpen = false; return; }
 
-        if (hoverModeDropdown && !isFocusActive) { isModeDropdownOpen = true; return; }
+        if (hoverModeDropdown && !isFocusActive) { isModeDropdownOpen = true; isControlDropdownOpen = false; isWebComboOpen = false; isAppComboOpen = false; isLangDropdownOpen = false; return; }
 
-        if (hoverWebCombo && !isFocusActive) { isWebComboOpen = true; return; }
+        if (hoverWebCombo && !isFocusActive) { isWebComboOpen = true; isControlDropdownOpen = false; isModeDropdownOpen = false; isAppComboOpen = false; isLangDropdownOpen = false; return; }
 
-        if (hoverAppCombo && !isFocusActive) { isAppComboOpen = true; return; }
+        if (hoverAppCombo && !isFocusActive) { isAppComboOpen = true; isControlDropdownOpen = false; isModeDropdownOpen = false; isWebComboOpen = false; isLangDropdownOpen = false; return; }
 
-        if (hoverLangDropdown && !isFocusActive) { isLangDropdownOpen = true; return; }
+        if (hoverLangDropdown && !isFocusActive) { isLangDropdownOpen = true; isControlDropdownOpen = false; isModeDropdownOpen = false; isWebComboOpen = false; isAppComboOpen = false; return; }
 
         if (hoverQuotesCheckbox && !isFocusActive) { showQuotes = !showQuotes; SaveBlocksData(); return; }
 
