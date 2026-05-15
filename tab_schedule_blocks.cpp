@@ -14,9 +14,19 @@
 #include <locale>
 #include <algorithm>
 #include <ctime>
+#include <thread>        // 🟢 NEW: For Background Observer Thread
+#include <mutex>         // 🟢 NEW: For Thread Safety
+#include <wininet.h>     // 🟢 NEW: For InternetSetOption
+
+#pragma comment(lib, "wininet.lib")
 
 using namespace Gdiplus;
 using namespace std;
+
+extern HWND hParentWnd;  // 🟢 NEW: Access main window handle for redrawing from thread
+static std::mutex g_schMutex; // 🟢 NEW: Mutex to prevent crashes during continuous blocking
+static bool isSchThreadRunning = false; // 🟢 NEW: Thread running flag
+
 // --- MISSING HELPERS & COLORS ---
 static void AddRoundedRectPath(GraphicsPath& path, float x, float y, float w, float h, float r) {
     float d = r * 2.0f;
@@ -34,6 +44,7 @@ static void AddRoundedRectPath(GraphicsPath& path, RectF rect, float r) {
 // Scrollbar Colors
 #define s_hScrollbarThumb Color(255, 180, 180, 180)
 #define s_hScrollbarTrack Color(255, 240, 240, 240)
+
 // ==========================================
 // --- DATA STRUCTURES & GLOBALS ---
 // ==========================================
@@ -72,7 +83,7 @@ static float s_cx = 0, s_cy = 0, s_cw = 800, s_ch = 600;
 
 // Edit Overlay & Sub-Tab System
 static int s_activeSubTab = 0; 
-static float s_listScrollT[3] = {0, 0, 0}; // 0: Web, 1: App, 2: Keyword
+static float s_listScrollT[3] = {0, 0, 0}; 
 static float s_listScrollC[3] = {0, 0, 0};
 static float s_listScrollMax[3] = {0, 0, 0};
 
@@ -162,31 +173,24 @@ static const Color ClrScrollbarTrack(255, 240, 242, 245);
 // --- DYNAMIC HITBOX SYSTEM FOR EDIT OVERLAY ---
 struct EditHitboxes {
     RectF saveBtn, cancelBtn, nextBtn, backBtn;
-    
-    // Sub-Tabs
     RectF subTabRects[3];
     int hSubTab = -1;
 
     RectF nameInp, modeDrop;
     RectF days[7];
-    
-    // Modern Time Hitboxes
     RectF stH_Box, stM_Box, stAmPm;
     RectF enH_Box, enM_Box, enAmPm;
-    
     RectF togInt, togAdt, togUni;
     RectF webInp, webCombo, addWeb;
     RectF appInp, appCombo, addApp;
     RectF keyInp, addKey;
     
-    // Smart Box-level List hitboxes (Stores exact index to fix mapping issues)
     vector<pair<RectF, int>> webDel, appDel, keyDel;
     RectF listAreas[3]; 
 
     RectF modeOpt[3];
     vector<RectF> webOpts, appOpts;
 
-    // UI Hovers
     bool hSave=false, hCancel=false, hNext=false, hBack=false;
     int hDay=-1;
     bool hStH=false, hStM=false, hStAmPm=false;
@@ -195,6 +199,7 @@ struct EditHitboxes {
     bool hAddWeb=false, hAddApp=false, hAddKey=false;
     bool hOptSelf=false, hOptParents=false, hOptLongText=false;
 } g_ehb;
+
 
 // ==========================================
 // --- BROWSER-ACCURATE BLOCKING LOGIC ---
@@ -409,14 +414,20 @@ static void ApplyPACFileBlocking(const vector<wstring>& keywords, bool block) {
         string cmd = "reg add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v AutoConfigURL /t REG_SZ /d \"" + pacUrl + "\" /f > nul 2>&1";
         system(cmd.c_str());
         system("reg add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v ProxyEnable /t REG_DWORD /d 0 /f > nul 2>&1");
+        
+        // 🟢 FIX: Force browser to reload proxy settings immediately
+        InternetSetOptionA(NULL, INTERNET_OPTION_SETTINGS_CHANGED, NULL, 0);
+        InternetSetOptionA(NULL, INTERNET_OPTION_REFRESH, NULL, 0);
     } else if (allKw.empty() && !blockAllInternet) {
         system("reg delete \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v AutoConfigURL /f > nul 2>&1");
+        
+        // 🟢 FIX: Force browser to clear proxy settings immediately
+        InternetSetOptionA(NULL, INTERNET_OPTION_SETTINGS_CHANGED, NULL, 0);
+        InternetSetOptionA(NULL, INTERNET_OPTION_REFRESH, NULL, 0);
     }
 }
 
 // ─── App Killing Helper ───────────────────────────────────────────────────
-// Profile active হলে blocked app গুলো kill করে, deactivate হলে কিছু করে না।
-// (app unblock = process কে allow করা, kill করার উল্টো নেই — শুধু future launch block হয় না)
 static void KillBlockedApps(const vector<SchBlockItem>& apps) {
     if (apps.empty()) return;
 
@@ -429,7 +440,6 @@ static void KillBlockedApps(const vector<SchBlockItem>& apps) {
     if (Process32FirstW(snap, &pe)) {
         do {
             wstring procName = pe.szExeFile;
-            // Case-insensitive match
             wstring procLower = procName;
             transform(procLower.begin(), procLower.end(), procLower.begin(), ::towlower);
 
@@ -455,7 +465,6 @@ void ApplyProfileBlocking(int profileIdx, bool enable) {
     if (profileIdx < 0 || profileIdx >= (int)g_profiles.size()) return;
     const auto& p = g_profiles[profileIdx];
 
-    // ── 1. Website + Keyword blocking (hosts file + PAC) ──────────────────
     vector<wstring> allPatterns;
     for (const auto& w : p.blockedWebsites) {
         auto pats = GetAllBlockPatterns(w.name);
@@ -468,44 +477,13 @@ void ApplyProfileBlocking(int profileIdx, bool enable) {
     ApplyHostsFileBlocking(allPatterns, enable);
     ApplyPACFileBlocking(allPatterns, enable);
 
-    // ── 2. App blocking — enable হলে চলমান processes kill করি ─────────────
-    // Disable হলে kill করার কিছু নেই (ইতোমধ্যে বন্ধ থাকা app allow হয়ে যায়)
     if (enable && !p.blockedApps.empty()) {
         KillBlockedApps(p.blockedApps);
     }
 
-    // ── 3. Adult content blocking — tab_adult এ delegate করি ───────────────
-    // Logic copy করা হয়নি — Adult এর নিজের state/PAC/hosts/DNS সব ওখানেই।
     if (p.blockAdult) {
         AdultBlock_ApplyForSchedule(enable);
     }
-}
-
-// --- Helpers ---
-static GraphicsPath* GetSchRoundRectPath(RectF rect, int radius) {
-    GraphicsPath* path = new GraphicsPath();
-    float d = radius * 2.0f;
-    path->AddArc(rect.X, rect.Y, d, d, 180.0f, 90.0f);
-    path->AddArc(rect.X + rect.Width - d, rect.Y, d, d, 270.0f, 90.0f);
-    path->AddArc(rect.X + rect.Width - d, rect.Y + rect.Height - d, d, d, 0.0f, 90.0f);
-    path->AddArc(rect.X, rect.Y + rect.Height - d, d, d, 90.0f, 90.0f);
-    path->CloseFigure(); return path;
-}
-
-static void DrawSchOverlaySpinner(Graphics& g, float x, float y, const wstring& valStr, bool hM, bool hP, Font* fIcon, Font* fBold) {
-    SolidBrush brushBtn(ClrBgHover); SolidBrush brushBtnHover(Color(255, 230, 235, 240));
-    SolidBrush brushWhite(ClrWhite); SolidBrush brushDark(ClrDark);
-    Pen pSoftBorder(Color(255, 225, 230, 235), 1.0f);
-    StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
-
-    RectF mRect(x, y, 32.0f, 36.0f); RectF tRect(x + 32.0f, y, 50.0f, 36.0f); RectF pRect(x + 82.0f, y, 32.0f, 36.0f);
-
-    g.FillRectangle(hM ? &brushBtnHover : &brushBtn, mRect); g.DrawRectangle(&pSoftBorder, mRect.X, mRect.Y, mRect.Width, mRect.Height);
-    g.DrawString(L"\xE738", -1, fIcon, mRect, &fmtC, &brushDark);
-    g.FillRectangle(&brushWhite, tRect); g.DrawRectangle(&pSoftBorder, tRect.X, tRect.Y, tRect.Width, tRect.Height);
-    g.DrawString(valStr.c_str(), -1, fBold, tRect, &fmtC, &brushDark);
-    g.FillRectangle(hP ? &brushBtnHover : &brushBtn, pRect); g.DrawRectangle(&pSoftBorder, pRect.X, pRect.Y, pRect.Width, pRect.Height);
-    g.DrawString(L"\xE710", -1, fIcon, pRect, &fmtC, &brushDark);
 }
 
 // ==========================================
@@ -609,10 +587,6 @@ static void LoadProfiles() {
         in >> p.blockInternet >> p.blockAdult >> p.blockUninstall;
         in.ignore();
 
-        if (p.isActive && p.lockMode == 0 && std::time(nullptr) >= p.lockEndTime) {
-            p.isActive = false;
-        }
-
         size_t wCount = 0; in >> wCount; in.ignore();
         for (size_t j = 0; j < wCount; ++j) { wstring w; getline(in, w); p.blockedWebsites.push_back({w, false}); }
 
@@ -629,11 +603,101 @@ static void LoadProfiles() {
     in.close();
 }
 
+
+// ==========================================
+// 🟢 NEW: BACKGROUND OBSERVER THREAD (FIXES ALL LOGIC GAPS)
+// ==========================================
+void ScheduleObserverThread() {
+    while (true) {
+        Sleep(1500); // Check every 1.5 seconds to save CPU
+        
+        if (!isSchDataLoaded) continue;
+
+        bool profilesChanged = false;
+
+        // Lock safely to avoid crashes while modifying or reading profiles
+        g_schMutex.lock();
+
+        time_t t = std::time(nullptr);
+        tm* now = std::localtime(&t);
+        int currentDay = now->tm_wday; 
+        int currentTotalMins = now->tm_hour * 60 + now->tm_min;
+
+        for (size_t i = 0; i < g_profiles.size(); ++i) {
+            auto& p = g_profiles[i];
+
+            // 1. Timer Expiration Check (Self Control)
+            if (p.isActive && p.lockMode == 0 && p.lockEndTime > 0 && t >= p.lockEndTime) {
+                p.isActive = false;
+                p.lockEndTime = 0;
+                ApplyProfileBlocking(i, false);
+                profilesChanged = true;
+            }
+
+            // 2. Schedule Auto Start/Stop Check
+            bool hasSchedule = false;
+            for (int d = 0; d < 7; d++) { if (p.activeDays[d]) hasSchedule = true; }
+
+            if (hasSchedule && p.lockMode == 0 && p.lockEndTime == 0) {
+                int startTotalMins = p.startHour * 60 + p.startMin;
+                int endTotalMins = p.endHour * 60 + p.endMin;
+
+                bool shouldBeActive = false;
+                if (p.activeDays[currentDay]) {
+                    if (startTotalMins <= endTotalMins) {
+                        shouldBeActive = (currentTotalMins >= startTotalMins && currentTotalMins < endTotalMins);
+                    } else {
+                        // Handles overnight schedules (e.g., 22:00 to 06:00)
+                        shouldBeActive = (currentTotalMins >= startTotalMins || currentTotalMins < endTotalMins);
+                    }
+                }
+
+                if (shouldBeActive && !p.isActive) {
+                    p.isActive = true;
+                    ApplyProfileBlocking(i, true);
+                    profilesChanged = true;
+                } else if (!shouldBeActive && p.isActive) {
+                    p.isActive = false;
+                    ApplyProfileBlocking(i, false);
+                    profilesChanged = true;
+                }
+            }
+
+            // 3. Continuous App Killing Check (Blocks apps opened *after* profile was activated)
+            if (p.isActive && !p.blockedApps.empty()) {
+                KillBlockedApps(p.blockedApps);
+            }
+        }
+
+        if (profilesChanged) {
+            SaveProfiles();
+            if (hParentWnd) {
+                InvalidateRect(hParentWnd, NULL, FALSE);
+            }
+        }
+
+        g_schMutex.unlock();
+    }
+}
+
+
 // ==========================================
 // --- DRAWING LOGIC ---
 // ==========================================
 void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
-    if (!isSchDataLoaded) { LoadProfiles(); isSchDataLoaded = true; }
+    if (!isSchDataLoaded) { 
+        LoadProfiles(); 
+        isSchDataLoaded = true; 
+        
+        // 🟢 Start Background thread once
+        if (!isSchThreadRunning) {
+            std::thread(ScheduleObserverThread).detach();
+            isSchThreadRunning = true;
+        }
+    }
+    
+    // 🟢 Thread Safety lock for UI reading
+    std::lock_guard<std::mutex> lock(g_schMutex);
     
     s_cx = x; s_cy = y; s_cw = w; s_ch = h;
     
@@ -657,7 +721,6 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
     SolidBrush bBgHover(ClrBgHover); SolidBrush bTealHover(ClrTealHover);
     SolidBrush bBg(ClrBg);
     
-    // 🟢 NEW: Soft Light Border logic
     Pen pThin(Color(255, 230, 235, 240), 1.5f);
     Pen pTeal(ClrTeal, 2.0f);
 
@@ -689,12 +752,6 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
 
         if (cY > y + h || cY + cardH < y + 90.0f) continue; 
         
-        if (g_profiles[i].isActive && g_profiles[i].lockMode == 0 && std::time(nullptr) >= g_profiles[i].lockEndTime) {
-            g_profiles[i].isActive = false; 
-            SaveProfiles();
-            ApplyProfileBlocking(i, false);
-        }
-
         RectF cardRect(cX, cY, cardW, cardH);
         GraphicsPath* cP = GetSchRoundRectPath(cardRect, 6);
         g.FillPath(&bWhite, cP); 
@@ -721,7 +778,8 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
         g.FillEllipse(&bWhite, knobX, cY + 115.0f + 2.0f, 22.0f, 22.0f);
 
         wstring toggleTxt = g_profiles[i].isActive ? L"Active" : L"Inactive";
-        if (g_profiles[i].isActive && g_profiles[i].lockMode == 0) toggleTxt = L"Locked (Auto)";
+        if (g_profiles[i].isActive && g_profiles[i].lockMode == 0 && g_profiles[i].lockEndTime > 0) toggleTxt = L"Locked (Timer)";
+        else if (g_profiles[i].isActive && g_profiles[i].lockMode == 0 && g_profiles[i].lockEndTime == 0) toggleTxt = L"Locked (Auto)";
         g.DrawString(toggleTxt.c_str(), -1, &fBold, RectF(cX + 75, cY + 115, 100, 26), &fL, g_profiles[i].isActive ? &bTeal : &bDark);
 
         RectF editRect(cX + cardW - 130, cY + 115, 60, 30);
@@ -743,7 +801,7 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
     }
     g.SetClip(&oldClip);
 
-    // --- OVERLAY: CREATE / EDIT PROFILE (MODERN COMPACT NO MAIN SCROLL) ---
+    // --- OVERLAY: CREATE / EDIT PROFILE ---
     if (editingProfileIdx != -1) {
         SolidBrush bgOver(ClrOverlay);
         g.FillRectangle(&bgOver, x, y, w, h);
@@ -753,7 +811,6 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
         float ovX = x + 20.0f;
         float ovY = y + 20.0f;
 
-        // No black border, using Soft light thin line
         RectF ovRect(ovX, ovY, ovW, ovH);
         GraphicsPath* oP = GetSchRoundRectPath(ovRect, 8);
         g.FillPath(&bBg, oP); g.DrawPath(&pThin, oP); delete oP;
@@ -870,14 +927,12 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
 
             g.DrawString(L"Session Time:", -1, &fSmallBold, RectF(cardX + 280, contentY + 35, 120, 20), &fL, &bGray);
 
-            // 🟢 NEW MODERN TIME BOX (AM/PM and Clean Hover Boxes)
             auto DrawModernTimeBox = [&](float tx, float ty, const wstring& lbl, int h, int m, RectF& hBox, RectF& mBox, RectF& ampmBtn, bool hH, bool hM, bool hAmPm) {
                 g.DrawString(lbl.c_str(), -1, &fSmall, RectF(tx, ty, 40, 30), &fC, &bGray);
 
                 int dispH = h % 12; if (dispH == 0) dispH = 12;
                 wstring ampmStr = (h >= 12) ? L"PM" : L"AM";
 
-                // Hour
                 hBox = RectF(tx + 45, ty, 35, 30);
                 GraphicsPath hp; AddRoundedRectPath(hp, hBox.X, hBox.Y, hBox.Width, hBox.Height, 6);
                 SolidBrush hbBr(hH ? ClrBgHover : ClrBg);
@@ -886,14 +941,12 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
 
                 g.DrawString(L":", -1, &fBold, RectF(tx + 80, ty, 10, 30), &fC, &bDark);
 
-                // Minute
                 mBox = RectF(tx + 90, ty, 35, 30);
                 GraphicsPath mp; AddRoundedRectPath(mp, mBox.X, mBox.Y, mBox.Width, mBox.Height, 6);
                 SolidBrush mbBr(hM ? ClrBgHover : ClrBg);
                 g.FillPath(&mbBr, &mp); g.DrawPath(&pThin, &mp);
                 g.DrawString((m < 10 ? L"0" + to_wstring(m) : to_wstring(m)).c_str(), -1, &fBold, mBox, &fC, &bDark);
 
-                // AM/PM Toggle
                 ampmBtn = RectF(tx + 130, ty, 38, 30);
                 GraphicsPath ap; AddRoundedRectPath(ap, ampmBtn.X, ampmBtn.Y, ampmBtn.Width, ampmBtn.Height, 6);
                 SolidBrush aBr(hAmPm ? ClrTealHover : ClrBgHover);
@@ -973,7 +1026,7 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
             }
         }
 
-        // ================== TAB 2: CUSTOM LISTS (NO MAIN SCROLLBAR) ==================
+        // ================== TAB 2: CUSTOM LISTS ==================
         else if (s_activeSubTab == 2) {
             vector<SchBlockItem>* cWebs = nullptr; vector<SchBlockItem>* cApps = nullptr; vector<SchBlockItem>* cKeys = nullptr;
             if(editingProfileIdx >= 0) {
@@ -982,7 +1035,6 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
                 cKeys = &g_profiles[editingProfileIdx].blockedKeywords;
             }
 
-            // Calculate exact available height for Custom Lists so it doesn't overflow main overlay
             float listAreaH = (ovY + ovH - 75.0f) - contentY;
             
             RectF cRect(cardX, contentY, cardW_inner, listAreaH);
@@ -991,7 +1043,6 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
 
             float colW = (cardW_inner - 30.0f) / 3.0f;
 
-            // Box-Level List Drawer
             auto DrawListCol = [&](int colIdx, float colX, const wstring& title, const wstring& ph, wstring& inpStr, int inpIdx, vector<SchBlockItem>* list,
                                    RectF& outInp, RectF* outCombo, RectF& outAdd, bool hovCombo, bool hovAdd, vector<pair<RectF,int>>& outDel) {
                 
@@ -1027,7 +1078,6 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
                 SolidBrush aBr(hovAdd ? ClrTealHover : ClrTeal); g.FillPath(&aBr, ap); delete ap;
                 g.DrawString(L"+", -1, &fBold, outAdd, &fC, &bWhite);
 
-                // --- 🟢 FIX: Smart Box-level Scroll System ---
                 outDel.clear();
                 float listStartY = contentY + 75.0f;
                 float boxH = listAreaH - 85.0f;
@@ -1059,7 +1109,6 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
                     }
                     g.SetClip(&oldClip);
 
-                    // Miniature scroll indicator inside box
                     if (s_listScrollMax[colIdx] > 0) {
                         float thumbH = (std::max)(20.0f, boxH * (boxH / (boxH + s_listScrollMax[colIdx])));
                         float thumbY = listStartY + (s_listScrollC[colIdx] / s_listScrollMax[colIdx]) * (boxH - thumbH);
@@ -1083,7 +1132,6 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
             DrawListCol(2, cardX + colW * 2 + 20, L"Keywords", L"games", inpKey, 4, cKeys, g_ehb.keyInp, nullptr, g_ehb.addKey, false, g_ehb.hAddKey, g_ehb.keyDel);
         }
 
-        // --- Overlapping Dropdown Menus (Z-Index Top) ---
         if (s_activeSubTab == 0 && isSchModeDropdownOpen) {
             RectF mlR(g_ehb.modeDrop.X, g_ehb.modeDrop.Y + 34, 180, 118);
             GraphicsPath* mlP = GetSchRoundRectPath(mlR, 4);
@@ -1232,6 +1280,8 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
 // --- MOUSE MOVE LOGIC ---
 // ==========================================
 void ProcessScheduleBlocksMouseMove(float x, float y) {
+    std::lock_guard<std::mutex> lock(g_schMutex);
+    
     hAddProfileBtn = false;
     
     s_hTimeMoM=false; s_hTimeMoP=false; s_hTimeDM=false; s_hTimeDP=false;
@@ -1341,11 +1391,19 @@ void ProcessScheduleBlocksMouseMove(float x, float y) {
             if(g_ehb.webCombo.Contains(x,y)) hoverSchWebCombo = true;
             if(g_ehb.appCombo.Contains(x,y)) hoverSchAppCombo = true;
 
-            if(g_ehb.addWeb.Contains(x,y)) g_ehb.hAddWeb = true;
-            if(g_ehb.addApp.Contains(x,y)) g_ehb.hAddApp = true;
-            if(g_ehb.addKey.Contains(x,y)) g_ehb.hAddKey = true;
+            activeInput = 0;
+            if (g_ehb.webInp.Contains(x,y)) activeInput = 2;
+            if (g_ehb.appInp.Contains(x,y)) activeInput = 3;
+            if (g_ehb.keyInp.Contains(x,y)) activeInput = 4;
 
             if (editingProfileIdx >= 0) {
+                if (g_ehb.hAddWeb && !inpWeb.empty()) { g_profiles[editingProfileIdx].blockedWebsites.push_back({inpWeb, false}); inpWeb = L""; }
+                if (g_ehb.hAddApp && !inpApp.empty()) { 
+                    if (inpApp.length() < 4 || inpApp.substr(inpApp.length() - 4) != L".exe") inpApp += L".exe";
+                    g_profiles[editingProfileIdx].blockedApps.push_back({inpApp, false}); inpApp = L""; 
+                }
+                if (g_ehb.hAddKey && !inpKey.empty()) { g_profiles[editingProfileIdx].blockedKeywords.push_back({inpKey, false}); inpKey = L""; }
+                
                 if (g_ehb.listAreas[0].Contains(x, y)) {
                     for(auto& p : g_ehb.webDel) { if(p.first.Contains(x,y)) g_profiles[editingProfileIdx].blockedWebsites[p.second].isHoveredCross = true; }
                 }
@@ -1391,6 +1449,7 @@ void ProcessScheduleBlocksMouseMove(float x, float y) {
 // --- MOUSE BUTTON DOWN ---
 // ==========================================
 void ProcessScheduleBlocksMouseDown(float x, float y) {
+    std::lock_guard<std::mutex> lock(g_schMutex);
     if (editingProfileIdx == -1) {
         // Main view scrollbar drag logic (if you want to implement thumb detection)
     }
@@ -1400,6 +1459,7 @@ void ProcessScheduleBlocksMouseDown(float x, float y) {
 // --- MOUSE BUTTON UP ---
 // ==========================================
 void ProcessScheduleBlocksMouseUp(float x, float y) {
+    std::lock_guard<std::mutex> lock(g_schMutex);
     s_scrollbarDragging = false;
 }
 
@@ -1407,6 +1467,8 @@ void ProcessScheduleBlocksMouseUp(float x, float y) {
 // --- MOUSE CLICK LOGIC ---
 // ==========================================
 void ProcessScheduleBlocksMouseClick(float x, float y) {
+    std::lock_guard<std::mutex> lock(g_schMutex);
+    
     if (s_showTimeOverlay) {
         if (s_hTimeMoM && s_focusMonths > 0) s_focusMonths--;
         if (s_hTimeMoP && s_focusMonths < 12) s_focusMonths++;
@@ -1547,11 +1609,11 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
 
             if(g_ehb.hStH) { editStH = (editStH + 1) % 24; } 
             if(g_ehb.hStM) { editStM = (editStM + 5) % 60; } 
-            if(g_ehb.hStAmPm) { editStH = (editStH + 12) % 24; } // AM/PM Toggle Magic
+            if(g_ehb.hStAmPm) { editStH = (editStH + 12) % 24; } 
 
             if(g_ehb.hEnH) { editEnH = (editEnH + 1) % 24; } 
             if(g_ehb.hEnM) { editEnM = (editEnM + 5) % 60; } 
-            if(g_ehb.hEnAmPm) { editEnH = (editEnH + 12) % 24; } // AM/PM Toggle Magic
+            if(g_ehb.hEnAmPm) { editEnH = (editEnH + 12) % 24; } 
             
             activeInput = g_ehb.nameInp.Contains(x,y) ? 1 : 0;
         } 
@@ -1655,7 +1717,14 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
                     SaveProfiles(); 
                 }
             } else {
-                if (g_profiles[i].lockMode == 0) { /* Block premature stopping */ }
+                if (g_profiles[i].lockMode == 0 && g_profiles[i].lockEndTime == 0) { 
+                    // Auto-schedule profiles can be force stopped manually if needed
+                    g_profiles[i].isActive = false;
+                    ApplyProfileBlocking(i, false);
+                    SaveProfiles();
+                } else if (g_profiles[i].lockMode == 0 && g_profiles[i].lockEndTime > 0) {
+                    // Timer profiles cannot be stopped manually
+                }
                 else if (g_profiles[i].lockMode == 1) { s_showPassOverlay = true; s_isStoppingFocus = true; s_inputPassText = L""; }
                 else if (g_profiles[i].lockMode == 2) { s_showTextUnlockOverlay = true; s_currentTypingText = L""; s_isTypingActive = true; }
             }
@@ -1692,6 +1761,8 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
 // --- KEYBOARD LOGIC ---
 // ==========================================
 void ProcessScheduleBlocksKeyPress(wchar_t c) {
+    std::lock_guard<std::mutex> lock(g_schMutex);
+    
     if (s_showPassOverlay && s_isPassInputActive) {
         if (c >= 32 && c <= 126 && s_inputPassText.length() < 20) s_inputPassText += c;
     } else if (s_showTextUnlockOverlay && s_isTypingActive) {
@@ -1707,6 +1778,8 @@ void ProcessScheduleBlocksKeyPress(wchar_t c) {
 }
 
 void ProcessScheduleBlocksKeyDown(WPARAM key) {
+    std::lock_guard<std::mutex> lock(g_schMutex);
+    
     if (key == VK_ESCAPE) { 
         if (s_showTimeOverlay || s_showPassOverlay || s_showTextUnlockOverlay) {
             s_showTimeOverlay = false; s_showPassOverlay = false; s_showTextUnlockOverlay = false;
@@ -1737,8 +1810,9 @@ void ProcessScheduleBlocksKeyDown(WPARAM key) {
     }
 }
 
-// 100% Smooth Scrolling Update with Smart Box Internal Scroll
 void ProcessScheduleBlocksMouseWheel(float x, float y, int delta) {
+    std::lock_guard<std::mutex> lock(g_schMutex);
+    
     UINT scrollLines = 3;
     SystemParametersInfoA(SPI_GETWHEELSCROLLLINES, 0, &scrollLines, 0);
     float scrollStep = (float)scrollLines * 15.0f; 
