@@ -95,8 +95,10 @@ void DrawFamilyLinkTab(Graphics& g, float x, float y, float w, float h) {
 
     // ── ৫. স্ট্যাটাস মেসেজ ──
     if (!fl_statusMsg.empty()) {
-        SolidBrush statusCol = (fl_connectionState == 2) ? SolidBrush(Color(255, 0, 180, 70)) : SolidBrush(Color(255, 232, 17, 35));
-        if (fl_connectionState == 1) statusCol.SetColor(Color(255, 0, 150, 160));
+        Color statusColor = (fl_connectionState == 2) ? Color(255, 0, 180, 70) :
+                            (fl_connectionState == 1) ? Color(255, 0, 150, 160) :
+                                                        Color(255, 232, 17, 35);
+        SolidBrush statusCol(statusColor);
         Font fStatus(&ff, 13, FontStyleBold, UnitPixel);
         g.DrawString(fl_statusMsg.c_str(), -1, &fStatus, RectF(x, btnY + 60.0f, w, 30.0f), &fmtC, &statusCol);
     }
