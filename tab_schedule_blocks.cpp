@@ -248,13 +248,15 @@ static void ApplyHostsFileBlocking(const vector<wstring>& patterns, bool block) 
     ShellExecuteA(NULL, "open", "cmd.exe", "/c ipconfig /flushdns", NULL, SW_HIDE);
 }
 
-// 🟢 Modified to accept a safe copy of profiles to prevent Concurrent Modification Crashes
+// 🟢 FIXED 1: PAC File Network Blocking
 static void ApplyPACFileBlocking(const vector<wstring>& keywords, bool block, const vector<FocusProfile>& safeProfiles) {
-    wchar_t appData[MAX_PATH]; if (!SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, 0, appData))) return;
-    wstring pacPath = wstring(appData) + L"\\RasFocus\\block.pac";
-    wstring pacDir = wstring(appData) + L"\\RasFocus"; CreateDirectoryW(pacDir.c_str(), NULL);
+    // ডিরেক্ট C:\ProgramData লোকেশন এবং সেফ ডিরেক্টরি ক্রিয়েশন
+    wstring pacDir = L"C:\\ProgramData\\RasFocus";
+    CreateDirectoryW(pacDir.c_str(), NULL);
+    wstring pacPath = pacDir + L"\\block.pac";
 
-    wifstream fin(pacPath); fin.imbue(locale(fin.getloc(), new codecvt_utf8<wchar_t>));
+    wifstream fin(pacPath.c_str());
+    fin.imbue(locale(fin.getloc(), new codecvt_utf8<wchar_t>));
     wstring content; if (fin) { wstring ln; while (getline(fin, ln)) content += ln + L"\n"; fin.close(); }
 
     vector<wstring> allKw; bool blockAllInternet = false;
@@ -270,18 +272,22 @@ static void ApplyPACFileBlocking(const vector<wstring>& keywords, bool block, co
     else { for (const auto& kw : allKw) pac += L"  if (url.indexOf(\"" + kw + L"\") !== -1) return \"PROXY 127.0.0.1:1\";\n"; }
     pac += L"  return \"DIRECT\";\n}\n";
 
-    wofstream fout(pacPath); fout.imbue(locale(fout.getloc(), new codecvt_utf8<wchar_t>));
+    wofstream fout(pacPath.c_str());
+    fout.imbue(locale(fout.getloc(), new codecvt_utf8<wchar_t>));
     if (fout) { fout << pac; fout.close(); }
 
+    // 🟢 FIXED: স্ট্রিং কনভার্সন বাদ দিয়ে সরাসরি ShellExecuteW (Wide) ব্যবহার করা হয়েছে
     if (block && (!allKw.empty() || blockAllInternet)) {
-        string pacUrl = "file://" + string(pacPath.begin(), pacPath.end());
-        string cmd1 = "/c reg add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v AutoConfigURL /t REG_SZ /d \"" + pacUrl + "\" /f";
-        ShellExecuteA(NULL, "open", "cmd.exe", cmd1.c_str(), NULL, SW_HIDE);
-        ShellExecuteA(NULL, "open", "cmd.exe", "/c reg add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v ProxyEnable /t REG_DWORD /d 0 /f", NULL, SW_HIDE);
-        InternetSetOptionA(NULL, INTERNET_OPTION_SETTINGS_CHANGED, NULL, 0); InternetSetOptionA(NULL, INTERNET_OPTION_REFRESH, NULL, 0);
+        wstring pacUrl = L"file://" + pacPath;
+        wstring cmd1 = L"/c reg add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v AutoConfigURL /t REG_SZ /d \"" + pacUrl + L"\" /f";
+        ShellExecuteW(NULL, L"open", L"cmd.exe", cmd1.c_str(), NULL, SW_HIDE);
+        ShellExecuteW(NULL, L"open", L"cmd.exe", L"/c reg add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v ProxyEnable /t REG_DWORD /d 0 /f", NULL, SW_HIDE);
+        InternetSetOptionW(NULL, INTERNET_OPTION_SETTINGS_CHANGED, NULL, 0); 
+        InternetSetOptionW(NULL, INTERNET_OPTION_REFRESH, NULL, 0);
     } else if (allKw.empty() && !blockAllInternet) {
-        ShellExecuteA(NULL, "open", "cmd.exe", "/c reg delete \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v AutoConfigURL /f", NULL, SW_HIDE);
-        InternetSetOptionA(NULL, INTERNET_OPTION_SETTINGS_CHANGED, NULL, 0); InternetSetOptionA(NULL, INTERNET_OPTION_REFRESH, NULL, 0);
+        ShellExecuteW(NULL, L"open", L"cmd.exe", L"/c reg delete \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v AutoConfigURL /f", NULL, SW_HIDE);
+        InternetSetOptionW(NULL, INTERNET_OPTION_SETTINGS_CHANGED, NULL, 0); 
+        InternetSetOptionW(NULL, INTERNET_OPTION_REFRESH, NULL, 0);
     }
 }
 
@@ -330,29 +336,37 @@ void ApplyProfileBlocking(int profileIdx, bool enable) {
 // ==========================================
 // --- HISTORY & SAVE/LOAD SYSTEM ---
 // ==========================================
+// 🟢 FIXED 2: History Logging 
 void LogHistoryToHiddenFolderSch(wstring action) {
-    wchar_t path[MAX_PATH];
-    if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, 0, path))) {
-        wstring historyDir = wstring(path) + L"\\RasFocus\\History"; CreateDirectoryW(historyDir.c_str(), NULL);
-        SetFileAttributesW(historyDir.c_str(), FILE_ATTRIBUTE_HIDDEN); wstring logFile = historyDir + L"\\schedule_activity_log.txt";
-        ofstream out(string(logFile.begin(), logFile.end()).c_str(), ios::app);
-        time_t now = std::time(0); string dt = std::ctime(&now); dt.pop_back(); 
-        if(out) out << "[" << dt << "] " << string(action.begin(), action.end()) << "\n";
-    }
+    // ডিরেক্ট C:\ProgramData\RasFocus\History
+    wstring baseDir = L"C:\\ProgramData\\RasFocus";
+    CreateDirectoryW(baseDir.c_str(), NULL);
+    
+    wstring historyDir = baseDir + L"\\History";
+    CreateDirectoryW(historyDir.c_str(), NULL);
+    SetFileAttributesW(historyDir.c_str(), FILE_ATTRIBUTE_HIDDEN); 
+    
+    wstring logFile = historyDir + L"\\schedule_activity_log.txt";
+
+    // 🟢 FIXED: wofstream ব্যবহার করা হয়েছে যাতে ক্র্যাশ না করে
+    wofstream out(logFile.c_str(), ios::app);
+    time_t now = std::time(0); string dt = std::ctime(&now); dt.pop_back(); 
+    if(out) out << L"[" << SafeUtf8ToWstring(dt) << L"] " << action << L"\n";
 }
 
-// 🟢 SAVE FILE NAME UPDATED TO PREVENT CORRUPT DATA CONFLICT
+// 🟢 FIXED 3: Main Profile Data Location
 static wstring GetSchSavePath() {
-    wchar_t path[MAX_PATH];
-    if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, 0, path))) {
-        wstring fullPath = wstring(path) + L"\\RasFocus"; CreateDirectoryW(fullPath.c_str(), NULL);
-        return fullPath + L"\\custom_profiles_v4.dat";
-    } return L"";
+    wstring folderPath = L"C:\\ProgramData\\RasFocus";
+    CreateDirectoryW(folderPath.c_str(), NULL);
+    return folderPath + L"\\custom_profiles_v4.dat";
 }
 
+// 🟢 FIXED 4: Safe Profile Saving
 static void SaveProfiles() {
-    wofstream out(string(GetSchSavePath().begin(), GetSchSavePath().end())); out.imbue(locale(out.getloc(), new codecvt_utf8<wchar_t>));
-    if (!out) return;
+    // সরাসরি c_str() ব্যবহার, স্ট্রিং কনভার্সনের মেমরি লিক থেকে মুক্তি
+    wofstream out(GetSchSavePath().c_str()); 
+    out.imbue(locale(out.getloc(), new codecvt_utf8<wchar_t>));
+    if (!out) return; // ফাইল ওপেন না হলে ক্র্যাশ করার বদলে সেফলি রিটার্ন করবে
     out << g_profiles.size() << L"\n";
     for (const auto& p : g_profiles) {
         out << p.profileName << L"\n" << p.isActive << L"\n" << p.lockMode << L"\n" << p.lockEndTime << L"\n" << p.parentsPassword << L"\n";
@@ -367,8 +381,10 @@ static void SaveProfiles() {
     } out.close();
 }
 
+// 🟢 FIXED 5: Safe Profile Loading
 static void LoadProfiles() {
-    wifstream in(string(GetSchSavePath().begin(), GetSchSavePath().end())); in.imbue(locale(in.getloc(), new codecvt_utf8<wchar_t>));
+    wifstream in(GetSchSavePath().c_str()); 
+    in.imbue(locale(in.getloc(), new codecvt_utf8<wchar_t>));
     if (!in) {
         FocusProfile defProfile; defProfile.profileName = L"Deep Work Session";
         defProfile.blockedWebsites.push_back({L"facebook.com", false}); defProfile.blockedApps.push_back({L"discord.exe", false});
