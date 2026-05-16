@@ -34,7 +34,6 @@ static bool isSchThreadRunning = false;
 // 🟢 BACKGROUND GLOBAL HELPERS
 // ==========================================
 
-// Safe UTF-8 to WString converter to prevent memory corruption
 static wstring SafeUtf8ToWstring(const string& str) {
     if (str.empty()) return wstring();
     int size_needed = MultiByteToWideChar(CP_UTF8, 0, &str[0], (int)str.size(), NULL, 0);
@@ -85,7 +84,6 @@ static void LoadAdultSitesFromResourceOnce() {
     }
 }
 
-// --- HELPERS & COLORS ---
 static void AddRoundedRectPath(GraphicsPath& path, float x, float y, float w, float h, float r) {
     float d = r * 2.0f;
     path.AddArc(x, y, d, d, 180.0f, 90.0f); path.AddArc(x + w - d, y, d, d, 270.0f, 90.0f);
@@ -107,18 +105,15 @@ static void DrawSchOverlaySpinner(Graphics& g, float x, float y, const std::wstr
     Pen pThin(Color(255, 200, 210, 220), 1.5f);
     StringFormat fC; fC.SetAlignment(StringAlignmentCenter); fC.SetLineAlignment(StringAlignmentCenter);
 
-    RectF minusRect(x, y, 40.0f, 40.0f); GraphicsPath* mp = GetSchRoundRectPath(minusRect, 6);
+    RectF minusRect(x, y, 40.0f, 40.0f); GraphicsPath* mp = GetSchRoundRectPath(minusRect, 6.0f);
     SolidBrush mBr(hMinus ? colTealHover : colTeal); g.FillPath(&mBr, mp); delete mp; g.DrawString(L"-", -1, fBold, minusRect, &fC, &bWhite);
 
-    RectF valRect(x + 45.0f, y, 60.0f, 40.0f); GraphicsPath* vp = GetSchRoundRectPath(valRect, 4);
+    RectF valRect(x + 45.0f, y, 60.0f, 40.0f); GraphicsPath* vp = GetSchRoundRectPath(valRect, 4.0f);
     SolidBrush vBr(Color(255, 248, 250, 252)); g.FillPath(&vBr, vp); g.DrawPath(&pThin, vp); delete vp; g.DrawString(value.c_str(), -1, fBold, valRect, &fC, &bDark);
 
-    RectF plusRect(x + 110.0f, y, 40.0f, 40.0f); GraphicsPath* pp = GetSchRoundRectPath(plusRect, 6);
+    RectF plusRect(x + 110.0f, y, 40.0f, 40.0f); GraphicsPath* pp = GetSchRoundRectPath(plusRect, 6.0f);
     SolidBrush pBr(hPlus ? colTealHover : colTeal); g.FillPath(&pBr, pp); delete pp; g.DrawString(L"+", -1, fBold, plusRect, &fC, &bWhite);
 }
-
-#define s_hScrollbarThumb Color(255, 180, 180, 180)
-#define s_hScrollbarTrack Color(255, 240, 240, 240)
 
 // ==========================================
 // --- DATA STRUCTURES & GLOBALS ---
@@ -210,7 +205,7 @@ struct EditHitboxes {
 } g_ehb;
 
 // ==========================================
-// --- BLOCKING LOGIC ---
+// 🟢 FIXED: BLOCKING LOGIC (GLOBAL SYNC)
 // ==========================================
 static vector<wstring> GetAllBlockPatterns(const wstring& entry) {
     vector<wstring> patterns; wstring e = entry;
@@ -223,38 +218,41 @@ static vector<wstring> GetAllBlockPatterns(const wstring& entry) {
     return patterns;
 }
 
-static void ApplyHostsFileBlocking(const vector<wstring>& patterns, bool block) {
+static void ApplyHostsFileBlocking(const vector<FocusProfile>& safeProfiles) {
     wchar_t sysDir[MAX_PATH]; GetSystemDirectoryW(sysDir, MAX_PATH);
     wstring hostsPath = wstring(sysDir) + L"\\drivers\\etc\\hosts";
+    
     wifstream fin(hostsPath); fin.imbue(locale(fin.getloc(), new codecvt_utf8<wchar_t>));
-    wstring content; if (fin) { wstring ln; while (getline(fin, ln)) content += ln + L"\n"; fin.close(); }
-
-    for (const auto& pat : patterns) {
-        if (pat.substr(0, 3) == L"kw:") continue; 
-        wstring blockLine = L"0.0.0.0 " + pat; wstring fullLine = blockLine + L" # RasFocus";
-        if (block) { if (content.find(blockLine) == wstring::npos) content += fullLine + L"\n"; } 
-        else {
-            wstring newContent; size_t pos = 0;
-            while (pos <= content.size()) {
-                size_t nl = content.find(L'\n', pos); wstring line = (nl == wstring::npos) ? content.substr(pos) : content.substr(pos, nl - pos);
-                if (line.find(blockLine) == wstring::npos) newContent += line + L"\n";
-                if (nl == wstring::npos) break; pos = nl + 1;
-            } content = newContent;
-        }
+    wstring cleanContent; 
+    if (fin) { 
+        wstring ln; 
+        while (getline(fin, ln)) { if (ln.find(L"# RasFocus") == wstring::npos) cleanContent += ln + L"\n"; }
+        fin.close(); 
     }
+
+    vector<wstring> activePats;
+    for (const auto& p : safeProfiles) {
+        if (!p.isActive) continue;
+        for (const auto& w : p.blockedWebsites) { auto pats = GetAllBlockPatterns(w.name); for (const auto& pt : pats) activePats.push_back(pt); }
+        if (p.qbYTAds) { activePats.push_back(L"googlevideo.com"); activePats.push_back(L"doubleclick.net"); }
+        if (p.blockInternet) { activePats.push_back(L"www.msftconnecttest.com"); activePats.push_back(L"ipv6.msftconnecttest.com"); }
+    }
+
+    for (const auto& pat : activePats) {
+        if (pat.substr(0, 3) == L"kw:") continue; 
+        wstring blockLine = L"0.0.0.0 " + pat + L" # RasFocus\n";
+        if (cleanContent.find(blockLine) == wstring::npos) cleanContent += blockLine;
+    }
+
     wofstream fout(hostsPath); fout.imbue(locale(fout.getloc(), new codecvt_utf8<wchar_t>));
-    if (fout) { fout << content; fout.close(); }
-    ShellExecuteA(NULL, "open", "cmd.exe", "/c ipconfig /flushdns", NULL, SW_HIDE);
+    if (fout) { fout << cleanContent; fout.close(); }
+    ShellExecuteW(NULL, L"open", L"cmd.exe", L"/c ipconfig /flushdns", NULL, SW_HIDE);
 }
 
-static void ApplyPACFileBlocking(const vector<wstring>& keywords, bool block, const vector<FocusProfile>& safeProfiles) {
+static void ApplyPACFileBlocking(const vector<FocusProfile>& safeProfiles) {
     wstring pacDir = L"C:\\ProgramData\\RasFocus";
     CreateDirectoryW(pacDir.c_str(), NULL);
     wstring pacPath = pacDir + L"\\block.pac";
-
-    wifstream fin(pacPath.c_str());
-    fin.imbue(locale(fin.getloc(), new codecvt_utf8<wchar_t>));
-    wstring content; if (fin) { wstring ln; while (getline(fin, ln)) content += ln + L"\n"; fin.close(); }
 
     vector<wstring> allKw; bool blockAllInternet = false;
     for (const auto& p : safeProfiles) {
@@ -264,23 +262,30 @@ static void ApplyPACFileBlocking(const vector<wstring>& keywords, bool block, co
         for (const auto& kw : p.adultCustomKeywords) allKw.push_back(kw.name);
     }
 
+    // 🟢 PAC Case Insensitive Bypass Fix
     wstring pac = L"function FindProxyForURL(url, host) {\n";
+    pac += L"  var lowerUrl = url.toLowerCase();\n";
     if (blockAllInternet) { pac += L"  return \"PROXY 127.0.0.1:1\";\n"; } 
-    else { for (const auto& kw : allKw) pac += L"  if (url.indexOf(\"" + kw + L"\") !== -1) return \"PROXY 127.0.0.1:1\";\n"; }
+    else { 
+        for (const auto& kw : allKw) {
+            wstring lowerKw = kw; transform(lowerKw.begin(), lowerKw.end(), lowerKw.begin(), ::towlower);
+            pac += L"  if (lowerUrl.indexOf(\"" + lowerKw + L"\") !== -1) return \"PROXY 127.0.0.1:1\";\n"; 
+        }
+    }
     pac += L"  return \"DIRECT\";\n}\n";
 
     wofstream fout(pacPath.c_str());
     fout.imbue(locale(fout.getloc(), new codecvt_utf8<wchar_t>));
     if (fout) { fout << pac; fout.close(); }
 
-    if (block && (!allKw.empty() || blockAllInternet)) {
+    if (!allKw.empty() || blockAllInternet) {
         wstring pacUrl = L"file://" + pacPath;
         wstring cmd1 = L"/c reg add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v AutoConfigURL /t REG_SZ /d \"" + pacUrl + L"\" /f";
         ShellExecuteW(NULL, L"open", L"cmd.exe", cmd1.c_str(), NULL, SW_HIDE);
         ShellExecuteW(NULL, L"open", L"cmd.exe", L"/c reg add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v ProxyEnable /t REG_DWORD /d 0 /f", NULL, SW_HIDE);
         InternetSetOptionW(NULL, INTERNET_OPTION_SETTINGS_CHANGED, NULL, 0); 
         InternetSetOptionW(NULL, INTERNET_OPTION_REFRESH, NULL, 0);
-    } else if (allKw.empty() && !blockAllInternet) {
+    } else {
         ShellExecuteW(NULL, L"open", L"cmd.exe", L"/c reg delete \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v AutoConfigURL /f", NULL, SW_HIDE);
         InternetSetOptionW(NULL, INTERNET_OPTION_SETTINGS_CHANGED, NULL, 0); 
         InternetSetOptionW(NULL, INTERNET_OPTION_REFRESH, NULL, 0);
@@ -304,26 +309,23 @@ static void KillBlockedApps(const vector<SchBlockItem>& apps) {
     CloseHandle(snap);
 }
 
-static void ApplyProfileBlockingWorker(FocusProfile p, vector<FocusProfile> all_profiles, bool enable) {
-    vector<wstring> allPatterns;
-    for (const auto& w : p.blockedWebsites) { auto pats = GetAllBlockPatterns(w.name); for (const auto& pt : pats) allPatterns.push_back(pt); }
-    if (p.qbYTAds) { allPatterns.push_back(L"googlevideo.com"); allPatterns.push_back(L"doubleclick.net"); allPatterns.push_back(L"kw:youtube.com/pagead"); }
-    if (p.blockInternet) { allPatterns.push_back(L"www.msftconnecttest.com"); allPatterns.push_back(L"ipv6.msftconnecttest.com"); SetInternetStateSch(enable); }
-    if (p.schStrictDns && enable) { AdultBlock_ApplyForSchedule(enable); } 
-
-    ApplyHostsFileBlocking(allPatterns, enable); 
-    ApplyPACFileBlocking(allPatterns, enable, all_profiles);
-    if (enable && !p.blockedApps.empty()) KillBlockedApps(p.blockedApps);
+static void ApplyProfileBlockingWorker(vector<FocusProfile> all_profiles) {
+    // Rebuild Hosts & PAC globally
+    ApplyHostsFileBlocking(all_profiles); 
+    ApplyPACFileBlocking(all_profiles);
+    
+    bool anyIntBlock = false; bool anyAdultDns = false;
+    for (const auto& p : all_profiles) { 
+        if (p.isActive && p.blockInternet) anyIntBlock = true; 
+        if (p.isActive && p.schStrictDns) anyAdultDns = true;
+    }
+    SetInternetStateSch(anyIntBlock);
+    AdultBlock_ApplyForSchedule(anyAdultDns);
 }
 
-void ApplyProfileBlocking(int profileIdx, bool enable) {
-    if (profileIdx < 0 || profileIdx >= (int)g_profiles.size()) return;
-    FocusProfile p_copy = g_profiles[profileIdx];
+void ApplyProfileBlocking() {
     vector<FocusProfile> all_profiles_copy = g_profiles;
-
-    std::thread([p_copy, all_profiles_copy, enable]() {
-        ApplyProfileBlockingWorker(p_copy, all_profiles_copy, enable);
-    }).detach();
+    std::thread([all_profiles_copy]() { ApplyProfileBlockingWorker(all_profiles_copy); }).detach();
 }
 
 // ==========================================
@@ -332,11 +334,9 @@ void ApplyProfileBlocking(int profileIdx, bool enable) {
 void LogHistoryToHiddenFolderSch(wstring action) {
     wstring baseDir = L"C:\\ProgramData\\RasFocus";
     CreateDirectoryW(baseDir.c_str(), NULL);
-    
     wstring historyDir = baseDir + L"\\History";
     CreateDirectoryW(historyDir.c_str(), NULL);
     SetFileAttributesW(historyDir.c_str(), FILE_ATTRIBUTE_HIDDEN); 
-    
     wstring logFile = historyDir + L"\\schedule_activity_log.txt";
 
     wofstream out(logFile.c_str(), ios::app);
@@ -402,43 +402,42 @@ void ScheduleObserverThread() {
         if (!isSchDataLoaded) continue;
 
         bool profilesChanged = false; g_schMutex.lock(); 
-        time_t t = std::time(nullptr); tm* now = std::localtime(&t); 
-        int currentDay = now->tm_wday; 
-        int prevDay = (currentDay + 6) % 7; // Yesterday for overnight logic
-        int currentTotalMins = now->tm_hour * 60 + now->tm_min;
+        time_t t = std::time(nullptr); tm* now = std::localtime(&t); int currentDay = now->tm_wday; int prevDay = (currentDay + 6) % 7; int currentTotalMins = now->tm_hour * 60 + now->tm_min;
 
         for (size_t i = 0; i < g_profiles.size(); ++i) {
             auto& p = g_profiles[i];
             if (p.isActive && p.lockMode == 0 && p.lockEndTime > 0 && t >= p.lockEndTime) {
-                p.isActive = false; p.lockEndTime = 0; ApplyProfileBlocking(i, false); profilesChanged = true;
+                p.isActive = false; p.lockEndTime = 0; profilesChanged = true;
             }
             bool hasSchedule = false; for (int d = 0; d < 7; d++) { if (p.activeDays[d]) hasSchedule = true; }
             
-            // 🟢 FIXED: Precision Math for Overnight Auto-Schedules
+            // 🟢 FIXED: Overnight Precision Math
             if (hasSchedule && p.lockMode == 0 && p.lockEndTime == 0) {
-                int startTotalMins = p.startHour * 60 + p.startMin; 
-                int endTotalMins = p.endHour * 60 + p.endMin;
+                int startTotalMins = p.startHour * 60 + p.startMin; int endTotalMins = p.endHour * 60 + p.endMin;
                 bool shouldBeActive = false;
                 
                 if (startTotalMins <= endTotalMins) {
-                    if (p.activeDays[currentDay]) { 
-                        shouldBeActive = (currentTotalMins >= startTotalMins && currentTotalMins < endTotalMins); 
-                    }
-                } else { // Overnight Math (e.g., 22:00 to 06:00)
+                    if (p.activeDays[currentDay]) { shouldBeActive = (currentTotalMins >= startTotalMins && currentTotalMins < endTotalMins); }
+                } else {
                     if (p.activeDays[currentDay] && currentTotalMins >= startTotalMins) { shouldBeActive = true; }
                     if (p.activeDays[prevDay] && currentTotalMins < endTotalMins) { shouldBeActive = true; }
                 }
-                
-                if (shouldBeActive && !p.isActive) { p.isActive = true; ApplyProfileBlocking(i, true); profilesChanged = true; } 
-                else if (!shouldBeActive && p.isActive) { p.isActive = false; ApplyProfileBlocking(i, false); profilesChanged = true; }
+                if (shouldBeActive && !p.isActive) { p.isActive = true; profilesChanged = true; } 
+                else if (!shouldBeActive && p.isActive) { p.isActive = false; profilesChanged = true; }
             }
         }
-        if (profilesChanged) { SaveProfiles(); if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE); }
+        if (profilesChanged) { ApplyProfileBlocking(); SaveProfiles(); if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE); }
         vector<FocusProfile> safeProfiles = g_profiles; g_schMutex.unlock(); 
 
         for (const auto& p : safeProfiles) {
-            if (p.isActive && !p.blockedApps.empty()) KillBlockedApps(p.blockedApps); 
             if (p.isActive) {
+                // 🟢 FIXED: Uninstall Protection Background Killer
+                vector<SchBlockItem> appsToKill = p.blockedApps;
+                if (p.blockUninstall) {
+                    appsToKill.push_back({L"taskmgr.exe"}); appsToKill.push_back({L"resmon.exe"}); appsToKill.push_back({L"perfmon.exe"});
+                }
+                if (!appsToKill.empty()) KillBlockedApps(appsToKill); 
+
                 HWND hActive = GetForegroundWindow();
                 if (hActive) {
                     wchar_t windowTitle[512] = { 0 };
@@ -464,6 +463,16 @@ void ScheduleObserverThread() {
                                 if (lowerTitle.find(lowerKw) != wstring::npos) { triggerBlock = true; break; }
                             }
                         }
+                        
+                        // 🟢 FIXED: Uninstall Title Protection
+                        if (p.blockUninstall && !triggerBlock) {
+                            if (lowerTitle.find(L"task manager") != wstring::npos || lowerTitle.find(L"programs and features") != wstring::npos || lowerTitle.find(L"apps & features") != wstring::npos || lowerTitle.find(L"uninstall") != wstring::npos) triggerBlock = true;
+                        }
+                        // 🟢 FIXED: Time Cheat Protection
+                        if (p.lockMode == 0 && p.lockEndTime > 0 && !triggerBlock) {
+                            if (lowerTitle.find(L"date and time") != wstring::npos || lowerTitle.find(L"time & language") != wstring::npos) triggerBlock = true;
+                        }
+
                         if (triggerBlock) CloseActiveTabOnly(hActive);
                     }
                 }
@@ -471,7 +480,6 @@ void ScheduleObserverThread() {
         }
     }
 }
-
 
 // ==========================================
 // --- DRAWING LOGIC ---
@@ -555,66 +563,26 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
     // =========================================================================
     if (editingProfileIdx != -1) {
         float ovX = x, ovY = y, ovW = w, ovH = h;
-        
-        // Background
-        SolidBrush bgEditor(Color(255, 248, 250, 252));
-        g.FillRectangle(&bgEditor, ovX, ovY, ovW, ovH);
+        SolidBrush bgEditor(Color(255, 248, 250, 252)); g.FillRectangle(&bgEditor, ovX, ovY, ovW, ovH);
 
-        // TOP TABS HEADER
-        float topH = 75.0f;
-        SolidBrush topBg(Color(255, 255, 255, 255));
-        g.FillRectangle(&topBg, ovX, ovY, ovW, topH);
-        Pen pDiv(Color(255, 220, 228, 238), 1.0f);
-        g.DrawLine(&pDiv, ovX, ovY + topH, ovX + ovW, ovY + topH);
+        float topH = 75.0f; SolidBrush topBg(Color(255, 255, 255, 255)); g.FillRectangle(&topBg, ovX, ovY, ovW, topH);
+        Pen pDiv(Color(255, 220, 228, 238), 1.0f); g.DrawLine(&pDiv, ovX, ovY + topH, ovX + ovW, ovY + topH);
 
         struct TopNavItem { const wchar_t* icon; const wchar_t* label; };
-        TopNavItem navItems[4] = { 
-            { L"\xE713", L"Basic & Time" }, 
-            { L"\xE7BA", L"Quick Settings" }, 
-            { L"\xE71D", L"Custom Lists" }, 
-            { L"\xE72E", L"Adult Block" } 
-        };
-
-        float tabW = 160.0f;
-        float startTabX = ovX + 25.0f;
+        TopNavItem navItems[4] = { { L"\xE713", L"Basic & Time" }, { L"\xE7BA", L"Quick Settings" }, { L"\xE71D", L"Custom Lists" }, { L"\xE72E", L"Adult Block" } };
+        float tabW = 160.0f; float startTabX = ovX + 25.0f;
         for (int i = 0; i < 4; i++) {
-            float tX = startTabX + (i * (tabW + 15.0f));
-            g_ehb.subTabRects[i] = RectF(tX, ovY + 20.0f, tabW, 40.0f);
-            
-            bool isActive = (s_activeSubTab == i);
-            bool isHov = (g_ehb.hSubTab == i);
-
-            if (isActive) {
-                SolidBrush activeBg(Color(30, 12, 168, 176));
-                GraphicsPath* tp = GetSchRoundRectPath(g_ehb.subTabRects[i], 8.0f);
-                g.FillPath(&activeBg, tp); delete tp;
-                SolidBrush accent(ClrTeal);
-                g.FillRectangle(&accent, tX + 15.0f, ovY + 71.0f, tabW - 30.0f, 4.0f);
-            } else if (isHov) {
-                SolidBrush hovBg(Color(255, 240, 243, 248));
-                GraphicsPath* tp = GetSchRoundRectPath(g_ehb.subTabRects[i], 8.0f);
-                g.FillPath(&hovBg, tp); delete tp;
-            }
-
-            SolidBrush iconClr(isActive ? ClrTeal : Color(255, 130, 140, 150));
-            SolidBrush labelClr(isActive ? ClrTeal : Color(255, 80, 80, 80));
-
-            g.DrawString(navItems[i].icon, -1, &fSmallIcon, RectF(tX + 12.0f, ovY + 28.0f, 24.0f, 24.0f), &fL, &iconClr);
-            g.DrawString(navItems[i].label, -1, &fBold, RectF(tX + 40.0f, ovY + 30.0f, tabW - 45.0f, 20.0f), &fL, &labelClr);
+            float tX = startTabX + (i * (tabW + 15.0f)); g_ehb.subTabRects[i] = RectF(tX, ovY + 20.0f, tabW, 40.0f);
+            bool isActive = (s_activeSubTab == i); bool isHov = (g_ehb.hSubTab == i);
+            if (isActive) { SolidBrush activeBg(Color(30, 12, 168, 176)); GraphicsPath* tp = GetSchRoundRectPath(g_ehb.subTabRects[i], 8.0f); g.FillPath(&activeBg, tp); delete tp; SolidBrush accent(ClrTeal); g.FillRectangle(&accent, tX + 15.0f, ovY + 71.0f, tabW - 30.0f, 4.0f); } 
+            else if (isHov) { SolidBrush hovBg(Color(255, 240, 243, 248)); GraphicsPath* tp = GetSchRoundRectPath(g_ehb.subTabRects[i], 8.0f); g.FillPath(&hovBg, tp); delete tp; }
+            SolidBrush iconClr(isActive ? ClrTeal : Color(255, 130, 140, 150)); SolidBrush labelClr(isActive ? ClrTeal : Color(255, 80, 80, 80));
+            g.DrawString(navItems[i].icon, -1, &fSmallIcon, RectF(tX + 12.0f, ovY + 28.0f, 24.0f, 24.0f), &fL, &iconClr); g.DrawString(navItems[i].label, -1, &fBold, RectF(tX + 40.0f, ovY + 30.0f, tabW - 45.0f, 20.0f), &fL, &labelClr);
         }
 
-        float contX = ovX + 30.0f; 
-        float contW = ovW - 60.0f; 
-        float contentY = ovY + topH + 25.0f;
-
-        float cardX = contX; 
-        float cardW_inner = contW;
-        
-        // BOTTOM FOOTER
-        float footerY = ovY + ovH - 68.0f; 
-        SolidBrush footerBg(Color(255, 255, 255, 255)); 
-        g.FillRectangle(&footerBg, ovX, footerY, ovW, 68.0f); 
-        g.DrawLine(&pDiv, ovX, footerY, ovX + ovW, footerY);
+        float contX = ovX + 30.0f; float contW = ovW - 60.0f; float contentY = ovY + topH + 25.0f;
+        float cardX = contX; float cardW_inner = contW;
+        float footerY = ovY + ovH - 68.0f; SolidBrush footerBg(Color(255, 255, 255, 255)); g.FillRectangle(&footerBg, ovX, footerY, ovW, 68.0f); g.DrawLine(&pDiv, ovX, footerY, ovX + ovW, footerY);
 
         g_ehb.backBtn = RectF(); g_ehb.nextBtn = RectF();
         if (s_activeSubTab > 0) {
@@ -626,7 +594,6 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
         g_ehb.cancelBtn = RectF(ovX + ovW - 275.0f, footerY + 14.0f, 110.0f, 38.0f); GraphicsPath* cvp = GetSchRoundRectPath(g_ehb.cancelBtn, 8.0f); SolidBrush cvBr(g_ehb.hCancel ? ClrBgHover : Color(255, 240, 243, 248)); g.FillPath(&cvBr, cvp); g.DrawPath(&pDiv, cvp); delete cvp; g.DrawString(L"Cancel", -1, &fBold, g_ehb.cancelBtn, &fC, &bDark);
         g_ehb.saveBtn = RectF(ovX + ovW - 150.0f, footerY + 14.0f, 120.0f, 38.0f); GraphicsPath* svp = GetSchRoundRectPath(g_ehb.saveBtn, 8.0f); SolidBrush svBr(g_ehb.hSave ? ClrTealHover : ClrTeal); g.FillPath(&svBr, svp); delete svp; g.DrawString(L"\xE74E  Save", -1, &fBold, g_ehb.saveBtn, &fC, &bWhite);
         
-        // Set safe bounds for list scrolls
         g.SetClip(RectF(ovX, ovY + topH + 1.0f, ovW, footerY - (ovY + topH + 1.0f)));
 
         if (s_activeSubTab == 0) {
@@ -739,7 +706,7 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
             g_ehb.keyDel.clear(); float listStartY = inpY + 48.0f; float boxH = listAreaH - 110.0f; g_ehb.listAreas[2] = RectF(rightColX, listStartY, colW, boxH); SolidBrush listBg2(Color(255, 250, 252, 255)); GraphicsPath* lbgp2 = GetSchRoundRectPath(g_ehb.listAreas[2], 8.0f); g.FillPath(&listBg2, lbgp2); g.DrawPath(&pDiv, lbgp2); delete lbgp2;
             vector<SchBlockItem>* aList = nullptr; if(editingProfileIdx >= 0) aList = &g_profiles[editingProfileIdx].adultCustomKeywords;
             if(aList && !aList->empty()) {
-                s_listScrollMax[2] = (std::max)(0.0f, (aList->size() * 42.0f) - boxH + 10.0f); s_listScrollC[2] += (s_listScrollT[2] - s_listScrollC[2]) * 0.15f; g.SetClip(g_ehb.listAreas[2]); float itemY = listStartY + 6.0f - s_listScrollC[2];
+                s_listScrollMax[2] = (std::max)(0.0f, (aList->size() * 42.0f) - boxH + 10.0f); s_listScrollC[2] += (s_listScrollT[2] - s_listScrollC[2]) * 0.15f; g.SetClip(g_ehb.listAreas[2]); float itemY = listStartY + 6.0f - s_listScrollC[colIdx];
                 for(size_t i = 0; i < aList->size(); ++i) {
                     auto& item = (*aList)[i];
                     if (itemY + 38.0f > listStartY && itemY < listStartY + boxH) {
@@ -863,7 +830,7 @@ void ProcessScheduleBlocksMouseMove(float x, float y) {
             if(g_ehb.enH_Box.Contains(x,y)) g_ehb.hEnH = true; if(g_ehb.enM_Box.Contains(x,y)) g_ehb.hEnM = true; if(g_ehb.enAmPm.Contains(x,y)) g_ehb.hEnAmPm = true;
         } 
         else if (s_activeSubTab == 1) {
-            if(g_ehb.togInt.Contains(x,y)) g_ehb.hTogInt = true; if(g_ehb.togUni.Contains(x,y)) g_ehb.hTogUni = true;
+            if(g_ehb.hTogInt) editBlockInt = !editBlockInt; if(g_ehb.hTogUni) editBlockUninst = !editBlockUninst;
             if (editingProfileIdx >= 0) {
                 for (size_t qi = 0; qi < s_quickBlocks.size() && qi < s_quickBlockRects.size(); ++qi) {
                     if (s_quickBlockRects[qi].Contains(x, y)) {
@@ -939,28 +906,49 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
         if (s_hTimeStart && activeActionProfileIdx >= 0) { 
             g_profiles[activeActionProfileIdx].isActive = true; 
             g_profiles[activeActionProfileIdx].lockEndTime = std::time(nullptr) + (s_focusMonths * 30 * 24 * 3600) + (s_focusDays * 24 * 3600) + (s_focusHours * 3600) + (s_focusMins * 60);
-            ApplyProfileBlocking(activeActionProfileIdx, true); s_showTimeOverlay = false; 
+            ApplyProfileBlocking(); s_showTimeOverlay = false; 
             LogHistoryToHiddenFolderSch(L"Started Schedule: " + g_profiles[activeActionProfileIdx].profileName); SaveProfiles();
             if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
         } return;
     }
     
+    // 🟢 FIXED: Parent Password Overlay Safety Check & Validation
     if (s_showPassOverlay) {
         s_isPassInputActive = s_hPassInput; if (s_hPassCancel) { s_showPassOverlay = false; s_inputPassText = L""; }
-        if (s_hPassConfirm && !s_inputPassText.empty() && activeActionProfileIdx >= 0) {
-            if (!s_isStoppingFocus) { 
-                g_profiles[activeActionProfileIdx].parentsPassword = s_inputPassText; g_profiles[activeActionProfileIdx].isActive = true; 
-                ApplyProfileBlocking(activeActionProfileIdx, true); 
-                s_showPassOverlay = false; s_inputPassText = L""; SaveProfiles();
+        if (s_hPassConfirm && !s_inputPassText.empty()) {
+            if (editingProfileIdx != -1) { 
+                // 🟢 FIXED: Force Pre-set Password in Editing Mode Before Saving
+                if (editingProfileIdx == -2) { FocusProfile np; np.lockMode = tempLockMode; g_profiles.push_back(np); editingProfileIdx = g_profiles.size() - 1; }
+                g_profiles[editingProfileIdx].parentsPassword = s_inputPassText;
+                
+                // Complete the save process
+                g_profiles[editingProfileIdx].profileName = inpProfileName;
+                g_profiles[editingProfileIdx].lockMode = tempLockMode; 
+                for(int d=0; d<7; d++) g_profiles[editingProfileIdx].activeDays[d] = editDays[d];
+                g_profiles[editingProfileIdx].startHour = editStH; g_profiles[editingProfileIdx].startMin = editStM; 
+                g_profiles[editingProfileIdx].endHour = editEnH; g_profiles[editingProfileIdx].endMin = editEnM;
+                g_profiles[editingProfileIdx].blockInternet = editBlockInt; g_profiles[editingProfileIdx].blockUninstall = editBlockUninst;
+                
+                LogHistoryToHiddenFolderSch(L"Saved Profile: " + inpProfileName); 
+                editingProfileIdx = -1; SaveProfiles(); 
+                s_showPassOverlay = false; s_inputPassText = L"";
                 if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
-            } else { 
-                if (g_profiles[activeActionProfileIdx].parentsPassword == s_inputPassText) { 
-                    g_profiles[activeActionProfileIdx].isActive = false; 
-                    ApplyProfileBlocking(activeActionProfileIdx, false); 
+            } else if (activeActionProfileIdx >= 0) {
+                // Starting/Stopping Profile Lock
+                if (!s_isStoppingFocus) { 
+                    g_profiles[activeActionProfileIdx].parentsPassword = s_inputPassText; g_profiles[activeActionProfileIdx].isActive = true; 
+                    ApplyProfileBlocking(); 
                     s_showPassOverlay = false; s_inputPassText = L""; SaveProfiles();
                     if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
-                } else {
-                    MessageBeep(MB_ICONERROR); // Wrong password warning
+                } else { 
+                    if (g_profiles[activeActionProfileIdx].parentsPassword == s_inputPassText) { 
+                        g_profiles[activeActionProfileIdx].isActive = false; 
+                        ApplyProfileBlocking(); 
+                        s_showPassOverlay = false; s_inputPassText = L""; SaveProfiles();
+                        if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
+                    } else {
+                        MessageBeep(MB_ICONERROR); // Wrong password warning
+                    }
                 }
             }
         } return;
@@ -970,7 +958,7 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
         if (s_hTextUnlockCancel) s_showTextUnlockOverlay = false;
         if (s_hTextUnlockConfirm && s_currentTypingText == s_targetUnlockText && activeActionProfileIdx >= 0) { 
             g_profiles[activeActionProfileIdx].isActive = false; 
-            ApplyProfileBlocking(activeActionProfileIdx, false); 
+            ApplyProfileBlocking(); 
             s_showTextUnlockOverlay = false; s_currentTypingText = L""; SaveProfiles(); 
             if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
         } return;
@@ -989,6 +977,10 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
         }
 
         if (s_activeSubTab == 2) {
+            // 🟢 FIXED: Dropdown Open Logic Restored
+            if (hoverSchWebCombo) { isSchWebComboOpen = !isSchWebComboOpen; return; }
+            if (hoverSchAppCombo) { isSchAppComboOpen = !isSchAppComboOpen; return; }
+
             if (g_ehb.hBtnAddExe && editingProfileIdx >= 0) {
                 lock.unlock(); 
                 
@@ -1015,8 +1007,24 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
         if (dropdownClosed) return;
 
         if (g_ehb.hCancel) { editingProfileIdx = -1; return; }
+        
         if (g_ehb.hSave) {
             if (inpProfileName.empty()) inpProfileName = L"Custom Profile";
+            
+            // 🟢 FIXED: Parent Pre-set Password Enforcement
+            if (tempLockMode == 1) {
+                wstring existingPass = L"";
+                if (editingProfileIdx >= 0 && editingProfileIdx < (int)g_profiles.size()) {
+                    existingPass = g_profiles[editingProfileIdx].parentsPassword;
+                }
+                if (existingPass.empty()) {
+                    s_showPassOverlay = true;
+                    s_isStoppingFocus = false; // Overlay behaves as initial setter
+                    s_inputPassText = L"";
+                    return; // Hold Save Process until pass confirmed
+                }
+            }
+
             if (editingProfileIdx == -2) { g_profiles.back().profileName = inpProfileName; } else if (editingProfileIdx >= 0) { g_profiles[editingProfileIdx].profileName = inpProfileName; }
             if(editingProfileIdx >= 0) {
                 g_profiles[editingProfileIdx].lockMode = tempLockMode; for(int d=0; d<7; d++) g_profiles[editingProfileIdx].activeDays[d] = editDays[d];
@@ -1034,10 +1042,7 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
             activeInput = g_ehb.nameInp.Contains(x,y) ? 1 : 0;
         } 
         else if (s_activeSubTab == 1) {
-            // 🟢 FIXED: Internet & Uninstall Toggle Clicks 
-            if(g_ehb.hTogInt) { editBlockInt = !editBlockInt; } 
-            if(g_ehb.hTogUni) { editBlockUninst = !editBlockUninst; }
-            
+            if(g_ehb.hTogInt) editBlockInt = !editBlockInt; if(g_ehb.hTogUni) editBlockUninst = !editBlockUninst;
             if (editingProfileIdx >= 0) {
                 for (size_t qi = 0; qi < s_quickBlocks.size() && qi < s_quickBlockRects.size(); ++qi) {
                     if (s_quickBlockRects[qi].Contains(x, y)) {
@@ -1103,7 +1108,7 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
             if (!g_profiles[i].isActive) {
                 if (g_profiles[i].lockMode == 0) { s_showTimeOverlay = true; }
                 else if (g_profiles[i].lockMode == 1) { s_showPassOverlay = true; s_isStoppingFocus = false; s_inputPassText = L""; }
-                else if (g_profiles[i].lockMode == 2) { g_profiles[i].isActive = true; ApplyProfileBlocking(i, true); SaveProfiles(); if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE); }
+                else if (g_profiles[i].lockMode == 2) { g_profiles[i].isActive = true; ApplyProfileBlocking(); SaveProfiles(); if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE); }
             } else {
                 if (g_profiles[i].lockMode == 0) {
                     if (g_profiles[i].lockEndTime > 0) {
@@ -1123,7 +1128,7 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
                         if (hasActiveSchedule) {
                             MessageBeep(MB_ICONWARNING); 
                         } else {
-                            g_profiles[i].isActive = false; ApplyProfileBlocking(i, false); SaveProfiles(); if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
+                            g_profiles[i].isActive = false; ApplyProfileBlocking(); SaveProfiles(); if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
                         }
                     }
                 } 
@@ -1142,7 +1147,6 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
             inpWeb = L""; inpApp = L""; inpKey = L""; activeInput = 1;
         }
         
-        // 🟢 FIXED: Delete Profile Deadlock and Loop Crash
         if (g_profiles[i].hDel && !g_profiles[i].isActive) {
             int pIdx = i;
             lock.unlock(); 
@@ -1153,6 +1157,7 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
                 if (pIdx < g_profiles.size()) {
                     g_profiles.erase(g_profiles.begin() + pIdx); 
                     SaveProfiles();
+                    ApplyProfileBlocking();
                     if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
                 }
             }
