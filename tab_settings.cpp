@@ -6,7 +6,7 @@ using namespace Gdiplus;
 using namespace std;
 
 // --- State Variables for Settings Tabs ---
-static int currentSetTab = 0; // Default to General
+static int currentSetTab = 0; // Default to Browsers
 static int hoverSetTab = -1;
 
 // --- Functional Variables (No Demos) ---
@@ -20,11 +20,17 @@ static bool tgl24Hour = false;
 static int langIdx = 0; 
 
 // 2. Browsers
-static bool tglForceActive = true;
-static bool tglStrictTitle = true;
-static bool tglCacheURL = true;
-static bool tglAggressiveBlock = false;
-static bool tglBlockNoExt = false;
+static bool tglBlockUnsupportedBrowsers = true;   // Block unsupported browsers when websites are blocked
+static bool tglBlockDateTime = false;              // Block Date & Time settings when a block is enabled
+static bool tglBlockLoginItems = false;            // Block Login Items settings when a block is enabled
+static bool tglBlockUsersGroups = false;           // Block Users & Groups settings when a block is enabled
+static bool tglBlockActivityMonitor = false;       // Block Activity Monitor when a block is enabled
+static bool tglBlockInactiveTabs = false;          // Block inactive browser tabs for blocked websites
+static bool tglBlockEmbedded = false;              // Block embedded content from blocked websites
+static bool tglBlockPauseForCause = false;         // Block the Pause for a Cause feature on the block page
+static bool tglBlockInstaller = false;             // Block the Cold Turkey Blocker installer when a block is enabled
+static bool tglForceFileURLs = false;              // Force Allow access to file URLs extension permissions
+static int  reEnableSeconds = 60;                  // Seconds given to re-enable browser extensions if disabled
 
 // 3. System
 static bool tglBlockTaskMgr = false;
@@ -61,7 +67,8 @@ static bool tglSyncSchedules = true;
 
 // --- Hover States ---
 static int hoverToggleIdx = -1; 
-static bool hoverLangBtn = false, hoverChromeBtn = false, hoverFirefoxBtn = false;
+static bool hoverLangBtn = false;
+static bool hoverMinusSecondsBtn = false, hoverPlusSecondsBtn = false;
 static bool hoverMinusBtn = false, hoverPlusBtn = false;
 
 static bool hGenPos = false, hAiPos = false;
@@ -172,8 +179,8 @@ void DrawSettingsTab(Graphics& g, float contentX, float contentY, float contentW
     
     g.DrawString(L"\xE713", -1, &fIcon, RectF(contentX + 30.0f, contentY, 30.0f, headerH), &fmtC, &brushDark);
 
-    wstring topTabs[] = { L"General", L"Browsers", L"System", L"Advanced", L"Notification", L"Sync" };
-    float tabWidths[] = { 80.0f, 90.0f, 70.0f, 90.0f, 110.0f, 60.0f };
+    wstring topTabs[] = { L"Browsers", L"General", L"System", L"Advanced", L"Notification", L"Sync" };
+    float tabWidths[] = { 90.0f, 80.0f, 70.0f, 90.0f, 110.0f, 60.0f };
     float currentX = contentX + 80.0f; 
 
     for (int i = 0; i < 6; ++i) {
@@ -199,12 +206,37 @@ void DrawSettingsTab(Graphics& g, float contentX, float contentY, float contentW
 
     // ROW CONFIGURATION
     float rowY = bodyY + 35.0f;
-    float rowH = (currentSetTab == 4) ? 41.0f : 50.0f; 
+    float rowH = (currentSetTab == 4) ? 41.0f : 50.0f; // Notification is still index 4
     float textX = boxX + 30.0f;
     float swX = boxX + boxW - 80.0f;
     float tOff = (rowH - 22.0f) / 2.0f;
 
-    if (currentSetTab == 0) { // General
+    if (currentSetTab == 0) { // Browsers
+        DrawSetRow(g, L"Block unsupported browsers when websites are blocked", textX, rowY, boxW, rowH, &fNormal, &brushDark);
+        DrawToggleSwitch(g, swX, rowY + tOff, tglBlockUnsupportedBrowsers); rowY += rowH;
+        DrawSetRow(g, L"Block Date & Time settings when a block is enabled", textX, rowY, boxW, rowH, &fNormal, &brushDark);
+        DrawToggleSwitch(g, swX, rowY + tOff, tglBlockDateTime); rowY += rowH;
+        DrawSetRow(g, L"Block Login Items settings when a block is enabled", textX, rowY, boxW, rowH, &fNormal, &brushDark);
+        DrawToggleSwitch(g, swX, rowY + tOff, tglBlockLoginItems); rowY += rowH;
+        DrawSetRow(g, L"Block Users & Groups settings when a block is enabled", textX, rowY, boxW, rowH, &fNormal, &brushDark);
+        DrawToggleSwitch(g, swX, rowY + tOff, tglBlockUsersGroups); rowY += rowH;
+        DrawSetRow(g, L"Block Activity Monitor when a block is enabled", textX, rowY, boxW, rowH, &fNormal, &brushDark);
+        DrawToggleSwitch(g, swX, rowY + tOff, tglBlockActivityMonitor); rowY += rowH;
+        DrawSetRow(g, L"Block inactive browser tabs for blocked websites", textX, rowY, boxW, rowH, &fNormal, &brushDark);
+        DrawToggleSwitch(g, swX, rowY + tOff, tglBlockInactiveTabs); rowY += rowH;
+        DrawSetRow(g, L"Block embedded content from blocked websites (may slow down browsing)", textX, rowY, boxW, rowH, &fNormal, &brushDark);
+        DrawToggleSwitch(g, swX, rowY + tOff, tglBlockEmbedded); rowY += rowH;
+        DrawSetRow(g, L"Block the Pause for a Cause feature on the block page", textX, rowY, boxW, rowH, &fNormal, &brushDark);
+        DrawToggleSwitch(g, swX, rowY + tOff, tglBlockPauseForCause); rowY += rowH;
+        DrawSetRow(g, L"Block the Cold Turkey Blocker installer when a block is enabled (prevents updates)", textX, rowY, boxW, rowH, &fNormal, &brushDark);
+        DrawToggleSwitch(g, swX, rowY + tOff, tglBlockInstaller); rowY += rowH;
+        DrawSetRow(g, L"Force Allow access to file URLs extension permissions in Chromium based browsers", textX, rowY, boxW, rowH, &fNormal, &brushDark);
+        DrawToggleSwitch(g, swX, rowY + tOff, tglForceFileURLs); rowY += rowH;
+
+        DrawSetRow(g, L"Seconds given to re-enable browser extensions if disabled or removed", textX, rowY, boxW, rowH, &fNormal, &brushDark);
+        DrawSpinner(g, swX - 80.0f, rowY + tOff - 5.0f, to_wstring(reEnableSeconds), hoverMinusSecondsBtn, hoverPlusSecondsBtn, &fIcon, &fBold);
+    }
+    else if (currentSetTab == 1) { // General
         DrawSetRow(g, L"Launch Application at System Logon", textX, rowY, boxW, rowH, &fNormal, &brushDark);
         DrawToggleSwitch(g, swX, rowY + tOff, tglStartup); rowY += rowH;
         DrawSetRow(g, L"Require Password for Settings Access", textX, rowY, boxW, rowH, &fNormal, &brushDark);
@@ -225,31 +257,6 @@ void DrawSettingsTab(Graphics& g, float contentX, float contentY, float contentW
         DrawToggleSwitch(g, swX, rowY + tOff, tglDailyBackup); rowY += rowH;
         DrawSetRow(g, L"Use 24-Hour Time Format", textX, rowY, boxW, rowH, &fNormal, &brushDark);
         DrawToggleSwitch(g, swX, rowY + tOff, tgl24Hour);
-    } 
-    else if (currentSetTab == 1) { // Browsers
-        DrawSetRow(g, L"Enforce Active Browser Tracking", textX, rowY, boxW, rowH, &fNormal, &brushDark);
-        DrawToggleSwitch(g, swX, rowY + tOff, tglForceActive); rowY += rowH;
-        DrawSetRow(g, L"Strict URL Matching for Popular Sites", textX, rowY, boxW, rowH, &fNormal, &brushDark);
-        DrawToggleSwitch(g, swX, rowY + tOff, tglStrictTitle); rowY += rowH;
-        DrawSetRow(g, L"Cache Recently Visited Websites", textX, rowY, boxW, rowH, &fNormal, &brushDark);
-        DrawToggleSwitch(g, swX, rowY + tOff, tglCacheURL); rowY += rowH;
-        DrawSetRow(g, L"Aggressive Browser Blocking on Failure", textX, rowY, boxW, rowH, &fNormal, &brushDark, true);
-        DrawToggleSwitch(g, swX, rowY + tOff, tglAggressiveBlock); rowY += rowH;
-        DrawSetRow(g, L"Block Browser if Extension is Missing", textX, rowY, boxW, rowH, &fNormal, &brushDark, true);
-        DrawToggleSwitch(g, swX, rowY + tOff, tglBlockNoExt); rowY += rowH;
-
-        g.DrawString(L"Browser Extensions", -1, &fNormal, RectF(textX, rowY, 200.0f, rowH), &fmtL, &brushDark);
-        g.DrawString(L"Click to install:", -1, &fSmall, RectF(swX - 250.0f, rowY, 100.0f, rowH), &fmtL, &brushGray);
-
-        RectF chrBtn(swX - 140.0f, rowY + 9.0f, 90.0f, 32.0f);
-        GraphicsPath* cp = GetSetRoundRectPath(chrBtn, 4);
-        g.FillPath(hoverChromeBtn ? &brushBg : &brushWhite, cp); g.DrawPath(&penBorder, cp); delete cp;
-        g.DrawString(L"Chrome", -1, &fNormal, chrBtn, &fmtC, &brushTeal);
-
-        RectF fxBtn(swX - 40.0f, rowY + 9.0f, 86.0f, 32.0f);
-        GraphicsPath* fp = GetSetRoundRectPath(fxBtn, 4);
-        g.FillPath(hoverFirefoxBtn ? &brushBg : &brushWhite, fp); g.DrawPath(&penBorder, fp); delete fp;
-        g.DrawString(L"Firefox", -1, &fNormal, fxBtn, &fmtC, &brushTeal);
     }
     else if (currentSetTab == 2) { // System
         DrawSetRow(g, L"Prevent Task Manager Access", textX, rowY, boxW, rowH, &fNormal, &brushDark);
@@ -350,7 +357,8 @@ void ProcessSettingsMouseMove(float x, float y) {
 
     hoverSetTab = -1; hoverToggleIdx = -1;
     hoverMinusBtn = false; hoverPlusBtn = false;
-    hoverLangBtn = false; hoverChromeBtn = false; hoverFirefoxBtn = false;
+    hoverMinusSecondsBtn = false; hoverPlusSecondsBtn = false;
+    hoverLangBtn = false;
     hGenPos = false; hAiPos = false;
     hDndStartM = false; hDndStartP = false;
     hDndEndM = false; hDndEndP = false;
@@ -360,7 +368,7 @@ void ProcessSettingsMouseMove(float x, float y) {
 
     // Top Tabs
     float headerH = 65.0f;
-    float tabWidths[] = { 80.0f, 90.0f, 70.0f, 90.0f, 110.0f, 60.0f };
+    float tabWidths[] = { 90.0f, 80.0f, 70.0f, 90.0f, 110.0f, 60.0f };
     float currentX = contentX + 80.0f;
     if (y >= contentY && y <= contentY + headerH) {
         for (int i = 0; i < 6; ++i) {
@@ -373,12 +381,26 @@ void ProcessSettingsMouseMove(float x, float y) {
     float boxX = contentX + 30.0f;
     float boxW = contentW - 60.0f;
     float swX = boxX + boxW - 80.0f;
-    float rowY = bodyY + 10.0f;
+    float rowY = bodyY + 35.0f; // matches Draw: box starts at bodyY+25, content at +35
     float rowH = (currentSetTab == 4) ? 41.0f : 50.0f;
     float tOff = (rowH - 22.0f) / 2.0f;
     float ctrlX = swX - 80.0f;
 
-    if (currentSetTab == 0) { // General
+    if (currentSetTab == 0) { // Browsers
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 10; rowY += rowH;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 11; rowY += rowH;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 12; rowY += rowH;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 13; rowY += rowH;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 14; rowY += rowH;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 15; rowY += rowH;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 16; rowY += rowH;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 17; rowY += rowH;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 18; rowY += rowH;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 19; rowY += rowH;
+        if (RectF(swX - 80.0f, rowY + tOff - 5.0f, 32.0f, 32.0f).Contains(x, y)) hoverMinusSecondsBtn = true;
+        if (RectF(swX - 80.0f + 92.0f, rowY + tOff - 5.0f, 32.0f, 32.0f).Contains(x, y)) hoverPlusSecondsBtn = true;
+    }
+    else if (currentSetTab == 1) { // General
         if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 0; rowY += rowH;
         if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 1; rowY += rowH;
         if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 2; rowY += rowH;
@@ -386,15 +408,6 @@ void ProcessSettingsMouseMove(float x, float y) {
         if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 3; rowY += rowH;
         if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 4; rowY += rowH;
         if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 5;
-    }
-    else if (currentSetTab == 1) { // Browsers
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 10; rowY += rowH;
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 11; rowY += rowH;
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 12; rowY += rowH;
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 13; rowY += rowH;
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 14; rowY += rowH;
-        if (RectF(swX - 140.0f, rowY + 9.0f, 90.0f, 32.0f).Contains(x, y)) hoverChromeBtn = true;
-        if (RectF(swX - 40.0f, rowY + 9.0f, 86.0f, 32.0f).Contains(x, y)) hoverFirefoxBtn = true;
     }
     else if (currentSetTab == 2) { // System
         if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 20; rowY += rowH;
@@ -447,7 +460,21 @@ void ProcessSettingsMouseMove(float x, float y) {
 void ProcessSettingsMouseClick(float x, float y) {
     if (hoverSetTab != -1) { currentSetTab = hoverSetTab; return; }
 
-    // General Logic
+    // Browsers Logic (tab index 0)
+    if (hoverToggleIdx == 10) tglBlockUnsupportedBrowsers = !tglBlockUnsupportedBrowsers;
+    if (hoverToggleIdx == 11) tglBlockDateTime = !tglBlockDateTime;
+    if (hoverToggleIdx == 12) tglBlockLoginItems = !tglBlockLoginItems;
+    if (hoverToggleIdx == 13) tglBlockUsersGroups = !tglBlockUsersGroups;
+    if (hoverToggleIdx == 14) tglBlockActivityMonitor = !tglBlockActivityMonitor;
+    if (hoverToggleIdx == 15) tglBlockInactiveTabs = !tglBlockInactiveTabs;
+    if (hoverToggleIdx == 16) tglBlockEmbedded = !tglBlockEmbedded;
+    if (hoverToggleIdx == 17) tglBlockPauseForCause = !tglBlockPauseForCause;
+    if (hoverToggleIdx == 18) tglBlockInstaller = !tglBlockInstaller;
+    if (hoverToggleIdx == 19) tglForceFileURLs = !tglForceFileURLs;
+    if (hoverMinusSecondsBtn && reEnableSeconds > 1) reEnableSeconds--;
+    if (hoverPlusSecondsBtn) reEnableSeconds++;
+
+    // General Logic (tab index 1)
     if (hoverToggleIdx == 0) tglStartup = !tglStartup;
     if (hoverToggleIdx == 1) tglRequirePass = !tglRequirePass;
     if (hoverToggleIdx == 2) tglStartMin = !tglStartMin;
@@ -455,15 +482,6 @@ void ProcessSettingsMouseClick(float x, float y) {
     if (hoverToggleIdx == 4) tglDailyBackup = !tglDailyBackup;
     if (hoverToggleIdx == 5) tgl24Hour = !tgl24Hour;
     if (hoverLangBtn) langIdx = (langIdx + 1) % 3;
-
-    // Browsers Logic
-    if (hoverToggleIdx == 10) tglForceActive = !tglForceActive;
-    if (hoverToggleIdx == 11) tglStrictTitle = !tglStrictTitle;
-    if (hoverToggleIdx == 12) tglCacheURL = !tglCacheURL;
-    if (hoverToggleIdx == 13) tglAggressiveBlock = !tglAggressiveBlock;
-    if (hoverToggleIdx == 14) tglBlockNoExt = !tglBlockNoExt;
-    if (hoverChromeBtn) MessageBox(NULL, "Installing Chrome Extension...", "Browser Integration", MB_OK | MB_ICONINFORMATION);
-    if (hoverFirefoxBtn) MessageBox(NULL, "Installing Firefox Extension...", "Browser Integration", MB_OK | MB_ICONINFORMATION);
 
     // System Logic
     if (hoverToggleIdx == 20) tglBlockTaskMgr = !tglBlockTaskMgr;
