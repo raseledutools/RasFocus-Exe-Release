@@ -2,6 +2,7 @@
 // Red-marked section removed. AI Filter removed. All in one GDI+ file.
 // UPDATED: Professional 2-Column Layout to fix overlap and empty right space.
 // UPDATED: Added Registry Policy Enforcement for SafeSearch.
+// UPDATED: Added Silent Monitor Logging and Hover Tooltips (i icon).
 
 #include "tab_adult.h"
 
@@ -33,6 +34,14 @@ static float s_contentX = 0.0f;
 static float s_contentY = 0.0f;
 static float s_contentW = 800.0f;
 static float s_contentH = 600.0f;
+
+// ==========================================
+// --- TOOLTIP & MOUSE CACHE ---
+// ==========================================
+static float s_mouseX = 0.0f;
+static float s_mouseY = 0.0f;
+static DWORD s_hoverStartTime = 0;
+static wstring s_activeTooltip = L"";
 
 // ==========================================
 // --- COLOR PALETTE ---
@@ -366,6 +375,31 @@ static void closeActiveTab() {
 }
 
 // ==========================================
+// --- SILENT MONITOR LOGGING ---
+// ==========================================
+static wstring lastLoggedUrl = L"";
+
+static void LogSilentUrl(const wstring& windowTitle, const wstring& url) {
+    if (url.empty() || url == lastLoggedUrl) return; 
+    lastLoggedUrl = url;
+
+    wstring logPath = L"C:\\ProgramData\\RasFocus\\silent_monitor_log.txt";
+
+    time_t now = time(0);
+    tm* ltm = localtime(&now);
+    char timeStr[64];
+    strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %I:%M:%S %p", ltm);
+    wstring wTimeStr(timeStr, timeStr + strlen(timeStr));
+
+    std::wofstream out(logPath.c_str(), std::ios::app);
+    out.imbue(std::locale(out.getloc(), new std::codecvt_utf8<wchar_t>));
+    if (out.is_open()) {
+        out << L"[" << wTimeStr << L"] TITLE: " << windowTitle << L" | URL: " << url << L"\n";
+        out.close();
+    }
+}
+
+// ==========================================
 // --- KEYBOARD HOOK ---
 // ==========================================
 static HHOOK hKeyboardHook = NULL;
@@ -591,7 +625,9 @@ static void AdultBackgroundThread() {
                         if(cbAdultWeb) for(const auto& s:adultWebsites) if(url.find(s)!=wstring::npos||lt.find(s)!=wstring::npos){ub=true;break;}
                         if(!ub&&cbFbReels){wstring lu=toLowerW_Logic(url);
                             if(lu.find(L"facebook.com/reel")!=wstring::npos||lu.find(L"instagram.com/reels")!=wstring::npos||lu.find(L"youtube.com/shorts")!=wstring::npos) ub=true;}
-                        if(cbSilentUrl&&!ub){/* silent url monitoring placeholder */}
+                        if(cbSilentUrl&&!ub){
+                            LogSilentUrl(title, url); // SILENT MONITOR ACTIVATED HERE
+                        }
                         if(ub){closeActiveTab();Sleep(280);TriggerAdultPopup();lastTitle=L"";}
                     }
                 }
@@ -656,6 +692,7 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
     Font fBold(&ff,13,FontStyleBold,UnitPixel);
     Font fSmall(&ff,11,FontStyleRegular,UnitPixel);
     Font fTiny(&ff,10,FontStyleRegular,UnitPixel);
+    Font fInfo(&ff, 11, FontStyleBold, UnitPixel); // For the 'i' icon
     FontFamily ffi(L"Segoe MDL2 Assets");
     Font fIcon(&ffi,15,FontStyleRegular,UnitPixel);
     Font fSmIcon(&ffi,12,FontStyleRegular,UnitPixel);
@@ -670,6 +707,16 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
     StringFormat fL,fC,fR;
     fL.SetAlignment(StringAlignmentNear);   fL.SetLineAlignment(StringAlignmentCenter);
     fC.SetAlignment(StringAlignmentCenter); fC.SetLineAlignment(StringAlignmentCenter);
+
+    // Helper to draw 'i' Tooltip Icons
+    auto drawInfoIcon = [&](RectF r) {
+        bool isHov = r.Contains(s_mouseX, s_mouseY);
+        GraphicsPath* p = MakeRoundRect(r, 8);
+        SolidBrush bg(isHov ? AClrTeal : Color(255, 170, 180, 190));
+        g.FillPath(&bg, p); delete p;
+        SolidBrush txt(AClrWhite);
+        g.DrawString(L"i", -1, &fInfo, RectF(r.X, r.Y + 1.0f, r.Width, r.Height), &fC, &txt);
+    };
 
     // Main background
     g.FillRectangle(&bBg,cx,cy,cw,ch);
@@ -734,6 +781,9 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
             wstring tl=L"Lock ("+to_wstring((left/60000)+1)+L"m)";
             g.DrawString(tl.c_str(),-1,&fBold,RectF(rFocusS.X+26,rFocusS.Y,rFocusS.Width-26,rFocusS.Height),&fC,&bW);
         } else g.DrawString(btnTxt.c_str(),-1,&fBold,rFocusS,&fC,&bW);
+        
+        // Tooltip Icon for Strict Focus
+        drawInfoIcon(RectF(rFocusS.X + rFocusS.Width - 8, rFocusS.Y - 6, 16, 16));
     }
 
     // Panic Button
@@ -744,6 +794,9 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
         g.DrawString(L"\xE7BA",-1,&fSmIcon,RectF(rPanic.X+8,rPanic.Y,20,rPanic.Height),&fL,&bW);
         g.DrawString(isPanicActive?L"Panic Active":L"Panic Mode",-1,&fBold,
             RectF(rPanic.X+28,rPanic.Y,rPanic.Width-28,rPanic.Height),&fL,&bW);
+        
+        // Tooltip Icon for Panic Button
+        drawInfoIcon(RectF(rPanic.X + rPanic.Width - 8, rPanic.Y - 6, 16, 16));
     }
 
     // Divider
@@ -873,6 +926,9 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
             GraphicsPath* bar=MakeRoundRect(RectF(cardR.X,cardR.Y+8,3,cardH2-16),2);
             SolidBrush barB(cards[i].activeClr); g.FillPath(&barB,bar); delete bar;
         }
+        
+        // Tooltip Icon for Strict Cards
+        drawInfoIcon(RectF(cardR.X + cardR.Width - 24, cardR.Y + 26, 16, 16));
     }
 
     g.DrawString(L"Advanced Options",-1,&fBold,RectF(R_X, cy+330, 200, 20),&fL,&bSecLbl);
@@ -904,6 +960,9 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
             wstring rem=to_wstring(left/3600000)+L"h "+to_wstring((left%3600000)/60000)+L"m left";
             g.DrawString(rem.c_str(),-1,&fTiny,RectF(rCard24h.X+38,rCard24h.Y+42,rCard24h.Width-42,18),&fL,&bTeal);
         }
+        
+        // Tooltip Icon
+        drawInfoIcon(RectF(rCard24h.X + rCard24h.Width - 24, rCard24h.Y + 26, 16, 16));
     }
 
     // Card 2: Periodic Popups
@@ -925,6 +984,9 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
 
         g.DrawString(L"Reminders",-1,&fBold,RectF(rCardPop.X+38,rCardPop.Y+8,rCardPop.Width-62,18),&fL,&bDk);
         g.DrawString(L"Fullscreen quote every 25 mins.",-1,&fTiny,RectF(rCardPop.X+38,rCardPop.Y+26,rCardPop.Width-42,30),&fL,&bGr);
+        
+        // Tooltip Icon
+        drawInfoIcon(RectF(rCardPop.X + rCardPop.Width - 24, rCardPop.Y + 26, 16, 16));
     }
 
     // ─────────────────────────────────────────
@@ -1071,6 +1133,34 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
             }
         }
     }
+
+    // ==========================================
+    // --- DRAW TOOLTIP ON TOP ---
+    // ==========================================
+    if (!s_activeTooltip.empty() && (GetTickCount() - s_hoverStartTime > 500) && !anyOverlay) {
+        Graphics gT(GetDesktopWindow());
+        RectF bounds;
+        gT.MeasureString(s_activeTooltip.c_str(), -1, &fSmall, PointF(0, 0), &bounds);
+        
+        float ttW = bounds.Width + 24.0f;
+        float ttH = bounds.Height + 16.0f;
+        float ttX = s_mouseX + 15.0f;
+        float ttY = s_mouseY + 15.0f;
+        
+        // Prevent going off-screen
+        if (ttX + ttW > s_contentX + s_contentW) ttX = s_mouseX - ttW - 5.0f;
+        if (ttY + ttH > s_contentY + s_contentH) ttY = s_mouseY - ttH - 5.0f;
+
+        RectF ttRect(ttX, ttY, ttW, ttH);
+        GraphicsPath* tp = MakeRoundRect(ttRect, 5);
+        SolidBrush tBg(Color(240, 30, 35, 45)); 
+        g.FillPath(&tBg, tp);
+        Pen tPen(AClrBorder, 1.0f); g.DrawPath(&tPen, tp);
+        delete tp;
+        
+        SolidBrush tTxt(Color(255, 240, 245, 250));
+        g.DrawString(s_activeTooltip.c_str(), -1, &fSmall, RectF(ttX + 12.0f, ttY + 8.0f, bounds.Width, bounds.Height), &fL, &tTxt);
+    }
 }
 
 // ==========================================
@@ -1078,6 +1168,13 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
 // ==========================================
 void ProcessAdultMouseMove(float x, float y) {
     float cx=s_contentX,cy=s_contentY,cw=s_contentW,ch=s_contentH;
+
+    // Handle Tooltip Hover State
+    if (abs(x - s_mouseX) > 1.0f || abs(y - s_mouseY) > 1.0f) {
+        s_mouseX = x; s_mouseY = y;
+        s_hoverStartTime = GetTickCount();
+        s_activeTooltip = L"";
+    }
     
     // Reset hovers
     hoverAdultFocusBtn=hoverControlDrop=hoverRelDrop=hoverLangDrop=false;
@@ -1168,8 +1265,33 @@ void ProcessAdultMouseMove(float x, float y) {
         *hov[i]=rCStrict[i].Contains(x,y);
     }
 
-    hCb24HourLock    = RectF(R_X, cy + 360, cardW2, 70).Contains(x,y);
-    hCbPeriodicPopups= RectF(R_X + 185, cy + 360, cardW2, 70).Contains(x,y);
+    RectF rCard24h(R_X, cy + 360, cardW2, 70);
+    RectF rCardPop(R_X + 185, cy + 360, cardW2, 70);
+    hCb24HourLock    = rCard24h.Contains(x,y);
+    hCbPeriodicPopups= rCardPop.Contains(x,y);
+
+    // --- ASSIGN TOOLTIP TEXTS ---
+    RectF rInfoStrict(rFocusS.X + rFocusS.Width - 8, rFocusS.Y - 6, 16, 16);
+    RectF rInfoPanic(rPanic.X + rPanic.Width - 8, rPanic.Y - 6, 16, 16);
+    
+    if (rInfoStrict.Contains(x, y)) s_activeTooltip = L"Starts a timed session where Task Manager\n& Registry Editor are totally blocked.";
+    else if (rInfoPanic.Contains(x, y)) s_activeTooltip = L"Emergency! Instantly kills all web\nbrowsers for the next 15 minutes.";
+
+    wstring strictTips[5] = {
+        L"Saves visited URLs in a hidden text file:\nC:\\ProgramData\\RasFocus\\silent_monitor_log.txt",
+        L"Forces Cloudflare 1.1.1.3 DNS to filter\nadult websites at the network level.",
+        L"Enforces SafeSearch via Windows Hosts\nfile and Browser Registry Policies.",
+        L"Automatically detects and closes any\nIncognito or InPrivate browser window.",
+        L"Locks Task Manager, Control Panel,\nand Registry to prevent bypassing."
+    };
+    for(int i=0; i<5; i++) {
+        RectF infoR(rCStrict[i].X + rCStrict[i].Width - 24, rCStrict[i].Y + 26, 16, 16);
+        if (infoR.Contains(x, y)) s_activeTooltip = strictTips[i];
+    }
+    if (RectF(rCard24h.X + rCard24h.Width - 24, rCard24h.Y + 26, 16, 16).Contains(x, y)) 
+        s_activeTooltip = L"Locks the protection for 24 hours.\nEven restarting the PC won't stop it.";
+    if (RectF(rCardPop.X + rCardPop.Width - 24, rCardPop.Y + 26, 16, 16).Contains(x, y)) 
+        s_activeTooltip = L"Shows a fullscreen motivational\nquote automatically every 25 mins.";
 }
 
 // ==========================================
@@ -1317,7 +1439,7 @@ void AdultBlock_ApplyForSchedule(bool enable) {
         cbHardcore  = true;
         cbRomantic  = true;
         // focusEndTime 0 রাখি — Schedule Block নিজে session manage করে,
-        // Adult এর timer এখানে interfere করবেবিধা না।
+        // Adult এর timer এখানে interfere করবে না।
         focusEndTime = 0;
         // DNS filter ও safe search enforce করি
         EnforceStrictProtocols();
