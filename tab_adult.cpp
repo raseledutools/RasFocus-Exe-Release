@@ -3,6 +3,7 @@
 // UPDATED: Professional 2-Column Layout to fix overlap and empty right space.
 // UPDATED: Added Registry Policy Enforcement for SafeSearch.
 // UPDATED: Added Silent Monitor Logging and Hover Tooltips (i icon).
+// UPDATED: Added Admin Privilege Checker, Smart Browser Kill, and Strict Lock Rules.
 
 #include "tab_adult.h"
 
@@ -23,6 +24,7 @@ extern bool g_showUpgradePopup;
 #include <uiautomation.h>
 #include <ctime>
 #include <shlwapi.h>
+#include <shlobj.h> // Added for IsUserAnAdmin()
 
 using namespace Gdiplus;
 using namespace std;
@@ -480,6 +482,34 @@ static void RemoveRegPolicy(HKEY hKeyRoot, const char* subKey, const char* value
 }
 
 // ==========================================
+// --- ADMIN PRIVILEGE CHECKER ---
+// ==========================================
+static bool CheckAndRequestAdmin() {
+    if (IsUserAnAdmin()) {
+        return true;
+    }
+    
+    int msg = MessageBoxA(NULL, 
+        "This feature requires Administrator privileges to modify the Registry and Hosts file.\n\nDo you want to restart RasFocus as Administrator?", 
+        "Admin Permission Required", MB_YESNO | MB_ICONWARNING);
+        
+    if (msg == IDYES) {
+        wchar_t szPath[MAX_PATH];
+        GetModuleFileNameW(NULL, szPath, MAX_PATH);
+        
+        SHELLEXECUTEINFOW sei = { sizeof(sei) };
+        sei.lpVerb = L"runas"; 
+        sei.lpFile = szPath;
+        sei.nShow = SW_NORMAL;
+        
+        if (ShellExecuteExW(&sei)) {
+            exit(0); 
+        }
+    }
+    return false;
+}
+
+// ==========================================
 // --- STRICT: DNS / HOSTS / POLICIES ---
 // ==========================================
 static void SetFamilyDNS(bool enable) {
@@ -814,12 +844,15 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
     RectF rCbFbReels(L_X, cbStartY + 90, 360, 22);
 
     auto drawCb=[&](RectF r, const wchar_t* txt, bool state, bool hover){
+        bool lockedAndOn = (isAdultFocusActive && state);
         RectF cbR(r.X, r.Y + 2, 16.0f, 16.0f);
-        SolidBrush cbFill(state?(isAdultFocusActive?AClrGrayText:AClrTeal):AClrWhite);
+        SolidBrush cbFill(state?(lockedAndOn?AClrGrayText:AClrTeal):AClrWhite);
         GraphicsPath* cp=MakeRoundRect(cbR,3);
         g.FillPath(&cbFill,cp); g.DrawPath(&pBorder,cp); delete cp;
         if(state) g.DrawString(L"\xE73E",-1,&fSmIcon,cbR,&fC,&bW);
-        SolidBrush tBr(hover&&!isAdultFocusActive?AClrTeal:AClrDark);
+        
+        bool canHover = hover && !lockedAndOn;
+        SolidBrush tBr(canHover?AClrTeal:AClrDark);
         g.DrawString(txt,-1,&fNorm,RectF(r.X+22,r.Y,r.Width-22,r.Height),&fL,&tBr);
     };
 
@@ -902,9 +935,11 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
     for(int i=0;i<5;i++){
         RectF cardR = rCStrict[i];
         bool st=*cards[i].state; bool hv=*cards[i].hover;
+        bool lockedAndOn = (isAdultFocusActive && st);
+        bool canToggle = (!isAdultFocusActive || !st);
         
         GraphicsPath* cp=MakeRoundRect(cardR,5);
-        SolidBrush cbg(hv&&!st?AClrBgHover:(st?AClrTealLight:AClrCardBg));
+        SolidBrush cbg(hv && canToggle && !st ? AClrBgHover : (st ? AClrTealLight : AClrCardBg));
         g.FillPath(&cbg,cp);
         Pen cp2(st?cards[i].activeClr:AClrBorder,(st?2.0f:1.5f));
         g.DrawPath(&cp2,cp); delete cp;
@@ -914,7 +949,7 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
 
         RectF cbx(cardR.X+cardR.Width-20,cardR.Y+8,14,14);
         GraphicsPath* cxp=MakeRoundRect(cbx,3);
-        SolidBrush cxf(st?cards[i].activeClr:AClrWhite);
+        SolidBrush cxf(st ? (lockedAndOn ? AClrGrayText : cards[i].activeClr) : AClrWhite);
         g.FillPath(&cxf,cxp); g.DrawPath(&pBorder,cxp); delete cxp;
         if(st) g.DrawString(L"\xE73E",-1,&fTiny,cbx,&fC,&bW);
 
@@ -949,7 +984,7 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
 
         RectF cbx(rCard24h.X+rCard24h.Width-20,rCard24h.Y+8,14,14);
         GraphicsPath* cxp=MakeRoundRect(cbx,3);
-        SolidBrush cxf(cb24HourLock?AClrTeal:AClrWhite);
+        SolidBrush cxf(cb24HourLock?AClrGrayText:AClrWhite); // always gray if active, since it can't be unticked
         g.FillPath(&cxf,cxp); g.DrawPath(&pBorder,cxp); delete cxp;
         if(cb24HourLock) g.DrawString(L"\xE73E",-1,&fTiny,cbx,&fC,&bW);
 
@@ -965,7 +1000,7 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
         drawInfoIcon(RectF(rCard24h.X + rCard24h.Width - 24, rCard24h.Y + 26, 16, 16));
     }
 
-    // Card 2: Periodic Popups
+    // Card 2: Periodic Popups (Exempt from Lock)
     {
         GraphicsPath* cp=MakeRoundRect(rCardPop,5);
         SolidBrush cbg(hCbPeriodicPopups?AClrBgHover:AClrCardBg);
@@ -978,7 +1013,7 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
 
         RectF cbx(rCardPop.X+rCardPop.Width-20,rCardPop.Y+8,14,14);
         GraphicsPath* cxp=MakeRoundRect(cbx,3);
-        SolidBrush cxf(cbPeriodicPopups?AClrTeal:AClrWhite);
+        SolidBrush cxf(cbPeriodicPopups?AClrTeal:AClrWhite); // Normal teal because it's exempt
         g.FillPath(&cxf,cxp); g.DrawPath(&pBorder,cxp); delete cxp;
         if(cbPeriodicPopups) g.DrawString(L"\xE73E",-1,&fTiny,cbx,&fC,&bW);
 
@@ -1351,12 +1386,26 @@ void ProcessAdultMouseClick(float x, float y) {
     if(hoverRelDrop&&!isAdultFocusActive)isRelDropOpen=true;
     if(hoverLangDrop&&!isAdultFocusActive)isLangDropOpen=true;
 
-    auto handleCb=[](bool& state,bool hover){if(hover){if(isAdultFocusActive){if(!state)state=true;}else state=!state;}};
+    // --- LOCK LOGIC: Allow ticking (turning ON) anytime, prevent unticking (turning OFF) if locked ---
+    auto handleCb=[](bool& state,bool hover){
+        if(hover){
+            if(isAdultFocusActive){
+                if(!state) state=true; // Locked: Only allow turning ON
+            }else{
+                state=!state; // Unlocked: Toggle freely
+            }
+        }
+    };
+    
     handleCb(cbAdultWeb, hCbAdultWeb);
     handleCb(cbFbReels,  hCbFbReels);
     handleCb(cbHardcore, hCbHardcore);
     handleCb(cbRomantic, hCbRomantic);
-    handleCb(cbPeriodicPopups, hCbPeriodicPopups);
+
+    // Exception: Reminders (Periodic Popups) can be toggled freely regardless of Lock
+    if(hCbPeriodicPopups){
+        cbPeriodicPopups = !cbPeriodicPopups;
+    }
 
     if(hCb24HourLock&&!cb24HourLock){
         if(!g_isPremiumUser){ g_showUpgradePopup=true; return; }
@@ -1366,17 +1415,64 @@ void ProcessAdultMouseClick(float x, float y) {
 
     isCustomInputActive=hoverCustomInput;
     if(hoverCustomAddBtn&&!customInputText.empty()){customAdultKeywords.push_back({customInputText,false});customInputText=L"";}
-    if(!isAdultFocusActive){for(auto it=customAdultKeywords.begin();it!=customAdultKeywords.end();){if(it->isHoveredCross)it=customAdultKeywords.erase(it);else ++it;}}
+    
+    // Deleting custom keywords is prevented if locked
+    if(!isAdultFocusActive){
+        for(auto it=customAdultKeywords.begin();it!=customAdultKeywords.end();){
+            if(it->isHoveredCross)it=customAdultKeywords.erase(it);else ++it;
+        }
+    }
 
-    auto toggleStrict=[](bool& state,bool hover,bool doProtocol){ if(hover){state=!state;if(doProtocol){}} };
     if(hCbSilentUrl||hCbDnsFilter||hCbSafeSearch||hCbIncognito||hCbStrictMode){
         if(!g_isPremiumUser){ g_showUpgradePopup=true; return; }
     }
-    if(hCbSilentUrl){cbSilentUrl=!cbSilentUrl;}
-    if(hCbDnsFilter){cbDnsFilter=!cbDnsFilter;SetFamilyDNS(cbDnsFilter);EnforceStrictProtocols();}
-    if(hCbSafeSearch){cbSafeSearch=!cbSafeSearch;EnforceStrictProtocols();}
-    if(hCbIncognito){cbIncognito=!cbIncognito;}
-    if(hCbStrictMode){cbStrictMode=!cbStrictMode;}
+    
+    // Helper to enforce Strict Protocol Lock Rule
+    auto canToggleStrict = [&](bool currentState) {
+        if (isAdultFocusActive && currentState) return false; // Prevent unticking if locked
+        return true;
+    };
+
+    if(hCbSilentUrl){
+        if(canToggleStrict(cbSilentUrl)) { cbSilentUrl=!cbSilentUrl; }
+    }
+    if(hCbDnsFilter){
+        if(canToggleStrict(cbDnsFilter)) {
+            if(!CheckAndRequestAdmin()) return;
+            cbDnsFilter=!cbDnsFilter;
+            SetFamilyDNS(cbDnsFilter);
+            EnforceStrictProtocols();
+            if(!cbDnsFilter){
+                MessageBox(NULL, "Family DNS disabled.\nPlease restart your browsers normally to apply changes.", "RasFocus Alert", MB_OK | MB_ICONINFORMATION);
+            }
+        }
+    }
+    if(hCbSafeSearch){
+        if(canToggleStrict(cbSafeSearch)) {
+            if(!CheckAndRequestAdmin()) return;
+            cbSafeSearch=!cbSafeSearch;
+            EnforceStrictProtocols();
+            
+            // Smart Browser Kill Solution
+            if(!cbSafeSearch){
+                int res = MessageBox(NULL, 
+                    "Safe Search policies have been removed.\n\nTo apply changes immediately, your web browsers (Chrome, Edge, Brave) need to be closed. Close them now?", 
+                    "Clear Browser Cache", 
+                    MB_YESNO | MB_ICONQUESTION);
+                if(res == IDYES){
+                    system("taskkill /F /IM chrome.exe /T >nul 2>&1");
+                    system("taskkill /F /IM msedge.exe /T >nul 2>&1");
+                    system("taskkill /F /IM brave.exe /T >nul 2>&1");
+                }
+            }
+        }
+    }
+    if(hCbIncognito){
+        if(canToggleStrict(cbIncognito)) { cbIncognito=!cbIncognito; }
+    }
+    if(hCbStrictMode){
+        if(canToggleStrict(cbStrictMode)) { cbStrictMode=!cbStrictMode; }
+    }
 
     SaveAdultSettings();
     SaveStrictSettings();
