@@ -104,21 +104,46 @@ static GraphicsPath* GetSchRoundRectPath(RectF rect, float radius) {
 }
 
 // ─── DrawSchOverlaySpinner ────────────────────────────────────────────────────
-// Draws a simple animated spinner indicator at the given center position.
-static void DrawSchOverlaySpinner(Graphics& g, float cx, float cy, float radius, Color color) {
-    static int frame = 0;
-    frame = (frame + 1) % 12;
-    for (int i = 0; i < 12; i++) {
-        float angle = (float)(i * 30) * 3.14159f / 180.0f;
-        float alpha = (float)((i + frame) % 12) / 12.0f;
-        Color c(static_cast<BYTE>(alpha * color.GetA()),
-                color.GetR(), color.GetG(), color.GetB());
-        SolidBrush br(c);
-        float dotR = radius * 0.15f;
-        float px = cx + (radius - dotR) * cos(angle);
-        float py = cy + (radius - dotR) * sin(angle);
-        g.FillEllipse(&br, px - dotR, py - dotR, dotR * 2.0f, dotR * 2.0f);
-    }
+// Draws a [-] [value] [+] counter row for the time-picker overlay.
+// x, y = top-left of the 3-cell group. Each cell is 36x36.
+static void DrawSchOverlaySpinner(Graphics& g, float x, float y,
+                                   const std::wstring& value,
+                                   bool hMinus, bool hPlus,
+                                   Font* fIcon, Font* fBold)
+{
+    FontFamily ff(L"Segoe UI");
+    SolidBrush bDark(Color(255, 50, 50, 50));
+    SolidBrush bWhite(Color(255, 255, 255, 255));
+    SolidBrush bTeal(Color(255, 12, 168, 176));
+    SolidBrush bTealHover(Color(255, 30, 185, 195));
+    Pen pThin(Color(255, 200, 210, 220), 1.5f);
+
+    StringFormat fC;
+    fC.SetAlignment(StringAlignmentCenter);
+    fC.SetLineAlignment(StringAlignmentCenter);
+
+    float btnW = 36.0f, btnH = 36.0f;
+
+    // [−] button
+    RectF minusRect(x, y, btnW, btnH);
+    GraphicsPath* mp = GetSchRoundRectPath(minusRect, 6);
+    SolidBrush mBr(hMinus ? bTealHover.GetColor() : bTeal.GetColor());
+    g.FillPath(&mBr, mp); delete mp;
+    g.DrawString(L"−", -1, fBold, minusRect, &fC, &bWhite);
+
+    // [value] display
+    RectF valRect(x + btnW + 4, y, 50.0f, btnH);
+    GraphicsPath* vp = GetSchRoundRectPath(valRect, 4);
+    SolidBrush vBr(Color(255, 248, 250, 252));
+    g.FillPath(&vBr, vp); g.DrawPath(&pThin, vp); delete vp;
+    g.DrawString(value.c_str(), -1, fBold, valRect, &fC, &bDark);
+
+    // [+] button
+    RectF plusRect(x + btnW + 4 + 50.0f + 4, y, btnW, btnH);
+    GraphicsPath* pp = GetSchRoundRectPath(plusRect, 6);
+    SolidBrush pBr(hPlus ? bTealHover.GetColor() : bTeal.GetColor());
+    g.FillPath(&pBr, pp); delete pp;
+    g.DrawString(L"+", -1, fBold, plusRect, &fC, &bWhite);
 }
 
 // Scrollbar Colors
