@@ -181,7 +181,7 @@ static void TryAdGuardViaUserRegistry(bool install) {
 
 // Method 3: Chrome/Edge External Extension JSON drop (no admin, works for Chrome)
 static void TryAdGuardViaExternalJson(bool install) {
-    // Chrome looks in: %LOCALAPPDATA%\Google\Chrome\User Data\External Extensions\
+    // Chrome looks in: %LOCALAPPDATA%\Google\Chrome\User Data\External Extensions
     wchar_t localApp[MAX_PATH]; SHGetFolderPathW(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, localApp);
     wstring chromeExtDir = wstring(localApp) + L"\\Google\\Chrome\\User Data\\External Extensions";
     wstring edgeExtDir   = wstring(localApp) + L"\\Microsoft\\Edge\\User Data\\External Extensions";
@@ -935,7 +935,7 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
             g_ehb.keyDel.clear(); float listStartY = inpY + 48.0f; float boxH = listAreaH - 110.0f; g_ehb.listAreas[2] = RectF(rightColX, listStartY, colW, boxH); SolidBrush listBg2(Color(255, 250, 252, 255)); GraphicsPath* lbgp2 = GetSchRoundRectPath(g_ehb.listAreas[2], 8.0f); g.FillPath(&listBg2, lbgp2); g.DrawPath(&pDiv, lbgp2); delete lbgp2;
             vector<SchBlockItem>* aList = nullptr; if(editingProfileIdx >= 0) aList = &g_profiles[editingProfileIdx].adultCustomKeywords;
             if(aList && !aList->empty()) {
-                s_listScrollMax[2] = (std::max)(0.0f, (aList->size() * 42.0f) - boxH + 10.0f); s_listScrollC[2] += (s_listScrollT[2] - s_listScrollC[2]) * 0.15f; g.SetClip(g_ehb.listAreas[2]); float itemY = listStartY + 6.0f - s_listScrollC[colIdx];
+                s_listScrollMax[2] = (std::max)(0.0f, (aList->size() * 42.0f) - boxH + 10.0f); s_listScrollC[2] += (s_listScrollT[2] - s_listScrollC[2]) * 0.15f; g.SetClip(g_ehb.listAreas[2]); float itemY = listStartY + 6.0f - s_listScrollC[2];
                 for(size_t i = 0; i < aList->size(); ++i) {
                     auto& item = (*aList)[i];
                     if (itemY + 38.0f > listStartY && itemY < listStartY + boxH) {
