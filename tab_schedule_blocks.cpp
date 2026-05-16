@@ -140,7 +140,6 @@ struct FocusProfile {
     int startHour = 9, startMin = 0, endHour = 17, endMin = 0;
     bool blockInternet = false, blockUninstall = true;
 
-    // Quick Block & Adult Flags
     bool qbYTShorts = false, qbFBReels = false, qbYTAds = false, qbIGReels = false;
     bool schAdultWeb = false, schHardcore = false, schRomantic = false, schStrictDns = false;
     
@@ -248,9 +247,7 @@ static void ApplyHostsFileBlocking(const vector<wstring>& patterns, bool block) 
     ShellExecuteA(NULL, "open", "cmd.exe", "/c ipconfig /flushdns", NULL, SW_HIDE);
 }
 
-// 🟢 FIXED 1: PAC File Network Blocking
 static void ApplyPACFileBlocking(const vector<wstring>& keywords, bool block, const vector<FocusProfile>& safeProfiles) {
-    // ডিরেক্ট C:\ProgramData লোকেশন এবং সেফ ডিরেক্টরি ক্রিয়েশন
     wstring pacDir = L"C:\\ProgramData\\RasFocus";
     CreateDirectoryW(pacDir.c_str(), NULL);
     wstring pacPath = pacDir + L"\\block.pac";
@@ -276,7 +273,6 @@ static void ApplyPACFileBlocking(const vector<wstring>& keywords, bool block, co
     fout.imbue(locale(fout.getloc(), new codecvt_utf8<wchar_t>));
     if (fout) { fout << pac; fout.close(); }
 
-    // 🟢 FIXED: স্ট্রিং কনভার্সন বাদ দিয়ে সরাসরি ShellExecuteW (Wide) ব্যবহার করা হয়েছে
     if (block && (!allKw.empty() || blockAllInternet)) {
         wstring pacUrl = L"file://" + pacPath;
         wstring cmd1 = L"/c reg add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v AutoConfigURL /t REG_SZ /d \"" + pacUrl + L"\" /f";
@@ -308,7 +304,6 @@ static void KillBlockedApps(const vector<SchBlockItem>& apps) {
     CloseHandle(snap);
 }
 
-// 🟢 Heavy Worker Thread Logic Separated to stop UI hanging
 static void ApplyProfileBlockingWorker(FocusProfile p, vector<FocusProfile> all_profiles, bool enable) {
     vector<wstring> allPatterns;
     for (const auto& w : p.blockedWebsites) { auto pats = GetAllBlockPatterns(w.name); for (const auto& pt : pats) allPatterns.push_back(pt); }
@@ -321,9 +316,7 @@ static void ApplyProfileBlockingWorker(FocusProfile p, vector<FocusProfile> all_
     if (enable && !p.blockedApps.empty()) KillBlockedApps(p.blockedApps);
 }
 
-// 🟢 Safely wraps the heavy workload in a detached thread
 void ApplyProfileBlocking(int profileIdx, bool enable) {
-    // Note: It assumes caller has locked g_schMutex already!
     if (profileIdx < 0 || profileIdx >= (int)g_profiles.size()) return;
     FocusProfile p_copy = g_profiles[profileIdx];
     vector<FocusProfile> all_profiles_copy = g_profiles;
@@ -336,9 +329,7 @@ void ApplyProfileBlocking(int profileIdx, bool enable) {
 // ==========================================
 // --- HISTORY & SAVE/LOAD SYSTEM ---
 // ==========================================
-// 🟢 FIXED 2: History Logging 
 void LogHistoryToHiddenFolderSch(wstring action) {
-    // ডিরেক্ট C:\ProgramData\RasFocus\History
     wstring baseDir = L"C:\\ProgramData\\RasFocus";
     CreateDirectoryW(baseDir.c_str(), NULL);
     
@@ -348,25 +339,21 @@ void LogHistoryToHiddenFolderSch(wstring action) {
     
     wstring logFile = historyDir + L"\\schedule_activity_log.txt";
 
-    // 🟢 FIXED: wofstream ব্যবহার করা হয়েছে যাতে ক্র্যাশ না করে
     wofstream out(logFile.c_str(), ios::app);
     time_t now = std::time(0); string dt = std::ctime(&now); dt.pop_back(); 
     if(out) out << L"[" << SafeUtf8ToWstring(dt) << L"] " << action << L"\n";
 }
 
-// 🟢 FIXED 3: Main Profile Data Location
 static wstring GetSchSavePath() {
     wstring folderPath = L"C:\\ProgramData\\RasFocus";
     CreateDirectoryW(folderPath.c_str(), NULL);
     return folderPath + L"\\custom_profiles_v4.dat";
 }
 
-// 🟢 FIXED 4: Safe Profile Saving
 static void SaveProfiles() {
-    // সরাসরি c_str() ব্যবহার, স্ট্রিং কনভার্সনের মেমরি লিক থেকে মুক্তি
     wofstream out(GetSchSavePath().c_str()); 
     out.imbue(locale(out.getloc(), new codecvt_utf8<wchar_t>));
-    if (!out) return; // ফাইল ওপেন না হলে ক্র্যাশ করার বদলে সেফলি রিটার্ন করবে
+    if (!out) return;
     out << g_profiles.size() << L"\n";
     for (const auto& p : g_profiles) {
         out << p.profileName << L"\n" << p.isActive << L"\n" << p.lockMode << L"\n" << p.lockEndTime << L"\n" << p.parentsPassword << L"\n";
@@ -381,7 +368,6 @@ static void SaveProfiles() {
     } out.close();
 }
 
-// 🟢 FIXED 5: Safe Profile Loading
 static void LoadProfiles() {
     wifstream in(GetSchSavePath().c_str()); 
     in.imbue(locale(in.getloc(), new codecvt_utf8<wchar_t>));
@@ -408,7 +394,7 @@ static void LoadProfiles() {
 
 
 // ==========================================
-// 🟢 BACKGROUND OBSERVER THREAD (FIXES ALL LOGIC GAPS & HANGS)
+// 🟢 BACKGROUND OBSERVER THREAD 
 // ==========================================
 void ScheduleObserverThread() {
     while (true) {
@@ -435,7 +421,6 @@ void ScheduleObserverThread() {
         if (profilesChanged) { SaveProfiles(); if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE); }
         vector<FocusProfile> safeProfiles = g_profiles; g_schMutex.unlock(); 
 
-        // 🟢 HEAVY WORK (OUTSIDE LOCK)
         for (const auto& p : safeProfiles) {
             if (p.isActive && !p.blockedApps.empty()) KillBlockedApps(p.blockedApps); 
             if (p.isActive) {
@@ -486,7 +471,6 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
     s_cx = x; s_cy = y; s_cw = w; s_ch = h;
     sch_cScroll += (sch_tScroll - sch_cScroll) * 0.12f;
 
-    // 🟢 PREMIUM DESIGN FONT SIZES SCALED UP
     FontFamily ff(L"Segoe UI");
     Font fTitle(&ff, 28, FontStyleBold, UnitPixel);
     Font fCardTitle(&ff, 20, FontStyleBold, UnitPixel);
@@ -502,7 +486,6 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
     StringFormat fC; fC.SetAlignment(StringAlignmentCenter); fC.SetLineAlignment(StringAlignmentCenter);
     StringFormat fTL; fTL.SetAlignment(StringAlignmentNear); fTL.SetLineAlignment(StringAlignmentNear);
 
-    // --- MAIN VIEW: PROFILE LIST ---
     g.DrawString(L"Focus Profiles", -1, &fTitle, RectF(x + 25, y + 20, 350, 40), &fL, &bDark);
     g.DrawString(L"Create dedicated schedules with advanced app, web & internet lock.", -1, &fNorm, RectF(x + 25, y + 65, 700, 25), &fL, &bGray);
 
@@ -510,8 +493,8 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
     SolidBrush aBr(hAddProfileBtn ? ClrTealHover : ClrTeal); g.FillPath(&aBr, aP); delete aP; g.DrawString(L"+ Add Blocking Profile", -1, &fBold, addBtnRect, &fC, &bWhite);
 
     float cardGap = 25.0f;
-    float cardW = (w - (cardGap * 3.0f)) / 2.0f; // Adjusted for better padding
-    float cardH = 190.0f; // Taller card for premium feel
+    float cardW = (w - (cardGap * 3.0f)) / 2.0f; 
+    float cardH = 190.0f; 
     float startX = x + cardGap; float startY = y + 110.0f - sch_cScroll;
     Region oldClip; g.GetClip(&oldClip); g.SetClip(RectF(x, y + 105.0f, w, h - 105.0f));
 
@@ -519,7 +502,7 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
         float cX = startX + (i % 2) * (cardW + cardGap); float cY = startY + (i / 2) * (cardH + cardGap);
         if (cY > y + h || cY + cardH < y + 100.0f) continue; 
         
-        RectF cardRect(cX, cY, cardW, cardH); GraphicsPath* cP = GetSchRoundRectPath(cardRect, 8); // Smoother corner
+        RectF cardRect(cX, cY, cardW, cardH); GraphicsPath* cP = GetSchRoundRectPath(cardRect, 8); 
         g.FillPath(&bWhite, cP); g.DrawPath(g_profiles[i].isActive ? &pTeal : &pThin, cP); delete cP;
 
         g.DrawString(L"\xE82D", -1, &fIcon, RectF(cX + 18, cY + 18, 30, 30), &fL, g_profiles[i].isActive ? &bTeal : &bGray); 
@@ -553,285 +536,200 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
     g.SetClip(&oldClip);
 
     // =========================================================================
-    // 🟢 OVERLAY: FULL-WINDOW EDIT PROFILE
+    // 🟢 PREMIUM OVERLAY: FULL-WINDOW EDIT PROFILE
     // =========================================================================
     if (editingProfileIdx != -1) {
         float ovX = x, ovY = y, ovW = w, ovH = h;
-        g.FillRectangle(&bBg, ovX, ovY, ovW, ovH); 
+        SolidBrush bgEditor(Color(255, 243, 246, 250));
+        g.FillRectangle(&bgEditor, ovX, ovY, ovW, ovH);
 
-        wstring tabNames[4] = {L"Basic & Time", L"Quick Settings", L"Custom Lists", L"Adult Block"};
-        float tX = ovX + 30; float tY = ovY + 25; 
+        float sideW = 190.0f; RectF sideRect(ovX, ovY, sideW, ovH); SolidBrush sideBg(Color(255, 30, 35, 48)); g.FillRectangle(&sideBg, sideRect.X, sideRect.Y, sideRect.Width, sideRect.Height);
+        SolidBrush accentBar(ClrTeal); g.FillRectangle(&accentBar, ovX, ovY, sideW, 4.0f);
+        g.DrawString(L"\xE7EF", -1, &fIcon, RectF(ovX + 18, ovY + 22, 32, 32), &fL, &bTeal);
+        g.DrawString(L"Edit Profile", -1, &fBold, RectF(ovX + 55, ovY + 22, sideW - 60, 32), &fL, &bWhite);
+        Pen pSideDiv(Color(60, 255, 255, 255), 1.0f); g.DrawLine(&pSideDiv, ovX + 15, ovY + 62, ovX + sideW - 15, ovY + 62);
+
+        struct SideNavItem { const wchar_t* icon; const wchar_t* label; const wchar_t* sub; };
+        SideNavItem navItems[4] = { { L"\xE713", L"Basic & Time", L"Name, schedule" }, { L"\xE7BA", L"Quick Settings", L"Internet, blocks" }, { L"\xE71D", L"Custom Lists", L"Websites, apps" }, { L"\xE72E", L"Adult Block", L"Safe browsing" } };
+
         for (int i = 0; i < 4; i++) {
-            g_ehb.subTabRects[i] = RectF(tX, tY, 140, 32); GraphicsPath* tabP = GetSchRoundRectPath(g_ehb.subTabRects[i], 16);
-            if (s_activeSubTab == i) { g.FillPath(&bTeal, tabP); g.DrawString(tabNames[i].c_str(), -1, &fSmallBold, g_ehb.subTabRects[i], &fC, &bWhite); } 
-            else { SolidBrush hovBr(g_ehb.hSubTab == i ? ClrBgHover : Color(255, 235, 238, 242)); g.FillPath(&hovBr, tabP); g.DrawString(tabNames[i].c_str(), -1, &fSmallBold, g_ehb.subTabRects[i], &fC, &bDark); }
-            delete tabP; tX += 150;
+            float itemY = ovY + 78.0f + i * 70.0f; g_ehb.subTabRects[i] = RectF(ovX, itemY, sideW, 62.0f);
+            bool isActive = (s_activeSubTab == i); bool isHov = (g_ehb.hSubTab == i);
+            if (isActive) { SolidBrush activeBg(Color(40, 12, 168, 176)); g.FillRectangle(&activeBg, ovX, itemY, sideW, 62.0f); SolidBrush accentLine(ClrTeal); g.FillRectangle(&accentLine, ovX, itemY + 8.0f, 3.5f, 46.0f); } else if (isHov) { SolidBrush hovBg(Color(20, 255, 255, 255)); g.FillRectangle(&hovBg, ovX, itemY, sideW, 62.0f); }
+            SolidBrush iconClr(isActive ? Color(255, 12, 168, 176) : Color(160, 180, 190, 200)); SolidBrush labelClr(isActive ? Color(255, 255, 255, 255) : Color(200, 190, 200, 215)); SolidBrush subClr(Color(120, 150, 160, 175));
+            g.DrawString(navItems[i].icon, -1, &fSmallIcon, RectF(ovX + 18, itemY + 10, 22, 22), &fL, &iconClr); g.DrawString(navItems[i].label, -1, &fBold, RectF(ovX + 46, itemY + 8, sideW - 55, 24), &fL, &labelClr); g.DrawString(navItems[i].sub, -1, &fSmall, RectF(ovX + 46, itemY + 33, sideW - 55, 20), &fL, &subClr);
         }
 
-        float contentY = ovY + 80.0f; 
-        g.DrawLine(&pThin, ovX, contentY - 15.0f, ovX + ovW, contentY - 15.0f);
-        g.DrawLine(&pThin, ovX, ovY + ovH - 75, ovX + ovW, ovY + ovH - 75);
-        
+        float contX = ovX + sideW + 20.0f; float contW = ovW - sideW - 40.0f; float contY = ovY + 20.0f;
+        wstring tabTitles[4] = { L"Basic & Time", L"Quick Settings", L"Custom Lists", L"Adult Block" }; wstring tabDescs[4] = { L"Set profile name, lock mode and active schedule time", L"Toggle internet blocking and quick content filters", L"Manage blocked websites and applications", L"Configure safe browsing and keyword filters" };
+        g.DrawString(tabTitles[s_activeSubTab].c_str(), -1, &fCardTitle, RectF(contX, contY, contW, 30), &fL, &bDark); g.DrawString(tabDescs[s_activeSubTab].c_str(), -1, &fSmall, RectF(contX, contY + 32, contW, 20), &fL, &bGray);
+        Pen pDiv(Color(255, 220, 228, 238), 1.0f); g.DrawLine(&pDiv, contX, contY + 60, ovX + ovW - 20, contY + 60);
+
+        float contentY = contY + 72.0f; float cardX = contX; float cardW_inner = contW;
+        float footerY = ovY + ovH - 68.0f; SolidBrush footerBg(Color(255, 255, 255, 255)); g.FillRectangle(&footerBg, ovX + sideW, footerY, ovW - sideW, 68.0f); Pen pFootDiv(Color(255, 220, 228, 238), 1.0f); g.DrawLine(&pFootDiv, ovX + sideW, footerY, ovX + ovW, footerY);
+
+        g_ehb.backBtn = RectF(); g_ehb.nextBtn = RectF();
         if (s_activeSubTab > 0) {
-            g_ehb.backBtn = RectF(ovX + 30, ovY + ovH - 55, 100, 40); GraphicsPath* bbp = GetSchRoundRectPath(g_ehb.backBtn, 6);
-            SolidBrush bbBr(g_ehb.hBack ? ClrBgHover : ClrWhite); g.FillPath(&bbBr, bbp); g.DrawPath(&pThin, bbp); delete bbp; g.DrawString(L"< Back", -1, &fBold, g_ehb.backBtn, &fC, &bDark);
-        } else { g_ehb.backBtn = RectF(); }
-
+            g_ehb.backBtn = RectF(contX, footerY + 14, 105, 38); GraphicsPath* bbp = GetSchRoundRectPath(g_ehb.backBtn, 8); SolidBrush bbBr(g_ehb.hBack ? ClrBgHover : Color(255, 240, 243, 248)); g.FillPath(&bbBr, bbp); g.DrawPath(&pDiv, bbp); delete bbp; g.DrawString(L"\xE76B  Back", -1, &fBold, g_ehb.backBtn, &fC, &bDark);
+        }
         if (s_activeSubTab < 3) {
-            g_ehb.nextBtn = RectF(ovX + 140, ovY + ovH - 55, 100, 40); GraphicsPath* nbp = GetSchRoundRectPath(g_ehb.nextBtn, 6);
-            SolidBrush nbBr(g_ehb.hNext ? ClrBgHover : ClrWhite); g.FillPath(&nbBr, nbp); g.DrawPath(&pThin, nbp); delete nbp; g.DrawString(L"Next >", -1, &fBold, g_ehb.nextBtn, &fC, &bDark);
-        } else { g_ehb.nextBtn = RectF(); }
+            float nextX = (s_activeSubTab > 0) ? contX + 115.0f : contX; g_ehb.nextBtn = RectF(nextX, footerY + 14, 105, 38); GraphicsPath* nbp = GetSchRoundRectPath(g_ehb.nextBtn, 8); SolidBrush nbBr(g_ehb.hNext ? ClrTealHover : ClrTeal); g.FillPath(&nbBr, nbp); delete nbp; g.DrawString(L"Next  \xE76C", -1, &fBold, g_ehb.nextBtn, &fC, &bWhite);
+        }
+        g_ehb.cancelBtn = RectF(ovX + ovW - 265, footerY + 14, 110, 38); GraphicsPath* cvp = GetSchRoundRectPath(g_ehb.cancelBtn, 8); SolidBrush cvBr(g_ehb.hCancel ? ClrBgHover : Color(255, 240, 243, 248)); g.FillPath(&cvBr, cvp); g.DrawPath(&pFootDiv, cvp); delete cvp; g.DrawString(L"Cancel", -1, &fBold, g_ehb.cancelBtn, &fC, &bDark);
+        g_ehb.saveBtn = RectF(ovX + ovW - 145, footerY + 14, 125, 38); GraphicsPath* svp = GetSchRoundRectPath(g_ehb.saveBtn, 8); SolidBrush svBr(g_ehb.hSave ? ClrTealHover : ClrTeal); g.FillPath(&svBr, svp); delete svp; g.DrawString(L"\xE74E  Save Profile", -1, &fBold, g_ehb.saveBtn, &fC, &bWhite);
+        g.SetClip(RectF(ovX + sideW, ovY, ovW - sideW, footerY - ovY));
 
-        g_ehb.saveBtn = RectF(ovX + ovW - 160, ovY + ovH - 55, 130, 40); GraphicsPath* svp = GetSchRoundRectPath(g_ehb.saveBtn, 6);
-        SolidBrush svBr(g_ehb.hSave ? ClrTealHover : ClrTeal); g.FillPath(&svBr, svp); delete svp; g.DrawString(L"Save Profile", -1, &fBold, g_ehb.saveBtn, &fC, &bWhite);
-
-        g_ehb.cancelBtn = RectF(ovX + ovW - 280, ovY + ovH - 55, 110, 40); GraphicsPath* cvp = GetSchRoundRectPath(g_ehb.cancelBtn, 6);
-        SolidBrush cvBr(g_ehb.hCancel ? ClrBgHover : ClrWhite); g.FillPath(&cvBr, cvp); g.DrawPath(&pThin, cvp); delete cvp; g.DrawString(L"Cancel", -1, &fBold, g_ehb.cancelBtn, &fC, &bDark);
-
-        float cardX = ovX + 30; float cardW_inner = ovW - 60; 
-
-        // ================== TAB 0: BASIC & TIME ==================
         if (s_activeSubTab == 0) {
-            RectF c1Rect(cardX, contentY, cardW_inner, 85); GraphicsPath* c1P = GetSchRoundRectPath(c1Rect, 8); g.FillPath(&bWhite, c1P); delete c1P;
-            g.DrawString(L"General Information", -1, &fBold, RectF(cardX + 20, contentY + 15, 250, 25), &fL, &bDark);
-            g.DrawString(L"Profile Name:", -1, &fNorm, RectF(cardX + 20, contentY + 45, 110, 30), &fL, &bGray);
-            
-            g_ehb.nameInp = RectF(cardX + 130, contentY + 42, 220, 36); GraphicsPath* np = GetSchRoundRectPath(g_ehb.nameInp, 6);
-            g.FillPath(activeInput == 1 ? &bWhite : &bBg, np); g.DrawPath(activeInput == 1 ? &pTeal : &pThin, np); delete np;
-            if(inpProfileName.empty() && activeInput != 1) g.DrawString(L"e.g. Study Time", -1, &fNorm, g_ehb.nameInp, &fC, &bGray);
-            else {
-                g.DrawString(inpProfileName.c_str(), -1, &fNorm, RectF(g_ehb.nameInp.X+10, g_ehb.nameInp.Y, g_ehb.nameInp.Width-10, g_ehb.nameInp.Height), &fL, &bDark);
-                if(activeInput == 1 && (GetTickCount()/500)%2==0) { Graphics gT(GetDesktopWindow()); RectF bR; gT.MeasureString(inpProfileName.c_str(), -1, &fNorm, PointF(0,0), &bR); g.FillRectangle(&bDark, g_ehb.nameInp.X+12+(inpProfileName.empty()?0:bR.Width), g_ehb.nameInp.Y+8, 1.5f, 20.0f); }
-            }
-
-            g.DrawString(L"Lock Mode:", -1, &fNorm, RectF(cardX + 380, contentY + 45, 90, 30), &fL, &bGray);
-            g_ehb.modeDrop = RectF(cardX + 470, contentY + 42, 200, 36); GraphicsPath* mdp = GetSchRoundRectPath(g_ehb.modeDrop, 6);
-            SolidBrush dropBg(hoverSchModeDropdown ? ClrWhite : ClrBg); g.FillPath(&dropBg, mdp); g.DrawPath(&pThin, mdp); delete mdp;
+            RectF c1Rect(cardX, contentY, cardW_inner, 100); GraphicsPath* c1P = GetSchRoundRectPath(c1Rect, 10); g.FillPath(&bWhite, c1P); g.DrawPath(&pDiv, c1P); delete c1P;
+            SolidBrush cardLabelBg(Color(255, 245, 250, 255)); g.FillRectangle(&cardLabelBg, cardX + 1, contentY + 1, cardW_inner - 2, 36);
+            g.DrawString(L"\xE77B  General Information", -1, &fBold, RectF(cardX + 18, contentY + 8, 280, 24), &fL, &bDark); g.DrawLine(&pDiv, cardX, contentY + 38, cardX + cardW_inner, contentY + 38);
+            g.DrawString(L"Profile Name", -1, &fSmall, RectF(cardX + 18, contentY + 50, 100, 22), &fL, &bGray);
+            g_ehb.nameInp = RectF(cardX + 125, contentY + 46, 230, 36); GraphicsPath* np = GetSchRoundRectPath(g_ehb.nameInp, 7); g.FillPath(activeInput == 1 ? &bWhite : &bBg, np); g.DrawPath(activeInput == 1 ? &pTeal : &pDiv, np); delete np;
+            if (inpProfileName.empty() && activeInput != 1) { g.DrawString(L"e.g. Study Time", -1, &fNorm, RectF(g_ehb.nameInp.X+10, g_ehb.nameInp.Y, g_ehb.nameInp.Width-10, g_ehb.nameInp.Height), &fL, &bGray); } else { g.DrawString(inpProfileName.c_str(), -1, &fNorm, RectF(g_ehb.nameInp.X+10, g_ehb.nameInp.Y, g_ehb.nameInp.Width-10, g_ehb.nameInp.Height), &fL, &bDark); if (activeInput == 1 && (GetTickCount()/500)%2==0) { Graphics gT(GetDesktopWindow()); RectF bR; gT.MeasureString(inpProfileName.c_str(), -1, &fNorm, PointF(0,0), &bR); g.FillRectangle(&bDark, g_ehb.nameInp.X+12+(inpProfileName.empty()?0:bR.Width), g_ehb.nameInp.Y+8, 1.5f, 20.0f); } }
+            g.DrawString(L"Lock Mode", -1, &fSmall, RectF(cardX + 375, contentY + 50, 90, 22), &fL, &bGray);
+            g_ehb.modeDrop = RectF(cardX + 460, contentY + 46, 210, 36); GraphicsPath* mdp = GetSchRoundRectPath(g_ehb.modeDrop, 7); SolidBrush dropBg(hoverSchModeDropdown ? ClrBgHover : ClrBg); g.FillPath(&dropBg, mdp); g.DrawPath(&pDiv, mdp); delete mdp;
             wstring curModeTxt = (tempLockMode == 1) ? L"Parents Control" : ((tempLockMode == 2) ? L"Long Text Unlock" : L"Self Control");
-            g.DrawString(curModeTxt.c_str(), -1, &fNorm, RectF(g_ehb.modeDrop.X+10, g_ehb.modeDrop.Y, g_ehb.modeDrop.Width-30, g_ehb.modeDrop.Height), &fL, &bDark);
-            g.DrawString(L"\xE70D", -1, &fSmallIcon, RectF(g_ehb.modeDrop.X+g_ehb.modeDrop.Width-30, g_ehb.modeDrop.Y, 30, g_ehb.modeDrop.Height), &fC, &bGray);
-            
-            contentY += 105;
-            RectF c2Rect(cardX, contentY, cardW_inner, 115); GraphicsPath* c2P = GetSchRoundRectPath(c2Rect, 8); g.FillPath(&bWhite, c2P); delete c2P;
-            g.DrawString(L"Schedule Settings", -1, &fBold, RectF(cardX + 20, contentY + 15, 200, 25), &fL, &bDark);
-            g.DrawString(L"Active Days:", -1, &fSmallBold, RectF(cardX + 20, contentY + 45, 150, 25), &fL, &bGray);
-            wstring dLabels[] = {L"S", L"M", L"T", L"W", L"T", L"F", L"S"};
-            for(int d=0; d<7; d++) {
-                g_ehb.days[d] = RectF(cardX + 20 + (d * 38), contentY + 70, 34, 34); GraphicsPath* dP = GetSchRoundRectPath(g_ehb.days[d], 17);
-                SolidBrush dBr(editDays[d] ? ClrTeal : (g_ehb.hDay == d ? ClrWhite : ClrBg)); g.FillPath(&dBr, dP); g.DrawPath(editDays[d] ? &pTeal : &pThin, dP); delete dP;
-                g.DrawString(dLabels[d].c_str(), -1, &fBold, g_ehb.days[d], &fC, editDays[d] ? &bWhite : &bDark);
-            }
-            g.DrawString(L"Session Time:", -1, &fSmallBold, RectF(cardX + 320, contentY + 45, 120, 25), &fL, &bGray);
+            g.DrawString(curModeTxt.c_str(), -1, &fNorm, RectF(g_ehb.modeDrop.X+12, g_ehb.modeDrop.Y, g_ehb.modeDrop.Width-34, g_ehb.modeDrop.Height), &fL, &bDark); g.DrawString(L"\xE70D", -1, &fSmallIcon, RectF(g_ehb.modeDrop.X+g_ehb.modeDrop.Width-30, g_ehb.modeDrop.Y, 28, g_ehb.modeDrop.Height), &fC, &bTeal);
 
+            contentY += 115.0f; RectF c2Rect(cardX, contentY, cardW_inner, 130); GraphicsPath* c2P = GetSchRoundRectPath(c2Rect, 10); g.FillPath(&bWhite, c2P); g.DrawPath(&pDiv, c2P); delete c2P;
+            SolidBrush cardLabelBg2(Color(255, 245, 250, 255)); g.FillRectangle(&cardLabelBg2, cardX + 1, contentY + 1, cardW_inner - 2, 36);
+            g.DrawString(L"\xE787  Schedule Settings", -1, &fBold, RectF(cardX + 18, contentY + 8, 280, 24), &fL, &bDark); g.DrawLine(&pDiv, cardX, contentY + 38, cardX + cardW_inner, contentY + 38);
+            g.DrawString(L"Active Days", -1, &fSmall, RectF(cardX + 18, contentY + 50, 90, 22), &fL, &bGray);
+            wstring dLabels[] = {L"Su", L"Mo", L"Tu", L"We", L"Th", L"Fr", L"Sa"};
+            for (int d = 0; d < 7; d++) {
+                g_ehb.days[d] = RectF(cardX + 115 + (d * 45.0f), contentY + 45, 38, 38); GraphicsPath* dP = GetSchRoundRectPath(g_ehb.days[d], 8); SolidBrush dBr(editDays[d] ? ClrTeal : (g_ehb.hDay == d ? Color(255,235,248,250) : ClrBg)); g.FillPath(&dBr, dP); g.DrawPath(editDays[d] ? &pTeal : &pDiv, dP); delete dP; g.DrawString(dLabels[d].c_str(), -1, &fSmallBold, g_ehb.days[d], &fC, editDays[d] ? &bWhite : &bDark);
+            }
+            g.DrawString(L"Session Time", -1, &fSmall, RectF(cardX + 18, contentY + 97, 95, 22), &fL, &bGray);
             auto DrawModernTimeBox = [&](float tx, float ty, const wstring& lbl, int h, int m, RectF& hBox, RectF& mBox, RectF& ampmBtn, bool hH, bool hM, bool hAmPm) {
-                g.DrawString(lbl.c_str(), -1, &fSmall, RectF(tx, ty, 45, 34), &fC, &bGray);
-                int dispH = h % 12; if (dispH == 0) dispH = 12; wstring ampmStr = (h >= 12) ? L"PM" : L"AM";
-                hBox = RectF(tx + 50, ty, 40, 34); GraphicsPath hp; AddRoundedRectPath(hp, hBox.X, hBox.Y, hBox.Width, hBox.Height, 6); SolidBrush hbBr(hH ? ClrBgHover : ClrBg); g.FillPath(&hbBr, &hp); g.DrawPath(&pThin, &hp); g.DrawString((dispH < 10 ? L"0" + to_wstring(dispH) : to_wstring(dispH)).c_str(), -1, &fBold, hBox, &fC, &bDark);
-                g.DrawString(L":", -1, &fBold, RectF(tx + 90, ty, 15, 34), &fC, &bDark);
-                mBox = RectF(tx + 105, ty, 40, 34); GraphicsPath mp; AddRoundedRectPath(mp, mBox.X, mBox.Y, mBox.Width, mBox.Height, 6); SolidBrush mbBr(hM ? ClrBgHover : ClrBg); g.FillPath(&mbBr, &mp); g.DrawPath(&pThin, &mp); g.DrawString((m < 10 ? L"0" + to_wstring(m) : to_wstring(m)).c_str(), -1, &fBold, mBox, &fC, &bDark);
-                ampmBtn = RectF(tx + 150, ty, 45, 34); GraphicsPath ap; AddRoundedRectPath(ap, ampmBtn.X, ampmBtn.Y, ampmBtn.Width, ampmBtn.Height, 6); SolidBrush aBr(hAmPm ? ClrTealHover : ClrBgHover); g.FillPath(&aBr, &ap); g.DrawPath(hAmPm ? &pTeal : &pThin, &ap); g.DrawString(ampmStr.c_str(), -1, &fBold, ampmBtn, &fC, (h >= 12) ? &bTeal : &bDark);
+                g.DrawString(lbl.c_str(), -1, &fSmallBold, RectF(tx, ty, 45, 34), &fC, &bGray); int dispH = h % 12; if (dispH == 0) dispH = 12; wstring ampmStr = (h >= 12) ? L"PM" : L"AM";
+                hBox = RectF(tx + 48, ty, 44, 34); GraphicsPath hp; AddRoundedRectPath(hp, hBox.X, hBox.Y, hBox.Width, hBox.Height, 7); SolidBrush hbBr(hH ? ClrBgHover : ClrBg); g.FillPath(&hbBr, &hp); g.DrawPath(&pDiv, &hp); g.DrawString((dispH < 10 ? L"0" + to_wstring(dispH) : to_wstring(dispH)).c_str(), -1, &fBold, hBox, &fC, &bDark);
+                g.DrawString(L":", -1, &fBold, RectF(tx + 93, ty, 12, 34), &fC, &bDark); mBox = RectF(tx + 105, ty, 44, 34); GraphicsPath mp; AddRoundedRectPath(mp, mBox.X, mBox.Y, mBox.Width, mBox.Height, 7); SolidBrush mbBr(hM ? ClrBgHover : ClrBg); g.FillPath(&mbBr, &mp); g.DrawPath(&pDiv, &mp); g.DrawString((m < 10 ? L"0" + to_wstring(m) : to_wstring(m)).c_str(), -1, &fBold, mBox, &fC, &bDark);
+                ampmBtn = RectF(tx + 155, ty, 44, 34); GraphicsPath ap; AddRoundedRectPath(ap, ampmBtn.X, ampmBtn.Y, ampmBtn.Width, ampmBtn.Height, 7); SolidBrush aBr(hAmPm ? ClrTealHover : (h >= 12 ? Color(230, 12, 168, 176) : ClrBg)); g.FillPath(&aBr, &ap); g.DrawPath(h >= 12 ? &pTeal : &pDiv, &ap); g.DrawString(ampmStr.c_str(), -1, &fBold, ampmBtn, &fC, (h >= 12) ? &bWhite : &bDark);
             };
-            DrawModernTimeBox(cardX + 320, contentY + 70, L"Start", editStH, editStM, g_ehb.stH_Box, g_ehb.stM_Box, g_ehb.stAmPm, g_ehb.hStH, g_ehb.hStM, g_ehb.hStAmPm);
-            DrawModernTimeBox(cardX + 530, contentY + 70, L"End", editEnH, editEnM, g_ehb.enH_Box, g_ehb.enM_Box, g_ehb.enAmPm, g_ehb.hEnH, g_ehb.hEnM, g_ehb.hEnAmPm);
+            DrawModernTimeBox(cardX + 115, contentY + 90, L"Start", editStH, editStM, g_ehb.stH_Box, g_ehb.stM_Box, g_ehb.stAmPm, g_ehb.hStH, g_ehb.hStM, g_ehb.hStAmPm); g.DrawString(L"\xE72A", -1, &fSmallIcon, RectF(cardX + 340, contentY + 93, 24, 28), &fC, &bGray); DrawModernTimeBox(cardX + 365, contentY + 90, L"End", editEnH, editEnM, g_ehb.enH_Box, g_ehb.enM_Box, g_ehb.enAmPm, g_ehb.hEnH, g_ehb.hEnM, g_ehb.hEnAmPm);
         }
-
-        // ================== TAB 1: QUICK SETTINGS ==================
         else if (s_activeSubTab == 1) {
-            RectF c3Rect(cardX, contentY, cardW_inner, 85); GraphicsPath* c3P = GetSchRoundRectPath(c3Rect, 8); g.FillPath(&bWhite, c3P); g.DrawPath(&pThin, c3P); delete c3P;
-            float cbWidth = (cardW_inner - 30.0f) / 2.0f; 
+            RectF c3Rect(cardX, contentY, cardW_inner, 105); GraphicsPath* c3P = GetSchRoundRectPath(c3Rect, 10); g.FillPath(&bWhite, c3P); g.DrawPath(&pDiv, c3P); delete c3P;
+            SolidBrush cardLabelBg3(Color(255, 245, 250, 255)); g.FillRectangle(&cardLabelBg3, cardX + 1, contentY + 1, cardW_inner - 2, 36); g.DrawString(L"\xE774  Internet & Protection", -1, &fBold, RectF(cardX + 18, contentY + 8, 280, 24), &fL, &bDark); g.DrawLine(&pDiv, cardX, contentY + 38, cardX + cardW_inner, contentY + 38);
 
-            auto DrawCb = [&](RectF& outHitbox, float cx, const wstring& label, bool val, bool hov) {
-                outHitbox = RectF(cx, contentY + 20, cbWidth - 10, 45); 
-                if (hov) { GraphicsPath* hp = GetSchRoundRectPath(outHitbox, 6); g.FillPath(&bBgHover, hp); delete hp; }
-                RectF cbBox(cx + 15, contentY + 32, 22, 22); GraphicsPath* bp = GetSchRoundRectPath(cbBox, 6); g.FillPath(val ? &bTeal : &bWhite, bp); g.DrawPath(val ? &pTeal : &pThin, bp); delete bp;
-                if(val) g.DrawString(L"\xE73E", -1, &fSmallIcon, cbBox, &fC, &bWhite);
-                g.DrawString(label.c_str(), -1, &fNorm, RectF(cx + 50, contentY + 32, cbWidth - 55, 22), &fL, &bDark);
+            float cbWidth = (cardW_inner - 30.0f) / 2.0f;
+            auto DrawCb = [&](RectF& outHitbox, float cx, float cy, const wstring& label, const wstring& desc, bool val, bool hov) {
+                outHitbox = RectF(cx, cy, cbWidth - 15, 52); if (hov) { GraphicsPath* hp = GetSchRoundRectPath(outHitbox, 8); g.FillPath(&bBgHover, hp); delete hp; }
+                RectF togBg(cx + 12, cy + 15, 44, 24); GraphicsPath* tp = GetSchRoundRectPath(togBg, 12); SolidBrush tBg(val ? ClrTeal : Color(255, 200, 210, 220)); g.FillPath(&tBg, tp); delete tp; g.FillEllipse(&bWhite, val ? togBg.X + togBg.Width - 22 : togBg.X + 2, togBg.Y + 2, 20, 20);
+                g.DrawString(label.c_str(), -1, &fBold, RectF(cx + 62, cy + 8, cbWidth - 75, 22), &fL, val ? &bTeal : &bDark); g.DrawString(desc.c_str(),  -1, &fSmall, RectF(cx + 62, cy + 30, cbWidth - 75, 18), &fL, &bGray);
             };
-            DrawCb(g_ehb.togInt, cardX + 15, L"Block Internet entirely", editBlockInt, g_ehb.hTogInt);
-            DrawCb(g_ehb.togUni, cardX + 15 + cbWidth, L"Block Uninstall / Taskmgr", editBlockUninst, g_ehb.hTogUni);
-            
-            contentY += 105;
-            RectF c4Rect(cardX, contentY, cardW_inner, 100); GraphicsPath* c4P = GetSchRoundRectPath(c4Rect, 8); g.FillPath(&bWhite, c4P); g.DrawPath(&pThin, c4P); delete c4P;
-            g.DrawString(L"Quick Block", -1, &fBold, RectF(cardX + 20, contentY + 15, 120, 25), &fL, &bDark);
-            g.DrawString(L"(Works in Chrome, Edge, Firefox, Brave, Opera)", -1, &fSmall, RectF(cardX + 140, contentY + 18, 400, 20), &fL, &bGray);
+            DrawCb(g_ehb.togInt, cardX + 15, contentY + 40, L"Block Internet", L"Disables all network access", editBlockInt, g_ehb.hTogInt); DrawCb(g_ehb.togUni, cardX + 15 + cbWidth, contentY + 40, L"Block Uninstall", L"Locks Task Manager & apps", editBlockUninst, g_ehb.hTogUni);
 
-            float qbX = cardX + 20; float qbY = contentY + 45; float qbW = 120.0f; float qbH = 36.0f; float qbGap = 15.0f;
-            s_quickBlockRects.resize(s_quickBlocks.size());
+            contentY += 120.0f; RectF c4Rect(cardX, contentY, cardW_inner, 120); GraphicsPath* c4P = GetSchRoundRectPath(c4Rect, 10); g.FillPath(&bWhite, c4P); g.DrawPath(&pDiv, c4P); delete c4P;
+            SolidBrush cardLabelBg4(Color(255, 245, 250, 255)); g.FillRectangle(&cardLabelBg4, cardX + 1, contentY + 1, cardW_inner - 2, 36); g.DrawString(L"\xE728  Quick Content Filters", -1, &fBold, RectF(cardX + 18, contentY + 8, 280, 24), &fL, &bDark); g.DrawLine(&pDiv, cardX, contentY + 38, cardX + cardW_inner, contentY + 38); g.DrawString(L"One-click blocking for Chrome, Edge, Firefox, Brave and Opera", -1, &fSmall, RectF(cardX + 18, contentY + 46, cardW_inner - 36, 18), &fL, &bGray);
+
+            float qbX = cardX + 18; float qbY = contentY + 68; float qbW = 138.0f; float qbH = 44.0f; float qbGap = 14.0f; s_quickBlockRects.resize(s_quickBlocks.size()); const wchar_t* qbIcons[4] = { L"\xE714", L"\xE8F3", L"\xE90A", L"\xE718" };
             for (size_t qi = 0; qi < s_quickBlocks.size(); ++qi) {
-                RectF qbRect(qbX + qi * (qbW + qbGap), qbY, qbW, qbH); s_quickBlockRects[qi] = qbRect;
-                bool alreadyAdded = false;
-                if (editingProfileIdx >= 0) {
-                    if (qi == 0) alreadyAdded = g_profiles[editingProfileIdx].qbYTShorts; else if (qi == 1) alreadyAdded = g_profiles[editingProfileIdx].qbFBReels; else if (qi == 2) alreadyAdded = g_profiles[editingProfileIdx].qbYTAds; else if (qi == 3) alreadyAdded = g_profiles[editingProfileIdx].qbIGReels;
-                }
-                GraphicsPath* qp = GetSchRoundRectPath(qbRect, 6);
-                if (alreadyAdded) g.FillPath(&bTeal, qp); else { SolidBrush qbBg(s_quickBlocks[qi].hovered ? ClrWhite : ClrBg); g.FillPath(&qbBg, qp); g.DrawPath(&pThin, qp); }
-                delete qp;
-                SolidBrush* txtClr = alreadyAdded ? &bWhite : &bDark; g.DrawString(s_quickBlocks[qi].label.c_str(), -1, &fSmallBold, qbRect, &fC, txtClr);
+                RectF qbRect(qbX + qi * (qbW + qbGap), qbY, qbW, qbH); s_quickBlockRects[qi] = qbRect; bool alreadyAdded = false;
+                if (editingProfileIdx >= 0) { if (qi == 0) alreadyAdded = g_profiles[editingProfileIdx].qbYTShorts; else if (qi == 1) alreadyAdded = g_profiles[editingProfileIdx].qbFBReels; else if (qi == 2) alreadyAdded = g_profiles[editingProfileIdx].qbYTAds; else if (qi == 3) alreadyAdded = g_profiles[editingProfileIdx].qbIGReels; }
+                GraphicsPath* qp = GetSchRoundRectPath(qbRect, 8); if (alreadyAdded) { g.FillPath(&bTeal, qp); } else { SolidBrush qbBg(s_quickBlocks[qi].hovered ? ClrBgHover : ClrBg); g.FillPath(&qbBg, qp); g.DrawPath(&pDiv, qp); } delete qp;
+                SolidBrush* txtClr = alreadyAdded ? &bWhite : &bDark; SolidBrush iconClrQb(alreadyAdded ? Color(255,255,255,255) : Color(255,12,168,176)); g.DrawString(qbIcons[qi], -1, &fSmallIcon, RectF(qbRect.X + 10, qbRect.Y, 22, qbH), &fL, &iconClrQb); g.DrawString(s_quickBlocks[qi].label.c_str(), -1, &fSmallBold, RectF(qbRect.X + 36, qbRect.Y, qbW - 40, qbH), &fL, txtClr);
             }
         }
-
-        // ================== TAB 2: CUSTOM LISTS (2 Columns Wide) ==================
         else if (s_activeSubTab == 2) {
-            vector<SchBlockItem>* cWebs = nullptr; vector<SchBlockItem>* cApps = nullptr;
-            if(editingProfileIdx >= 0) { cWebs = &g_profiles[editingProfileIdx].blockedWebsites; cApps = &g_profiles[editingProfileIdx].blockedApps; }
+            vector<SchBlockItem>* cWebs = nullptr; vector<SchBlockItem>* cApps = nullptr; if(editingProfileIdx >= 0) { cWebs = &g_profiles[editingProfileIdx].blockedWebsites; cApps = &g_profiles[editingProfileIdx].blockedApps; }
+            float listAreaH = (ovY + ovH - 80.0f) - contentY; RectF cRect(cardX, contentY, cardW_inner, listAreaH); GraphicsPath* cP = GetSchRoundRectPath(cRect, 10); g.FillPath(&bWhite, cP); g.DrawPath(&pDiv, cP); delete cP;
+            float colGap = 20.0f; float colW = (cardW_inner - (colGap * 3)) / 2.0f;
 
-            float listAreaH = (ovY + ovH - 85.0f) - contentY;
-            RectF cRect(cardX, contentY, cardW_inner, listAreaH); GraphicsPath* cP = GetSchRoundRectPath(cRect, 8); g.FillPath(&bWhite, cP); delete cP;
-
-            float colGap = 30.0f; float colW = (cardW_inner - (colGap * 2)) / 2.0f;
-
-            auto DrawListCol = [&](int colIdx, float colX, const wstring& title, const wstring& ph, wstring& inpStr, int inpIdx, vector<SchBlockItem>* list,
-                                   RectF& outInp, RectF* outCombo, RectF& outAdd, bool hovCombo, bool hovAdd, vector<pair<RectF,int>>& outDel) {
-                g.DrawString(title.c_str(), -1, &fCardTitle, RectF(colX, contentY + 15, colW, 35), &fL, &bDark);
-                float inpY = contentY + 55.0f; float comboW = outCombo ? 36.0f : 0.0f; float addW = 75.0f; float gap = 8.0f;
-                float inpW = colW - comboW - addW - (outCombo ? gap * 2 : gap);
-
-                outInp = RectF(colX, inpY, inpW, 40); GraphicsPath* ip = GetSchRoundRectPath(outInp, 6);
-                g.FillPath(activeInput == inpIdx ? &bWhite : &bBg, ip); g.DrawPath(activeInput == inpIdx ? &pTeal : &pThin, ip); delete ip;
-                if(inpStr.empty() && activeInput != inpIdx) { g.DrawString(ph.c_str(), -1, &fNorm, RectF(outInp.X+10, outInp.Y, outInp.Width-20, outInp.Height), &fL, &bGray); } 
-                else { g.DrawString(inpStr.c_str(), -1, &fNorm, RectF(outInp.X+10, outInp.Y, outInp.Width-20, outInp.Height), &fL, &bDark);
-                    if(activeInput == inpIdx && (GetTickCount()/500)%2==0) { Graphics gT(GetDesktopWindow()); RectF bR; gT.MeasureString(inpStr.c_str(), -1, &fNorm, PointF(0,0), &bR); g.FillRectangle(&bDark, outInp.X+10+(inpStr.empty()?0:bR.Width), outInp.Y+10, 1.5f, 20.0f); }
-                }
-
+            auto DrawListCol = [&](int colIdx, float colX, const wstring& title, const wstring& icon, const wstring& ph, wstring& inpStr, int inpIdx, vector<SchBlockItem>* list, RectF& outInp, RectF* outCombo, RectF& outAdd, bool hovCombo, bool hovAdd, vector<pair<RectF,int>>& outDel) {
+                g.DrawString(icon.c_str(), -1, &fSmallIcon, RectF(colX, contentY + 10, 22, 26), &fL, &bTeal); g.DrawString(title.c_str(), -1, &fBold, RectF(colX + 26, contentY + 8, colW - 26, 28), &fL, &bDark);
+                wstring countTxt = list ? (to_wstring(list->size()) + L" item" + (list->size() != 1 ? L"s" : L"")) : L"0 items"; SolidBrush countBg(ClrTeal); RectF countR(colX + colW - 60, contentY + 12, 55, 22); GraphicsPath* cp = GetSchRoundRectPath(countR, 11); g.FillPath(&countBg, cp); delete cp; g.DrawString(countTxt.c_str(), -1, &fSmall, countR, &fC, &bWhite); g.DrawLine(&pDiv, colX, contentY + 42, colX + colW, contentY + 42);
+                float inpY = contentY + 52.0f; float comboW = outCombo ? 36.0f : 0.0f; float addW = 72.0f; float gap = 6.0f; float inpW = colW - comboW - addW - (outCombo ? gap * 2 : gap);
+                outInp = RectF(colX, inpY, inpW, 38); GraphicsPath* ip = GetSchRoundRectPath(outInp, 8); SolidBrush inpBg(activeInput == inpIdx ? Color(255,255,255,255) : Color(255,248,250,253)); g.FillPath(&inpBg, ip); g.DrawPath(activeInput == inpIdx ? &pTeal : &pDiv, ip); delete ip;
+                if(inpStr.empty() && activeInput != inpIdx) { g.DrawString(ph.c_str(), -1, &fSmall, RectF(outInp.X+10, outInp.Y, outInp.Width-20, outInp.Height), &fL, &bGray); } else { g.DrawString(inpStr.c_str(), -1, &fSmall, RectF(outInp.X+10, outInp.Y, outInp.Width-20, outInp.Height), &fL, &bDark); if(activeInput == inpIdx && (GetTickCount()/500)%2==0) { Graphics gT(GetDesktopWindow()); RectF bR; gT.MeasureString(inpStr.c_str(), -1, &fSmall, PointF(0,0), &bR); g.FillRectangle(&bDark, outInp.X+10+(inpStr.empty()?0:bR.Width), outInp.Y+9, 1.5f, 20.0f); } }
                 float nextX = outInp.X + outInp.Width + gap;
-                if(outCombo) {
-                    *outCombo = RectF(nextX, inpY, comboW, 40); GraphicsPath* cbp = GetSchRoundRectPath(*outCombo, 6); SolidBrush cbBr(hovCombo ? ClrBgHover : ClrWhite); g.FillPath(&cbBr, cbp); g.DrawPath(&pThin, cbp); delete cbp; g.DrawString(L"\xE70D", -1, &fSmallIcon, *outCombo, &fC, &bDark);
-                    nextX += comboW + gap;
-                }
-                outAdd = RectF(nextX, inpY, addW, 40); GraphicsPath* ap = GetSchRoundRectPath(outAdd, 6); SolidBrush aBr(hovAdd ? ClrTealHover : ClrTeal); g.FillPath(&aBr, ap); delete ap; g.DrawString(L"+ Add", -1, &fBold, outAdd, &fC, &bWhite);
-
-                outDel.clear(); float listStartY = inpY + 50.0f; float boxH = listAreaH - 120.0f;
-                if (colIdx == 1) boxH -= 50.0f; 
-
-                g_ehb.listAreas[colIdx] = RectF(colX, listStartY, colW, boxH); g.FillRectangle(&bWhite, g_ehb.listAreas[colIdx]); g.DrawRectangle(&pThin, colX, listStartY, colW, boxH);
-
+                if(outCombo) { *outCombo = RectF(nextX, inpY, comboW, 38); GraphicsPath* cbp = GetSchRoundRectPath(*outCombo, 8); SolidBrush cbBr(hovCombo ? ClrBgHover : Color(255,248,250,253)); g.FillPath(&cbBr, cbp); g.DrawPath(&pDiv, cbp); delete cbp; g.DrawString(L"\xE70D", -1, &fSmallIcon, *outCombo, &fC, &bTeal); nextX += comboW + gap; }
+                outAdd = RectF(nextX, inpY, addW, 38); GraphicsPath* ap = GetSchRoundRectPath(outAdd, 8); SolidBrush aBr(hovAdd ? ClrTealHover : ClrTeal); g.FillPath(&aBr, ap); delete ap; g.DrawString(L"+ Add", -1, &fSmallBold, outAdd, &fC, &bWhite);
+                outDel.clear(); float listStartY = inpY + 48.0f; float boxH = listAreaH - 130.0f; if (colIdx == 1) boxH -= 50.0f;
+                g_ehb.listAreas[colIdx] = RectF(colX, listStartY, colW, boxH); SolidBrush listBg(Color(255, 250, 252, 255)); GraphicsPath* lbgp = GetSchRoundRectPath(g_ehb.listAreas[colIdx], 8); g.FillPath(&listBg, lbgp); g.DrawPath(&pDiv, lbgp); delete lbgp;
                 if(list && !list->empty()) {
-                    s_listScrollMax[colIdx] = (std::max)(0.0f, (list->size() * 40.0f) - boxH + 10.0f); s_listScrollC[colIdx] += (s_listScrollT[colIdx] - s_listScrollC[colIdx]) * 0.15f;
-                    g.SetClip(g_ehb.listAreas[colIdx]); float itemY = listStartY + 5.0f - s_listScrollC[colIdx];
+                    s_listScrollMax[colIdx] = (std::max)(0.0f, (list->size() * 42.0f) - boxH + 10.0f); s_listScrollC[colIdx] += (s_listScrollT[colIdx] - s_listScrollC[colIdx]) * 0.15f; g.SetClip(g_ehb.listAreas[colIdx]); float itemY = listStartY + 6.0f - s_listScrollC[colIdx];
                     for(size_t i = 0; i < list->size(); ++i) {
                         auto& item = (*list)[i];
-                        if (itemY + 36 > listStartY && itemY < listStartY + boxH) {
-                            RectF rowR(colX + 8, itemY, colW - 16, 36); g.DrawString(item.name.c_str(), -1, &fNorm, RectF(rowR.X+5, rowR.Y, rowR.Width-40, rowR.Height), &fL, &bDark);
-                            RectF delR(rowR.X + rowR.Width - 36, rowR.Y, 36, 36); outDel.push_back({delR, (int)i}); SolidBrush crBr(item.isHoveredCross ? ClrRed : ClrGrayText); g.DrawString(L"\xE711", -1, &fSmallIcon, delR, &fC, &crBr);
-                            g.DrawLine(&pThin, rowR.X, rowR.Y + 36.0f, rowR.X + rowR.Width, rowR.Y + 36.0f);
-                        } itemY += 40.0f;
+                        if (itemY + 38 > listStartY && itemY < listStartY + boxH) {
+                            RectF rowR(colX + 8, itemY, colW - 16, 38); if (i % 2 == 0) { SolidBrush rowBg(Color(30, 12, 168, 176)); GraphicsPath* rp = GetSchRoundRectPath(rowR, 5); g.FillPath(&rowBg, rp); delete rp; }
+                            SolidBrush dotClr(ClrTeal); g.FillEllipse(&dotClr, rowR.X + 8, rowR.Y + 14, 7, 7); g.DrawString(item.name.c_str(), -1, &fSmall, RectF(rowR.X + 22, rowR.Y, rowR.Width - 55, rowR.Height), &fL, &bDark);
+                            RectF delR(rowR.X + rowR.Width - 32, rowR.Y + 3, 30, 32); outDel.push_back({delR, (int)i}); SolidBrush crBr(item.isHoveredCross ? ClrRed : Color(150, 150, 160, 175)); g.DrawString(L"\xE711", -1, &fSmallIcon, delR, &fC, &crBr);
+                        } itemY += 42.0f;
                     }
-                    g.SetClip(&oldClip);
-                    if (s_listScrollMax[colIdx] > 0) {
-                        float thumbH = (std::max)(20.0f, boxH * (boxH / (boxH + s_listScrollMax[colIdx]))); float thumbY = listStartY + (s_listScrollC[colIdx] / s_listScrollMax[colIdx]) * (boxH - thumbH);
-                        RectF thumbR(colX + colW - 8, thumbY, 6, thumbH); GraphicsPath thP; AddRoundedRectPath(thP, thumbR.X, thumbR.Y, thumbR.Width, thumbR.Height, 3); SolidBrush thB(Color(100, 150, 150, 150)); g.FillPath(&thB, &thP);
-                    }
-                } else { s_listScrollMax[colIdx] = 0.0f; s_listScrollT[colIdx] = 0.0f; }
+                    g.SetClip(RectF(ovX + sideW, ovY, ovW - sideW, footerY - ovY));
+                    if (s_listScrollMax[colIdx] > 0) { float thumbH = (std::max)(24.0f, boxH * (boxH / (boxH + s_listScrollMax[colIdx]))); float thumbY = listStartY + (s_listScrollC[colIdx] / s_listScrollMax[colIdx]) * (boxH - thumbH); RectF thumbR(colX + colW - 7, thumbY, 5, thumbH); GraphicsPath thP; AddRoundedRectPath(thP, thumbR.X, thumbR.Y, thumbR.Width, thumbR.Height, 3); SolidBrush thB(Color(120, 12, 168, 176)); g.FillPath(&thB, &thP); }
+                } else { g.DrawString(L"\xE71D", -1, &fTitle, RectF(colX, listStartY + boxH/2 - 40, colW, 40), &fC, &bGray); g.DrawString(L"No items added yet", -1, &fSmall, RectF(colX, listStartY + boxH/2 + 5, colW, 24), &fC, &bGray); s_listScrollMax[colIdx] = 0.0f; s_listScrollT[colIdx] = 0.0f; }
             };
-
-            float startColX = cardX + 20.0f;
-            DrawListCol(0, startColX, L"Websites", L"e.g. facebook.com", inpWeb, 2, cWebs, g_ehb.webInp, &g_ehb.webCombo, g_ehb.addWeb, hoverSchWebCombo, g_ehb.hAddWeb, g_ehb.webDel);
-            DrawListCol(1, startColX + colW + colGap, L"Applications", L"e.g. vlc.exe", inpApp, 3, cApps, g_ehb.appInp, &g_ehb.appCombo, g_ehb.addApp, hoverSchAppCombo, g_ehb.hAddApp, g_ehb.appDel);
-
-            float btnW = (colW - 20.0f) / 3.0f; float btnY = contentY + listAreaH - 55.0f; float appColX = startColX + colW + colGap;
-
-            g_ehb.btnAddExe = RectF(appColX, btnY, btnW, 40.0f); GraphicsPath* p1 = GetSchRoundRectPath(g_ehb.btnAddExe, 6); SolidBrush b1(g_ehb.hBtnAddExe ? ClrGreen : Color(255, 90, 170, 20)); g.FillPath(&b1, p1); delete p1; g.DrawString(L"Add Exe", -1, &fSmallBold, g_ehb.btnAddExe, &fC, &bWhite);
-            g_ehb.btnAddStore = RectF(appColX + btnW + 10.0f, btnY, btnW, 40.0f); GraphicsPath* p2 = GetSchRoundRectPath(g_ehb.btnAddStore, 6); SolidBrush b2(g_ehb.hBtnAddStore ? ClrGreen : Color(255, 90, 170, 20)); g.FillPath(&b2, p2); delete p2; g.DrawString(L"Add Store", -1, &fSmallBold, g_ehb.btnAddStore, &fC, &bWhite);
-            g_ehb.btnAddTitle = RectF(appColX + (btnW * 2) + 20.0f, btnY, btnW, 40.0f); GraphicsPath* p3 = GetSchRoundRectPath(g_ehb.btnAddTitle, 6); SolidBrush b3(g_ehb.hBtnAddTitle ? ClrGreen : Color(255, 90, 170, 20)); g.FillPath(&b3, p3); delete p3; g.DrawString(L"Add Title", -1, &fSmallBold, g_ehb.btnAddTitle, &fC, &bWhite);
+            float startColX = cardX + colGap; DrawListCol(0, startColX, L"Websites", L"\xE774", L"e.g. facebook.com", inpWeb, 2, cWebs, g_ehb.webInp, &g_ehb.webCombo, g_ehb.addWeb, hoverSchWebCombo, g_ehb.hAddWeb, g_ehb.webDel); DrawListCol(1, startColX + colW + colGap, L"Applications", L"\xE7EF", L"e.g. vlc.exe", inpApp, 3, cApps, g_ehb.appInp, &g_ehb.appCombo, g_ehb.addApp, hoverSchAppCombo, g_ehb.hAddApp, g_ehb.appDel);
+            float appColX = startColX + colW + colGap; float btnW = (colW - colGap) / 3.0f; float btnY = contentY + listAreaH - 45.0f;
+            g_ehb.btnAddExe = RectF(appColX, btnY, btnW - 5, 36.0f); GraphicsPath* p1 = GetSchRoundRectPath(g_ehb.btnAddExe, 8); SolidBrush b1(g_ehb.hBtnAddExe ? Color(255,75,155,5) : Color(255, 90, 170, 20)); g.FillPath(&b1, p1); delete p1; g.DrawString(L"Add .exe", -1, &fSmall, g_ehb.btnAddExe, &fC, &bWhite);
+            g_ehb.btnAddStore = RectF(appColX + btnW + 2, btnY, btnW - 5, 36.0f); GraphicsPath* p2 = GetSchRoundRectPath(g_ehb.btnAddStore, 8); SolidBrush b2(g_ehb.hBtnAddStore ? Color(255,75,155,5) : Color(255, 90, 170, 20)); g.FillPath(&b2, p2); delete p2; g.DrawString(L"Store App", -1, &fSmall, g_ehb.btnAddStore, &fC, &bWhite);
+            g_ehb.btnAddTitle = RectF(appColX + btnW * 2 + 4, btnY, btnW - 5, 36.0f); GraphicsPath* p3 = GetSchRoundRectPath(g_ehb.btnAddTitle, 8); SolidBrush b3(g_ehb.hBtnAddTitle ? Color(255,75,155,5) : Color(255, 90, 170, 20)); g.FillPath(&b3, p3); delete p3; g.DrawString(L"By Title", -1, &fSmall, g_ehb.btnAddTitle, &fC, &bWhite);
         }
-
-        // ================== TAB 3: ADULT BLOCK (NEW) ==================
         else if (s_activeSubTab == 3) {
-            float listAreaH = (ovY + ovH - 85.0f) - contentY;
-            RectF cRect(cardX, contentY, cardW_inner, listAreaH); GraphicsPath* cP = GetSchRoundRectPath(cRect, 8); g.FillPath(&bWhite, cP); delete cP;
-
-            float colGap = 30.0f; float colW = (cardW_inner - (colGap * 2)) / 2.0f; float startColX = cardX + 20.0f;
-
-            g.DrawString(L"Safe Browsing Rules", -1, &fCardTitle, RectF(startColX, contentY + 15, colW, 35), &fL, &bDark);
-            
-            bool cA = false, cH = false, cR = false, cD = false;
-            if(editingProfileIdx >= 0) { cA = g_profiles[editingProfileIdx].schAdultWeb; cH = g_profiles[editingProfileIdx].schHardcore; cR = g_profiles[editingProfileIdx].schRomantic; cD = g_profiles[editingProfileIdx].schStrictDns; }
-
-            auto DrawRuleCb = [&](RectF& outHitbox, float cy, const wstring& label, bool val, bool hov) {
-                outHitbox = RectF(startColX, cy, colW - 10, 45); 
-                if (hov) { GraphicsPath* hp = GetSchRoundRectPath(outHitbox, 6); g.FillPath(&bBgHover, hp); delete hp; }
-                RectF cbBox(startColX + 10, cy + 12, 22, 22); GraphicsPath* bp = GetSchRoundRectPath(cbBox, 6); g.FillPath(val ? &bTeal : &bWhite, bp); g.DrawPath(val ? &pTeal : &pThin, bp); delete bp;
-                if(val) g.DrawString(L"\xE73E", -1, &fSmallIcon, cbBox, &fC, &bWhite);
-                g.DrawString(label.c_str(), -1, &fNorm, RectF(startColX + 45, cy + 12, colW - 55, 22), &fL, &bDark);
-            };
-
-            DrawRuleCb(g_ehb.cbAdultWeb, contentY + 60, L"Block Adult Websites (Resource List)", cA, g_ehb.hCbAdultWeb);
-            DrawRuleCb(g_ehb.cbHardcore, contentY + 115, L"Block Hardcore Keywords (Porn, NSFW)", cH, g_ehb.hCbHardcore);
-            DrawRuleCb(g_ehb.cbRomantic, contentY + 170, L"Block Romantic / Softcore Content", cR, g_ehb.hCbRomantic);
-            DrawRuleCb(g_ehb.cbStrictDns, contentY + 225, L"Enforce Strict DNS & SafeSearch", cD, g_ehb.hCbStrictDns);
-
-            float rightColX = startColX + colW + colGap;
-            g.DrawString(L"Custom Bad Words", -1, &fCardTitle, RectF(rightColX, contentY + 15, colW, 35), &fL, &bDark);
-
-            float inpY = contentY + 55.0f; float addW = 75.0f; float gap = 8.0f; float inpW = colW - addW - gap;
-            g_ehb.keyInp = RectF(rightColX, inpY, inpW, 40); GraphicsPath* ip = GetSchRoundRectPath(g_ehb.keyInp, 6);
-            g.FillPath(activeInput == 4 ? &bWhite : &bBg, ip); g.DrawPath(activeInput == 4 ? &pTeal : &pThin, ip); delete ip;
-            if(inpKey.empty() && activeInput != 4) { g.DrawString(L"e.g. badword", -1, &fNorm, RectF(g_ehb.keyInp.X+10, g_ehb.keyInp.Y, g_ehb.keyInp.Width-20, g_ehb.keyInp.Height), &fL, &bGray); } 
-            else { g.DrawString(inpKey.c_str(), -1, &fNorm, RectF(g_ehb.keyInp.X+10, g_ehb.keyInp.Y, g_ehb.keyInp.Width-20, g_ehb.keyInp.Height), &fL, &bDark);
-                if(activeInput == 4 && (GetTickCount()/500)%2==0) { Graphics gT(GetDesktopWindow()); RectF bR; gT.MeasureString(inpKey.c_str(), -1, &fNorm, PointF(0,0), &bR); g.FillRectangle(&bDark, g_ehb.keyInp.X+10+(inpKey.empty()?0:bR.Width), g_ehb.keyInp.Y+10, 1.5f, 20.0f); }
+            float listAreaH = (ovY + ovH - 80.0f) - contentY; RectF cRect(cardX, contentY, cardW_inner, listAreaH); GraphicsPath* cP = GetSchRoundRectPath(cRect, 10); g.FillPath(&bWhite, cP); g.DrawPath(&pDiv, cP); delete cP;
+            float colGap = 20.0f; float colW = (cardW_inner - (colGap * 3)) / 2.0f; float startColX = cardX + colGap;
+            g.DrawString(L"\xE72E", -1, &fSmallIcon, RectF(startColX, contentY + 10, 22, 26), &fL, &bTeal); g.DrawString(L"Safe Browsing Rules", -1, &fBold, RectF(startColX + 28, contentY + 8, colW, 28), &fL, &bDark); g.DrawLine(&pDiv, startColX, contentY + 42, startColX + colW, contentY + 42);
+            bool cA = false, cH = false, cR = false, cD = false; if(editingProfileIdx >= 0) { cA = g_profiles[editingProfileIdx].schAdultWeb; cH = g_profiles[editingProfileIdx].schHardcore; cR = g_profiles[editingProfileIdx].schRomantic; cD = g_profiles[editingProfileIdx].schStrictDns; }
+            struct RuleInfo { const wchar_t* icon; const wchar_t* label; const wchar_t* desc; const wchar_t* badge; };
+            RuleInfo rules[4] = { { L"\xE774", L"Block Adult Websites", L"Resource list of 1000+ adult sites", L"STRONG" }, { L"\xE787", L"Block Hardcore Keywords", L"Filters porn, NSFW, explicit terms", L"STRICT" }, { L"\xE8F3", L"Block Romantic Content", L"Softcore, suggestive, item songs", L"MILD" }, { L"\xE8F1", L"Strict DNS & SafeSearch", L"Forces safe search on all browsers", L"DNS" } };
+            bool* ruleVals[4] = { &cA, &cH, &cR, &cD }; RectF* ruleHitboxes[4] = { &g_ehb.cbAdultWeb, &g_ehb.cbHardcore, &g_ehb.cbRomantic, &g_ehb.cbStrictDns }; bool ruleHovs[4] = { g_ehb.hCbAdultWeb, g_ehb.hCbHardcore, g_ehb.hCbRomantic, g_ehb.hCbStrictDns };
+            for (int ri = 0; ri < 4; ri++) {
+                float ry = contentY + 50.0f + ri * 58.0f; *ruleHitboxes[ri] = RectF(startColX, ry, colW, 52.0f); if (ruleHovs[ri]) { GraphicsPath* hp = GetSchRoundRectPath(*ruleHitboxes[ri], 8); SolidBrush hovBg(ClrBgHover); g.FillPath(&hovBg, hp); delete hp; }
+                RectF togBg(startColX + 10, ry + 15, 44, 24); GraphicsPath* tp = GetSchRoundRectPath(togBg, 12); SolidBrush tBg(*ruleVals[ri] ? ClrTeal : Color(255, 200, 210, 220)); g.FillPath(&tBg, tp); delete tp; g.FillEllipse(&bWhite, *ruleVals[ri] ? togBg.X + togBg.Width - 22 : togBg.X + 2, togBg.Y + 2, 20, 20);
+                g.DrawString(rules[ri].icon, -1, &fSmallIcon, RectF(startColX + 62, ry + 5, 22, 22), &fL, *ruleVals[ri] ? &bTeal : &bGray); g.DrawString(rules[ri].label, -1, &fBold, RectF(startColX + 88, ry + 4, colW - 140, 22), &fL, *ruleVals[ri] ? &bTeal : &bDark); g.DrawString(rules[ri].desc, -1, &fSmall, RectF(startColX + 88, ry + 26, colW - 140, 18), &fL, &bGray);
+                Color badgeClr = *ruleVals[ri] ? Color(255, 12, 168, 176) : Color(255, 200, 210, 220); RectF bdgR(startColX + colW - 52, ry + 16, 46, 20); GraphicsPath* bdgP = GetSchRoundRectPath(bdgR, 10); SolidBrush bdgBg(badgeClr); g.FillPath(&bdgBg, bdgP); delete bdgP; SolidBrush bdgTxt(*ruleVals[ri] ? Color(255,255,255,255) : Color(255,120,130,145)); g.DrawString(rules[ri].badge, -1, &fSmall, bdgR, &fC, &bdgTxt);
+                if (ri < 3) g.DrawLine(&pDiv, startColX + 10, ry + 52, startColX + colW - 10, ry + 52);
             }
-
-            g_ehb.addKey = RectF(g_ehb.keyInp.X + g_ehb.keyInp.Width + gap, inpY, addW, 40); GraphicsPath* ap = GetSchRoundRectPath(g_ehb.addKey, 6); SolidBrush aBr(g_ehb.hAddKey ? ClrTealHover : ClrTeal); g.FillPath(&aBr, ap); delete ap; g.DrawString(L"+ Add", -1, &fBold, g_ehb.addKey, &fC, &bWhite);
-
-            g_ehb.keyDel.clear(); float listStartY = inpY + 50.0f; float boxH = listAreaH - 120.0f;
-            g_ehb.listAreas[2] = RectF(rightColX, listStartY, colW, boxH); g.FillRectangle(&bWhite, g_ehb.listAreas[2]); g.DrawRectangle(&pThin, rightColX, listStartY, colW, boxH);
-
+            float rightColX = startColX + colW + colGap; g.DrawString(L"\xE721", -1, &fSmallIcon, RectF(rightColX, contentY + 10, 22, 26), &fL, &bTeal); g.DrawString(L"Custom Bad Words", -1, &fBold, RectF(rightColX + 28, contentY + 8, colW, 28), &fL, &bDark); g.DrawLine(&pDiv, rightColX, contentY + 42, rightColX + colW, contentY + 42);
+            float inpY = contentY + 52.0f; float addW = 72.0f; float gap = 6.0f; float inpW = colW - addW - gap; g_ehb.keyInp = RectF(rightColX, inpY, inpW, 38); GraphicsPath* ip = GetSchRoundRectPath(g_ehb.keyInp, 8); SolidBrush inpBg2(activeInput == 4 ? Color(255,255,255,255) : Color(255,248,250,253)); g.FillPath(&inpBg2, ip); g.DrawPath(activeInput == 4 ? &pTeal : &pDiv, ip); delete ip;
+            if(inpKey.empty() && activeInput != 4) { g.DrawString(L"e.g. badword", -1, &fSmall, RectF(g_ehb.keyInp.X+10, g_ehb.keyInp.Y, g_ehb.keyInp.Width-20, g_ehb.keyInp.Height), &fL, &bGray); } else { g.DrawString(inpKey.c_str(), -1, &fSmall, RectF(g_ehb.keyInp.X+10, g_ehb.keyInp.Y, g_ehb.keyInp.Width-20, g_ehb.keyInp.Height), &fL, &bDark); if(activeInput == 4 && (GetTickCount()/500)%2==0) { Graphics gT(GetDesktopWindow()); RectF bR; gT.MeasureString(inpKey.c_str(), -1, &fSmall, PointF(0,0), &bR); g.FillRectangle(&bDark, g_ehb.keyInp.X+10+(inpKey.empty()?0:bR.Width), g_ehb.keyInp.Y+9, 1.5f, 20.0f); } }
+            g_ehb.addKey = RectF(g_ehb.keyInp.X + g_ehb.keyInp.Width + gap, inpY, addW, 38); GraphicsPath* ap2 = GetSchRoundRectPath(g_ehb.addKey, 8); SolidBrush aBr2(g_ehb.hAddKey ? ClrTealHover : ClrTeal); g.FillPath(&aBr2, ap2); delete ap2; g.DrawString(L"+ Add", -1, &fSmallBold, g_ehb.addKey, &fC, &bWhite);
+            g_ehb.keyDel.clear(); float listStartY = inpY + 48.0f; float boxH = listAreaH - 110.0f; g_ehb.listAreas[2] = RectF(rightColX, listStartY, colW, boxH); SolidBrush listBg2(Color(255, 250, 252, 255)); GraphicsPath* lbgp2 = GetSchRoundRectPath(g_ehb.listAreas[2], 8); g.FillPath(&listBg2, lbgp2); g.DrawPath(&pDiv, lbgp2); delete lbgp2;
             vector<SchBlockItem>* aList = nullptr; if(editingProfileIdx >= 0) aList = &g_profiles[editingProfileIdx].adultCustomKeywords;
             if(aList && !aList->empty()) {
-                s_listScrollMax[2] = (std::max)(0.0f, (aList->size() * 40.0f) - boxH + 10.0f); s_listScrollC[2] += (s_listScrollT[2] - s_listScrollC[2]) * 0.15f;
-                g.SetClip(g_ehb.listAreas[2]); float itemY = listStartY + 5.0f - s_listScrollC[2];
+                s_listScrollMax[2] = (std::max)(0.0f, (aList->size() * 42.0f) - boxH + 10.0f); s_listScrollC[2] += (s_listScrollT[2] - s_listScrollC[2]) * 0.15f; g.SetClip(g_ehb.listAreas[2]); float itemY = listStartY + 6.0f - s_listScrollC[2];
                 for(size_t i = 0; i < aList->size(); ++i) {
                     auto& item = (*aList)[i];
-                    if (itemY + 36 > listStartY && itemY < listStartY + boxH) {
-                        RectF rowR(rightColX + 8, itemY, colW - 16, 36); g.DrawString(item.name.c_str(), -1, &fNorm, RectF(rowR.X+5, rowR.Y, rowR.Width-40, rowR.Height), &fL, &bDark);
-                        RectF delR(rowR.X + rowR.Width - 36, rowR.Y, 36, 36); g_ehb.keyDel.push_back({delR, (int)i}); SolidBrush crBr(item.isHoveredCross ? ClrRed : ClrGrayText); g.DrawString(L"\xE711", -1, &fSmallIcon, delR, &fC, &crBr);
-                        g.DrawLine(&pThin, rowR.X, rowR.Y + 36.0f, rowR.X + rowR.Width, rowR.Y + 36.0f);
-                    } itemY += 40.0f;
-                } g.SetClip(&oldClip);
-                if (s_listScrollMax[2] > 0) {
-                    float thumbH = (std::max)(20.0f, boxH * (boxH / (boxH + s_listScrollMax[2]))); float thumbY = listStartY + (s_listScrollC[2] / s_listScrollMax[2]) * (boxH - thumbH);
-                    RectF thumbR(rightColX + colW - 8, thumbY, 6, thumbH); GraphicsPath thP; AddRoundedRectPath(thP, thumbR.X, thumbR.Y, thumbR.Width, thumbR.Height, 3); SolidBrush thB(Color(100, 150, 150, 150)); g.FillPath(&thB, &thP);
-                }
+                    if (itemY + 38 > listStartY && itemY < listStartY + boxH) {
+                        RectF rowR(rightColX + 8, itemY, colW - 16, 38); if (i % 2 == 0) { SolidBrush rowBg(Color(30, 12, 168, 176)); GraphicsPath* rp = GetSchRoundRectPath(rowR, 5); g.FillPath(&rowBg, rp); delete rp; }
+                        SolidBrush dotClr(ClrTeal); g.FillEllipse(&dotClr, rowR.X + 8, rowR.Y + 14, 7, 7); g.DrawString(item.name.c_str(), -1, &fSmall, RectF(rowR.X + 22, rowR.Y, rowR.Width - 55, rowR.Height), &fL, &bDark);
+                        RectF delR(rowR.X + rowR.Width - 32, rowR.Y + 3, 30, 32); g_ehb.keyDel.push_back({delR, (int)i}); SolidBrush crBr(item.isHoveredCross ? ClrRed : Color(150, 150, 160, 175)); g.DrawString(L"\xE711", -1, &fSmallIcon, delR, &fC, &crBr);
+                    } itemY += 42.0f;
+                } g.SetClip(RectF(ovX + sideW, ovY, ovW - sideW, footerY - ovY));
+                if (s_listScrollMax[2] > 0) { float thumbH = (std::max)(24.0f, boxH * (boxH / (boxH + s_listScrollMax[2]))); float thumbY = listStartY + (s_listScrollC[2] / s_listScrollMax[2]) * (boxH - thumbH); RectF thumbR(rightColX + colW - 7, thumbY, 5, thumbH); GraphicsPath thP; AddRoundedRectPath(thP, thumbR.X, thumbR.Y, thumbR.Width, thumbR.Height, 3); SolidBrush thB(Color(120, 12, 168, 176)); g.FillPath(&thB, &thP); }
             } else { s_listScrollMax[2] = 0.0f; s_listScrollT[2] = 0.0f; }
         }
+        g.SetClip(&oldClip);
 
         // ================== DROPDOWNS OVERLAYS ==================
         if (s_activeSubTab == 0 && isSchModeDropdownOpen) {
-            RectF mlR(g_ehb.modeDrop.X, g_ehb.modeDrop.Y + 40, 200, 126); GraphicsPath* mlP = GetSchRoundRectPath(mlR, 6); g.FillPath(&bWhite, mlP); g.DrawPath(&pThin, mlP); delete mlP;
-            g_ehb.modeOpt[0] = RectF(mlR.X+2, mlR.Y+2, 196, 40); g_ehb.modeOpt[1] = RectF(mlR.X+2, mlR.Y+42, 196, 40); g_ehb.modeOpt[2] = RectF(mlR.X+2, mlR.Y+82, 196, 40);
-            SolidBrush o1Br(g_ehb.hOptSelf ? ClrBgHover : ClrWhite); g.FillRectangle(&o1Br, g_ehb.modeOpt[0]); g.DrawString(L"Self Control", -1, &fNorm, RectF(mlR.X+15, mlR.Y+2, 170, 40), &fL, &bDark);
-            SolidBrush o2Br(g_ehb.hOptParents ? ClrBgHover : ClrWhite); g.FillRectangle(&o2Br, g_ehb.modeOpt[1]); g.DrawString(L"Parents Control", -1, &fNorm, RectF(mlR.X+15, mlR.Y+42, 170, 40), &fL, &bDark);
-            SolidBrush o3Br(g_ehb.hOptLongText ? ClrBgHover : ClrWhite); g.FillRectangle(&o3Br, g_ehb.modeOpt[2]); g.DrawString(L"Long Text Unlock", -1, &fNorm, RectF(mlR.X+15, mlR.Y+82, 170, 40), &fL, &bDark);
+            RectF mlR(g_ehb.modeDrop.X, g_ehb.modeDrop.Y + 40, 215, 130); GraphicsPath* mlP = GetSchRoundRectPath(mlR, 8); g.FillPath(&bWhite, mlP); g.DrawPath(&pDiv, mlP); delete mlP;
+            g_ehb.modeOpt[0] = RectF(mlR.X+2, mlR.Y+2, mlR.Width-4, 40); g_ehb.modeOpt[1] = RectF(mlR.X+2, mlR.Y+44, mlR.Width-4, 40); g_ehb.modeOpt[2] = RectF(mlR.X+2, mlR.Y+86, mlR.Width-4, 40);
+            SolidBrush o1Br(g_ehb.hOptSelf ? ClrBgHover : ClrWhite); g.FillRectangle(&o1Br, g_ehb.modeOpt[0]); g.DrawString(L"\xE713  Self Control", -1, &fNorm, RectF(mlR.X+15, mlR.Y+2, mlR.Width-20, 40), &fL, &bDark);
+            SolidBrush o2Br(g_ehb.hOptParents ? ClrBgHover : ClrWhite); g.FillRectangle(&o2Br, g_ehb.modeOpt[1]); g.DrawString(L"\xE7EF  Parents Control", -1, &fNorm, RectF(mlR.X+15, mlR.Y+44, mlR.Width-20, 40), &fL, &bDark);
+            SolidBrush o3Br(g_ehb.hOptLongText ? ClrBgHover : ClrWhite); g.FillRectangle(&o3Br, g_ehb.modeOpt[2]); g.DrawString(L"\xE8A1  Long Text Unlock", -1, &fNorm, RectF(mlR.X+15, mlR.Y+86, mlR.Width-20, 40), &fL, &bDark);
         }
         
         auto DrawDynamicDropdown = [&](RectF btnRect, vector<wstring>& opts, vector<RectF>& outOpts, int hovIdx) {
-            RectF lR(btnRect.X - 120, btnRect.Y + 36, 155, opts.size() * 36 + 10); GraphicsPath* lP = GetSchRoundRectPath(lR, 6); g.FillPath(&bWhite, lP); g.DrawPath(&pThin, lP); delete lP;
-            outOpts.clear(); float iY = lR.Y + 5;
-            for(size_t i=0; i<opts.size(); ++i) {
-                RectF optRect(lR.X+2, iY, lR.Width-4, 36); outOpts.push_back(optRect);
-                SolidBrush oBr(hovIdx == (int)i ? ClrBgHover : ClrWhite); g.FillRectangle(&oBr, optRect); g.DrawString(opts[i].c_str(), -1, &fSmall, RectF(lR.X+10, iY, lR.Width-15, 36), &fL, &bDark); iY += 36;
-            }
+            RectF lR(btnRect.X - 120, btnRect.Y + 36, 165, (float)(opts.size() * 36 + 10)); GraphicsPath* lP = GetSchRoundRectPath(lR, 8); g.FillPath(&bWhite, lP); g.DrawPath(&pDiv, lP); delete lP; outOpts.clear(); float iY = lR.Y + 5;
+            for(size_t i=0; i<opts.size(); ++i) { RectF optRect(lR.X+2, iY, lR.Width-4, 36); outOpts.push_back(optRect); SolidBrush oBr(hovIdx == (int)i ? ClrBgHover : ClrWhite); g.FillRectangle(&oBr, optRect); g.DrawString(opts[i].c_str(), -1, &fSmall, RectF(lR.X+12, iY, lR.Width-18, 36), &fL, &bDark); iY += 36; }
         };
 
         if (s_activeSubTab == 2) {
             if (isSchWebComboOpen) DrawDynamicDropdown(g_ehb.webCombo, schCommonWebsites, g_ehb.webOpts, hoverSchWebOptIdx);
             if (isSchAppComboOpen) DrawDynamicDropdown(g_ehb.appCombo, schCommonApps, g_ehb.appOpts, hoverSchAppOptIdx);
             if (isSchStoreComboOpen) {
-                RectF lR(g_ehb.btnAddStore.X, g_ehb.btnAddStore.Y - (schCommonStoreApps.size() * 36 + 10), 155, schCommonStoreApps.size() * 36 + 10);
-                GraphicsPath* lP = GetSchRoundRectPath(lR, 6); g.FillPath(&bWhite, lP); g.DrawPath(&pThin, lP); delete lP;
-                g_ehb.storeOpts.clear(); float iY = lR.Y + 5;
-                for(size_t i=0; i<schCommonStoreApps.size(); ++i) {
-                    RectF optRect(lR.X+2, iY, lR.Width-4, 36); g_ehb.storeOpts.push_back(optRect);
-                    SolidBrush oBr(hoverSchStoreOptIdx == (int)i ? ClrBgHover : ClrWhite); g.FillRectangle(&oBr, optRect); g.DrawString(schCommonStoreApps[i].c_str(), -1, &fSmall, RectF(lR.X+10, iY, lR.Width-15, 36), &fL, &bDark); iY += 36;
-                }
+                RectF lR(g_ehb.btnAddStore.X, g_ehb.btnAddStore.Y - (float)(schCommonStoreApps.size() * 36 + 10), 165, (float)(schCommonStoreApps.size() * 36 + 10)); GraphicsPath* lP = GetSchRoundRectPath(lR, 8); g.FillPath(&bWhite, lP); g.DrawPath(&pDiv, lP); delete lP; g_ehb.storeOpts.clear(); float iY = lR.Y + 5;
+                for(size_t i=0; i<schCommonStoreApps.size(); ++i) { RectF optRect(lR.X+2, iY, lR.Width-4, 36); g_ehb.storeOpts.push_back(optRect); SolidBrush oBr(hoverSchStoreOptIdx == (int)i ? ClrBgHover : ClrWhite); g.FillRectangle(&oBr, optRect); g.DrawString(schCommonStoreApps[i].c_str(), -1, &fSmall, RectF(lR.X+12, iY, lR.Width-18, 36), &fL, &bDark); iY += 36; }
             }
         }
     }
 
     if (s_showTimeOverlay || s_showPassOverlay || s_showTextUnlockOverlay) {
         SolidBrush overlayBg(ClrOverlay); g.FillRectangle(&overlayBg, x, y, w, h);
-        float ovW = s_showTextUnlockOverlay ? 750.0f : 600.0f; // Made wider
-        float ovH = s_showTextUnlockOverlay ? 500.0f : 320.0f; // Made taller
+        float ovW = s_showTextUnlockOverlay ? 750.0f : 600.0f; float ovH = s_showTextUnlockOverlay ? 500.0f : 320.0f;
         float ovX = x + (w - ovW) / 2.0f; float ovY = y + (h - ovH) / 2.0f;
         RectF ovRect(ovX, ovY, ovW, ovH); GraphicsPath* op = GetSchRoundRectPath(ovRect, 10); g.FillPath(&bBg, op); g.DrawPath(&pThin, op); delete op;
 
@@ -937,7 +835,7 @@ void ProcessScheduleBlocksMouseMove(float x, float y) {
                 if (g_ehb.listAreas[1].Contains(x, y)) { for(auto& p : g_ehb.appDel) { if(p.first.Contains(x,y)) g_profiles[editingProfileIdx].blockedApps[p.second].isHoveredCross = true; } }
             }
         }
-        else if (s_activeSubTab == 3) { // Adult Block
+        else if (s_activeSubTab == 3) { 
             if (g_ehb.cbAdultWeb.Contains(x, y)) g_ehb.hCbAdultWeb = true;
             if (g_ehb.cbHardcore.Contains(x, y)) g_ehb.hCbHardcore = true;
             if (g_ehb.cbRomantic.Contains(x, y)) g_ehb.hCbRomantic = true;
@@ -980,7 +878,8 @@ void ProcessScheduleBlocksMouseUp(float x, float y) { std::lock_guard<std::mutex
 // --- MOUSE CLICK LOGIC ---
 // ==========================================
 void ProcessScheduleBlocksMouseClick(float x, float y) {
-    std::lock_guard<std::mutex> lock(g_schMutex);
+    // 🟢 FIXED: Changed to unique_lock to prevent deadlock when dialogs open
+    std::unique_lock<std::mutex> lock(g_schMutex);
     
     if (s_showTimeOverlay) {
         if (s_hTimeMoM && s_focusMonths > 0) s_focusMonths--; if (s_hTimeMoP && s_focusMonths < 12) s_focusMonths++;
@@ -993,20 +892,41 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
             g_profiles[activeActionProfileIdx].lockEndTime = std::time(nullptr) + (s_focusMonths * 30 * 24 * 3600) + (s_focusDays * 24 * 3600) + (s_focusHours * 3600) + (s_focusMins * 60);
             ApplyProfileBlocking(activeActionProfileIdx, true); s_showTimeOverlay = false; 
             LogHistoryToHiddenFolderSch(L"Started Schedule: " + g_profiles[activeActionProfileIdx].profileName); SaveProfiles();
+            if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
         } return;
     }
+    
+    // 🟢 FIXED: UI refresh issue on Password confirmation
     if (s_showPassOverlay) {
         s_isPassInputActive = s_hPassInput; if (s_hPassCancel) { s_showPassOverlay = false; s_inputPassText = L""; }
         if (s_hPassConfirm && !s_inputPassText.empty() && activeActionProfileIdx >= 0) {
-            if (!s_isStoppingFocus) { g_profiles[activeActionProfileIdx].parentsPassword = s_inputPassText; g_profiles[activeActionProfileIdx].isActive = true; ApplyProfileBlocking(activeActionProfileIdx, true); } 
-            else { if (g_profiles[activeActionProfileIdx].parentsPassword == s_inputPassText) { g_profiles[activeActionProfileIdx].isActive = false; ApplyProfileBlocking(activeActionProfileIdx, false); } }
-            s_showPassOverlay = false; s_inputPassText = L""; SaveProfiles();
+            if (!s_isStoppingFocus) { 
+                g_profiles[activeActionProfileIdx].parentsPassword = s_inputPassText; g_profiles[activeActionProfileIdx].isActive = true; 
+                ApplyProfileBlocking(activeActionProfileIdx, true); 
+                s_showPassOverlay = false; s_inputPassText = L""; SaveProfiles();
+                if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
+            } else { 
+                if (g_profiles[activeActionProfileIdx].parentsPassword == s_inputPassText) { 
+                    g_profiles[activeActionProfileIdx].isActive = false; 
+                    ApplyProfileBlocking(activeActionProfileIdx, false); 
+                    s_showPassOverlay = false; s_inputPassText = L""; SaveProfiles();
+                    if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
+                } else {
+                    MessageBeep(MB_ICONERROR); // Wrong password warning
+                }
+            }
         } return;
     }
+    
+    // 🟢 FIXED: UI refresh issue on Text Unlock confirmation
     if (s_showTextUnlockOverlay) {
         if (s_hTextUnlockCancel) s_showTextUnlockOverlay = false;
-        if (s_hTextUnlockConfirm && s_currentTypingText == s_targetUnlockText && activeActionProfileIdx >= 0) { g_profiles[activeActionProfileIdx].isActive = false; ApplyProfileBlocking(activeActionProfileIdx, false); s_showTextUnlockOverlay = false; s_currentTypingText = L""; SaveProfiles(); }
-        return;
+        if (s_hTextUnlockConfirm && s_currentTypingText == s_targetUnlockText && activeActionProfileIdx >= 0) { 
+            g_profiles[activeActionProfileIdx].isActive = false; 
+            ApplyProfileBlocking(activeActionProfileIdx, false); 
+            s_showTextUnlockOverlay = false; s_currentTypingText = L""; SaveProfiles(); 
+            if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
+        } return;
     }
 
     if (editingProfileIdx != -1) {
@@ -1023,11 +943,22 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
 
         if (s_activeSubTab == 2) {
             if (g_ehb.hBtnAddExe && editingProfileIdx >= 0) {
+                // 🟢 FIXED: Unlock the mutex before opening the File Dialog to prevent re-entrancy crash
+                lock.unlock(); 
+                
                 OPENFILENAMEW ofn; wchar_t szFile[260] = { 0 }; ZeroMemory(&ofn, sizeof(ofn)); ofn.lStructSize = sizeof(ofn); ofn.hwndOwner = hParentWnd; ofn.lpstrFile = szFile; ofn.nMaxFile = sizeof(szFile) / sizeof(wchar_t); ofn.lpstrFilter = L"Executables\0*.exe\0All\0*.*\0"; ofn.nFilterIndex = 1; ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
-                if (GetOpenFileNameW(&ofn) == TRUE) { wstring fullPath = ofn.lpstrFile; size_t pos = fullPath.find_last_of(L"\\/"); wstring exeName = (pos != wstring::npos) ? fullPath.substr(pos + 1) : fullPath; g_profiles[editingProfileIdx].blockedApps.push_back({exeName, false}); }
+                
+                bool fileSelected = (GetOpenFileNameW(&ofn) == TRUE);
+                
+                lock.lock(); // 🟢 RELOCK after dialog is closed
+                
+                if (fileSelected) { 
+                    wstring fullPath = ofn.lpstrFile; size_t pos = fullPath.find_last_of(L"\\/"); wstring exeName = (pos != wstring::npos) ? fullPath.substr(pos + 1) : fullPath; 
+                    g_profiles[editingProfileIdx].blockedApps.push_back({exeName, false}); 
+                }
                 return;
             }
-            if (g_ehb.hBtnAddStore) { isSchStoreComboOpen = !isSchStoreComboOpen; return; } // Toggle Store Apps Dropdown
+            if (g_ehb.hBtnAddStore) { isSchStoreComboOpen = !isSchStoreComboOpen; return; } 
             if (isSchStoreComboOpen && !hoverSchStoreCombo && hoverSchStoreOptIdx == -1) { isSchStoreComboOpen = false; dropdownClosed = true; } 
             else if (isSchStoreComboOpen) { if (hoverSchStoreOptIdx != -1 && editingProfileIdx >= 0) { g_profiles[editingProfileIdx].blockedApps.push_back({schCommonStoreApps[hoverSchStoreOptIdx], false}); } isSchStoreComboOpen = false; return; }
 
@@ -1070,14 +1001,14 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
             }
         }
         else if (s_activeSubTab == 2) {
-            if (hoverSchWebCombo) { isSchWebComboOpen = true; return; } if (hoverSchAppCombo) { isSchAppComboOpen = true; return; }
+            if(g_ehb.webCombo.Contains(x,y)) hoverSchWebCombo = true; if(g_ehb.appCombo.Contains(x,y)) hoverSchAppCombo = true;
+            if (g_ehb.btnAddExe.Contains(x, y)) g_ehb.hBtnAddExe = true; if (g_ehb.btnAddStore.Contains(x, y)) g_ehb.hBtnAddStore = true; if (g_ehb.btnAddTitle.Contains(x, y)) g_ehb.hBtnAddTitle = true;
+
             activeInput = 0; if (g_ehb.webInp.Contains(x,y)) activeInput = 2; if (g_ehb.appInp.Contains(x,y)) activeInput = 3;
-            
             if (editingProfileIdx >= 0 && editingProfileIdx < (int)g_profiles.size()) {
                 if (g_ehb.hAddWeb && !inpWeb.empty()) { g_profiles[editingProfileIdx].blockedWebsites.push_back({inpWeb, false}); inpWeb = L""; }
                 if (g_ehb.hAddApp && !inpApp.empty()) { if (inpApp.length() < 4 || inpApp.substr(inpApp.length() - 4) != L".exe") inpApp += L".exe"; g_profiles[editingProfileIdx].blockedApps.push_back({inpApp, false}); inpApp = L""; }
                 
-                // 🟢 FIXED: Added break; after erase to prevent vector out of bounds crashes
                 if (g_ehb.listAreas[0].Contains(x, y)) { 
                     auto& webs = g_profiles[editingProfileIdx].blockedWebsites; 
                     for(auto& p : g_ehb.webDel) { if(p.first.Contains(x,y)) { webs.erase(webs.begin() + p.second); break; } } 
@@ -1098,7 +1029,6 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
                 activeInput = 0; if (g_ehb.keyInp.Contains(x,y)) activeInput = 4;
                 if (g_ehb.hAddKey && !inpKey.empty()) { g_profiles[editingProfileIdx].adultCustomKeywords.push_back({inpKey, false}); inpKey = L""; }
                 
-                // 🟢 FIXED: Added break; after erase to prevent vector out of bounds crashes
                 if (g_ehb.listAreas[2].Contains(x, y)) { 
                     auto& keys = g_profiles[editingProfileIdx].adultCustomKeywords; 
                     for(auto& p : g_ehb.keyDel) { if(p.first.Contains(x,y)) { keys.erase(keys.begin() + p.second); break; } } 
@@ -1112,7 +1042,6 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
         editingProfileIdx = -2; s_activeSubTab = 0; inpProfileName = L""; inpWeb = L""; inpApp = L""; inpKey = L""; tempLockMode = 0;
         for(int d=0; d<7; d++) editDays[d] = false; editStH = 9; editStM = 0; editEnH = 17; editEnM = 0; editBlockInt = false; editBlockUninst = true;
         
-        // 🟢 FIXED: Only initializing [0], [1] and [2] to prevent Stack Corruption 
         s_listScrollT[0] = s_listScrollT[1] = s_listScrollT[2] = 0; 
         s_listScrollC[0] = s_listScrollC[1] = s_listScrollC[2] = 0;
         
@@ -1120,14 +1049,32 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
     }
 
     for (size_t i = 0; i < g_profiles.size(); ++i) {
+        // 🟢 FIXED: Profile Turning OFF glitch and UI Refresh
         if (g_profiles[i].hToggle) { 
             activeActionProfileIdx = i;
             if (!g_profiles[i].isActive) {
                 if (g_profiles[i].lockMode == 0) { s_showTimeOverlay = true; }
                 else if (g_profiles[i].lockMode == 1) { s_showPassOverlay = true; s_isStoppingFocus = false; s_inputPassText = L""; }
-                else if (g_profiles[i].lockMode == 2) { g_profiles[i].isActive = true; ApplyProfileBlocking(i, true); SaveProfiles(); }
+                else if (g_profiles[i].lockMode == 2) { g_profiles[i].isActive = true; ApplyProfileBlocking(i, true); SaveProfiles(); if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE); }
             } else {
-                if (g_profiles[i].lockMode == 0 && g_profiles[i].lockEndTime == 0) { g_profiles[i].isActive = false; ApplyProfileBlocking(i, false); SaveProfiles(); } 
+                if (g_profiles[i].lockMode == 0) {
+                    if (g_profiles[i].lockEndTime > 0) {
+                        MessageBeep(MB_ICONWARNING); // Prevent stopping Timer locks
+                    } else {
+                        bool hasActiveSchedule = false;
+                        time_t t = std::time(nullptr); tm* now = std::localtime(&t); int currentDay = now->tm_wday; int currentTotalMins = now->tm_hour * 60 + now->tm_min;
+                        int startTotalMins = g_profiles[i].startHour * 60 + g_profiles[i].startMin; int endTotalMins = g_profiles[i].endHour * 60 + g_profiles[i].endMin;
+                        if (g_profiles[i].activeDays[currentDay]) {
+                            hasActiveSchedule = (startTotalMins <= endTotalMins) ? (currentTotalMins >= startTotalMins && currentTotalMins < endTotalMins) : (currentTotalMins >= startTotalMins || currentTotalMins < endTotalMins);
+                        }
+                        
+                        if (hasActiveSchedule) {
+                            MessageBeep(MB_ICONWARNING); // Prevent stopping Auto Schedules manually
+                        } else {
+                            g_profiles[i].isActive = false; ApplyProfileBlocking(i, false); SaveProfiles(); if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
+                        }
+                    }
+                } 
                 else if (g_profiles[i].lockMode == 1) { s_showPassOverlay = true; s_isStoppingFocus = true; s_inputPassText = L""; }
                 else if (g_profiles[i].lockMode == 2) { s_showTextUnlockOverlay = true; s_currentTypingText = L""; s_isTypingActive = true; }
             }
@@ -1137,16 +1084,25 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
             for(int d=0; d<7; d++) editDays[d] = g_profiles[i].activeDays[d];
             editStH = g_profiles[i].startHour; editStM = g_profiles[i].startMin; editEnH = g_profiles[i].endHour; editEnM = g_profiles[i].endMin; editBlockInt = g_profiles[i].blockInternet; editBlockUninst = g_profiles[i].blockUninstall;
             
-            // 🟢 FIXED: Only initializing [0], [1] and [2] to prevent Stack Corruption 
             s_listScrollT[0] = s_listScrollT[1] = s_listScrollT[2] = 0; 
             s_listScrollC[0] = s_listScrollC[1] = s_listScrollC[2] = 0;
             
             inpWeb = L""; inpApp = L""; inpKey = L""; activeInput = 1;
         }
+        // 🟢 FIXED: Safe Profile Deletion with Deadlock Prevention
         if (g_profiles[i].hDel && !g_profiles[i].isActive) {
-            if (MessageBoxA(NULL, "Are you sure you want to delete this profile?", "Delete Profile", MB_YESNO | MB_ICONWARNING) == IDYES) { 
-                g_profiles.erase(g_profiles.begin() + i); SaveProfiles(); break; 
+            lock.unlock(); // Unlock before showing MessageBox to prevent background UI thread freeze!
+            int res = MessageBoxA(NULL, "Are you sure you want to delete this profile?", "Delete Profile", MB_YESNO | MB_ICONWARNING);
+            lock.lock();   // Re-lock after user clicks Yes/No
+
+            if (res == IDYES) { 
+                if (i < g_profiles.size()) {
+                    g_profiles.erase(g_profiles.begin() + i); 
+                    SaveProfiles();
+                    if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
+                }
             }
+            break; // Must break because vector size just changed, continuing loop would cause crash
         }
     }
 }
