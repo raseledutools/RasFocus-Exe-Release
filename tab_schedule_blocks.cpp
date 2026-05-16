@@ -88,6 +88,39 @@ static void AddRoundedRectPath(GraphicsPath& path, RectF rect, float r) {
     AddRoundedRectPath(path, rect.X, rect.Y, rect.Width, rect.Height, r);
 }
 
+// ─── GetSchRoundRectPath ──────────────────────────────────────────────────────
+// Returns a heap-allocated GraphicsPath for a rounded rectangle.
+// Caller is responsible for deleting the returned pointer.
+static GraphicsPath* GetSchRoundRectPath(RectF rect, float radius) {
+    GraphicsPath* path = new GraphicsPath();
+    float x = rect.X, y = rect.Y, w = rect.Width, h = rect.Height;
+    float d = radius * 2.0f;
+    path->AddArc(x,         y,         d, d, 180.0f, 90.0f);
+    path->AddArc(x + w - d, y,         d, d, 270.0f, 90.0f);
+    path->AddArc(x + w - d, y + h - d, d, d,   0.0f, 90.0f);
+    path->AddArc(x,         y + h - d, d, d,  90.0f, 90.0f);
+    path->CloseFigure();
+    return path;
+}
+
+// ─── DrawSchOverlaySpinner ────────────────────────────────────────────────────
+// Draws a simple animated spinner indicator at the given center position.
+static void DrawSchOverlaySpinner(Graphics& g, float cx, float cy, float radius, Color color) {
+    static int frame = 0;
+    frame = (frame + 1) % 12;
+    for (int i = 0; i < 12; i++) {
+        float angle = (float)(i * 30) * 3.14159f / 180.0f;
+        float alpha = (float)((i + frame) % 12) / 12.0f;
+        Color c(static_cast<BYTE>(alpha * color.GetA()),
+                color.GetR(), color.GetG(), color.GetB());
+        SolidBrush br(c);
+        float dotR = radius * 0.15f;
+        float px = cx + (radius - dotR) * cos(angle);
+        float py = cy + (radius - dotR) * sin(angle);
+        g.FillEllipse(&br, px - dotR, py - dotR, dotR * 2.0f, dotR * 2.0f);
+    }
+}
+
 // Scrollbar Colors
 #define s_hScrollbarThumb Color(255, 180, 180, 180)
 #define s_hScrollbarTrack Color(255, 240, 240, 240)
