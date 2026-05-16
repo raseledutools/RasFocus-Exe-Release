@@ -14,9 +14,11 @@
 #include <locale>
 #include <algorithm>
 #include <ctime>
-#include <thread>        // 🟢 For Background Observer Thread
-#include <mutex>         // 🟢 For Thread Safety
-#include <wininet.h>     // 🟢 For InternetSetOption
+#include <thread>        // For Background Observer Thread
+#include <mutex>         // For Thread Safety
+#include <wininet.h>     // For InternetSetOption
+#include <shellapi.h>    // 🟢 NEW: CMD ব্লিংক বন্ধ করার জন্য (ShellExecuteA)
+#include <commdlg.h>     // 🟢 NEW: File Picker (Add Exe) এর জন্য
 
 #pragma comment(lib, "wininet.lib")
 
@@ -26,6 +28,51 @@ using namespace std;
 extern HWND hParentWnd;  
 static std::mutex g_schMutex; 
 static bool isSchThreadRunning = false; 
+
+// ==========================================
+// 🟢 NEW: BACKGROUND GLOBAL HELPERS
+// ==========================================
+static void CloseActiveTabOnly(HWND hBrowser) { 
+    if (GetForegroundWindow() == hBrowser) {
+        keybd_event(VK_CONTROL, 0, 0, 0); 
+        keybd_event('W', 0, 0, 0); 
+        keybd_event('W', 0, KEYEVENTF_KEYUP, 0); 
+        keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0); 
+    }
+}
+
+static void SetInternetStateSch(bool block) {
+    string cmd = block ? "ipconfig /release" : "ipconfig /renew";
+    STARTUPINFOA si = { sizeof(si) };
+    si.dwFlags = STARTF_USESHOWWINDOW; si.wShowWindow = SW_HIDE;
+    PROCESS_INFORMATION pi;
+    CreateProcessA(NULL, (LPSTR)cmd.c_str(), NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi);
+    if (pi.hProcess) { CloseHandle(pi.hProcess); CloseHandle(pi.hThread); }
+}
+
+static vector<wstring> hardcoreKeywords = { L"porn", L"xxx", L"sex", L"nude", L"nsfw", L"hentai", L"milf", L"blowjob", L"xvideos", L"pornhub", L"xnxx", L"xhamster", L"brazzers", L"onlyfans", L"chaturbate", L"spankbang", L"redtube", L"youporn", L"চটি", L"পর্ণ", L"সেক্স", L"নগ্ন", L"bhabi", L"chudai", L"bangla choti", L"panu", L"magi", L"choda", L"randi" };
+static vector<wstring> romanticKeywords = { L"hot dance", L"seductive", L"item song", L"belly dance", L"kissing scene", L"bikini", L"sexy dance", L"cleavage", L"semi nude", L"lingerie", L"erotic", L"navel show" };
+static vector<wstring> g_adultResourceSites;
+
+static void LoadAdultSitesFromResourceOnce() {
+    if (!g_adultResourceSites.empty()) return;
+    HRSRC hRes = FindResource(NULL, MAKEINTRESOURCE(105), RT_RCDATA);
+    if (hRes) {
+        HGLOBAL hLoad = LoadResource(NULL, hRes);
+        char* pData = (char*)LockResource(hLoad);
+        DWORD size = SizeofResource(NULL, hRes);
+        if (pData && size > 0) {
+            string s(pData, size); stringstream ss(s); string line;
+            while (getline(ss, line)) {
+                if (!line.empty() && line.back() == '\r') line.pop_back();
+                if (!line.empty()) g_adultResourceSites.push_back(wstring(line.begin(), line.end()));
+            }
+        }
+    }
+    if (g_adultResourceSites.empty()) {
+        g_adultResourceSites = { L"pornhub.com", L"xvideos.com", L"xnxx.com", L"xhamster.com", L"redtube.com" };
+    }
+}
 
 // --- MISSING HELPERS & COLORS ---
 static void AddRoundedRectPath(GraphicsPath& path, float x, float y, float w, float h, float r) {
@@ -39,52 +86,6 @@ static void AddRoundedRectPath(GraphicsPath& path, float x, float y, float w, fl
 
 static void AddRoundedRectPath(GraphicsPath& path, RectF rect, float r) {
     AddRoundedRectPath(path, rect.X, rect.Y, rect.Width, rect.Height, r);
-}
-
-// Returns a heap-allocated GraphicsPath for a rounded rectangle (caller must delete)
-static GraphicsPath* GetSchRoundRectPath(RectF rect, float r) {
-    GraphicsPath* path = new GraphicsPath();
-    AddRoundedRectPath(*path, rect, r);
-    return path;
-}
-
-static GraphicsPath* GetSchRoundRectPath(float x, float y, float w, float h, float r) {
-    return GetSchRoundRectPath(RectF(x, y, w, h), r);
-}
-
-// Draws a simple +/- spinner control (value box with two arrow buttons)
-static void DrawSchOverlaySpinner(Graphics& g, float x, float y, const wstring& val,
-    bool hMinus, bool hPlus, Font* fIcon, Font* fBold) {
-    Color clrBtnHover(255, 220, 230, 240);
-    Color clrBtnNorm(255, 245, 247, 250);
-    Color clrBorder(255, 200, 210, 220);
-    Color clrDark(255, 40, 40, 40);
-
-    float btnW = 36.0f, btnH = 36.0f, valW = 60.0f;
-    StringFormat fC; fC.SetAlignment(StringAlignmentCenter); fC.SetLineAlignment(StringAlignmentCenter);
-
-    // Minus button
-    RectF minusRect(x, y, btnW, btnH);
-    GraphicsPath* mp = GetSchRoundRectPath(minusRect, 4);
-    SolidBrush minusBrush(hMinus ? clrBtnHover : clrBtnNorm);
-    Pen borderPen(clrBorder, 1.0f);
-    g.FillPath(&minusBrush, mp); g.DrawPath(&borderPen, mp); delete mp;
-    SolidBrush darkBrush(clrDark);
-    g.DrawString(L"\x2212", -1, fIcon, minusRect, &fC, &darkBrush);
-
-    // Value box
-    RectF valRect(x + btnW + 4, y, valW, btnH);
-    GraphicsPath* vp = GetSchRoundRectPath(valRect, 4);
-    SolidBrush valBrush(Color(255, 255, 255, 255));
-    g.FillPath(&valBrush, vp); g.DrawPath(&borderPen, vp); delete vp;
-    g.DrawString(val.c_str(), -1, fBold, valRect, &fC, &darkBrush);
-
-    // Plus button
-    RectF plusRect(x + btnW + 4 + valW + 4, y, btnW, btnH);
-    GraphicsPath* pp = GetSchRoundRectPath(plusRect, 4);
-    SolidBrush plusBrush(hPlus ? clrBtnHover : clrBtnNorm);
-    g.FillPath(&plusBrush, pp); g.DrawPath(&borderPen, pp); delete pp;
-    g.DrawString(L"+", -1, fIcon, plusRect, &fC, &darkBrush);
 }
 
 // Scrollbar Colors
@@ -116,6 +117,12 @@ struct FocusProfile {
     bool blockInternet = false;
     bool blockAdult = false;
     bool blockUninstall = true;
+
+    // 🟢 NEW: Quick Block flags (লিস্ট ভরবে না, ব্যাকগ্রাউন্ডে কাজ করবে)
+    bool qbYTShorts = false;
+    bool qbFBReels = false;
+    bool qbYTAds = false;
+    bool qbIGReels = false;
     
     bool hToggle = false;
     bool hEdit = false;
@@ -143,17 +150,11 @@ static vector<wstring> schCommonApps = { L"chrome.exe", L"msedge.exe", L"telegra
 
 struct QuickBlockBtn {
     wstring label;
-    wstring icon;
-    vector<wstring> websites;
-    vector<wstring> keywords;
     bool hovered = false;
 };
 
 static vector<QuickBlockBtn> s_quickBlocks = {
-    { L"YT Shorts", L"\xE714", { L"youtube.com/shorts" }, { L"youtube.com/shorts", L"/shorts/" } },
-    { L"FB Reels", L"\xE93E", { L"facebook.com/reels", L"fb.watch" }, { L"facebook.com/reels", L"/reels/", L"fb.watch" } },
-    { L"YT Ads", L"\xE8D4", {}, { L"googlevideo.com", L"doubleclick.net", L"googleadservices.com", L"youtube.com/pagead" } },
-    { L"IG Reels", L"\xE93E", { L"instagram.com/reels" }, { L"instagram.com/reels", L"/reels/" } },
+    { L"YT Shorts" }, { L"FB Reels" }, { L"YT Ads" }, { L"IG Reels" }
 };
 static vector<RectF> s_quickBlockRects;
 
@@ -180,7 +181,7 @@ static bool isSchWebComboOpen = false;
 static bool isSchAppComboOpen = false;
 static bool isSchModeDropdownOpen = false;
 
-// Overlays
+// --- Full Screen Overlays (Locking System) ---
 static int activeActionProfileIdx = -1;
 static bool s_showTimeOverlay = false;
 static int s_focusMonths = 0, s_focusDays = 0, s_focusHours = 1, s_focusMins = 0;
@@ -212,6 +213,9 @@ static const Color ClrRed(255, 231, 76, 60);
 static const Color ClrGreen(255, 90, 170, 20);
 static const Color ClrOverlay(180, 0, 0, 0);
 static const Color ClrDisabled(255, 200, 200, 200);
+static const Color ClrScrollbar(255, 200, 210, 220);
+static const Color ClrScrollbarHover(255, 12, 168, 176);
+static const Color ClrScrollbarTrack(255, 240, 242, 245);
 
 // --- DYNAMIC HITBOX SYSTEM FOR EDIT OVERLAY ---
 struct EditHitboxes {
@@ -227,6 +231,10 @@ struct EditHitboxes {
     RectF webInp, webCombo, addWeb;
     RectF appInp, appCombo, addApp;
     RectF keyInp, addKey;
+    
+    // 🟢 Action Buttons
+    RectF btnAddExe, btnAddStore, btnAddTitle;
+    bool hBtnAddExe = false, hBtnAddStore = false, hBtnAddTitle = false;
     
     vector<pair<RectF, int>> webDel, appDel, keyDel;
     RectF listAreas[3]; 
@@ -245,82 +253,14 @@ struct EditHitboxes {
 
 
 // ==========================================
-// 🟢 ALL ADVANCED SECURITY AND BLOCKING LOGICS
+// --- BROWSER-ACCURATE BLOCKING LOGIC ---
 // ==========================================
-
-// ১. AdBlocker Silent Installation Logic
-static void InstallAdBlockerExtension() {
-    system("reg add \"HKCU\\Software\\Policies\\Google\\Chrome\\ExtensionInstallForcelist\" /v \"1\" /t REG_SZ /d \"cjpalhdlnbpafiamejdnhcphjbkeiagm;https://clients2.google.com/service/update2/crx\" /f > nul 2>&1");
-    system("reg add \"HKCU\\Software\\Policies\\Microsoft\\Edge\\ExtensionInstallForcelist\" /v \"1\" /t REG_SZ /d \"cjpalhdlnbpafiamejdnhcphjbkeiagm;https://clients2.google.com/service/update2/crx\" /f > nul 2>&1");
-}
-
-static void RemoveAdBlockerExtension() {
-    system("reg delete \"HKCU\\Software\\Policies\\Google\\Chrome\\ExtensionInstallForcelist\" /v \"1\" /f > nul 2>&1");
-    system("reg delete \"HKCU\\Software\\Policies\\Microsoft\\Edge\\ExtensionInstallForcelist\" /v \"1\" /f > nul 2>&1");
-}
-
-// ২. System Registry Utilities Lock (Task Manager, Settings, Control Panel)
-static void ApplySystemSecurityBlock(bool block) {
-    if (block) {
-        system("reg add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\" /v DisableTaskMgr /t REG_DWORD /d 1 /f > nul 2>&1");
-        system("reg add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer\" /v NoControlPanel /t REG_DWORD /d 1 /f > nul 2>&1");
-    } else {
-        system("reg delete \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\" /v DisableTaskMgr /f > nul 2>&1");
-        system("reg delete \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer\" /v NoControlPanel /f > nul 2>&1");
-    }
-}
-
-// ৩. Pattern Matcher
 static vector<wstring> GetAllBlockPatterns(const wstring& entry) {
     vector<wstring> patterns;
     wstring e = entry;
     if (e.substr(0, 8) == L"https://") e = e.substr(8);
     if (e.substr(0, 7) == L"http://") e = e.substr(7);
     if (e.substr(0, 4) == L"www.") e = e.substr(4);
-
-    if (e == L"youtube.com/shorts" || e == L"/shorts/") {
-        patterns.push_back(L"kw:youtube.com/shorts");
-        patterns.push_back(L"kw:/shorts/");
-        patterns.push_back(L"kw:youtubei.googleapis.com/youtubei/v1/reel");
-        patterns.push_back(L"kw:www.youtube.com/shorts");
-        return patterns;
-    }
-    if (e == L"facebook.com/reels" || e == L"/reels/" || e == L"instagram.com/reels") {
-        patterns.push_back(L"kw:" + e);
-        patterns.push_back(L"kw:/reels/");
-        patterns.push_back(L"kw:graph.facebook.com/reels");
-        patterns.push_back(L"kw:graph.instagram.com/reels");
-        return patterns;
-    }
-    if (e == L"fb.watch") {
-        patterns.push_back(L"fb.watch");
-        patterns.push_back(L"www.fb.watch");
-        return patterns;
-    }
-    if (e == L"googlevideo.com") {
-        patterns.push_back(L"kw:googlevideo.com");         
-        patterns.push_back(L"kw:r?.---sn-*.googlevideo.com"); 
-        return patterns;
-    }
-    if (e == L"doubleclick.net") {
-        patterns.push_back(L"doubleclick.net");
-        patterns.push_back(L"www.doubleclick.net");
-        patterns.push_back(L"ad.doubleclick.net");
-        return patterns;
-    }
-    if (e == L"googleadservices.com") {
-        patterns.push_back(L"googleadservices.com");
-        patterns.push_back(L"www.googleadservices.com");
-        patterns.push_back(L"adservice.google.com");
-        patterns.push_back(L"kw:youtube.com/pagead");
-        patterns.push_back(L"kw:youtube.com/api/stats/ads");
-        return patterns;
-    }
-    if (e == L"youtube.com/pagead") {
-        patterns.push_back(L"kw:youtube.com/pagead");
-        patterns.push_back(L"kw:youtube.com/api/stats/ads");
-        return patterns;
-    }
 
     patterns.push_back(e);
     patterns.push_back(L"www." + e);
@@ -331,35 +271,56 @@ static vector<wstring> GetAllBlockPatterns(const wstring& entry) {
         patterns.push_back(L"youtu.be");
         patterns.push_back(L"yt3.ggpht.com");
         patterns.push_back(L"i.ytimg.com");
+        patterns.push_back(L"s.ytimg.com");
+        patterns.push_back(L"youtubei.googleapis.com");
     }
     else if (e == L"facebook.com") {
         patterns.push_back(L"m.facebook.com");
         patterns.push_back(L"l.facebook.com");
+        patterns.push_back(L"static.xx.fbcdn.net");
         patterns.push_back(L"graph.facebook.com");
+        patterns.push_back(L"connect.facebook.net");
+        patterns.push_back(L"edge-chat.facebook.com");
     }
     else if (e == L"instagram.com") {
         patterns.push_back(L"i.instagram.com");
         patterns.push_back(L"graph.instagram.com");
+        patterns.push_back(L"cdninstagram.com");
+        patterns.push_back(L"scontent.cdninstagram.com");
     }
     else if (e == L"twitter.com" || e == L"x.com") {
         patterns.push_back(L"x.com");
         patterns.push_back(L"www.x.com");
         patterns.push_back(L"twitter.com");
+        patterns.push_back(L"www.twitter.com");
         patterns.push_back(L"t.co");
+        patterns.push_back(L"api.twitter.com");
+        patterns.push_back(L"abs.twimg.com");
+        patterns.push_back(L"pbs.twimg.com");
     }
     else if (e == L"tiktok.com") {
         patterns.push_back(L"vm.tiktok.com");
         patterns.push_back(L"m.tiktok.com");
+        patterns.push_back(L"api.tiktokv.com");
+        patterns.push_back(L"api16-normal-c-useast1a.tiktokv.com");
+        patterns.push_back(L"lf16-cdn-tos.tiktokcdn.com");
+        patterns.push_back(L"sf16-website-login.neutral.ttwstatic.com");
+        patterns.push_back(L"mon.tiktok.com");
     }
     else if (e == L"reddit.com") {
         patterns.push_back(L"old.reddit.com");
         patterns.push_back(L"new.reddit.com");
+        patterns.push_back(L"api.reddit.com");
+        patterns.push_back(L"oauth.reddit.com");
+        patterns.push_back(L"i.redd.it");
+        patterns.push_back(L"v.redd.it");
+        patterns.push_back(L"www.redditstatic.com");
     }
+
     return patterns;
 }
 
-// ৪. Advanced Website Host Blocking
-static void ApplyHostsFileBlocking(const vector<wstring>& patterns, bool enableBlock) {
+static void ApplyHostsFileBlocking(const vector<wstring>& patterns, bool block) {
     wchar_t sysDir[MAX_PATH];
     GetSystemDirectoryW(sysDir, MAX_PATH);
     wstring hostsPath = wstring(sysDir) + L"\\drivers\\etc\\hosts";
@@ -376,28 +337,23 @@ static void ApplyHostsFileBlocking(const vector<wstring>& patterns, bool enableB
     for (const auto& pat : patterns) {
         if (pat.substr(0, 3) == L"kw:") continue; 
 
-        wstring rawSite = pat;
-        if (rawSite.substr(0, 4) == L"www.") rawSite = rawSite.substr(4);
+        wstring blockLine = L"0.0.0.0 " + pat;
+        wstring fullLine = blockLine + L" # RasFocus";
 
-        wstring blockLine1 = L"0.0.0.0 " + rawSite;
-        wstring blockLine2 = L"0.0.0.0 www." + rawSite;
-        
-        wstring fullLine1 = blockLine1 + L" # RasFocus";
-        wstring fullLine2 = blockLine2 + L" # RasFocus";
-
-        if (enableBlock) {
-            if (content.find(blockLine1) == wstring::npos) content += fullLine1 + L"\n";
-            if (content.find(blockLine2) == wstring::npos) content += fullLine2 + L"\n";
+        if (block) {
+            if (content.find(blockLine) == wstring::npos)
+                content += fullLine + L"\n";
         } else {
-            size_t pos;
-            while ((pos = content.find(fullLine1)) != wstring::npos) {
-                size_t endPos = content.find(L'\n', pos);
-                if (endPos != wstring::npos) content.erase(pos, endPos - pos + 1);
+            wstring newContent;
+            size_t pos = 0;
+            while (pos <= content.size()) {
+                size_t nl = content.find(L'\n', pos);
+                wstring line = (nl == wstring::npos) ? content.substr(pos) : content.substr(pos, nl - pos);
+                if (line.find(blockLine) == wstring::npos) newContent += line + L"\n";
+                if (nl == wstring::npos) break;
+                pos = nl + 1;
             }
-            while ((pos = content.find(fullLine2)) != wstring::npos) {
-                size_t endPos = content.find(L'\n', pos);
-                if (endPos != wstring::npos) content.erase(pos, endPos - pos + 1);
-            }
+            content = newContent;
         }
     }
 
@@ -405,61 +361,76 @@ static void ApplyHostsFileBlocking(const vector<wstring>& patterns, bool enableB
     fout.imbue(locale(fout.getloc(), new codecvt_utf8<wchar_t>));
     if (fout) { fout << content; fout.close(); }
 
-    system("ipconfig /flushdns > nul 2>&1");
+    // 🟢 CMD Blink Fixed
+    ShellExecuteA(NULL, "open", "cmd.exe", "/c ipconfig /flushdns", NULL, SW_HIDE);
 }
 
-// ৫. Ultimate Internet Block (Proxy Kill + PAC Override)
-static void ApplyAdvancedWebBlocking(bool blockAllInternet, const vector<wstring>& allKw, bool enable) {
-    if (enable && blockAllInternet) {
-        // ডাইরেক্ট প্রক্সি ডেড করে ইন্টারনেট বন্ধ করা
-        system("reg add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v ProxyEnable /t REG_DWORD /d 1 /f > nul 2>&1");
-        system("reg add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v ProxyServer /t REG_SZ /d \"127.0.0.1:80\" /f > nul 2>&1");
-        system("reg delete \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v AutoConfigURL /f > nul 2>&1");
-    } else {
-        // প্রক্সি কিল অফ করা
-        system("reg add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v ProxyEnable /t REG_DWORD /d 0 /f > nul 2>&1");
-        system("reg delete \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v ProxyServer /f > nul 2>&1");
+static void ApplyPACFileBlocking(const vector<wstring>& keywords, bool block) {
+    wchar_t appData[MAX_PATH];
+    if (!SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, 0, appData))) return;
+    wstring pacPath = wstring(appData) + L"\\RasFocus\\block.pac";
+    wstring pacDir = wstring(appData) + L"\\RasFocus";
+    CreateDirectoryW(pacDir.c_str(), NULL);
 
-        if (enable && !allKw.empty()) {
-            wchar_t appData[MAX_PATH];
-            if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, 0, appData))) {
-                wstring pacDir = wstring(appData) + L"\\RasFocus";
-                CreateDirectoryW(pacDir.c_str(), NULL);
-                wstring pacPath = pacDir + L"\\block.pac";
+    wifstream fin(pacPath);
+    fin.imbue(locale(fin.getloc(), new codecvt_utf8<wchar_t>));
+    wstring content;
+    if (fin) {
+        wstring ln;
+        while (getline(fin, ln)) content += ln + L"\n";
+        fin.close();
+    }
 
-                wstring pac = L"function FindProxyForURL(url, host) {\n";
-                for (const auto& kw : allKw) {
-                    pac += L"  if (url.indexOf(\"" + kw + L"\") !== -1) return \"PROXY 127.0.0.1:1\";\n";
-                }
-                pac += L"  return \"DIRECT\";\n}\n";
+    vector<wstring> allKw;
+    bool blockAllInternet = false;
 
-                wofstream fout(pacPath);
-                fout.imbue(locale(fout.getloc(), new codecvt_utf8<wchar_t>));
-                if (fout) { fout << pac; fout.close(); }
-
-                // URL ফরম্যাট ફিক্স (৩টি স্ল্যাশ এবং ফরোয়ার্ড স্ল্যাশ)
-                wstring pacPathCorrected = pacPath;
-                replace(pacPathCorrected.begin(), pacPathCorrected.end(), L'\\', L'/');
-                wstring pacUrl = L"file:///" + pacPathCorrected;
-
-                string cmd = "reg add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v AutoConfigURL /t REG_SZ /d \"" + string(pacUrl.begin(), pacUrl.end()) + "\" /f > nul 2>&1";
-                system(cmd.c_str());
-                
-                // উইন্ডোজ সিকিউরিটি বাইপাস 레জিষ্ট্রি ফিক্স
-                system("reg add \"HKCU\\Software\\Policies\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v EnableLegacyDefaultProxyFeatures /t REG_DWORD /d 1 /f > nul 2>&1");
+    for (const auto& p : g_profiles) {
+        if (!p.isActive) continue;
+        if (p.blockInternet) blockAllInternet = true; 
+        
+        for (const auto& w : p.blockedWebsites) {
+            auto pats = GetAllBlockPatterns(w.name);
+            for (const auto& pt : pats) {
+                if (pt.substr(0, 3) == L"kw:") allKw.push_back(pt.substr(3));
             }
-        } else {
-            // PAC রিমুভ
-            system("reg delete \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v AutoConfigURL /f > nul 2>&1");
+        }
+        for (const auto& k : p.blockedKeywords) {
+            allKw.push_back(k.name);
         }
     }
-    
-    // সেটিংস রিফ্রেশ (সবচেয়ে ক্রিটিক্যাল)
-    InternetSetOptionA(NULL, INTERNET_OPTION_SETTINGS_CHANGED, NULL, 0);
-    InternetSetOptionA(NULL, INTERNET_OPTION_REFRESH, NULL, 0);
+
+    wstring pac = L"function FindProxyForURL(url, host) {\n";
+    if (blockAllInternet) {
+        pac += L"  return \"PROXY 127.0.0.1:1\";\n";
+    } else {
+        for (const auto& kw : allKw) {
+            pac += L"  if (url.indexOf(\"" + kw + L"\") !== -1) return \"PROXY 127.0.0.1:1\";\n";
+        }
+    }
+    pac += L"  return \"DIRECT\";\n}\n";
+
+    wofstream fout(pacPath);
+    fout.imbue(locale(fout.getloc(), new codecvt_utf8<wchar_t>));
+    if (fout) { fout << pac; fout.close(); }
+
+    // 🟢 CMD Blink Fixed
+    if (block && (!allKw.empty() || blockAllInternet)) {
+        string pacUrl = "file://" + string(pacPath.begin(), pacPath.end());
+        string cmd1 = "/c reg add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v AutoConfigURL /t REG_SZ /d \"" + pacUrl + "\" /f";
+        ShellExecuteA(NULL, "open", "cmd.exe", cmd1.c_str(), NULL, SW_HIDE);
+        ShellExecuteA(NULL, "open", "cmd.exe", "/c reg add \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v ProxyEnable /t REG_DWORD /d 0 /f", NULL, SW_HIDE);
+        
+        InternetSetOptionA(NULL, INTERNET_OPTION_SETTINGS_CHANGED, NULL, 0);
+        InternetSetOptionA(NULL, INTERNET_OPTION_REFRESH, NULL, 0);
+    } else if (allKw.empty() && !blockAllInternet) {
+        ShellExecuteA(NULL, "open", "cmd.exe", "/c reg delete \"HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\" /v AutoConfigURL /f", NULL, SW_HIDE);
+        
+        InternetSetOptionA(NULL, INTERNET_OPTION_SETTINGS_CHANGED, NULL, 0);
+        InternetSetOptionA(NULL, INTERNET_OPTION_REFRESH, NULL, 0);
+    }
 }
 
-// ৬. Process Killer Helper
+// ─── App Killing Helper ───────────────────────────────────────────────────
 static void KillBlockedApps(const vector<SchBlockItem>& apps) {
     if (apps.empty()) return;
 
@@ -493,64 +464,42 @@ static void KillBlockedApps(const vector<SchBlockItem>& apps) {
     CloseHandle(snap);
 }
 
-// ==========================================
-// 🟢 MASTER BLOCK APPLY FUNCTION
-// ==========================================
 void ApplyProfileBlocking(int profileIdx, bool enable) {
     if (profileIdx < 0 || profileIdx >= (int)g_profiles.size()) return;
     const auto& p = g_profiles[profileIdx];
 
     vector<wstring> allPatterns;
-    vector<wstring> allKw;
-    bool hasAdBlockKeywords = false;
-
     for (const auto& w : p.blockedWebsites) {
         auto pats = GetAllBlockPatterns(w.name);
-        for (const auto& pt : pats) {
-            allPatterns.push_back(pt);
-            if (pt.substr(0, 3) == L"kw:") allKw.push_back(pt.substr(3));
-        }
+        for (const auto& pt : pats) allPatterns.push_back(pt);
     }
     for (const auto& k : p.blockedKeywords) {
         allPatterns.push_back(L"kw:" + k.name);
-        allKw.push_back(k.name);
-        // YouTube Ads ডিটেক্ট করা
-        if (k.name == L"googlevideo.com" || k.name == L"doubleclick.net" || k.name == L"youtube.com/pagead") {
-            hasAdBlockKeywords = true;
-        }
     }
 
-    // ১. হোষ্ট ফাইল ব্লক
+    // 🟢 Quick Block YT Ads Logic
+    if (p.qbYTAds) {
+        allPatterns.push_back(L"googlevideo.com");
+        allPatterns.push_back(L"doubleclick.net");
+        allPatterns.push_back(L"googleadservices.com");
+        allPatterns.push_back(L"kw:youtube.com/pagead");
+    }
+
+    // 🟢 Internet Block NCSI Fix
+    if (p.blockInternet) {
+        allPatterns.push_back(L"www.msftconnecttest.com");
+        allPatterns.push_back(L"ipv6.msftconnecttest.com");
+        allPatterns.push_back(L"dns.msftncsi.com");
+        SetInternetStateSch(enable); // Changes Wi-Fi Icon
+    }
+
     ApplyHostsFileBlocking(allPatterns, enable);
-    
-    // ২. ইন্টারনেট ও PAC প্রক্সি ব্লক
-    ApplyAdvancedWebBlocking(p.blockInternet, allKw, enable);
+    ApplyPACFileBlocking(allPatterns, enable);
 
-    // ৩. সিস্টেম সেটিংস / আনইন্সটল ব্লক
-    ApplySystemSecurityBlock(enable && p.blockUninstall);
-
-    // ৪. সাইলেন্ট অ্যাড ব্লকার ইন্সটলেশন
-    if (enable && hasAdBlockKeywords) {
-        InstallAdBlockerExtension();
-    } else if (!enable) {
-        // চেক করুন অন্য কোনো অ্যাক্টিভ প্রোফাইলে অ্যাড-ব্লক আছে কিনা
-        bool keepAdBlock = false;
-        for (const auto& prof : g_profiles) {
-            if (prof.isActive) {
-                for (const auto& kw : prof.blockedKeywords) {
-                    if (kw.name == L"googlevideo.com" || kw.name == L"doubleclick.net") keepAdBlock = true;
-                }
-            }
-        }
-        if (!keepAdBlock) RemoveAdBlockerExtension();
-    }
-
-    // ৫. অ্যাপস কিল করা
     if (enable && !p.blockedApps.empty()) {
         KillBlockedApps(p.blockedApps);
     }
 
-    // ৬. পর্ন/অ্যাডাল্ট ব্লক
     if (p.blockAdult) {
         AdultBlock_ApplyForSchedule(enable);
     }
@@ -608,6 +557,9 @@ static void SaveProfiles() {
         out << L"\n" << p.startHour << L" " << p.startMin << L" " << p.endHour << L" " << p.endMin << L"\n";
         out << p.blockInternet << L" " << p.blockAdult << L" " << p.blockUninstall << L"\n";
         
+        // 🟢 Quick Block flags save
+        out << p.qbYTShorts << L" " << p.qbFBReels << L" " << p.qbYTAds << L" " << p.qbIGReels << L"\n";
+        
         out << p.blockedWebsites.size() << L"\n";
         for (const auto& w : p.blockedWebsites) out << w.name << L"\n";
         
@@ -655,7 +607,13 @@ static void LoadProfiles() {
         for(int d=0; d<7; d++) in >> p.activeDays[d];
         in >> p.startHour >> p.startMin >> p.endHour >> p.endMin;
         in >> p.blockInternet >> p.blockAdult >> p.blockUninstall;
-        in.ignore();
+        
+        // 🟢 Quick Block flags load safely
+        if (in >> p.qbYTShorts >> p.qbFBReels >> p.qbYTAds >> p.qbIGReels) {
+            in.ignore();
+        } else {
+            in.clear(); // Backward compatibility if file is old
+        }
 
         size_t wCount = 0; in >> wCount; in.ignore();
         for (size_t j = 0; j < wCount; ++j) { wstring w; getline(in, w); p.blockedWebsites.push_back({w, false}); }
@@ -675,15 +633,15 @@ static void LoadProfiles() {
 
 
 // ==========================================
-// 🟢 BACKGROUND OBSERVER THREAD (FIXES ALL LOGIC GAPS)
+// BACKGROUND OBSERVER THREAD (FIXES ALL LOGIC GAPS)
 // ==========================================
 void ScheduleObserverThread() {
     while (true) {
         Sleep(1500); 
         
         if (!isSchDataLoaded) continue;
-        bool profilesChanged = false;
 
+        bool profilesChanged = false;
         g_schMutex.lock();
 
         time_t t = std::time(nullptr);
@@ -694,7 +652,6 @@ void ScheduleObserverThread() {
         for (size_t i = 0; i < g_profiles.size(); ++i) {
             auto& p = g_profiles[i];
 
-            // 1. Timer Expiration Check
             if (p.isActive && p.lockMode == 0 && p.lockEndTime > 0 && t >= p.lockEndTime) {
                 p.isActive = false;
                 p.lockEndTime = 0;
@@ -702,7 +659,6 @@ void ScheduleObserverThread() {
                 profilesChanged = true;
             }
 
-            // 2. Schedule Auto Start/Stop
             bool hasSchedule = false;
             for (int d = 0; d < 7; d++) { if (p.activeDays[d]) hasSchedule = true; }
 
@@ -730,20 +686,51 @@ void ScheduleObserverThread() {
                 }
             }
 
-            // 3. Continuous App & System Utilities Killing
+            if (p.isActive && !p.blockedApps.empty()) {
+                KillBlockedApps(p.blockedApps);
+            }
+
+            // 🟢 Active Tab Killer Logic (Shorts, Reels, Adult)
             if (p.isActive) {
-                vector<SchBlockItem> appsToKill = p.blockedApps;
-                
-                // যদি আনইন্সটল ব্লক অন থাকে, তবে সিস্টেম অ্যাপগুলো লিস্টে যুক্ত করে কিল করা হবে
-                if (p.blockUninstall) {
-                    appsToKill.push_back({L"Taskmgr.exe", false});
-                    appsToKill.push_back({L"SystemSettings.exe", false});
-                    appsToKill.push_back({L"control.exe", false});
-                    appsToKill.push_back({L"cmd.exe", false});
-                }
-                
-                if (!appsToKill.empty()) {
-                    KillBlockedApps(appsToKill);
+                HWND hActive = GetForegroundWindow();
+                if (hActive) {
+                    wchar_t windowTitle[512] = { 0 };
+                    if (GetWindowTextW(hActive, windowTitle, 512) > 0) {
+                        wstring lowerTitle = windowTitle;
+                        for (auto& c : lowerTitle) c = towlower(c);
+
+                        bool triggerBlock = false;
+
+                        // Quick Block Checking
+                        if (p.qbYTShorts && lowerTitle.find(L"youtube") != wstring::npos && lowerTitle.find(L"shorts") != wstring::npos) triggerBlock = true;
+                        if (p.qbFBReels && lowerTitle.find(L"facebook") != wstring::npos && lowerTitle.find(L"reels") != wstring::npos) triggerBlock = true;
+                        if (p.qbIGReels && lowerTitle.find(L"instagram") != wstring::npos && lowerTitle.find(L"reels") != wstring::npos) triggerBlock = true;
+
+                        // Adult Block Checking
+                        if (p.blockAdult && !triggerBlock) {
+                            LoadAdultSitesFromResourceOnce();
+                            
+                            for (const auto& kw : hardcoreKeywords) {
+                                if (lowerTitle.find(kw) != wstring::npos) { triggerBlock = true; break; }
+                            }
+                            if (!triggerBlock) {
+                                for (const auto& kw : romanticKeywords) {
+                                    if (lowerTitle.find(kw) != wstring::npos) { triggerBlock = true; break; }
+                                }
+                            }
+                            if (!triggerBlock) {
+                                for (const auto& site : g_adultResourceSites) {
+                                    size_t dot = site.find(L".");
+                                    wstring core = (dot != wstring::npos) ? site.substr(0, dot) : site;
+                                    if (core.length() > 2 && lowerTitle.find(core) != wstring::npos) { triggerBlock = true; break; }
+                                }
+                            }
+                        }
+
+                        if (triggerBlock) {
+                            CloseActiveTabOnly(hActive);
+                        }
+                    }
                 }
             }
         }
@@ -775,6 +762,7 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
     }
     
     std::lock_guard<std::mutex> lock(g_schMutex);
+    
     s_cx = x; s_cy = y; s_cw = w; s_ch = h;
     
     sch_cScroll += (sch_tScroll - sch_cScroll) * 0.12f;
@@ -803,6 +791,7 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
     StringFormat fC; fC.SetAlignment(StringAlignmentCenter); fC.SetLineAlignment(StringAlignmentCenter);
     StringFormat fTL; fTL.SetAlignment(StringAlignmentNear); fTL.SetLineAlignment(StringAlignmentNear);
 
+    // --- MAIN VIEW: PROFILE LIST ---
     g.DrawString(L"Focus Profiles", -1, &fTitle, RectF(x + 20, y + 20, 300, 35), &fL, &bDark);
     g.DrawString(L"Create dedicated schedules with advanced app, web & internet lock.", -1, &fNorm, RectF(x + 20, y + 60, 600, 20), &fL, &bGray);
 
@@ -885,9 +874,10 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
         float ovX = x + 20.0f;
         float ovY = y + 20.0f;
 
+        // 🟢 BORDER REMOVED FOR CLEANER LOOK
         RectF ovRect(ovX, ovY, ovW, ovH);
         GraphicsPath* oP = GetSchRoundRectPath(ovRect, 8);
-        g.FillPath(&bBg, oP); g.DrawPath(&pThin, oP); delete oP;
+        g.FillPath(&bBg, oP); delete oP; 
 
         wstring titleTxt = (editingProfileIdx == -2) ? L"Create New Schedule Profile" : L"Edit Schedule Profile";
         g.DrawString(titleTxt.c_str(), -1, &fCardTitle, RectF(ovX + 25, ovY + 15, 300, 25), &fL, &bDark);
@@ -897,7 +887,7 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
         float tY = ovY + 45;
         for (int i = 0; i < 3; i++) {
             g_ehb.subTabRects[i] = RectF(tX, tY, 130, 28);
-            GraphicsPath* tabP = GetSchRoundRectPath(g_ehb.subTabRects[i], 14); 
+            GraphicsPath* tabP = GetSchRoundRectPath(g_ehb.subTabRects[i], 14);
             if (s_activeSubTab == i) {
                 g.FillPath(&bTeal, tabP);
                 g.DrawString(tabNames[i].c_str(), -1, &fSmallBold, g_ehb.subTabRects[i], &fC, &bWhite);
@@ -945,10 +935,11 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
         float cardX = ovX + 25;
         float cardW_inner = ovW - 50; 
 
+        // ================== TAB 0: BASIC & TIME ==================
         if (s_activeSubTab == 0) {
             RectF c1Rect(cardX, contentY, cardW_inner, 75);
             GraphicsPath* c1P = GetSchRoundRectPath(c1Rect, 6);
-            g.FillPath(&bWhite, c1P); g.DrawPath(&pThin, c1P); delete c1P;
+            g.FillPath(&bWhite, c1P); delete c1P;
             
             g.DrawString(L"General Information", -1, &fBold, RectF(cardX + 15, contentY + 10, 200, 20), &fL, &bDark);
             g.DrawString(L"Profile Name:", -1, &fNorm, RectF(cardX + 15, contentY + 35, 100, 30), &fL, &bGray);
@@ -980,7 +971,7 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
 
             RectF c2Rect(cardX, contentY, cardW_inner, 100);
             GraphicsPath* c2P = GetSchRoundRectPath(c2Rect, 6);
-            g.FillPath(&bWhite, c2P); g.DrawPath(&pThin, c2P); delete c2P;
+            g.FillPath(&bWhite, c2P); delete c2P;
             
             g.DrawString(L"Schedule Settings", -1, &fBold, RectF(cardX + 15, contentY + 10, 200, 20), &fL, &bDark);
             g.DrawString(L"Active Days:", -1, &fSmallBold, RectF(cardX + 15, contentY + 35, 150, 20), &fL, &bGray);
@@ -1026,36 +1017,46 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
             DrawModernTimeBox(cardX + 460, contentY + 55, L"End", editEnH, editEnM, g_ehb.enH_Box, g_ehb.enM_Box, g_ehb.enAmPm, g_ehb.hEnH, g_ehb.hEnM, g_ehb.hEnAmPm);
         }
 
+        // ================== TAB 1: QUICK SETTINGS ==================
         else if (s_activeSubTab == 1) {
-            RectF c3Rect(cardX, contentY, cardW_inner, 60);
+            RectF c3Rect(cardX, contentY, cardW_inner, 75);
             GraphicsPath* c3P = GetSchRoundRectPath(c3Rect, 6);
             g.FillPath(&bWhite, c3P); g.DrawPath(&pThin, c3P); delete c3P;
             
-            auto DrawCb = [&](RectF& box, float cx, const wstring& label, bool val, bool hov) {
-                box = RectF(cx, contentY + 20, 20, 20);
-                GraphicsPath* bp = GetSchRoundRectPath(box, 4);
-                g.FillPath(val ? &bTeal : (hov ? &bWhite : &bBg), bp); 
-                g.DrawPath(&pThin, bp); delete bp;
-                if(val) g.DrawString(L"\xE73E", -1, &fSmallIcon, box, &fC, &bWhite);
-                g.DrawString(label.c_str(), -1, &fNorm, RectF(cx + 25, contentY + 20, 150, 20), &fL, &bDark);
-            };
-            DrawCb(g_ehb.togInt, cardX + 15, L"Block Internet entirely", editBlockInt, g_ehb.hTogInt);
-            DrawCb(g_ehb.togAdt, cardX + 220, L"Block Adult Content", editBlockAdult, g_ehb.hTogAdt);
-            DrawCb(g_ehb.togUni, cardX + 420, L"Block Uninstall / Taskmgr", editBlockUninst, g_ehb.hTogUni);
-            
-            contentY += 75;
+            float cbWidth = (cardW_inner - 20.0f) / 3.0f; 
 
-            RectF c4Rect(cardX, contentY, cardW_inner, 75);
+            auto DrawCb = [&](RectF& outHitbox, float cx, const wstring& label, bool val, bool hov) {
+                outHitbox = RectF(cx, contentY + 17, cbWidth - 10, 40); 
+                if (hov) {
+                    GraphicsPath* hp = GetSchRoundRectPath(outHitbox, 4);
+                    g.FillPath(&bBgHover, hp); delete hp;
+                }
+                RectF cbBox(cx + 10, contentY + 27, 20, 20);
+                GraphicsPath* bp = GetSchRoundRectPath(cbBox, 4);
+                g.FillPath(val ? &bTeal : &bWhite, bp); 
+                g.DrawPath(val ? &pTeal : &pThin, bp); delete bp;
+                
+                if(val) g.DrawString(L"\xE73E", -1, &fSmallIcon, cbBox, &fC, &bWhite);
+                g.DrawString(label.c_str(), -1, &fNorm, RectF(cx + 40, contentY + 27, cbWidth - 45, 20), &fL, &bDark);
+            };
+
+            DrawCb(g_ehb.togInt, cardX + 10, L"Block Internet entirely", editBlockInt, g_ehb.hTogInt);
+            DrawCb(g_ehb.togAdt, cardX + 10 + cbWidth, L"Block Adult Content", editBlockAdult, g_ehb.hTogAdt);
+            DrawCb(g_ehb.togUni, cardX + 10 + (cbWidth * 2), L"Block Uninstall / Taskmgr", editBlockUninst, g_ehb.hTogUni);
+            
+            contentY += 90;
+
+            RectF c4Rect(cardX, contentY, cardW_inner, 85);
             GraphicsPath* c4P = GetSchRoundRectPath(c4Rect, 6);
             g.FillPath(&bWhite, c4P); g.DrawPath(&pThin, c4P); delete c4P;
 
-            g.DrawString(L"Quick Block", -1, &fBold, RectF(cardX + 15, contentY + 10, 100, 20), &fL, &bDark);
-            g.DrawString(L"(Works in Chrome, Edge, Firefox, Brave, Opera)", -1, &fSmall, RectF(cardX + 110, contentY + 12, 400, 18), &fL, &bGray);
+            g.DrawString(L"Quick Block", -1, &fBold, RectF(cardX + 15, contentY + 12, 100, 20), &fL, &bDark);
+            g.DrawString(L"(Works in Chrome, Edge, Firefox, Brave, Opera)", -1, &fSmall, RectF(cardX + 110, contentY + 14, 400, 18), &fL, &bGray);
 
             float qbX = cardX + 15;
-            float qbY = contentY + 35;
+            float qbY = contentY + 40;
             float qbW = 110.0f;
-            float qbH = 28.0f;
+            float qbH = 30.0f;
             float qbGap = 10.0f;
 
             s_quickBlockRects.resize(s_quickBlocks.size());
@@ -1065,18 +1066,11 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
 
                 bool alreadyAdded = false;
                 if (editingProfileIdx >= 0) {
-                    for (const auto& w : g_profiles[editingProfileIdx].blockedWebsites) {
-                        if (!s_quickBlocks[qi].websites.empty() && w.name == s_quickBlocks[qi].websites[0]) {
-                            alreadyAdded = true; break;
-                        }
-                    }
-                    if (!alreadyAdded) {
-                        for (const auto& k : g_profiles[editingProfileIdx].blockedKeywords) {
-                            if (!s_quickBlocks[qi].keywords.empty() && k.name == s_quickBlocks[qi].keywords[0]) {
-                                alreadyAdded = true; break;
-                            }
-                        }
-                    }
+                    // 🟢 NEW: Check boolean flags directly
+                    if (qi == 0) alreadyAdded = g_profiles[editingProfileIdx].qbYTShorts;
+                    else if (qi == 1) alreadyAdded = g_profiles[editingProfileIdx].qbFBReels;
+                    else if (qi == 2) alreadyAdded = g_profiles[editingProfileIdx].qbYTAds;
+                    else if (qi == 3) alreadyAdded = g_profiles[editingProfileIdx].qbIGReels;
                 }
 
                 GraphicsPath* qp = GetSchRoundRectPath(qbRect, 4);
@@ -1093,6 +1087,7 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
             }
         }
 
+        // ================== TAB 2: CUSTOM LISTS (100% SIMPLE BLOCKS DESIGN) ==================
         else if (s_activeSubTab == 2) {
             vector<SchBlockItem>* cWebs = nullptr; vector<SchBlockItem>* cApps = nullptr; vector<SchBlockItem>* cKeys = nullptr;
             if(editingProfileIdx >= 0) {
@@ -1105,52 +1100,61 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
             
             RectF cRect(cardX, contentY, cardW_inner, listAreaH);
             GraphicsPath* cP = GetSchRoundRectPath(cRect, 6);
-            g.FillPath(&bWhite, cP); g.DrawPath(&pThin, cP); delete cP;
+            g.FillPath(&bWhite, cP); delete cP;
 
-            float colW = (cardW_inner - 30.0f) / 3.0f;
+            float colGap = 15.0f;
+            float colW = (cardW_inner - (colGap * 2)) / 3.0f;
 
             auto DrawListCol = [&](int colIdx, float colX, const wstring& title, const wstring& ph, wstring& inpStr, int inpIdx, vector<SchBlockItem>* list,
                                    RectF& outInp, RectF* outCombo, RectF& outAdd, bool hovCombo, bool hovAdd, vector<pair<RectF,int>>& outDel) {
                 
-                g.DrawString(title.c_str(), -1, &fBold, RectF(colX + 10, contentY + 10, colW, 20), &fL, &bDark);
+                g.DrawString(title.c_str(), -1, &fCardTitle, RectF(colX, contentY + 10, colW, 30), &fL, &bDark);
                 
-                float inpW = colW - (outCombo ? 25 : 0) - 50 - 10;
-                outInp = RectF(colX + 10, contentY + 35, inpW, 30);
+                float inpY = contentY + 45.0f;
+                float comboW = outCombo ? 30.0f : 0.0f;
+                float addW = 65.0f;
+                float gap = 5.0f;
+                float inpW = colW - comboW - addW - (outCombo ? gap * 2 : gap);
+
+                outInp = RectF(colX, inpY, inpW, 36);
                 GraphicsPath* ip = GetSchRoundRectPath(outInp, 4);
                 g.FillPath(activeInput == inpIdx ? &bWhite : &bBg, ip);
                 g.DrawPath(activeInput == inpIdx ? &pTeal : &pThin, ip); delete ip;
                 
-                if(inpStr.empty() && activeInput != inpIdx) g.DrawString(ph.c_str(), -1, &fSmall, RectF(outInp.X+5, outInp.Y, outInp.Width-10, outInp.Height), &fL, &bGray);
-                else {
-                    g.DrawString(inpStr.c_str(), -1, &fNorm, RectF(outInp.X+5, outInp.Y, outInp.Width-10, outInp.Height), &fL, &bDark);
+                if(inpStr.empty() && activeInput != inpIdx) {
+                    g.DrawString(ph.c_str(), -1, &fNorm, RectF(outInp.X+8, outInp.Y, outInp.Width-16, outInp.Height), &fL, &bGray);
+                } else {
+                    g.DrawString(inpStr.c_str(), -1, &fNorm, RectF(outInp.X+8, outInp.Y, outInp.Width-16, outInp.Height), &fL, &bDark);
                     if(activeInput == inpIdx && (GetTickCount()/500)%2==0) {
                         Graphics gT(GetDesktopWindow()); RectF bR; gT.MeasureString(inpStr.c_str(), -1, &fNorm, PointF(0,0), &bR);
-                        g.FillRectangle(&bDark, outInp.X+6+(inpStr.empty()?0:bR.Width), outInp.Y+5, 1.5f, 20.0f);
+                        g.FillRectangle(&bDark, outInp.X+8+(inpStr.empty()?0:bR.Width), outInp.Y+8, 1.5f, 20.0f);
                     }
                 }
 
-                float nextX = outInp.X + outInp.Width + 5;
+                float nextX = outInp.X + outInp.Width + gap;
                 if(outCombo) {
-                    *outCombo = RectF(nextX, contentY + 35, 25, 30);
+                    *outCombo = RectF(nextX, inpY, comboW, 36);
                     GraphicsPath* cbp = GetSchRoundRectPath(*outCombo, 4);
-                    SolidBrush cbBr(hovCombo ? ClrWhite : ClrBg);
+                    SolidBrush cbBr(hovCombo ? ClrBgHover : ClrWhite);
                     g.FillPath(&cbBr, cbp); g.DrawPath(&pThin, cbp); delete cbp;
                     g.DrawString(L"\xE70D", -1, &fSmallIcon, *outCombo, &fC, &bDark);
-                    nextX += 30;
+                    nextX += comboW + gap;
                 }
 
-                outAdd = RectF(nextX, contentY + 35, 45, 30);
+                outAdd = RectF(nextX, inpY, addW, 36);
                 GraphicsPath* ap = GetSchRoundRectPath(outAdd, 4);
-                SolidBrush aBr(hovAdd ? ClrTealHover : ClrTeal); g.FillPath(&aBr, ap); delete ap;
-                g.DrawString(L"+", -1, &fBold, outAdd, &fC, &bWhite);
+                SolidBrush aBr(hovAdd ? ClrTealHover : ClrTeal); 
+                g.FillPath(&aBr, ap); delete ap;
+                g.DrawString(L"+ Add", -1, &fBold, outAdd, &fC, &bWhite);
 
                 outDel.clear();
-                float listStartY = contentY + 75.0f;
-                float boxH = listAreaH - 85.0f;
+                float listStartY = inpY + 45.0f;
+                float boxH = listAreaH - 100.0f;
+                if (colIdx == 1) boxH -= 45.0f; 
+
                 g_ehb.listAreas[colIdx] = RectF(colX, listStartY, colW, boxH);
-                
-                GraphicsPath bP; AddRoundedRectPath(bP, colX+5, listStartY, colW-10, boxH, 4);
-                g.FillPath(&bBg, &bP); g.DrawPath(&pThin, &bP);
+                g.FillRectangle(&bWhite, g_ehb.listAreas[colIdx]);
+                g.DrawRectangle(&pThin, colX, listStartY, colW, boxH);
 
                 if(list && !list->empty()) {
                     s_listScrollMax[colIdx] = (std::max)(0.0f, (list->size() * 35.0f) - boxH + 10.0f);
@@ -1162,14 +1166,15 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
                     for(size_t i = 0; i < list->size(); ++i) {
                         auto& item = (*list)[i];
                         if (itemY + 30 > listStartY && itemY < listStartY + boxH) {
-                            RectF rowR(colX + 10, itemY, colW - 20, 30);
-                            g.FillRectangle(&bBgHover, rowR);
-                            g.DrawString(item.name.c_str(), -1, &fSmall, RectF(rowR.X+5, rowR.Y, rowR.Width-30, rowR.Height), &fL, &bDark);
+                            RectF rowR(colX + 5, itemY, colW - 10, 30);
+                            g.DrawString(item.name.c_str(), -1, &fNorm, RectF(rowR.X+5, rowR.Y, rowR.Width-35, rowR.Height), &fL, &bDark);
                             
-                            RectF delR(rowR.X + rowR.Width - 25, rowR.Y + 2.5f, 25, 25);
+                            RectF delR(rowR.X + rowR.Width - 30, rowR.Y, 30, 30);
                             outDel.push_back({delR, (int)i});
                             SolidBrush crBr(item.isHoveredCross ? ClrRed : ClrGrayText);
                             g.DrawString(L"\xE711", -1, &fSmallIcon, delR, &fC, &crBr);
+                            
+                            g.DrawLine(&pThin, rowR.X, rowR.Y + 30.0f, rowR.X + rowR.Width, rowR.Y + 30.0f);
                         }
                         itemY += 35.0f;
                     }
@@ -1178,7 +1183,7 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
                     if (s_listScrollMax[colIdx] > 0) {
                         float thumbH = (std::max)(20.0f, boxH * (boxH / (boxH + s_listScrollMax[colIdx])));
                         float thumbY = listStartY + (s_listScrollC[colIdx] / s_listScrollMax[colIdx]) * (boxH - thumbH);
-                        RectF thumbR(colX + colW - 9, thumbY, 4, thumbH);
+                        RectF thumbR(colX + colW - 6, thumbY, 4, thumbH);
                         GraphicsPath thP; AddRoundedRectPath(thP, thumbR.X, thumbR.Y, thumbR.Width, thumbR.Height, 2);
                         SolidBrush thB(Color(100, 150, 150, 150));
                         g.FillPath(&thB, &thP);
@@ -1188,14 +1193,33 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
                 }
             };
 
-            DrawListCol(0, cardX, L"Websites", L"fb.com", inpWeb, 2, cWebs, g_ehb.webInp, &g_ehb.webCombo, g_ehb.addWeb, hoverSchWebCombo, g_ehb.hAddWeb, g_ehb.webDel);
-            SolidBrush bSep(Color(255, 235, 238, 242));
-            g.FillRectangle(&bSep, cardX + colW + 4, contentY + 10, 2.0f, listAreaH - 20);
-            
-            DrawListCol(1, cardX + colW + 10, L"Apps", L"vlc.exe", inpApp, 3, cApps, g_ehb.appInp, &g_ehb.appCombo, g_ehb.addApp, hoverSchAppCombo, g_ehb.hAddApp, g_ehb.appDel);
-            g.FillRectangle(&bSep, cardX + colW * 2 + 14, contentY + 10, 2.0f, listAreaH - 20);
-            
-            DrawListCol(2, cardX + colW * 2 + 20, L"Keywords", L"games", inpKey, 4, cKeys, g_ehb.keyInp, nullptr, g_ehb.addKey, false, g_ehb.hAddKey, g_ehb.keyDel);
+            float startColX = cardX + 10.0f;
+            DrawListCol(0, startColX, L"Websites", L"e.g. facebook.com", inpWeb, 2, cWebs, g_ehb.webInp, &g_ehb.webCombo, g_ehb.addWeb, hoverSchWebCombo, g_ehb.hAddWeb, g_ehb.webDel);
+            DrawListCol(1, startColX + colW + colGap, L"Applications", L"e.g. vlc.exe", inpApp, 3, cApps, g_ehb.appInp, &g_ehb.appCombo, g_ehb.addApp, hoverSchAppCombo, g_ehb.hAddApp, g_ehb.appDel);
+            DrawListCol(2, startColX + (colW * 2) + (colGap * 2), L"Keywords", L"e.g. games", inpKey, 4, cKeys, g_ehb.keyInp, nullptr, g_ehb.addKey, false, g_ehb.hAddKey, g_ehb.keyDel);
+
+            // 🟢 Action Buttons Under Apps Column
+            float btnW = (colW - 10.0f) / 3.0f; 
+            float btnY = contentY + listAreaH - 45.0f; 
+            float appColX = startColX + colW + colGap;
+
+            g_ehb.btnAddExe = RectF(appColX, btnY, btnW, 36.0f);
+            GraphicsPath* p1 = GetSchRoundRectPath(g_ehb.btnAddExe, 4);
+            SolidBrush b1(g_ehb.hBtnAddExe ? ClrGreen : Color(255, 90, 170, 20));
+            g.FillPath(&b1, p1); delete p1;
+            g.DrawString(L"Add Exe", -1, &fSmallBold, g_ehb.btnAddExe, &fC, &bWhite);
+
+            g_ehb.btnAddStore = RectF(appColX + btnW + 5.0f, btnY, btnW, 36.0f);
+            GraphicsPath* p2 = GetSchRoundRectPath(g_ehb.btnAddStore, 4);
+            SolidBrush b2(g_ehb.hBtnAddStore ? ClrGreen : Color(255, 90, 170, 20));
+            g.FillPath(&b2, p2); delete p2;
+            g.DrawString(L"Add Store", -1, &fSmallBold, g_ehb.btnAddStore, &fC, &bWhite);
+
+            g_ehb.btnAddTitle = RectF(appColX + (btnW * 2) + 10.0f, btnY, btnW, 36.0f);
+            GraphicsPath* p3 = GetSchRoundRectPath(g_ehb.btnAddTitle, 4);
+            SolidBrush b3(g_ehb.hBtnAddTitle ? ClrGreen : Color(255, 90, 170, 20));
+            g.FillPath(&b3, p3); delete p3;
+            g.DrawString(L"Add Title", -1, &fSmallBold, g_ehb.btnAddTitle, &fC, &bWhite);
         }
 
         if (s_activeSubTab == 0 && isSchModeDropdownOpen) {
@@ -1256,16 +1280,12 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
 
         if (s_showTimeOverlay) {
             g.DrawString(L"SET FOCUS DURATION (SELF CONTROL)", -1, &fTitle, RectF(ovX, ovY + 20, ovW, 30), &fC, &bDark);
-            
             g.DrawString(L"Months:", -1, &fBold, RectF(ovX + 40, ovY + 80, 60, 36), &fL, &bDark);
             DrawSchOverlaySpinner(g, ovX + 110, ovY + 80, to_wstring(s_focusMonths), s_hTimeMoM, s_hTimeMoP, &fIcon, &fBold);
-            
             g.DrawString(L"Days:", -1, &fBold, RectF(ovX + 250, ovY + 80, 50, 36), &fL, &bDark);
             DrawSchOverlaySpinner(g, ovX + 300, ovY + 80, to_wstring(s_focusDays), s_hTimeDM, s_hTimeDP, &fIcon, &fBold);
-
             g.DrawString(L"Hours:", -1, &fBold, RectF(ovX + 40, ovY + 140, 60, 36), &fL, &bDark);
             DrawSchOverlaySpinner(g, ovX + 110, ovY + 140, to_wstring(s_focusHours), s_hTimeHM, s_hTimeHP, &fIcon, &fBold);
-            
             g.DrawString(L"Mins:", -1, &fBold, RectF(ovX + 250, ovY + 140, 50, 36), &fL, &bDark);
             DrawSchOverlaySpinner(g, ovX + 300, ovY + 140, to_wstring(s_focusMins), s_hTimeMM, s_hTimeMP, &fIcon, &fBold);
 
@@ -1411,6 +1431,8 @@ void ProcessScheduleBlocksMouseMove(float x, float y) {
             if (isSchAppComboOpen) {
                 for(size_t i=0; i<g_ehb.appOpts.size(); ++i) { if(g_ehb.appOpts[i].Contains(x, y)) { hoverSchAppOptIdx = i; return; } }
             }
+            
+            g_ehb.hBtnAddExe = false; g_ehb.hBtnAddStore = false; g_ehb.hBtnAddTitle = false;
         }
 
         if(g_ehb.saveBtn.Contains(x,y)) g_ehb.hSave = true;
@@ -1456,6 +1478,10 @@ void ProcessScheduleBlocksMouseMove(float x, float y) {
         else if (s_activeSubTab == 2) {
             if(g_ehb.webCombo.Contains(x,y)) hoverSchWebCombo = true;
             if(g_ehb.appCombo.Contains(x,y)) hoverSchAppCombo = true;
+
+            if (g_ehb.btnAddExe.Contains(x, y)) g_ehb.hBtnAddExe = true;
+            if (g_ehb.btnAddStore.Contains(x, y)) g_ehb.hBtnAddStore = true;
+            if (g_ehb.btnAddTitle.Contains(x, y)) g_ehb.hBtnAddTitle = true;
 
             activeInput = 0;
             if (g_ehb.webInp.Contains(x,y)) activeInput = 2;
@@ -1516,9 +1542,6 @@ void ProcessScheduleBlocksMouseMove(float x, float y) {
 // ==========================================
 void ProcessScheduleBlocksMouseDown(float x, float y) {
     std::lock_guard<std::mutex> lock(g_schMutex);
-    if (editingProfileIdx == -1) {
-        // Main view scrollbar drag logic (if you want to implement thumb detection)
-    }
 }
 
 // ==========================================
@@ -1625,6 +1648,30 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
         }
 
         if (s_activeSubTab == 2) {
+            if (g_ehb.hBtnAddExe && editingProfileIdx >= 0) {
+                OPENFILENAMEW ofn;
+                wchar_t szFile[260] = { 0 };
+                ZeroMemory(&ofn, sizeof(ofn));
+                ofn.lStructSize = sizeof(ofn);
+                ofn.hwndOwner = hParentWnd;
+                ofn.lpstrFile = szFile;
+                ofn.nMaxFile = sizeof(szFile) / sizeof(wchar_t);
+                ofn.lpstrFilter = L"Executables\0*.exe\0All\0*.*\0";
+                ofn.nFilterIndex = 1;
+                ofn.lpstrFileTitle = NULL;
+                ofn.nMaxFileTitle = 0;
+                ofn.lpstrInitialDir = NULL;
+                ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+
+                if (GetOpenFileNameW(&ofn) == TRUE) {
+                    wstring fullPath = ofn.lpstrFile;
+                    size_t pos = fullPath.find_last_of(L"\\/");
+                    wstring exeName = (pos != wstring::npos) ? fullPath.substr(pos + 1) : fullPath;
+                    g_profiles[editingProfileIdx].blockedApps.push_back({exeName, false});
+                }
+                return;
+            }
+
             if (isSchWebComboOpen && !hoverSchWebCombo && hoverSchWebOptIdx == -1) {
                 isSchWebComboOpen = false; dropdownClosed = true;
             } else if (isSchWebComboOpen) {
@@ -1690,29 +1737,12 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
 
             if (editingProfileIdx >= 0) {
                 for (size_t qi = 0; qi < s_quickBlocks.size() && qi < s_quickBlockRects.size(); ++qi) {
-                    if (!s_quickBlocks[qi].hovered) continue;
-                    auto& qb = s_quickBlocks[qi];
-
-                    bool found = false;
-                    if (!qb.websites.empty()) {
-                        auto& webs = g_profiles[editingProfileIdx].blockedWebsites;
-                        for (auto it = webs.begin(); it != webs.end(); ++it) {
-                            if (it->name == qb.websites[0]) { webs.erase(it); found = true; break; }
-                        }
-                    }
-                    if (!found) {
-                        if (!qb.keywords.empty()) {
-                            auto& keys = g_profiles[editingProfileIdx].blockedKeywords;
-                            for (auto it = keys.begin(); it != keys.end(); ++it) {
-                                if (it->name == qb.keywords[0]) { keys.erase(it); found = true; break; }
-                            }
-                        }
-                    }
-                    if (!found) {
-                        for (const auto& ws : qb.websites)
-                            g_profiles[editingProfileIdx].blockedWebsites.push_back({ws, false});
-                        for (const auto& kw : qb.keywords)
-                            g_profiles[editingProfileIdx].blockedKeywords.push_back({kw, false});
+                    if (s_quickBlockRects[qi].Contains(x, y)) {
+                        // 🟢 Toggle boolean flags cleanly
+                        if (qi == 0) g_profiles[editingProfileIdx].qbYTShorts = !g_profiles[editingProfileIdx].qbYTShorts;
+                        else if (qi == 1) g_profiles[editingProfileIdx].qbFBReels = !g_profiles[editingProfileIdx].qbFBReels;
+                        else if (qi == 2) g_profiles[editingProfileIdx].qbYTAds = !g_profiles[editingProfileIdx].qbYTAds;
+                        else if (qi == 3) g_profiles[editingProfileIdx].qbIGReels = !g_profiles[editingProfileIdx].qbIGReels;
                     }
                 }
             }
