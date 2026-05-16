@@ -481,33 +481,7 @@ static void RemoveRegPolicy(HKEY hKeyRoot, const char* subKey, const char* value
     }
 }
 
-// ==========================================
-// --- ADMIN PRIVILEGE CHECKER ---
-// ==========================================
-static bool CheckAndRequestAdmin() {
-    if (IsUserAnAdmin()) {
-        return true;
-    }
-    
-    int msg = MessageBoxA(NULL, 
-        "This feature requires Administrator privileges to modify the Registry and Hosts file.\n\nDo you want to restart RasFocus as Administrator?", 
-        "Admin Permission Required", MB_YESNO | MB_ICONWARNING);
-        
-    if (msg == IDYES) {
-        wchar_t szPath[MAX_PATH];
-        GetModuleFileNameW(NULL, szPath, MAX_PATH);
-        
-        SHELLEXECUTEINFOW sei = { sizeof(sei) };
-        sei.lpVerb = L"runas"; 
-        sei.lpFile = szPath;
-        sei.nShow = SW_NORMAL;
-        
-        if (ShellExecuteExW(&sei)) {
-            exit(0); 
-        }
-    }
-    return false;
-}
+
 
 // ==========================================
 // --- STRICT: DNS / HOSTS / POLICIES ---
@@ -519,6 +493,64 @@ static void SetFamilyDNS(bool enable) {
                        :L"/c wmic nicconfig where (IPEnabled=TRUE) call SetDNSServerSearchOrder ()";
     sei.lpParameters=args.c_str(); ShellExecuteExW(&sei);
     WinExec("ipconfig /flushdns",SW_HIDE);
+}
+
+// ==========================================
+// --- SAFE SEARCH: DYNAMIC BAT EXECUTION ---
+// ==========================================
+static void ToggleSafeSearchViaBat(bool enable) {
+    // ১. Temp directory বের করা
+    wchar_t tempPath[MAX_PATH];
+    GetTempPathW(MAX_PATH, tempPath);
+    wstring batPath = wstring(tempPath) + L"RasFocus_SafeSearch.bat";
+
+    // ২. .bat ফাইল তৈরি করা এবং কমান্ড লেখা
+    wofstream batFile(batPath);
+    batFile.imbue(std::locale(batFile.getloc(), new std::codecvt_utf8<wchar_t>));
+    if (!batFile.is_open()) return;
+
+    batFile << L"@echo off\r\n";
+
+    if (enable) {
+        // Chrome
+        batFile << L"reg add \"HKLM\\SOFTWARE\\Policies\\Google\\Chrome\" /v ForceGoogleSafeSearch /t REG_DWORD /d 1 /f\r\n";
+        batFile << L"reg add \"HKLM\\SOFTWARE\\Policies\\Google\\Chrome\" /v ForceYouTubeRestrict /t REG_DWORD /d 2 /f\r\n";
+        // Edge
+        batFile << L"reg add \"HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge\" /v ForceGoogleSafeSearch /t REG_DWORD /d 1 /f\r\n";
+        batFile << L"reg add \"HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge\" /v ForceBingSafeSearch /t REG_DWORD /d 1 /f\r\n";
+        batFile << L"reg add \"HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge\" /v ForceYouTubeRestrict /t REG_DWORD /d 2 /f\r\n";
+        // Brave
+        batFile << L"reg add \"HKLM\\SOFTWARE\\Policies\\BraveSoftware\\Brave\" /v ForceGoogleSafeSearch /t REG_DWORD /d 1 /f\r\n";
+    } else {
+        // Chrome
+        batFile << L"reg delete \"HKLM\\SOFTWARE\\Policies\\Google\\Chrome\" /v ForceGoogleSafeSearch /f >nul 2>&1\r\n";
+        batFile << L"reg delete \"HKLM\\SOFTWARE\\Policies\\Google\\Chrome\" /v ForceYouTubeRestrict /f >nul 2>&1\r\n";
+        // Edge
+        batFile << L"reg delete \"HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge\" /v ForceGoogleSafeSearch /f >nul 2>&1\r\n";
+        batFile << L"reg delete \"HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge\" /v ForceBingSafeSearch /f >nul 2>&1\r\n";
+        batFile << L"reg delete \"HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge\" /v ForceYouTubeRestrict /f >nul 2>&1\r\n";
+        // Brave
+        batFile << L"reg delete \"HKLM\\SOFTWARE\\Policies\\BraveSoftware\\Brave\" /v ForceGoogleSafeSearch /f >nul 2>&1\r\n";
+    }
+
+    batFile << L"ipconfig /flushdns >nul\r\n";
+    batFile.close();
+
+    // ৩. Admin হিসেবে .bat execute করা
+    SHELLEXECUTEINFOW sei = { sizeof(sei) };
+    sei.lpVerb = L"runas";
+    sei.lpFile = batPath.c_str();
+    sei.nShow  = SW_HIDE;
+    sei.fMask  = SEE_MASK_NOCLOSEPROCESS;
+
+    if (ShellExecuteExW(&sei) && sei.hProcess) {
+        // ৪. .bat শেষ হওয়া পর্যন্ত অপেক্ষা
+        WaitForSingleObject(sei.hProcess, INFINITE);
+        CloseHandle(sei.hProcess);
+    }
+
+    // ৫. Temp .bat ডিলিট
+    DeleteFileW(batPath.c_str());
 }
 
 static void EnforceStrictProtocols() {
@@ -1438,7 +1470,6 @@ void ProcessAdultMouseClick(float x, float y) {
     }
     if(hCbDnsFilter){
         if(canToggleStrict(cbDnsFilter)) {
-            if(!CheckAndRequestAdmin()) return;
             cbDnsFilter=!cbDnsFilter;
             SetFamilyDNS(cbDnsFilter);
             EnforceStrictProtocols();
@@ -1449,9 +1480,8 @@ void ProcessAdultMouseClick(float x, float y) {
     }
     if(hCbSafeSearch){
         if(canToggleStrict(cbSafeSearch)) {
-            if(!CheckAndRequestAdmin()) return;
             cbSafeSearch=!cbSafeSearch;
-            EnforceStrictProtocols();
+            ToggleSafeSearchViaBat(cbSafeSearch);
             
             // Smart Browser Kill Solution
             if(!cbSafeSearch){
