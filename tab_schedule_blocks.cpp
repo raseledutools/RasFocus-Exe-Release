@@ -116,6 +116,102 @@ static void DrawSchOverlaySpinner(Graphics& g, float x, float y, const std::wstr
 }
 
 // ==========================================
+// 🟢 ADGUARD AUTO-INSTALL (NO ADMIN NEEDED)
+// ==========================================
+
+// AdGuard Extension ID for Chrome/Edge
+static const wstring ADGUARD_EXT_ID = L"bgnkhfasdpejbgvffebekngafnmikojm";
+
+// Method 1: Registry-based force install (needs admin — tries silently)
+static void TryAdGuardViaRegistry(bool install) {
+    wstring chromeReg = L"HKLM\\Software\\Policies\\Google\\Chrome\\ExtensionInstallForcelist";
+    wstring edgeReg   = L"HKLM\\Software\\Policies\\Microsoft\\Edge\\ExtensionInstallForcelist";
+
+    wchar_t tempPath[MAX_PATH]; GetTempPathW(MAX_PATH, tempPath);
+    wstring batPath = wstring(tempPath) + L"ras_adguard_reg.bat";
+
+    wstring bat = L"@echo off\n";
+    if (install) {
+        bat += L"reg add \"" + chromeReg + L"\" /v \"1\" /t REG_SZ /d \"" + ADGUARD_EXT_ID + L";https://clients2.google.com/service/update2/crx\" /f 2>nul\n";
+        bat += L"reg add \"" + edgeReg   + L"\" /v \"1\" /t REG_SZ /d \"" + ADGUARD_EXT_ID + L";https://edge.microsoft.com/extensionwebstorebase/v1/crx\" /f 2>nul\n";
+    } else {
+        bat += L"reg delete \"" + chromeReg + L"\" /v \"1\" /f 2>nul\n";
+        bat += L"reg delete \"" + edgeReg   + L"\" /v \"1\" /f 2>nul\n";
+    }
+    bat += L"del \"%~f0\"\n";
+
+    wofstream out(batPath); out << bat; out.close();
+    // runas = UAC prompt; if user cancels → falls to Method 2
+    ShellExecuteW(NULL, L"runas", batPath.c_str(), NULL, NULL, SW_HIDE);
+}
+
+// Method 2: Per-user registry (NO admin needed, works immediately in Chrome/Edge)
+static void TryAdGuardViaUserRegistry(bool install) {
+    // Chrome: HKCU policy path (Chrome 85+ respects HKCU ExtensionInstallForcelist)
+    wstring chromeKey = L"Software\\Policies\\Google\\Chrome\\ExtensionInstallForcelist";
+    wstring edgeKey   = L"Software\\Policies\\Microsoft\\Edge\\ExtensionInstallForcelist";
+    wstring extValue  = ADGUARD_EXT_ID + L";https://clients2.google.com/service/update2/crx";
+    wstring extValueE = ADGUARD_EXT_ID + L";https://edge.microsoft.com/extensionwebstorebase/v1/crx";
+
+    auto WriteReg = [&](const wstring& key, const wstring& val) {
+        HKEY hk;
+        if (RegCreateKeyExW(HKEY_CURRENT_USER, key.c_str(), 0, NULL,
+            REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, NULL, &hk, NULL) == ERROR_SUCCESS) {
+            RegSetValueExW(hk, L"1", 0, REG_SZ,
+                (const BYTE*)val.c_str(), (DWORD)((val.size() + 1) * sizeof(wchar_t)));
+            RegCloseKey(hk);
+        }
+    };
+    auto DeleteReg = [&](const wstring& key) {
+        HKEY hk;
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, key.c_str(), 0, KEY_SET_VALUE, &hk) == ERROR_SUCCESS) {
+            RegDeleteValueW(hk, L"1");
+            RegCloseKey(hk);
+        }
+    };
+
+    if (install) {
+        WriteReg(chromeKey, extValue);
+        WriteReg(edgeKey,   extValueE);
+    } else {
+        DeleteReg(chromeKey);
+        DeleteReg(edgeKey);
+    }
+}
+
+// Method 3: Chrome/Edge External Extension JSON drop (no admin, works for Chrome)
+static void TryAdGuardViaExternalJson(bool install) {
+    // Chrome looks in: %LOCALAPPDATA%\Google\Chrome\User Data\External Extensions\
+    wchar_t localApp[MAX_PATH]; SHGetFolderPathW(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, localApp);
+    wstring chromeExtDir = wstring(localApp) + L"\\Google\\Chrome\\User Data\\External Extensions";
+    wstring edgeExtDir   = wstring(localApp) + L"\\Microsoft\\Edge\\User Data\\External Extensions";
+    wstring jsonFile     = ADGUARD_EXT_ID + L".json";
+    wstring jsonContent  = L"{\n  \"external_update_url\": \"https://clients2.google.com/service/update2/crx\"\n}\n";
+
+    if (install) {
+        for (const auto& dir : { chromeExtDir, edgeExtDir }) {
+            CreateDirectoryW(dir.c_str(), NULL);
+            wofstream jf(dir + L"\\" + jsonFile);
+            if (jf) { jf << jsonContent; jf.close(); }
+        }
+    } else {
+        for (const auto& dir : { chromeExtDir, edgeExtDir }) {
+            DeleteFileW((dir + L"\\" + jsonFile).c_str());
+        }
+    }
+}
+
+// Master function: tries all 3 methods
+static void ManageAdGuardExtension(bool install) {
+    // Method 2 (no admin) — always runs first, instant effect
+    TryAdGuardViaUserRegistry(install);
+    // Method 3 (no admin) — JSON drop for Chrome
+    TryAdGuardViaExternalJson(install);
+    // Method 1 (admin UAC) — if user accepts, strongest enforcement
+    TryAdGuardViaRegistry(install);
+}
+
+// ==========================================
 // --- DATA STRUCTURES & GLOBALS ---
 // ==========================================
 struct SchBlockItem { wstring name; bool isHoveredCross = false; };
@@ -135,7 +231,7 @@ struct FocusProfile {
     int startHour = 9, startMin = 0, endHour = 17, endMin = 0;
     bool blockInternet = false, blockUninstall = true;
 
-    bool qbYTShorts = false, qbFBReels = false, qbYTAds = false, qbIGReels = false;
+    bool quickBlockYouTubeShorts = false, quickBlockFacebookReels = false, quickBlockAds = false, quickBlockInstagramReels = false;
     bool schAdultWeb = false, schHardcore = false, schRomantic = false, schStrictDns = false;
     
     bool hToggle = false, hEdit = false, hDel = false;
@@ -187,7 +283,8 @@ struct EditHitboxes {
     RectF subTabRects[4];
     int hSubTab = -1;
 
-    RectF nameInp, modeDrop, days[7], stH_Box, stM_Box, stAmPm, enH_Box, enM_Box, enAmPm, togInt, togUni;
+    RectF nameInp, modeDrop, days[7], stH_Box, stM_Box, stAmPm, enH_Box, enM_Box, enAmPm, toggleInternet, toggleUninstall;
+    bool hoverToggleInternet = false, hoverToggleUninstall = false;
     RectF webInp, webCombo, addWeb, appInp, appCombo, addApp, keyInp, addKey;
     RectF btnAddExe, btnAddStore, btnAddTitle;
     bool hBtnAddExe = false, hBtnAddStore = false, hBtnAddTitle = false;
@@ -200,7 +297,7 @@ struct EditHitboxes {
     RectF modeOpt[3];
     vector<RectF> webOpts, appOpts, storeOpts;
 
-    bool hSave=false, hCancel=false, hNext=false, hBack=false, hStH=false, hStM=false, hStAmPm=false, hEnH=false, hEnM=false, hEnAmPm=false, hTogInt=false, hTogUni=false, hAddWeb=false, hAddApp=false, hAddKey=false, hOptSelf=false, hOptParents=false, hOptLongText=false;
+    bool hSave=false, hCancel=false, hNext=false, hBack=false, hStH=false, hStM=false, hStAmPm=false, hEnH=false, hEnM=false, hEnAmPm=false, hAddWeb=false, hAddApp=false, hAddKey=false, hOptSelf=false, hOptParents=false, hOptLongText=false;
     int hDay=-1;
 } g_ehb;
 
@@ -234,7 +331,7 @@ static void ApplyHostsFileBlocking(const vector<FocusProfile>& safeProfiles) {
     for (const auto& p : safeProfiles) {
         if (!p.isActive) continue;
         for (const auto& w : p.blockedWebsites) { auto pats = GetAllBlockPatterns(w.name); for (const auto& pt : pats) activePats.push_back(pt); }
-        if (p.qbYTAds) { activePats.push_back(L"googlevideo.com"); activePats.push_back(L"doubleclick.net"); }
+        if (p.quickBlockAds) { activePats.push_back(L"googlevideo.com"); activePats.push_back(L"doubleclick.net"); }
         if (p.blockInternet) { activePats.push_back(L"www.msftconnecttest.com"); activePats.push_back(L"ipv6.msftconnecttest.com"); }
     }
 
@@ -309,6 +406,124 @@ static void KillBlockedApps(const vector<SchBlockItem>& apps) {
     CloseHandle(snap);
 }
 
+// ==========================================
+// 🟢 SAFE SEARCH ENFORCER (DNS + Hosts + Registry)
+// ==========================================
+
+static void ApplySafeSearchEnforcement(bool enable) {
+    // ── 1. HOSTS FILE: redirect search engines to their SafeSearch IPs ──
+    wchar_t sysDir[MAX_PATH]; GetSystemDirectoryW(sysDir, MAX_PATH);
+    wstring hostsPath = wstring(sysDir) + L"\\drivers\\etc\\hosts";
+
+    wifstream fin(hostsPath);
+    fin.imbue(locale(fin.getloc(), new codecvt_utf8<wchar_t>));
+    wstring cleanContent;
+    if (fin) {
+        wstring ln;
+        while (getline(fin, ln)) {
+            if (ln.find(L"# RasSafeSearch") == wstring::npos) cleanContent += ln + L"\n";
+        }
+        fin.close();
+    }
+
+    if (enable) {
+        // Google SafeSearch: forcesafesearch.google.com = 216.239.38.120
+        cleanContent += L"216.239.38.120 www.google.com # RasSafeSearch\n";
+        cleanContent += L"216.239.38.120 google.com # RasSafeSearch\n";
+        cleanContent += L"216.239.38.120 www.google.com.bd # RasSafeSearch\n";
+        // Bing SafeSearch: strict.bing.com = 204.79.197.220
+        cleanContent += L"204.79.197.220 www.bing.com # RasSafeSearch\n";
+        cleanContent += L"204.79.197.220 bing.com # RasSafeSearch\n";
+        // YouTube Restricted: restrict.youtube.com = 216.239.38.120
+        cleanContent += L"216.239.38.120 www.youtube.com # RasSafeSearch\n";
+        cleanContent += L"216.239.38.120 m.youtube.com # RasSafeSearch\n";
+        cleanContent += L"216.239.38.120 youtube.com # RasSafeSearch\n";
+        // DuckDuckGo SafeSearch
+        cleanContent += L"54.156.15.249 duckduckgo.com # RasSafeSearch\n";
+        cleanContent += L"54.156.15.249 www.duckduckgo.com # RasSafeSearch\n";
+    }
+
+    wofstream fout(hostsPath);
+    fout.imbue(locale(fout.getloc(), new codecvt_utf8<wchar_t>));
+    if (fout) { fout << cleanContent; fout.close(); }
+
+    // ── 2. REGISTRY: Force SafeSearch via Chrome/Edge policy ──
+    wstring chromeKey = L"Software\\Policies\\Google\\Chrome";
+    wstring edgeKey   = L"Software\\Policies\\Microsoft\\Edge";
+
+    auto WriteRegDword = [](const wstring& key, const wstring& name, DWORD val) {
+        HKEY hk;
+        if (RegCreateKeyExW(HKEY_LOCAL_MACHINE, key.c_str(), 0, NULL,
+            REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, NULL, &hk, NULL) == ERROR_SUCCESS) {
+            RegSetValueExW(hk, name.c_str(), 0, REG_DWORD, (const BYTE*)&val, sizeof(DWORD));
+            RegCloseKey(hk);
+        }
+        // Also try HKCU (no admin needed)
+        if (RegCreateKeyExW(HKEY_CURRENT_USER, key.c_str(), 0, NULL,
+            REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, NULL, &hk, NULL) == ERROR_SUCCESS) {
+            RegSetValueExW(hk, name.c_str(), 0, REG_DWORD, (const BYTE*)&val, sizeof(DWORD));
+            RegCloseKey(hk);
+        }
+    };
+    auto DeleteRegVal = [](const wstring& key, const wstring& name) {
+        HKEY hk;
+        if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, key.c_str(), 0, KEY_SET_VALUE, &hk) == ERROR_SUCCESS) {
+            RegDeleteValueW(hk, name.c_str()); RegCloseKey(hk);
+        }
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, key.c_str(), 0, KEY_SET_VALUE, &hk) == ERROR_SUCCESS) {
+            RegDeleteValueW(hk, name.c_str()); RegCloseKey(hk);
+        }
+    };
+
+    if (enable) {
+        // Chrome: ForceGoogleSafeSearch = 1, ForceYouTubeRestrict = 2 (Strict)
+        WriteRegDword(chromeKey, L"ForceGoogleSafeSearch", 1);
+        WriteRegDword(chromeKey, L"ForceYouTubeRestrict", 2);
+        // Edge: ForceGoogleSafeSearch = 1, ForceYouTubeRestrict = 2
+        WriteRegDword(edgeKey, L"ForceGoogleSafeSearch", 1);
+        WriteRegDword(edgeKey, L"ForceYouTubeRestrict", 2);
+        // Firefox via registry (for Firefox 60+)
+        wstring ffKey = L"Software\\Policies\\Mozilla\\Firefox";
+        WriteRegDword(ffKey, L"EnableTrackingProtection", 1);
+    } else {
+        DeleteRegVal(chromeKey, L"ForceGoogleSafeSearch");
+        DeleteRegVal(chromeKey, L"ForceYouTubeRestrict");
+        DeleteRegVal(edgeKey, L"ForceGoogleSafeSearch");
+        DeleteRegVal(edgeKey, L"ForceYouTubeRestrict");
+    }
+
+    // ── 3. DNS FLUSH ──
+    ShellExecuteW(NULL, L"open", L"cmd.exe", L"/c ipconfig /flushdns", NULL, SW_HIDE);
+
+    // ── 4. BAT for admin-level DNS (Family Filter DNS servers) ──
+    if (enable) {
+        wchar_t tempPath[MAX_PATH]; GetTempPathW(MAX_PATH, tempPath);
+        wstring batPath = wstring(tempPath) + L"ras_safedns.bat";
+        // CleanBrowsing Family Filter DNS: 185.228.168.168 / 185.228.169.168
+        wstring bat = L"@echo off\n";
+        bat += L"netsh interface ip set dns \"Wi-Fi\" static 185.228.168.168 2>nul\n";
+        bat += L"netsh interface ip add dns \"Wi-Fi\" 185.228.169.168 index=2 2>nul\n";
+        bat += L"netsh interface ip set dns \"Ethernet\" static 185.228.168.168 2>nul\n";
+        bat += L"netsh interface ip add dns \"Ethernet\" 185.228.169.168 index=2 2>nul\n";
+        bat += L"netsh interface ip set dns \"Local Area Connection\" static 185.228.168.168 2>nul\n";
+        bat += L"ipconfig /flushdns\n";
+        bat += L"del \"%~f0\"\n";
+        wofstream out(batPath); out << bat; out.close();
+        ShellExecuteW(NULL, L"runas", batPath.c_str(), NULL, NULL, SW_HIDE);
+    } else {
+        wchar_t tempPath[MAX_PATH]; GetTempPathW(MAX_PATH, tempPath);
+        wstring batPath = wstring(tempPath) + L"ras_safedns_off.bat";
+        wstring bat = L"@echo off\n";
+        bat += L"netsh interface ip set dns \"Wi-Fi\" dhcp 2>nul\n";
+        bat += L"netsh interface ip set dns \"Ethernet\" dhcp 2>nul\n";
+        bat += L"netsh interface ip set dns \"Local Area Connection\" dhcp 2>nul\n";
+        bat += L"ipconfig /flushdns\n";
+        bat += L"del \"%~f0\"\n";
+        wofstream out(batPath); out << bat; out.close();
+        ShellExecuteW(NULL, L"runas", batPath.c_str(), NULL, NULL, SW_HIDE);
+    }
+}
+
 static void ApplyProfileBlockingWorker(vector<FocusProfile> all_profiles) {
     // Rebuild Hosts & PAC globally
     ApplyHostsFileBlocking(all_profiles); 
@@ -320,6 +535,7 @@ static void ApplyProfileBlockingWorker(vector<FocusProfile> all_profiles) {
         if (p.isActive && p.schStrictDns) anyAdultDns = true;
     }
     SetInternetStateSch(anyIntBlock);
+    ApplySafeSearchEnforcement(anyAdultDns);
     AdultBlock_ApplyForSchedule(anyAdultDns);
 }
 
@@ -360,7 +576,7 @@ static void SaveProfiles() {
         for(int i=0; i<7; i++) out << p.activeDays[i] << L" ";
         out << L"\n" << p.startHour << L" " << p.startMin << L" " << p.endHour << L" " << p.endMin << L"\n";
         out << p.blockInternet << L" " << p.blockUninstall << L"\n";
-        out << p.qbYTShorts << L" " << p.qbFBReels << L" " << p.qbYTAds << L" " << p.qbIGReels << L"\n";
+        out << p.quickBlockYouTubeShorts << L" " << p.quickBlockFacebookReels << L" " << p.quickBlockAds << L" " << p.quickBlockInstagramReels << L"\n";
         out << p.schAdultWeb << L" " << p.schHardcore << L" " << p.schRomantic << L" " << p.schStrictDns << L"\n";
         out << p.blockedWebsites.size() << L"\n"; for (const auto& w : p.blockedWebsites) out << w.name << L"\n";
         out << p.blockedApps.size() << L"\n"; for (const auto& a : p.blockedApps) out << a.name << L"\n";
@@ -384,7 +600,7 @@ static void LoadProfiles() {
         in >> p.isActive >> p.lockMode >> p.lockEndTime; in.ignore(); getline(in, p.parentsPassword);
         for(int d=0; d<7; d++) in >> p.activeDays[d];
         in >> p.startHour >> p.startMin >> p.endHour >> p.endMin >> p.blockInternet >> p.blockUninstall;
-        if (in >> p.qbYTShorts >> p.qbFBReels >> p.qbYTAds >> p.qbIGReels >> p.schAdultWeb >> p.schHardcore >> p.schRomantic >> p.schStrictDns) { in.ignore(); } else { in.clear(); }
+        if (in >> p.quickBlockYouTubeShorts >> p.quickBlockFacebookReels >> p.quickBlockAds >> p.quickBlockInstagramReels >> p.schAdultWeb >> p.schHardcore >> p.schRomantic >> p.schStrictDns) { in.ignore(); } else { in.clear(); }
         size_t wCount = 0; if(in >> wCount) { in.ignore(); for(size_t j=0; j<wCount; ++j) { wstring w; getline(in, w); p.blockedWebsites.push_back({w, false}); } }
         size_t aCount = 0; if(in >> aCount) { in.ignore(); for(size_t j=0; j<aCount; ++j) { wstring a; getline(in, a); p.blockedApps.push_back({a, false}); } }
         size_t kCount = 0; if(in >> kCount) { in.ignore(); for(size_t j=0; j<kCount; ++j) { wstring k; getline(in, k); p.adultCustomKeywords.push_back({k, false}); } }
@@ -397,8 +613,17 @@ static void LoadProfiles() {
 // 🟢 BACKGROUND OBSERVER THREAD 
 // ==========================================
 void ScheduleObserverThread() {
+    int tickCount = 0;
     while (true) {
-        Sleep(1500); 
+        Sleep(400); 
+        tickCount++;
+
+        // Cursor blink refresh: every 400ms যখন overlay open থাকে
+        if (s_showPassOverlay || s_showTextUnlockOverlay || s_showTimeOverlay) {
+            if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
+        }
+
+        if (tickCount % 4 != 0) continue; // Profile check: ~1600ms এ একবার
         if (!isSchDataLoaded) continue;
 
         bool profilesChanged = false; g_schMutex.lock(); 
@@ -444,9 +669,9 @@ void ScheduleObserverThread() {
                     if (GetWindowTextW(hActive, windowTitle, 512) > 0) {
                         wstring lowerTitle = windowTitle; for (auto& c : lowerTitle) c = towlower(c);
                         bool triggerBlock = false;
-                        if (p.qbYTShorts && lowerTitle.find(L"youtube") != wstring::npos && lowerTitle.find(L"shorts") != wstring::npos) triggerBlock = true;
-                        if (p.qbFBReels && lowerTitle.find(L"facebook") != wstring::npos && lowerTitle.find(L"reels") != wstring::npos) triggerBlock = true;
-                        if (p.qbIGReels && lowerTitle.find(L"instagram") != wstring::npos && lowerTitle.find(L"reels") != wstring::npos) triggerBlock = true;
+                        if (p.quickBlockYouTubeShorts && lowerTitle.find(L"youtube") != wstring::npos && lowerTitle.find(L"shorts") != wstring::npos) triggerBlock = true;
+                        if (p.quickBlockFacebookReels && lowerTitle.find(L"facebook") != wstring::npos && lowerTitle.find(L"reels") != wstring::npos) triggerBlock = true;
+                        if (p.quickBlockInstagramReels && lowerTitle.find(L"instagram") != wstring::npos && lowerTitle.find(L"reels") != wstring::npos) triggerBlock = true;
 
                         if (p.schHardcore && !triggerBlock) { for (const auto& kw : hardcoreKeywords) { if (lowerTitle.find(kw) != wstring::npos) { triggerBlock = true; break; } } }
                         if (p.schRomantic && !triggerBlock) { for (const auto& kw : romanticKeywords) { if (lowerTitle.find(kw) != wstring::npos) { triggerBlock = true; break; } } }
@@ -635,17 +860,21 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
                 RectF togBg(cx + 12.0f, cy + 15.0f, 44.0f, 24.0f); GraphicsPath* tp = GetSchRoundRectPath(togBg, 12.0f); SolidBrush tBg(val ? ClrTeal : Color(255, 200, 210, 220)); g.FillPath(&tBg, tp); delete tp; g.FillEllipse(&bWhite, val ? togBg.X + togBg.Width - 22.0f : togBg.X + 2.0f, togBg.Y + 2.0f, 20.0f, 20.0f);
                 g.DrawString(label.c_str(), -1, &fBold, RectF(cx + 62.0f, cy + 8.0f, cbWidth - 75.0f, 22.0f), &fL, val ? &bTeal : &bDark); g.DrawString(desc.c_str(),  -1, &fSmall, RectF(cx + 62.0f, cy + 30.0f, cbWidth - 75.0f, 18.0f), &fL, &bGray);
             };
-            DrawCb(g_ehb.togInt, cardX + 15.0f, contentY + 40.0f, L"Block Internet", L"Disables all network access", editBlockInt, g_ehb.hTogInt); DrawCb(g_ehb.togUni, cardX + 15.0f + cbWidth, contentY + 40.0f, L"Block Uninstall", L"Locks Task Manager & apps", editBlockUninst, g_ehb.hTogUni);
+            DrawCb(g_ehb.toggleInternet, cardX + 15.0f, contentY + 40.0f, L"Block Internet", L"Disables all network access", editBlockInt, g_ehb.hoverToggleInternet); DrawCb(g_ehb.toggleUninstall, cardX + 15.0f + cbWidth, contentY + 40.0f, L"Block Uninstall", L"Locks Task Manager & apps", editBlockUninst, g_ehb.hoverToggleUninstall);
 
             contentY += 120.0f; RectF c4Rect(cardX, contentY, cardW_inner, 120.0f); GraphicsPath* c4P = GetSchRoundRectPath(c4Rect, 10.0f); g.FillPath(&bWhite, c4P); g.DrawPath(&pDiv, c4P); delete c4P;
             SolidBrush cardLabelBg4(Color(255, 245, 250, 255)); g.FillRectangle(&cardLabelBg4, cardX + 1.0f, contentY + 1.0f, cardW_inner - 2.0f, 36.0f); g.DrawString(L"\xE728  Quick Content Filters", -1, &fBold, RectF(cardX + 18.0f, contentY + 8.0f, 280.0f, 24.0f), &fL, &bDark); g.DrawLine(&pDiv, cardX, contentY + 38.0f, cardX + cardW_inner, contentY + 38.0f); g.DrawString(L"One-click blocking for Chrome, Edge, Firefox, Brave and Opera", -1, &fSmall, RectF(cardX + 18.0f, contentY + 46.0f, cardW_inner - 36.0f, 18.0f), &fL, &bGray);
 
             float qbX = cardX + 18.0f; float qbY = contentY + 68.0f; float qbW = 138.0f; float qbH = 44.0f; float qbGap = 14.0f; s_quickBlockRects.resize(s_quickBlocks.size()); const wchar_t* qbIcons[4] = { L"\xE714", L"\xE8F3", L"\xE90A", L"\xE718" };
+            const wchar_t* qbFullLabels[4] = { L"YouTube Shorts", L"Facebook Reels", L"Web & YT Ads", L"Instagram Reels" };
             for (size_t qi = 0; qi < s_quickBlocks.size(); ++qi) {
                 RectF qbRect(qbX + qi * (qbW + qbGap), qbY, qbW, qbH); s_quickBlockRects[qi] = qbRect; bool alreadyAdded = false;
-                if (editingProfileIdx >= 0) { if (qi == 0) alreadyAdded = g_profiles[editingProfileIdx].qbYTShorts; else if (qi == 1) alreadyAdded = g_profiles[editingProfileIdx].qbFBReels; else if (qi == 2) alreadyAdded = g_profiles[editingProfileIdx].qbYTAds; else if (qi == 3) alreadyAdded = g_profiles[editingProfileIdx].qbIGReels; }
+                if (editingProfileIdx >= 0) { if (qi == 0) alreadyAdded = g_profiles[editingProfileIdx].quickBlockYouTubeShorts; else if (qi == 1) alreadyAdded = g_profiles[editingProfileIdx].quickBlockFacebookReels; else if (qi == 2) alreadyAdded = g_profiles[editingProfileIdx].quickBlockAds; else if (qi == 3) alreadyAdded = g_profiles[editingProfileIdx].quickBlockInstagramReels; }
                 GraphicsPath* qp = GetSchRoundRectPath(qbRect, 8.0f); if (alreadyAdded) { g.FillPath(&bTeal, qp); } else { SolidBrush qbBg(s_quickBlocks[qi].hovered ? ClrBgHover : ClrBg); g.FillPath(&qbBg, qp); g.DrawPath(&pDiv, qp); } delete qp;
-                SolidBrush* txtClr = alreadyAdded ? &bWhite : &bDark; SolidBrush iconClrQb(alreadyAdded ? Color(255,255,255,255) : Color(255,12,168,176)); g.DrawString(qbIcons[qi], -1, &fSmallIcon, RectF(qbRect.X + 10.0f, qbRect.Y, 22.0f, qbH), &fL, &iconClrQb); g.DrawString(s_quickBlocks[qi].label.c_str(), -1, &fSmallBold, RectF(qbRect.X + 36.0f, qbRect.Y, qbW - 40.0f, qbH), &fL, txtClr);
+                SolidBrush* txtClr = alreadyAdded ? &bWhite : &bDark; SolidBrush iconClrQb(alreadyAdded ? Color(255,255,255,255) : Color(255,12,168,176));
+                g.DrawString(qbIcons[qi], -1, &fSmallIcon, RectF(qbRect.X + 8.0f, qbRect.Y, 20.0f, qbH), &fL, &iconClrQb);
+                g.DrawString(qbFullLabels[qi], -1, &fSmallBold, RectF(qbRect.X + 30.0f, qbRect.Y, qbW - 60.0f, qbH), &fL, txtClr);
+                RectF togBgQ(qbRect.X + qbW - 36.0f, qbRect.Y + 12.0f, 28.0f, 16.0f); GraphicsPath* tpQ = GetSchRoundRectPath(togBgQ, 8.0f); SolidBrush tBgQ(alreadyAdded ? Color(255,255,255,255) : Color(80,255,255,255)); g.FillPath(&tBgQ, tpQ); delete tpQ; SolidBrush tDotQ(alreadyAdded ? ClrTeal : Color(180,150,160,170)); g.FillEllipse(&tDotQ, alreadyAdded ? togBgQ.X + togBgQ.Width - 14.0f : togBgQ.X + 2.0f, togBgQ.Y + 2.0f, 12.0f, 12.0f);
             }
         }
         else if (s_activeSubTab == 2) {
@@ -760,10 +989,25 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
             RectF startRect(ovX + 310.0f, ovY + 250.0f, 200.0f, 45.0f); GraphicsPath* sp = GetSchRoundRectPath(startRect, 6.0f); SolidBrush startBrush(s_hTimeStart ? ClrTealHover : ClrTeal); g.FillPath(&startBrush, sp); delete sp; g.DrawString(L"Start Profile", -1, &fBold, startRect, &fC, &bWhite);
         } else if (s_showPassOverlay) {
             wstring titleTxt = s_isStoppingFocus ? L"ENTER PARENTS PASSWORD TO STOP" : L"SET PARENTS PASSWORD"; g.DrawString(titleTxt.c_str(), -1, &fTitle, RectF(ovX, ovY + 30.0f, ovW, 35.0f), &fC, &bDark);
-            RectF passInpRect(ovX + 60.0f, ovY + 110.0f, ovW - 120.0f, 45.0f); GraphicsPath* pp = GetSchRoundRectPath(passInpRect, 6.0f); g.FillPath(s_isPassInputActive ? &bWhite : &bBg, pp); g.DrawPath(s_isPassInputActive ? &pTeal : &pThin, pp); delete pp;
+            s_isPassInputActive = true; // Always active — window খুললেই type করা যাবে
+            RectF passInpRect(ovX + 60.0f, ovY + 110.0f, ovW - 120.0f, 45.0f); GraphicsPath* pp = GetSchRoundRectPath(passInpRect, 6.0f); g.FillPath(&bWhite, pp); g.DrawPath(&pTeal, pp); delete pp;
             wstring displayPass = wstring(s_inputPassText.length(), L'*');
-            if (s_inputPassText.empty() && !s_isPassInputActive) g.DrawString(L"Type password here...", -1, &fNorm, passInpRect, &fC, &bGray);
-            else { g.DrawString(displayPass.c_str(), -1, &fTitle, RectF(ovX + 70.0f, ovY + 115.0f, ovW - 140.0f, 35.0f), &fL, &bDark); if (s_isPassInputActive && (GetTickCount() / 500) % 2 == 0) { Graphics gT(GetDesktopWindow()); RectF bR; gT.MeasureString(displayPass.c_str(), -1, &fTitle, PointF(0,0), &bR); float curX = ovX + 72.0f + (displayPass.empty()?0:bR.Width); g.FillRectangle(&bDark, curX, ovY + 120.0f, 1.5f, 25.0f); } }
+            if (s_inputPassText.empty()) {
+                // Placeholder + blinking cursor একসাথে
+                g.DrawString(L"Type password here...", -1, &fNorm, passInpRect, &fC, &bGray);
+                if ((GetTickCount() / 500) % 2 == 0) {
+                    float cursorX = passInpRect.X + passInpRect.Width / 2.0f - 1.0f;
+                    g.FillRectangle(&bDark, cursorX, passInpRect.Y + 10.0f, 1.5f, 25.0f);
+                }
+            } else {
+                // Stars + cursor text এর পরে
+                g.DrawString(displayPass.c_str(), -1, &fTitle, RectF(ovX + 70.0f, ovY + 115.0f, ovW - 140.0f, 35.0f), &fL, &bDark);
+                if ((GetTickCount() / 500) % 2 == 0) {
+                    Graphics gT(GetDesktopWindow()); RectF bR; gT.MeasureString(displayPass.c_str(), -1, &fTitle, PointF(0,0), &bR);
+                    float curX = ovX + 72.0f + bR.Width;
+                    g.FillRectangle(&bDark, curX, ovY + 120.0f, 1.5f, 25.0f);
+                }
+            }
             RectF cancelRect(ovX + 60.0f, ovY + 190.0f, 160.0f, 45.0f); GraphicsPath* cp = GetSchRoundRectPath(cancelRect, 6.0f); SolidBrush cancelBrush(s_hPassCancel ? ClrBgHover : ClrWhite); g.FillPath(&cancelBrush, cp); g.DrawPath(&pThin, cp); delete cp; g.DrawString(L"Cancel (Esc)", -1, &fBold, cancelRect, &fC, &bDark);
             RectF confRect(ovX + 260.0f, ovY + 190.0f, 200.0f, 45.0f); GraphicsPath* sp = GetSchRoundRectPath(confRect, 6.0f); SolidBrush confBrush(s_hPassConfirm ? ClrTealHover : ClrTeal); g.FillPath(&confBrush, sp); delete sp; g.DrawString(L"Confirm", -1, &fBold, confRect, &fC, &bWhite);
         } else if (s_showTextUnlockOverlay) {
@@ -771,6 +1015,14 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
             RectF targetBox(ovX + 30.0f, ovY + 80.0f, ovW - 60.0f, 140.0f); GraphicsPath* tbp = GetSchRoundRectPath(targetBox, 6.0f); g.FillPath(&bWhite, tbp); g.DrawPath(&pThin, tbp); delete tbp; g.DrawString(s_targetUnlockText.c_str(), -1, &fNorm, RectF(targetBox.X+12.0f, targetBox.Y+12.0f, targetBox.Width-24.0f, targetBox.Height-24.0f), &fTL, &bGray);
             RectF typeBox(ovX + 30.0f, ovY + 240.0f, ovW - 60.0f, 170.0f); GraphicsPath* tp = GetSchRoundRectPath(typeBox, 6.0f); g.FillPath(s_isTypingActive ? &bWhite : &bBg, tp); g.DrawPath(s_isTypingActive ? &pTeal : &pThin, tp); delete tp;
             g.DrawString(s_currentTypingText.c_str(), -1, &fNorm, RectF(typeBox.X + 12.0f, typeBox.Y + 12.0f, typeBox.Width - 24.0f, typeBox.Height - 24.0f), &fTL, &bDark);
+            if (s_isTypingActive && (GetTickCount() / 500) % 2 == 0) {
+                Graphics gT(GetDesktopWindow()); RectF bR; gT.MeasureString(s_currentTypingText.c_str(), -1, &fNorm, PointF(0,0), &bR);
+                float lineH = 22.0f; float maxW = typeBox.Width - 24.0f;
+                int lines = (bR.Width > 0 && maxW > 0) ? (int)(bR.Width / maxW) : 0;
+                float cursorX = typeBox.X + 12.0f + fmod(bR.Width, maxW);
+                float cursorY = typeBox.Y + 12.0f + lines * lineH;
+                g.FillRectangle(&bDark, cursorX, cursorY, 1.5f, 18.0f);
+            }
             RectF cancelRect(ovX + 160.0f, ovY + 430.0f, 160.0f, 45.0f); GraphicsPath* cp = GetSchRoundRectPath(cancelRect, 6.0f); SolidBrush cancelBrush(s_hTextUnlockCancel ? ClrBgHover : ClrWhite); g.FillPath(&cancelBrush, cp); g.DrawPath(&pThin, cp); delete cp; g.DrawString(L"Cancel (Esc)", -1, &fBold, cancelRect, &fC, &bDark);
             RectF confRect(ovX + 360.0f, ovY + 430.0f, 220.0f, 45.0f); GraphicsPath* sp = GetSchRoundRectPath(confRect, 6.0f); SolidBrush confBrush((s_currentTypingText == s_targetUnlockText) ? (s_hTextUnlockConfirm ? ClrTealHover : ClrTeal) : ClrDisabled); g.FillPath(&confBrush, sp); delete sp; g.DrawString(L"Unlock Profile", -1, &fBold, confRect, &fC, &bWhite);
         }
@@ -818,7 +1070,7 @@ void ProcessScheduleBlocksMouseMove(float x, float y) {
         }
 
         if(g_ehb.saveBtn.Contains(x,y)) g_ehb.hSave = true; if(g_ehb.cancelBtn.Contains(x,y)) g_ehb.hCancel = true; if(g_ehb.nextBtn.Contains(x,y)) g_ehb.hNext = true; if(g_ehb.backBtn.Contains(x,y)) g_ehb.hBack = true;
-        g_ehb.hDay = -1; g_ehb.hStH=false; g_ehb.hStM=false; g_ehb.hStAmPm=false; g_ehb.hEnH=false; g_ehb.hEnM=false; g_ehb.hEnAmPm=false; g_ehb.hTogInt=false; g_ehb.hTogUni=false;
+        g_ehb.hDay = -1; g_ehb.hStH=false; g_ehb.hStM=false; g_ehb.hStAmPm=false; g_ehb.hEnH=false; g_ehb.hEnM=false; g_ehb.hEnAmPm=false; g_ehb.hoverToggleInternet=false; g_ehb.hoverToggleUninstall=false;
         hoverSchModeDropdown=false; hoverSchWebCombo=false; hoverSchAppCombo=false; hoverSchStoreCombo=false; g_ehb.hAddWeb=false; g_ehb.hAddApp=false; g_ehb.hAddKey=false;
         for (auto& qb : s_quickBlocks) qb.hovered = false;
         if (editingProfileIdx >= 0 && editingProfileIdx < (int)g_profiles.size()) { for(auto& it : g_profiles[editingProfileIdx].blockedWebsites) it.isHoveredCross=false; for(auto& it : g_profiles[editingProfileIdx].blockedApps) it.isHoveredCross=false; for(auto& it : g_profiles[editingProfileIdx].adultCustomKeywords) it.isHoveredCross=false; }
@@ -830,15 +1082,11 @@ void ProcessScheduleBlocksMouseMove(float x, float y) {
             if(g_ehb.enH_Box.Contains(x,y)) g_ehb.hEnH = true; if(g_ehb.enM_Box.Contains(x,y)) g_ehb.hEnM = true; if(g_ehb.enAmPm.Contains(x,y)) g_ehb.hEnAmPm = true;
         } 
         else if (s_activeSubTab == 1) {
-            if(g_ehb.hTogInt) editBlockInt = !editBlockInt; if(g_ehb.hTogUni) editBlockUninst = !editBlockUninst;
+            g_ehb.hoverToggleInternet = g_ehb.toggleInternet.Contains(x, y);
+            g_ehb.hoverToggleUninstall = g_ehb.toggleUninstall.Contains(x, y);
             if (editingProfileIdx >= 0) {
                 for (size_t qi = 0; qi < s_quickBlocks.size() && qi < s_quickBlockRects.size(); ++qi) {
-                    if (s_quickBlockRects[qi].Contains(x, y)) {
-                        if (qi == 0) g_profiles[editingProfileIdx].qbYTShorts = !g_profiles[editingProfileIdx].qbYTShorts;
-                        else if (qi == 1) g_profiles[editingProfileIdx].qbFBReels = !g_profiles[editingProfileIdx].qbFBReels;
-                        else if (qi == 2) g_profiles[editingProfileIdx].qbYTAds = !g_profiles[editingProfileIdx].qbYTAds;
-                        else if (qi == 3) g_profiles[editingProfileIdx].qbIGReels = !g_profiles[editingProfileIdx].qbIGReels;
-                    }
+                    s_quickBlocks[qi].hovered = s_quickBlockRects[qi].Contains(x, y);
                 }
             }
         }
@@ -914,7 +1162,7 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
     
     // 🟢 FIXED: Parent Password Overlay Safety Check & Validation
     if (s_showPassOverlay) {
-        s_isPassInputActive = s_hPassInput; if (s_hPassCancel) { s_showPassOverlay = false; s_inputPassText = L""; }
+        s_isPassInputActive = true; if (s_hPassCancel) { s_showPassOverlay = false; s_inputPassText = L""; }
         if (s_hPassConfirm && !s_inputPassText.empty()) {
             if (editingProfileIdx != -1) { 
                 // 🟢 FIXED: Force Pre-set Password in Editing Mode Before Saving
@@ -977,9 +1225,9 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
         }
 
         if (s_activeSubTab == 2) {
-            // 🟢 FIXED: Dropdown Open Logic Restored
-            if (hoverSchWebCombo) { isSchWebComboOpen = !isSchWebComboOpen; return; }
-            if (hoverSchAppCombo) { isSchAppComboOpen = !isSchAppComboOpen; return; }
+            // Dropdown toggle: directly check position, not hover bool (hover can be stale)
+            if (g_ehb.webCombo.Contains(x, y)) { isSchWebComboOpen = !isSchWebComboOpen; isSchAppComboOpen = false; isSchStoreComboOpen = false; return; }
+            if (g_ehb.appCombo.Contains(x, y)) { isSchAppComboOpen = !isSchAppComboOpen; isSchWebComboOpen = false; isSchStoreComboOpen = false; return; }
 
             if (g_ehb.hBtnAddExe && editingProfileIdx >= 0) {
                 lock.unlock(); 
@@ -996,12 +1244,21 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
                 }
                 return;
             }
-            if (g_ehb.hBtnAddStore) { isSchStoreComboOpen = !isSchStoreComboOpen; return; } 
-            if (isSchStoreComboOpen && !hoverSchStoreCombo && hoverSchStoreOptIdx == -1) { isSchStoreComboOpen = false; dropdownClosed = true; } 
-            else if (isSchStoreComboOpen) { if (hoverSchStoreOptIdx != -1 && editingProfileIdx >= 0) { g_profiles[editingProfileIdx].blockedApps.push_back({schCommonStoreApps[hoverSchStoreOptIdx], false}); } isSchStoreComboOpen = false; return; }
+            if (g_ehb.hBtnAddStore) { isSchStoreComboOpen = !isSchStoreComboOpen; isSchWebComboOpen = false; isSchAppComboOpen = false; return; } 
 
-            if (isSchWebComboOpen && !hoverSchWebCombo && hoverSchWebOptIdx == -1) { isSchWebComboOpen = false; dropdownClosed = true; } else if (isSchWebComboOpen) { if (hoverSchWebOptIdx != -1 && editingProfileIdx >= 0) { g_profiles[editingProfileIdx].blockedWebsites.push_back({schCommonWebsites[hoverSchWebOptIdx], false}); } isSchWebComboOpen = false; return; }
-            if (isSchAppComboOpen && !hoverSchAppCombo && hoverSchAppOptIdx == -1) { isSchAppComboOpen = false; dropdownClosed = true; } else if (isSchAppComboOpen) { if (hoverSchAppOptIdx != -1 && editingProfileIdx >= 0) { g_profiles[editingProfileIdx].blockedApps.push_back({schCommonApps[hoverSchAppOptIdx], false}); } isSchAppComboOpen = false; return; }
+            // Option selection when open
+            if (isSchWebComboOpen) { 
+                if (hoverSchWebOptIdx != -1 && editingProfileIdx >= 0) { g_profiles[editingProfileIdx].blockedWebsites.push_back({schCommonWebsites[hoverSchWebOptIdx], false}); }
+                isSchWebComboOpen = false; return; 
+            }
+            if (isSchAppComboOpen) { 
+                if (hoverSchAppOptIdx != -1 && editingProfileIdx >= 0) { g_profiles[editingProfileIdx].blockedApps.push_back({schCommonApps[hoverSchAppOptIdx], false}); }
+                isSchAppComboOpen = false; return; 
+            }
+            if (isSchStoreComboOpen) { 
+                if (hoverSchStoreOptIdx != -1 && editingProfileIdx >= 0) { g_profiles[editingProfileIdx].blockedApps.push_back({schCommonStoreApps[hoverSchStoreOptIdx], false}); }
+                isSchStoreComboOpen = false; return; 
+            }
         }
 
         if (dropdownClosed) return;
@@ -1042,22 +1299,22 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
             activeInput = g_ehb.nameInp.Contains(x,y) ? 1 : 0;
         } 
         else if (s_activeSubTab == 1) {
-            if(g_ehb.hTogInt) editBlockInt = !editBlockInt; if(g_ehb.hTogUni) editBlockUninst = !editBlockUninst;
+            if(g_ehb.hoverToggleInternet) editBlockInt = !editBlockInt; if(g_ehb.hoverToggleUninstall) editBlockUninst = !editBlockUninst;
             if (editingProfileIdx >= 0) {
                 for (size_t qi = 0; qi < s_quickBlocks.size() && qi < s_quickBlockRects.size(); ++qi) {
                     if (s_quickBlockRects[qi].Contains(x, y)) {
-                        if (qi == 0) g_profiles[editingProfileIdx].qbYTShorts = !g_profiles[editingProfileIdx].qbYTShorts;
-                        else if (qi == 1) g_profiles[editingProfileIdx].qbFBReels = !g_profiles[editingProfileIdx].qbFBReels;
-                        else if (qi == 2) g_profiles[editingProfileIdx].qbYTAds = !g_profiles[editingProfileIdx].qbYTAds;
-                        else if (qi == 3) g_profiles[editingProfileIdx].qbIGReels = !g_profiles[editingProfileIdx].qbIGReels;
+                        if (qi == 0) g_profiles[editingProfileIdx].quickBlockYouTubeShorts = !g_profiles[editingProfileIdx].quickBlockYouTubeShorts;
+                        else if (qi == 1) g_profiles[editingProfileIdx].quickBlockFacebookReels = !g_profiles[editingProfileIdx].quickBlockFacebookReels;
+                        else if (qi == 2) {
+                            g_profiles[editingProfileIdx].quickBlockAds = !g_profiles[editingProfileIdx].quickBlockAds;
+                            ManageAdGuardExtension(g_profiles[editingProfileIdx].quickBlockAds);
+                        }
+                        else if (qi == 3) g_profiles[editingProfileIdx].quickBlockInstagramReels = !g_profiles[editingProfileIdx].quickBlockInstagramReels;
                     }
                 }
             }
         }
         else if (s_activeSubTab == 2) {
-            if(g_ehb.webCombo.Contains(x,y)) hoverSchWebCombo = true; if(g_ehb.appCombo.Contains(x,y)) hoverSchAppCombo = true;
-            if (g_ehb.btnAddExe.Contains(x, y)) g_ehb.hBtnAddExe = true; if (g_ehb.btnAddStore.Contains(x, y)) g_ehb.hBtnAddStore = true; if (g_ehb.btnAddTitle.Contains(x, y)) g_ehb.hBtnAddTitle = true;
-
             activeInput = 0; if (g_ehb.webInp.Contains(x,y)) activeInput = 2; if (g_ehb.appInp.Contains(x,y)) activeInput = 3;
             if (editingProfileIdx >= 0 && editingProfileIdx < (int)g_profiles.size()) {
                 if (g_ehb.hAddWeb && !inpWeb.empty()) { g_profiles[editingProfileIdx].blockedWebsites.push_back({inpWeb, false}); inpWeb = L""; }
