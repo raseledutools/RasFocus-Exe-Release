@@ -377,82 +377,82 @@ void ProcessSettingsMouseMove(float x, float y) {
         }
     }
 
-    float bodyY = contentY + headerH + 25.0f;
+    // FIX: bodyY must match DrawSettingsTab exactly (no extra +25)
+    float bodyY = contentY + headerH;
     float boxX = contentX + 30.0f;
     float boxW = contentW - 60.0f;
     float swX = boxX + boxW - 80.0f;
-    float rowY = bodyY + 35.0f; // matches Draw: box starts at bodyY+25, content at +35
+    float rowY = bodyY + 35.0f;
     float rowH = (currentSetTab == 4) ? 41.0f : 50.0f;
     float tOff = (rowH - 22.0f) / 2.0f;
     float ctrlX = swX - 80.0f;
 
     if (currentSetTab == 0) { // Browsers
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 10; rowY += rowH;
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 11; rowY += rowH;
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 12; rowY += rowH;
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 13; rowY += rowH;
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 14; rowY += rowH;
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 15; rowY += rowH;
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 16; rowY += rowH;
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 17; rowY += rowH;
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 18; rowY += rowH;
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 19; rowY += rowH;
-        if (RectF(swX - 80.0f, rowY + tOff - 5.0f, 32.0f, 32.0f).Contains(x, y)) hoverMinusSecondsBtn = true;
-        if (RectF(swX - 80.0f + 92.0f, rowY + tOff - 5.0f, 32.0f, 32.0f).Contains(x, y)) hoverPlusSecondsBtn = true;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) { hoverToggleIdx = 10; } rowY += rowH;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) { hoverToggleIdx = 11; } rowY += rowH;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) { hoverToggleIdx = 12; } rowY += rowH;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) { hoverToggleIdx = 13; } rowY += rowH;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) { hoverToggleIdx = 14; } rowY += rowH;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) { hoverToggleIdx = 15; } rowY += rowH;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) { hoverToggleIdx = 16; } rowY += rowH;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) { hoverToggleIdx = 17; } rowY += rowH;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) { hoverToggleIdx = 18; } rowY += rowH;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) { hoverToggleIdx = 19; } rowY += rowH;
+        if (RectF(swX - 80.0f, rowY + tOff - 5.0f, 32.0f, 32.0f).Contains(x, y)) { hoverMinusSecondsBtn = true; }
+        if (RectF(swX - 80.0f + 92.0f, rowY + tOff - 5.0f, 32.0f, 32.0f).Contains(x, y)) { hoverPlusSecondsBtn = true; }
     }
     else if (currentSetTab == 1) { // General
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 0; rowY += rowH;
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 1; rowY += rowH;
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 2; rowY += rowH;
-        if (RectF(swX - 100.0f, rowY + 9.0f, 146.0f, 32.0f).Contains(x, y)) hoverLangBtn = true; rowY += rowH;
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 3; rowY += rowH;
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 4; rowY += rowH;
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 5;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) { hoverToggleIdx = 0; } rowY += rowH;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) { hoverToggleIdx = 1; } rowY += rowH;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) { hoverToggleIdx = 2; } rowY += rowH;
+        if (RectF(swX - 100.0f, rowY + 9.0f, 146.0f, 32.0f).Contains(x, y)) { hoverLangBtn = true; } rowY += rowH;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) { hoverToggleIdx = 3; } rowY += rowH;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) { hoverToggleIdx = 4; } rowY += rowH;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) { hoverToggleIdx = 5; }
     }
     else if (currentSetTab == 2) { // System
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 20; rowY += rowH;
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 21; rowY += rowH;
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 22; rowY += rowH;
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 23; rowY += rowH;
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 24; rowY += rowH;
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 25; rowY += rowH;
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 26;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) { hoverToggleIdx = 20; } rowY += rowH;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) { hoverToggleIdx = 21; } rowY += rowH;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) { hoverToggleIdx = 22; } rowY += rowH;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) { hoverToggleIdx = 23; } rowY += rowH;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) { hoverToggleIdx = 24; } rowY += rowH;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) { hoverToggleIdx = 25; } rowY += rowH;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) { hoverToggleIdx = 26; }
     }
     else if (currentSetTab == 3) { // Advanced
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 30; rowY += rowH;
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 31; rowY += rowH;
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 32; rowY += rowH;
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 33; rowY += rowH;
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 34; rowY += rowH;
-        
-        if (RectF(swX - 80.0f, rowY + tOff - 5.0f, 32.0f, 32.0f).Contains(x, y)) hoverMinusBtn = true;
-        if (RectF(swX - 80.0f + 92.0f, rowY + tOff - 5.0f, 32.0f, 32.0f).Contains(x, y)) hoverPlusBtn = true;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) { hoverToggleIdx = 30; } rowY += rowH;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) { hoverToggleIdx = 31; } rowY += rowH;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) { hoverToggleIdx = 32; } rowY += rowH;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) { hoverToggleIdx = 33; } rowY += rowH;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) { hoverToggleIdx = 34; } rowY += rowH;
+        if (RectF(swX - 80.0f, rowY + tOff - 5.0f, 32.0f, 32.0f).Contains(x, y)) { hoverMinusBtn = true; }
+        if (RectF(swX - 80.0f + 92.0f, rowY + tOff - 5.0f, 32.0f, 32.0f).Contains(x, y)) { hoverPlusBtn = true; }
     }
     else if (currentSetTab == 4) { // Notification
-        if (RectF(swX - 60.0f, rowY + 5.0f, 120.0f, 30.0f).Contains(x, y)) hGenPos = true; rowY += rowH;
-        if (RectF(swX - 60.0f, rowY + 5.0f, 120.0f, 30.0f).Contains(x, y)) hAiPos = true; rowY += rowH;
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 40; rowY += rowH;
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 41; rowY += rowH;
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 42; rowY += rowH;
+        if (RectF(swX - 60.0f, rowY + 5.0f, 120.0f, 30.0f).Contains(x, y)) { hGenPos = true; } rowY += rowH;
+        if (RectF(swX - 60.0f, rowY + 5.0f, 120.0f, 30.0f).Contains(x, y)) { hAiPos = true; } rowY += rowH;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) { hoverToggleIdx = 40; } rowY += rowH;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) { hoverToggleIdx = 41; } rowY += rowH;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) { hoverToggleIdx = 42; } rowY += rowH;
 
-        if (RectF(ctrlX, rowY + 5.0f, 32.0f, 32.0f).Contains(x, y)) hDndStartM = true;
-        if (RectF(ctrlX + 92.0f, rowY + 5.0f, 32.0f, 32.0f).Contains(x, y)) hDndStartP = true; rowY += rowH;
+        if (RectF(ctrlX, rowY + 5.0f, 32.0f, 32.0f).Contains(x, y)) { hDndStartM = true; }
+        if (RectF(ctrlX + 92.0f, rowY + 5.0f, 32.0f, 32.0f).Contains(x, y)) { hDndStartP = true; } rowY += rowH;
 
-        if (RectF(ctrlX, rowY + 5.0f, 32.0f, 32.0f).Contains(x, y)) hDndEndM = true;
-        if (RectF(ctrlX + 92.0f, rowY + 5.0f, 32.0f, 32.0f).Contains(x, y)) hDndEndP = true; rowY += rowH;
+        if (RectF(ctrlX, rowY + 5.0f, 32.0f, 32.0f).Contains(x, y)) { hDndEndM = true; }
+        if (RectF(ctrlX + 92.0f, rowY + 5.0f, 32.0f, 32.0f).Contains(x, y)) { hDndEndP = true; } rowY += rowH;
 
-        if (RectF(ctrlX, rowY + 5.0f, 32.0f, 32.0f).Contains(x, y)) hThreshM = true;
-        if (RectF(ctrlX + 92.0f, rowY + 5.0f, 32.0f, 32.0f).Contains(x, y)) hThreshP = true; rowY += rowH;
+        if (RectF(ctrlX, rowY + 5.0f, 32.0f, 32.0f).Contains(x, y)) { hThreshM = true; }
+        if (RectF(ctrlX + 92.0f, rowY + 5.0f, 32.0f, 32.0f).Contains(x, y)) { hThreshP = true; } rowY += rowH;
 
-        if (RectF(ctrlX, rowY + 5.0f, 32.0f, 32.0f).Contains(x, y)) hFreqNormM = true;
-        if (RectF(ctrlX + 92.0f, rowY + 5.0f, 32.0f, 32.0f).Contains(x, y)) hFreqNormP = true; rowY += rowH;
+        if (RectF(ctrlX, rowY + 5.0f, 32.0f, 32.0f).Contains(x, y)) { hFreqNormM = true; }
+        if (RectF(ctrlX + 92.0f, rowY + 5.0f, 32.0f, 32.0f).Contains(x, y)) { hFreqNormP = true; } rowY += rowH;
 
-        if (RectF(ctrlX, rowY + 5.0f, 32.0f, 32.0f).Contains(x, y)) hFreqLowM = true;
-        if (RectF(ctrlX + 92.0f, rowY + 5.0f, 32.0f, 32.0f).Contains(x, y)) hFreqLowP = true;
+        if (RectF(ctrlX, rowY + 5.0f, 32.0f, 32.0f).Contains(x, y)) { hFreqLowM = true; }
+        if (RectF(ctrlX + 92.0f, rowY + 5.0f, 32.0f, 32.0f).Contains(x, y)) { hFreqLowP = true; }
     }
     else if (currentSetTab == 5) { // Sync
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 50; rowY += rowH;
-        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) hoverToggleIdx = 51;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) { hoverToggleIdx = 50; } rowY += rowH;
+        if (RectF(swX, rowY + tOff, 44.0f, 22.0f).Contains(x, y)) { hoverToggleIdx = 51; }
     }
 }
 
@@ -461,64 +461,62 @@ void ProcessSettingsMouseClick(float x, float y) {
     if (hoverSetTab != -1) { currentSetTab = hoverSetTab; return; }
 
     // Browsers Logic (tab index 0)
-    if (hoverToggleIdx == 10) tglBlockUnsupportedBrowsers = !tglBlockUnsupportedBrowsers;
-    if (hoverToggleIdx == 11) tglBlockDateTime = !tglBlockDateTime;
-    if (hoverToggleIdx == 12) tglBlockLoginItems = !tglBlockLoginItems;
-    if (hoverToggleIdx == 13) tglBlockUsersGroups = !tglBlockUsersGroups;
-    if (hoverToggleIdx == 14) tglBlockActivityMonitor = !tglBlockActivityMonitor;
-    if (hoverToggleIdx == 15) tglBlockInactiveTabs = !tglBlockInactiveTabs;
-    if (hoverToggleIdx == 16) tglBlockEmbedded = !tglBlockEmbedded;
-    if (hoverToggleIdx == 17) tglBlockPauseForCause = !tglBlockPauseForCause;
-    if (hoverToggleIdx == 18) tglBlockInstaller = !tglBlockInstaller;
-    if (hoverToggleIdx == 19) tglForceFileURLs = !tglForceFileURLs;
-    if (hoverMinusSecondsBtn && reEnableSeconds > 1) reEnableSeconds--;
-    if (hoverPlusSecondsBtn) reEnableSeconds++;
-
+    if (hoverToggleIdx == 10) { tglBlockUnsupportedBrowsers = !tglBlockUnsupportedBrowsers; }
+    else if (hoverToggleIdx == 11) { tglBlockDateTime = !tglBlockDateTime; }
+    else if (hoverToggleIdx == 12) { tglBlockLoginItems = !tglBlockLoginItems; }
+    else if (hoverToggleIdx == 13) { tglBlockUsersGroups = !tglBlockUsersGroups; }
+    else if (hoverToggleIdx == 14) { tglBlockActivityMonitor = !tglBlockActivityMonitor; }
+    else if (hoverToggleIdx == 15) { tglBlockInactiveTabs = !tglBlockInactiveTabs; }
+    else if (hoverToggleIdx == 16) { tglBlockEmbedded = !tglBlockEmbedded; }
+    else if (hoverToggleIdx == 17) { tglBlockPauseForCause = !tglBlockPauseForCause; }
+    else if (hoverToggleIdx == 18) { tglBlockInstaller = !tglBlockInstaller; }
+    else if (hoverToggleIdx == 19) { tglForceFileURLs = !tglForceFileURLs; }
     // General Logic (tab index 1)
-    if (hoverToggleIdx == 0) tglStartup = !tglStartup;
-    if (hoverToggleIdx == 1) tglRequirePass = !tglRequirePass;
-    if (hoverToggleIdx == 2) tglStartMin = !tglStartMin;
-    if (hoverToggleIdx == 3) tglDarkTheme = !tglDarkTheme;
-    if (hoverToggleIdx == 4) tglDailyBackup = !tglDailyBackup;
-    if (hoverToggleIdx == 5) tgl24Hour = !tgl24Hour;
-    if (hoverLangBtn) langIdx = (langIdx + 1) % 3;
+    else if (hoverToggleIdx == 0) { tglStartup = !tglStartup; }
+    else if (hoverToggleIdx == 1) { tglRequirePass = !tglRequirePass; }
+    else if (hoverToggleIdx == 2) { tglStartMin = !tglStartMin; }
+    else if (hoverToggleIdx == 3) { tglDarkTheme = !tglDarkTheme; }
+    else if (hoverToggleIdx == 4) { tglDailyBackup = !tglDailyBackup; }
+    else if (hoverToggleIdx == 5) { tgl24Hour = !tgl24Hour; }
+    // System Logic (tab index 2)
+    else if (hoverToggleIdx == 20) { tglBlockTaskMgr = !tglBlockTaskMgr; }
+    else if (hoverToggleIdx == 21) { tglBlockRegEdit = !tglBlockRegEdit; }
+    else if (hoverToggleIdx == 22) { tglProtectUninstall = !tglProtectUninstall; }
+    else if (hoverToggleIdx == 23) { tglSafeMode = !tglSafeMode; }
+    else if (hoverToggleIdx == 24) { tglProcessSuspend = !tglProcessSuspend; }
+    else if (hoverToggleIdx == 25) { tglBlockUninstallers = !tglBlockUninstallers; }
+    else if (hoverToggleIdx == 26) { tglProtectPowerShell = !tglProtectPowerShell; }
+    // Advanced Logic (tab index 3)
+    else if (hoverToggleIdx == 30) { tglRecordUsage = !tglRecordUsage; }
+    else if (hoverToggleIdx == 31) { tglProtectClipboard = !tglProtectClipboard; }
+    else if (hoverToggleIdx == 32) { tglShowDelete = !tglShowDelete; }
+    else if (hoverToggleIdx == 33) { tglShowTimer = !tglShowTimer; }
+    else if (hoverToggleIdx == 34) { tglImportExport = !tglImportExport; }
+    // Notification Logic (tab index 4)
+    else if (hoverToggleIdx == 40) { tglAudio = !tglAudio; }
+    else if (hoverToggleIdx == 41) { tglMuteAll = !tglMuteAll; }
+    else if (hoverToggleIdx == 42) { tglDND = !tglDND; }
+    // Sync Logic (tab index 5)
+    else if (hoverToggleIdx == 50) { tglCloudSync = !tglCloudSync; }
+    else if (hoverToggleIdx == 51) { tglSyncSchedules = !tglSyncSchedules; }
 
-    // System Logic
-    if (hoverToggleIdx == 20) tglBlockTaskMgr = !tglBlockTaskMgr;
-    if (hoverToggleIdx == 21) tglBlockRegEdit = !tglBlockRegEdit;
-    if (hoverToggleIdx == 22) tglProtectUninstall = !tglProtectUninstall;
-    if (hoverToggleIdx == 23) tglSafeMode = !tglSafeMode;
-    if (hoverToggleIdx == 24) tglProcessSuspend = !tglProcessSuspend;
-    if (hoverToggleIdx == 25) tglBlockUninstallers = !tglBlockUninstallers;
-    if (hoverToggleIdx == 26) tglProtectPowerShell = !tglProtectPowerShell;
+    // Spinner / button logic (independent of toggle index)
+    if (hoverMinusSecondsBtn && reEnableSeconds > 1) { reEnableSeconds--; }
+    if (hoverPlusSecondsBtn) { reEnableSeconds++; }
+    if (hoverMinusBtn && maxPlansCount > 0) { maxPlansCount--; }
+    if (hoverPlusBtn) { maxPlansCount++; }
+    if (hoverLangBtn) { langIdx = (langIdx + 1) % 3; }
 
-    // Advanced Logic
-    if (hoverToggleIdx == 30) tglRecordUsage = !tglRecordUsage;
-    if (hoverToggleIdx == 31) tglProtectClipboard = !tglProtectClipboard;
-    if (hoverToggleIdx == 32) tglShowDelete = !tglShowDelete;
-    if (hoverToggleIdx == 33) tglShowTimer = !tglShowTimer;
-    if (hoverToggleIdx == 34) tglImportExport = !tglImportExport;
-    if (hoverMinusBtn && maxPlansCount > 0) maxPlansCount--;
-    if (hoverPlusBtn) maxPlansCount++;
-
-    // Notification Logic
-    if (hGenPos) genPosIdx = (genPosIdx + 1) % 4;
-    if (hAiPos) aiPosIdx = (aiPosIdx + 1) % 4;
-    if (hoverToggleIdx == 40) tglAudio = !tglAudio;
-    if (hoverToggleIdx == 41) tglMuteAll = !tglMuteAll;
-    if (hoverToggleIdx == 42) tglDND = !tglDND;
-    if (hDndStartM) dndStartH = (dndStartH - 1 + 24) % 24;
-    if (hDndStartP) dndStartH = (dndStartH + 1) % 24;
-    if (hDndEndM) dndEndH = (dndEndH - 1 + 24) % 24;
-    if (hDndEndP) dndEndH = (dndEndH + 1) % 24;
-    if (hThreshM && threshMin > 1) threshMin--;
-    if (hThreshP && threshMin < 59) threshMin++;
-    if (hFreqNormM && freqNormMin > 1) freqNormMin--;
-    if (hFreqNormP && freqNormMin < 59) freqNormMin++;
-    if (hFreqLowM && freqLowMin > 1) freqLowMin--;
-    if (hFreqLowP && freqLowMin < 59) freqLowMin++;
-
-    // Sync Logic
-    if (hoverToggleIdx == 50) tglCloudSync = !tglCloudSync;
-    if (hoverToggleIdx == 51) tglSyncSchedules = !tglSyncSchedules;
+    if (hGenPos) { genPosIdx = (genPosIdx + 1) % 4; }
+    if (hAiPos)  { aiPosIdx  = (aiPosIdx  + 1) % 4; }
+    if (hDndStartM) { dndStartH = (dndStartH - 1 + 24) % 24; }
+    if (hDndStartP) { dndStartH = (dndStartH + 1) % 24; }
+    if (hDndEndM)   { dndEndH   = (dndEndH   - 1 + 24) % 24; }
+    if (hDndEndP)   { dndEndH   = (dndEndH   + 1) % 24; }
+    if (hThreshM && threshMin > 1)    { threshMin--; }
+    if (hThreshP && threshMin < 59)   { threshMin++; }
+    if (hFreqNormM && freqNormMin > 1)  { freqNormMin--; }
+    if (hFreqNormP && freqNormMin < 59) { freqNormMin++; }
+    if (hFreqLowM && freqLowMin > 1)  { freqLowMin--; }
+    if (hFreqLowP && freqLowMin < 59) { freqLowMin++; }
 }
