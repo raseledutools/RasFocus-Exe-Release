@@ -124,12 +124,15 @@ static void DrawSchOverlaySpinner(Graphics& g, float x, float y,
 
     float btnW = 36.0f, btnH = 36.0f;
 
+    Color colTeal(255, 12, 168, 176);
+    Color colTealHover(255, 30, 185, 195);
+
     // [−] button
     RectF minusRect(x, y, btnW, btnH);
     GraphicsPath* mp = GetSchRoundRectPath(minusRect, 6);
-    SolidBrush mBr(hMinus ? bTealHover.GetColor() : bTeal.GetColor());
+    SolidBrush mBr(hMinus ? colTealHover : colTeal);
     g.FillPath(&mBr, mp); delete mp;
-    g.DrawString(L"−", -1, fBold, minusRect, &fC, &bWhite);
+    g.DrawString(L"-", -1, fBold, minusRect, &fC, &bWhite);
 
     // [value] display
     RectF valRect(x + btnW + 4, y, 50.0f, btnH);
@@ -141,7 +144,7 @@ static void DrawSchOverlaySpinner(Graphics& g, float x, float y,
     // [+] button
     RectF plusRect(x + btnW + 4 + 50.0f + 4, y, btnW, btnH);
     GraphicsPath* pp = GetSchRoundRectPath(plusRect, 6);
-    SolidBrush pBr(hPlus ? bTealHover.GetColor() : bTeal.GetColor());
+    SolidBrush pBr(hPlus ? colTealHover : colTeal);
     g.FillPath(&pBr, pp); delete pp;
     g.DrawString(L"+", -1, fBold, plusRect, &fC, &bWhite);
 }
