@@ -1,6 +1,7 @@
 // tab_adult.cpp - Unified Adult Block + Strict Protocols (v2.0)
 // Red-marked section removed. AI Filter removed. All in one GDI+ file.
 // UPDATED: Professional 2-Column Layout to fix overlap and empty right space.
+// UPDATED: Added Registry Policy Enforcement for SafeSearch.
 
 #include "tab_adult.h"
 
@@ -426,7 +427,26 @@ static wstring GetBrowserURL_Fallback(HWND hBrowser) {
 }
 
 // ==========================================
-// --- STRICT: DNS / HOSTS ---
+// --- REGISTRY POLICY HELPERS ---
+// ==========================================
+static void SetRegPolicy(HKEY hKeyRoot, const char* subKey, const char* valueName, DWORD data) {
+    HKEY hKey;
+    if (RegCreateKeyExA(hKeyRoot, subKey, 0, NULL, REG_OPTION_NON_VOLATILE, KEY_WRITE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
+        RegSetValueExA(hKey, valueName, 0, REG_DWORD, (const BYTE*)&data, sizeof(data));
+        RegCloseKey(hKey);
+    }
+}
+
+static void RemoveRegPolicy(HKEY hKeyRoot, const char* subKey, const char* valueName) {
+    HKEY hKey;
+    if (RegOpenKeyExA(hKeyRoot, subKey, 0, KEY_SET_VALUE, &hKey) == ERROR_SUCCESS) {
+        RegDeleteValueA(hKey, valueName);
+        RegCloseKey(hKey);
+    }
+}
+
+// ==========================================
+// --- STRICT: DNS / HOSTS / POLICIES ---
 // ==========================================
 static void SetFamilyDNS(bool enable) {
     SHELLEXECUTEINFOW sei={sizeof(sei)};
@@ -441,6 +461,7 @@ static void EnforceStrictProtocols() {
     string hp="C:\\Windows\\System32\\drivers\\etc\\hosts";
     string tp="C:\\Windows\\System32\\drivers\\etc\\hosts.temp";
     ifstream fi(hp); ofstream fo(tp); string line; bool skip=false;
+    
     if(fi.is_open()&&fo.is_open()){
         while(getline(fi,line)){
             if(line.find("# RasFocus Strict Start")!=string::npos) skip=true;
@@ -449,12 +470,17 @@ static void EnforceStrictProtocols() {
         }
         fi.close();
     }
+    
     if(cbDnsFilter||cbSafeSearch){
         fo<<"\n# RasFocus Strict Start\n";
         if(cbSafeSearch){
             fo<<"216.239.38.120 google.com\n216.239.38.120 www.google.com\n";
+            fo<<"216.239.38.120 google.com.bd\n216.239.38.120 www.google.com.bd\n";
             fo<<"204.79.197.220 bing.com\n204.79.197.220 www.bing.com\n";
             fo<<"211.73.64.227 youtube.com\n211.73.64.227 www.youtube.com\n";
+            
+            // IPv6 Fallback
+            fo<<"2001:4860:4802:32::78 google.com\n2001:4860:4802:32::78 www.google.com\n";
         }
         if(cbDnsFilter){
             vector<string> s={"pornhub.com","xvideos.com","xnxx.com","xhamster.com","redtube.com"};
@@ -465,6 +491,31 @@ static void EnforceStrictProtocols() {
     fo.close();
     remove(hp.c_str()); rename(tp.c_str(),hp.c_str());
     WinExec("ipconfig /flushdns",SW_HIDE);
+
+    // --- BROWSER ENTERPRISE POLICIES ---
+    if (cbSafeSearch) {
+        // Chrome
+        SetRegPolicy(HKEY_LOCAL_MACHINE, "SOFTWARE\\Policies\\Google\\Chrome", "ForceGoogleSafeSearch", 1);
+        SetRegPolicy(HKEY_LOCAL_MACHINE, "SOFTWARE\\Policies\\Google\\Chrome", "ForceYouTubeRestrict", 2); // 2 = Strict
+        
+        // Edge
+        SetRegPolicy(HKEY_LOCAL_MACHINE, "SOFTWARE\\Policies\\Microsoft\\Edge", "ForceGoogleSafeSearch", 1);
+        SetRegPolicy(HKEY_LOCAL_MACHINE, "SOFTWARE\\Policies\\Microsoft\\Edge", "ForceBingSafeSearch", 1);
+        SetRegPolicy(HKEY_LOCAL_MACHINE, "SOFTWARE\\Policies\\Microsoft\\Edge", "ForceYouTubeRestrict", 2);
+        
+        // Brave
+        SetRegPolicy(HKEY_LOCAL_MACHINE, "SOFTWARE\\Policies\\BraveSoftware\\Brave", "ForceGoogleSafeSearch", 1);
+    } else {
+        // Remove Policies
+        RemoveRegPolicy(HKEY_LOCAL_MACHINE, "SOFTWARE\\Policies\\Google\\Chrome", "ForceGoogleSafeSearch");
+        RemoveRegPolicy(HKEY_LOCAL_MACHINE, "SOFTWARE\\Policies\\Google\\Chrome", "ForceYouTubeRestrict");
+        
+        RemoveRegPolicy(HKEY_LOCAL_MACHINE, "SOFTWARE\\Policies\\Microsoft\\Edge", "ForceGoogleSafeSearch");
+        RemoveRegPolicy(HKEY_LOCAL_MACHINE, "SOFTWARE\\Policies\\Microsoft\\Edge", "ForceBingSafeSearch");
+        RemoveRegPolicy(HKEY_LOCAL_MACHINE, "SOFTWARE\\Policies\\Microsoft\\Edge", "ForceYouTubeRestrict");
+        
+        RemoveRegPolicy(HKEY_LOCAL_MACHINE, "SOFTWARE\\Policies\\BraveSoftware\\Brave", "ForceGoogleSafeSearch");
+    }
 }
 
 // ==========================================
@@ -1266,7 +1317,7 @@ void AdultBlock_ApplyForSchedule(bool enable) {
         cbHardcore  = true;
         cbRomantic  = true;
         // focusEndTime 0 রাখি — Schedule Block নিজে session manage করে,
-        // Adult এর timer এখানে interfere করবে না।
+        // Adult এর timer এখানে interfere করবেবিধা না।
         focusEndTime = 0;
         // DNS filter ও safe search enforce করি
         EnforceStrictProtocols();
