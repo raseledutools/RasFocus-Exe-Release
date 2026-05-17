@@ -27,6 +27,16 @@ static bool dash_hovKillBtn = false;
 
 static float d_cX = 0.0f, d_cY = 0.0f, d_cW = 0.0f, d_cH = 0.0f;
 
+// --- 4 Big Action Card States ---
+struct ActionCard {
+    wstring title;
+    wstring subtitle;
+    RectF bounds;
+    bool isHovered;
+};
+static ActionCard s_actionCards[4];
+static bool s_actionCardsInit = false;
+
 // --- Dashboard Sub-Tab States ---
 static int selectedDashTab = 0;
 static int hoveredDashTab = -1;
@@ -114,6 +124,15 @@ void InitDashboardData() {
     s_sections.push_back(sec5);
 
     s_init = true;
+
+    // --- Init 4 Action Cards ---
+    if (!s_actionCardsInit) {
+        s_actionCards[0] = { L"Create Blocking Profile", L"Set up Schedule, Simple & Emergency blocks", RectF(), false };
+        s_actionCards[1] = { L"Advanced Adult Block",    L"Block adult sites & filter content",          RectF(), false };
+        s_actionCards[2] = { L"Start Deep Study",        L"Launch a Pomodoro focus session now",         RectF(), false };
+        s_actionCards[3] = { L"Allow Only Websites & Apps", L"Whitelist specific sites and applications",RectF(), false };
+        s_actionCardsInit = true;
+    }
 }
 
 // --- Helper: Rounded Rectangle Path ---
@@ -177,18 +196,91 @@ void DrawDashboardTab(Graphics& g, float cx, float cy, float cw, float ch) {
     // 1. Background
     g.FillRectangle(&bBg, cx, cy, cw, ch);
 
-    // 🟢 NEW: Hero Section
+    // 🟢 Hero Section
     float marginX = cx + 40.0f;
     float heroY = cy + 30.0f;
-    
+
     wstring greeting = GetGreeting();
     g.DrawString(greeting.c_str(), -1, &fH1, RectF(marginX, heroY, cw, 40.0f), &fmtL, &bDark);
     g.DrawString(L"Manage your workflow and boost productivity.", -1, &fSub, RectF(marginX, heroY + 40.0f, cw, 25.0f), &fmtL, &bGrayText);
 
-    // 2. Draw 5 Sub-Tabs (Modern Pill/Underline Style)
+    // ─── 4 BIG ACTION CARDS ───────────────────────────────────────────────
     float usableWidth = cw - 80.0f;
-    float tabY = heroY + 90.0f;
-    float tabH = 35.0f;
+    float acY     = heroY + 80.0f;
+    float acGapX  = 16.0f;
+    float acGapY  = 14.0f;
+    float acW     = (usableWidth - acGapX) / 2.0f;
+    float acH     = 90.0f;
+
+    // Card gradient colours (top-left tint, drawn as flat fill + accent border)
+    struct CardTheme { Color bg; Color border; Color textC; Color subC; };
+    CardTheme acThemes[4] = {
+        { Color(255, 13, 158, 126),  Color(255,  9, 110, 88),  Color(255,255,255,255), Color(200,255,255,255) }, // teal
+        { Color(255,124,  58, 237),  Color(255, 91, 33, 182),  Color(255,255,255,255), Color(200,255,255,255) }, // purple
+        { Color(255,245, 158,  11),  Color(255,217,119,  6),   Color(255,255,255,255), Color(200,255,255,255) }, // amber
+        { Color(255, 59, 130, 246),  Color(255, 29, 78, 216),  Color(255,255,255,255), Color(200,255,255,255) }, // blue
+    };
+    wstring acIcons[4] = { L"\xE72E", L"\xE8D7", L"\xE728", L"\xE774" }; // MDL2: shield, eye-off, brain, globe
+
+    Font fAcTitle(&ff, 14, FontStyleBold,    UnitPixel);
+    Font fAcSub  (&ff, 11, FontStyleRegular, UnitPixel);
+    FontFamily ffIcAc(L"Segoe MDL2 Assets");
+    Font fAcIcon(&ffIcAc, 26, FontStyleRegular, UnitPixel);
+
+    for (int i = 0; i < 4; i++) {
+        int row = i / 2, col = i % 2;
+        float ax = marginX + col * (acW + acGapX);
+        float ay = acY    + row * (acH + acGapY);
+        s_actionCards[i].bounds = RectF(ax, ay, acW, acH);
+
+        bool hov = s_actionCards[i].isHovered;
+        CardTheme& th = acThemes[i];
+
+        // Shadow
+        DrawSoftShadow(g, s_actionCards[i].bounds, 10);
+
+        // Fill
+        GraphicsPath acPath;
+        AddRoundedRectPath(acPath, ax, ay, acW, acH, 10.0f);
+        Color fillC = hov ? th.border : th.bg;
+        SolidBrush acBg(fillC);
+        g.FillPath(&acBg, &acPath);
+
+        // Icon background circle
+        float icS = 46.0f;
+        RectF icBg(ax + 14.0f, ay + (acH - icS) / 2.0f, icS, icS);
+        GraphicsPath icCirc;
+        AddRoundedRectPath(icCirc, icBg.X, icBg.Y, icBg.Width, icBg.Height, 23.0f);
+        SolidBrush icCircFill(Color(55, 255, 255, 255));
+        g.FillPath(&icCircFill, &icCirc);
+
+        // Icon
+        SolidBrush acIconC(Color(255, 255, 255, 255));
+        g.DrawString(acIcons[i].c_str(), -1, &fAcIcon, icBg, &fmtC, &acIconC);
+
+        // Arrow hint (right side)
+        FontFamily ffIcArrow(L"Segoe MDL2 Assets");
+        Font fArrow(&ffIcArrow, 14, FontStyleRegular, UnitPixel);
+        SolidBrush arrowC(Color(120, 255, 255, 255));
+        g.DrawString(L"\xE76C", -1, &fArrow,
+            RectF(ax + acW - 32.0f, ay + (acH - 20.0f) / 2.0f, 24.0f, 20.0f),
+            &fmtC, &arrowC);
+
+        // Title + subtitle
+        float txtX = icBg.X + icS + 12.0f;
+        float txtW = acW - (txtX - ax) - 36.0f;
+        SolidBrush acTxtC(th.textC);
+        SolidBrush acSubC(th.subC);
+        g.DrawString(s_actionCards[i].title.c_str(),    -1, &fAcTitle,
+            RectF(txtX, ay + 20.0f, txtW, 22.0f), &fmtTL, &acTxtC);
+        g.DrawString(s_actionCards[i].subtitle.c_str(), -1, &fAcSub,
+            RectF(txtX, ay + 46.0f, txtW, 34.0f), &fmtTL, &acSubC);
+    }
+    // ─────────────────────────────────────────────────────────────────────
+
+    // 2. Draw 5 Sub-Tabs (Modern Pill/Underline Style)
+    float tabY = acY + 2 * acH + 2 * acGapY + 10.0f;
+    float tabH  = 35.0f;
     float tabGap = 20.0f; 
 
     std::wstring subNames[] = { L"Quick Blocks", L"Web & Cloud", L"Pro Tools", L"Personal Notes", L"Student Corner" };
@@ -389,6 +481,14 @@ void ProcessDashboardMouseMove(float x, float y) {
 
     int oldHoverDashTab = hoveredDashTab;
     hoveredDashTab = -1;
+
+    // Action card hover
+    for (int i = 0; i < 4; i++) {
+        bool wasHov = s_actionCards[i].isHovered;
+        s_actionCards[i].isHovered = s_actionCards[i].bounds.Contains(x, y);
+        if (wasHov != s_actionCards[i].isHovered) needsRedraw = true;
+    }
+
     for (int i = 0; i < 5; i++) {
         if (s_tabRects[i].Contains(x, y)) { hoveredDashTab = i; needsRedraw = true; break; }
     }
@@ -426,6 +526,23 @@ void ProcessDashboardMouseClick(float x, float y, int& selectedTab) {
     }
 
     if (dash_hovKillBtn) { showKillPrompt = true; killInput = L""; dash_hovKillBtn = false; return; }
+
+    // --- Action Card Clicks ---
+    // Card 0: Create Blocking Profile  → Blocks tab (Simple Blocks)
+    // Card 1: Advanced Adult Block     → Blocks tab (Adult Block = tab index 2)
+    // Card 2: Start Deep Study         → Deep Study tab (index 3)
+    // Card 3: Allow Only Websites&Apps → Blocks tab (Simple Blocks, Allow mode)
+    for (int i = 0; i < 4; i++) {
+        if (s_actionCards[i].bounds.Contains(x, y)) {
+            s_actionCards[i].isHovered = false;
+            if      (i == 0) selectedTab = 1; // Blocks → Simple
+            else if (i == 1) selectedTab = 2; // Adult Block
+            else if (i == 2) selectedTab = 3; // Deep Study
+            else if (i == 3) selectedTab = 1; // Blocks → Allow mode
+            if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
+            return;
+        }
+    }
 
     for (int i = 0; i < 5; i++) {
         if (s_tabRects[i].Contains(x, y)) {
