@@ -70,10 +70,16 @@ static bool isAdultFocusActive = false;
 static bool hoverAdultFocusBtn = false;
 static ULONGLONG focusEndTime = 0;
 
-static int controlMode = 0;
+static int controlMode = 0; // 0=Self, 1=Parents, 2=Long Text
 static bool hoverControlDrop = false; static bool isControlDropOpen = false;
 static int hoverCtrlIdx = -1;
-wstring ctrlModes[] = { L"Self Control", L"Friend Control" };
+wstring ctrlModes[] = { L"Self Control", L"Parents Control", L"Long Text" };
+
+// --- Long Text Overlay ---
+static bool showLongTextOverlay = false;
+static wstring inputLongText = L"";
+static bool isLongTextInputActive = true;
+static bool hLongTextInput = false, hLongTextConfirm = false, hLongTextCancel = false;
 
 static bool showTimeOverlay = false;
 static int focusHours = 1; static int focusMins = 0;
@@ -964,6 +970,32 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
         {L"\xE72E", L"Strict Lock Mode",L"Block TaskMgr & Regedit.", &cbStrictMode, &hCbStrictMode, AClrRed},
     };
 
+    // Toggle switch + i icon draw helper for strict cards
+    // Layout: [track bg] [thumb] [i icon]
+    // toggleX, toggleY = top-left of the toggle track
+    auto drawToggleWithInfo = [&](float toggleX, float toggleY, bool st, bool lockedAndOn, Color activeClr) {
+        float trackW = 34.0f, trackH = 18.0f;
+        float thumbD = 14.0f;
+
+        // Track
+        GraphicsPath* trackP = MakeRoundRect(RectF(toggleX, toggleY, trackW, trackH), 9);
+        Color trackClr = st ? (lockedAndOn ? AClrGrayText : activeClr) : AClrBorder;
+        SolidBrush trackBr(trackClr);
+        g.FillPath(&trackBr, trackP); delete trackP;
+
+        // Thumb
+        float thumbX = st ? (toggleX + trackW - thumbD - 2.0f) : (toggleX + 2.0f);
+        float thumbY = toggleY + (trackH - thumbD) / 2.0f;
+        GraphicsPath* thumbP = MakeRoundRect(RectF(thumbX, thumbY, thumbD, thumbD), 7);
+        SolidBrush thumbBr(AClrWhite);
+        g.FillPath(&thumbBr, thumbP); delete thumbP;
+
+        // i icon — right of the toggle track
+        float iX = toggleX + trackW + 4.0f;
+        float iY = toggleY + (trackH - 16.0f) / 2.0f;
+        drawInfoIcon(RectF(iX, iY, 16.0f, 16.0f));
+    };
+
     for(int i=0;i<5;i++){
         RectF cardR = rCStrict[i];
         bool st=*cards[i].state; bool hv=*cards[i].hover;
@@ -979,23 +1011,20 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
         SolidBrush iconC(st?cards[i].activeClr:AClrGrayText);
         g.DrawString(cards[i].icon,-1,&fLgIcon,RectF(cardR.X+8,cardR.Y+12,28,40),&fL,&iconC);
 
-        RectF cbx(cardR.X+cardR.Width-20,cardR.Y+8,14,14);
-        GraphicsPath* cxp=MakeRoundRect(cbx,3);
-        SolidBrush cxf(st ? (lockedAndOn ? AClrGrayText : cards[i].activeClr) : AClrWhite);
-        g.FillPath(&cxf,cxp); g.DrawPath(&pBorder,cxp); delete cxp;
-        if(st) g.DrawString(L"\xE73E",-1,&fTiny,cbx,&fC,&bW);
+        // Toggle switch + i icon (top-right of card)
+        // Total width: 34 (track) + 4 (gap) + 16 (i) = 54px
+        float toggleX = cardR.X + cardR.Width - 58.0f;
+        float toggleY = cardR.Y + 10.0f;
+        drawToggleWithInfo(toggleX, toggleY, st, lockedAndOn, cards[i].activeClr);
 
-        SolidBrush titleC(st?AClrDark:AClrDark);
-        g.DrawString(cards[i].title,-1,&fBold,RectF(cardR.X+38,cardR.Y+8,cardR.Width-62,18),&fL,&titleC);
-        g.DrawString(cards[i].desc,-1,&fTiny,RectF(cardR.X+38,cardR.Y+26,cardR.Width-42,30),&fL,&bGr);
+        SolidBrush titleC(AClrDark);
+        g.DrawString(cards[i].title,-1,&fBold,RectF(cardR.X+38,cardR.Y+8,cardR.Width-100,18),&fL,&titleC);
+        g.DrawString(cards[i].desc,-1,&fTiny,RectF(cardR.X+38,cardR.Y+26,cardR.Width-100,30),&fL,&bGr);
 
         if(st){
             GraphicsPath* bar=MakeRoundRect(RectF(cardR.X,cardR.Y+8,3,cardH2-16),2);
             SolidBrush barB(cards[i].activeClr); g.FillPath(&barB,bar); delete bar;
         }
-        
-        // Tooltip Icon for Strict Cards
-        drawInfoIcon(RectF(cardR.X + cardR.Width - 24, cardR.Y + 26, 16, 16));
     }
 
     g.DrawString(L"Advanced Options",-1,&fBold,RectF(R_X, cy+330, 200, 20),&fL,&bSecLbl);
@@ -1014,22 +1043,28 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
         SolidBrush iconC(cb24HourLock?AClrTeal:AClrOrange);
         g.DrawString(L"\xE72E",-1,&fLgIcon,RectF(rCard24h.X+8,rCard24h.Y+15,28,40),&fL,&iconC);
 
-        RectF cbx(rCard24h.X+rCard24h.Width-20,rCard24h.Y+8,14,14);
-        GraphicsPath* cxp=MakeRoundRect(cbx,3);
-        SolidBrush cxf(cb24HourLock?AClrGrayText:AClrWhite); // always gray if active, since it can't be unticked
-        g.FillPath(&cxf,cxp); g.DrawPath(&pBorder,cxp); delete cxp;
-        if(cb24HourLock) g.DrawString(L"\xE73E",-1,&fTiny,cbx,&fC,&bW);
+        // Toggle + i icon
+        {
+            float toggleX = rCard24h.X + rCard24h.Width - 58.0f;
+            float toggleY = rCard24h.Y + 10.0f;
+            float trackW = 34.0f, trackH = 18.0f, thumbD = 14.0f;
+            GraphicsPath* trackP = MakeRoundRect(RectF(toggleX, toggleY, trackW, trackH), 9);
+            SolidBrush trackBr(cb24HourLock ? AClrGrayText : AClrBorder);
+            g.FillPath(&trackBr, trackP); delete trackP;
+            float thumbX = cb24HourLock ? (toggleX + trackW - thumbD - 2.0f) : (toggleX + 2.0f);
+            float thumbY = toggleY + (trackH - thumbD) / 2.0f;
+            GraphicsPath* thumbP = MakeRoundRect(RectF(thumbX, thumbY, thumbD, thumbD), 7);
+            SolidBrush thumbBr(AClrWhite); g.FillPath(&thumbBr, thumbP); delete thumbP;
+            drawInfoIcon(RectF(toggleX + trackW + 4.0f, toggleY + (trackH - 16.0f) / 2.0f, 16.0f, 16.0f));
+        }
 
-        g.DrawString(L"24-Hour Lock",-1,&fBold,RectF(rCard24h.X+38,rCard24h.Y+8,rCard24h.Width-62,18),&fL,&bDk);
-        g.DrawString(L"Cannot be undone.",-1,&fTiny,RectF(rCard24h.X+38,rCard24h.Y+26,rCard24h.Width-42,16),&fL,&bGr);
+        g.DrawString(L"24-Hour Lock",-1,&fBold,RectF(rCard24h.X+38,rCard24h.Y+8,rCard24h.Width-100,18),&fL,&bDk);
+        g.DrawString(L"Cannot be undone.",-1,&fTiny,RectF(rCard24h.X+38,rCard24h.Y+26,rCard24h.Width-100,16),&fL,&bGr);
         if(cb24HourLock){
             ULONGLONG left=lock24hEndTime>GetTickCount64()?lock24hEndTime-GetTickCount64():0;
             wstring rem=to_wstring(left/3600000)+L"h "+to_wstring((left%3600000)/60000)+L"m left";
-            g.DrawString(rem.c_str(),-1,&fTiny,RectF(rCard24h.X+38,rCard24h.Y+42,rCard24h.Width-42,18),&fL,&bTeal);
+            g.DrawString(rem.c_str(),-1,&fTiny,RectF(rCard24h.X+38,rCard24h.Y+42,rCard24h.Width-100,18),&fL,&bTeal);
         }
-        
-        // Tooltip Icon
-        drawInfoIcon(RectF(rCard24h.X + rCard24h.Width - 24, rCard24h.Y + 26, 16, 16));
     }
 
     // Card 2: Periodic Popups (Exempt from Lock)
@@ -1043,17 +1078,23 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
         SolidBrush iconC(cbPeriodicPopups?AClrTeal:AClrGrayText);
         g.DrawString(L"\xEA8F",-1,&fLgIcon,RectF(rCardPop.X+8,rCardPop.Y+15,28,40),&fL,&iconC);
 
-        RectF cbx(rCardPop.X+rCardPop.Width-20,rCardPop.Y+8,14,14);
-        GraphicsPath* cxp=MakeRoundRect(cbx,3);
-        SolidBrush cxf(cbPeriodicPopups?AClrTeal:AClrWhite); // Normal teal because it's exempt
-        g.FillPath(&cxf,cxp); g.DrawPath(&pBorder,cxp); delete cxp;
-        if(cbPeriodicPopups) g.DrawString(L"\xE73E",-1,&fTiny,cbx,&fC,&bW);
+        // Toggle + i icon
+        {
+            float toggleX = rCardPop.X + rCardPop.Width - 58.0f;
+            float toggleY = rCardPop.Y + 10.0f;
+            float trackW = 34.0f, trackH = 18.0f, thumbD = 14.0f;
+            GraphicsPath* trackP = MakeRoundRect(RectF(toggleX, toggleY, trackW, trackH), 9);
+            SolidBrush trackBr(cbPeriodicPopups ? AClrTeal : AClrBorder);
+            g.FillPath(&trackBr, trackP); delete trackP;
+            float thumbX = cbPeriodicPopups ? (toggleX + trackW - thumbD - 2.0f) : (toggleX + 2.0f);
+            float thumbY = toggleY + (trackH - thumbD) / 2.0f;
+            GraphicsPath* thumbP = MakeRoundRect(RectF(thumbX, thumbY, thumbD, thumbD), 7);
+            SolidBrush thumbBr(AClrWhite); g.FillPath(&thumbBr, thumbP); delete thumbP;
+            drawInfoIcon(RectF(toggleX + trackW + 4.0f, toggleY + (trackH - 16.0f) / 2.0f, 16.0f, 16.0f));
+        }
 
-        g.DrawString(L"Reminders",-1,&fBold,RectF(rCardPop.X+38,rCardPop.Y+8,rCardPop.Width-62,18),&fL,&bDk);
-        g.DrawString(L"Fullscreen quote every 25 mins.",-1,&fTiny,RectF(rCardPop.X+38,rCardPop.Y+26,rCardPop.Width-42,30),&fL,&bGr);
-        
-        // Tooltip Icon
-        drawInfoIcon(RectF(rCardPop.X + rCardPop.Width - 24, rCardPop.Y + 26, 16, 16));
+        g.DrawString(L"Reminders",-1,&fBold,RectF(rCardPop.X+38,rCardPop.Y+8,rCardPop.Width-100,18),&fL,&bDk);
+        g.DrawString(L"Fullscreen quote every 25 mins.",-1,&fTiny,RectF(rCardPop.X+38,rCardPop.Y+26,rCardPop.Width-100,30),&fL,&bGr);
     }
 
     // ─────────────────────────────────────────
@@ -1091,10 +1132,13 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
     // ==========================================
     // --- OVERLAYS ---
     // ==========================================
-    bool anyOverlay=(showTimeOverlay||showPassOverlay||showStrictTimeOverlay);
+    bool anyOverlay=(showTimeOverlay||showPassOverlay||showStrictTimeOverlay||showLongTextOverlay);
     if(anyOverlay){
         SolidBrush ov(AClrOverlay); g.FillRectangle(&ov,cx,cy,cw,ch);
-        float ovW=420.0f,ovH=230.0f;
+
+        // Long Text overlay is bigger
+        float ovW = showLongTextOverlay ? 500.0f : 420.0f;
+        float ovH = showLongTextOverlay ? 340.0f : 230.0f;
         float ovX=cx+(cw-ovW)/2.0f, ovY=cy+(ch-ovH)/2.0f;
         RectF ovR(ovX,ovY,ovW,ovH);
         GraphicsPath* op=MakeRoundRect(ovR,8);
@@ -1135,7 +1179,7 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
             g.DrawString(L"Start Focus",-1,&fBold,startR,&fC,&bW);
         }
         else if(showPassOverlay){
-            wstring ttl=isStoppingFocus?L"Enter Password to Stop":L"Enter Friend's Password";
+            wstring ttl=isStoppingFocus?L"Enter Password to Stop":L"Enter Parents' Password";
             g.DrawString(ttl.c_str(),-1,&fTitle,RectF(ovX,ovY,ovW,46.0f),&fC,&bW);
             RectF piR(ovX+40,ovY+76,ovW-80,40);
             GraphicsPath* pip=MakeRoundRect(piR,4);
@@ -1163,6 +1207,46 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
             g.FillPath(&cob,cop); delete cop;
             g.DrawString(L"Confirm",-1,&fBold,confR,&fC,&bW);
         }
+        else if(showLongTextOverlay){
+            g.DrawString(L"Type Long Text to Lock",-1,&fTitle,RectF(ovX,ovY,ovW,46.0f),&fC,&bW);
+            g.DrawString(L"You must retype this exact text to stop the session.",-1,&fSmall,RectF(ovX+20,ovY+54,ovW-40,20),&fC,&bGr);
+
+            RectF ltR(ovX+20,ovY+82,ovW-40,160);
+            GraphicsPath* ltp=MakeRoundRect(ltR,4);
+            SolidBrush ltBg(Color(255,248,251,253));
+            g.FillPath(&ltBg,ltp);
+            Pen ltp2(isLongTextInputActive?AClrTeal:AClrBorder,1.5f); g.DrawPath(&ltp2,ltp); delete ltp;
+
+            StringFormat ltFmt; ltFmt.SetAlignment(StringAlignmentNear); ltFmt.SetLineAlignment(StringAlignmentNear);
+            ltFmt.SetFormatFlags(StringFormatFlagsLineLimit);
+            if(inputLongText.empty()&&!isLongTextInputActive)
+                g.DrawString(L"Type a long passage (min 10 words)...",-1,&fNorm,RectF(ltR.X+8,ltR.Y+8,ltR.Width-16,ltR.Height-16),&ltFmt,&bGr);
+            else{
+                g.DrawString(inputLongText.c_str(),-1,&fNorm,RectF(ltR.X+8,ltR.Y+8,ltR.Width-16,ltR.Height-16),&ltFmt,&bDk);
+                if(isLongTextInputActive&&(GetTickCount()/500)%2==0)
+                    g.FillRectangle(&bDk,ltR.X+10,ltR.Y+10,1.5f,18.0f);
+            }
+
+            // word count hint
+            int wc = 0; bool inW=false;
+            for(auto ch2:inputLongText){if(iswspace(ch2)){inW=false;}else{if(!inW){wc++;inW=true;}}}
+            wstring wcStr=L"Words: "+to_wstring(wc)+L" (min 10)";
+            SolidBrush wcClr(wc>=10?AClrGreen:AClrGrayText);
+            g.DrawString(wcStr.c_str(),-1,&fSmall,RectF(ovX+20,ovY+248,200,20),&fL,&wcClr);
+
+            RectF cancelR(ovX+20,ovY+276,140,40);
+            GraphicsPath* cxp2=MakeRoundRect(cancelR,4);
+            SolidBrush cxb2(hLongTextCancel?AClrBgHover:AClrWhite);
+            g.FillPath(&cxb2,cxp2); g.DrawPath(&pBorder,cxp2); delete cxp2;
+            g.DrawString(L"Cancel",-1,&fBold,cancelR,&fC,&bDk);
+
+            bool canConfirm=(wc>=10);
+            RectF confR2(ovX+180,ovY+276,300,40);
+            GraphicsPath* cop2=MakeRoundRect(confR2,4);
+            SolidBrush cob2(canConfirm?(hLongTextConfirm?AClrTealHover:AClrTeal):AClrBorder);
+            g.FillPath(&cob2,cop2); delete cop2;
+            g.DrawString(L"Lock with this Text",-1,&fBold,confR2,&fC,&bW);
+        }
     }
 
     // ==========================================
@@ -1170,10 +1254,10 @@ void DrawAdultBlockTab(Graphics& g, float cx, float cy, float cw, float ch) {
     // ==========================================
     if(!anyOverlay){
         if(isControlDropOpen&&!isAdultFocusActive){
-            RectF dR(rMode.X,rMode.Y+31,rMode.Width,2*30.0f);
+            RectF dR(rMode.X,rMode.Y+31,rMode.Width,3*30.0f);
             GraphicsPath* dp=MakeRoundRect(dR,4);
             SolidBrush dBg(AClrWhite); g.FillPath(&dBg,dp); g.DrawPath(&pBorder,dp); delete dp;
-            for(int i=0;i<2;i++){
+            for(int i=0;i<3;i++){
                 SolidBrush hb(hoverCtrlIdx==i?AClrBgHover:AClrWhite);
                 g.FillRectangle(&hb,dR.X+1,dR.Y+i*30.0f+1,dR.Width-2,28.0f);
                 g.DrawString(ctrlModes[i].c_str(),-1,&fNorm,RectF(dR.X+8,dR.Y+i*30,dR.Width-8,30),&fL,&bDk);
@@ -1249,15 +1333,16 @@ void ProcessAdultMouseMove(float x, float y) {
     hoverCustomInput=hoverCustomAddBtn=false;
     hTimeHM=hTimeHP=hTimeMM=hTimeMP=hTimeStart=hTimeCancel=false;
     hPassInput=hPassConfirm=hPassCancel=false;
+    hLongTextInput=hLongTextConfirm=hLongTextCancel=false;
     hCb24HourLock=hCbPeriodicPopups=false;
     hoverStrictFocusBtn=hoverStrictPanicBtn=false;
     hCbSilentUrl=hCbDnsFilter=hCbSafeSearch=hCbIncognito=hCbStrictMode=false;
     hStrictTimeHM=hStrictTimeHP=hStrictTimeMM=hStrictTimeMP=hStrictTimeStart=hStrictTimeCancel=false;
     for(auto& it:customAdultKeywords) it.isHoveredCross=false;
 
-    bool anyOverlay=(showTimeOverlay||showPassOverlay||showStrictTimeOverlay);
+    bool anyOverlay=(showTimeOverlay||showPassOverlay||showStrictTimeOverlay||showLongTextOverlay);
     if(anyOverlay){
-        float ovW=420,ovH=230;
+        float ovW=showLongTextOverlay?500.0f:420.0f,ovH=showLongTextOverlay?340.0f:230.0f;
         float ovX=cx+(cw-ovW)/2.0f, ovY2=cy+(ch-ovH)/2.0f;
         if(showTimeOverlay){
             if(RectF(ovX+116,ovY2+72,32,36).Contains(x,y)) hTimeHM=true;
@@ -1277,6 +1362,10 @@ void ProcessAdultMouseMove(float x, float y) {
             if(RectF(ovX+40, ovY2+76, ovW-80,40).Contains(x,y)) hPassInput=true;
             if(RectF(ovX+40, ovY2+152,140,40).Contains(x,y)) hPassCancel=true;
             if(RectF(ovX+200,ovY2+152,160,40).Contains(x,y)) hPassConfirm=true;
+        } else if(showLongTextOverlay){
+            if(RectF(ovX+20, ovY2+82, ovW-40,160).Contains(x,y)) hLongTextInput=true;
+            if(RectF(ovX+20, ovY2+276,140,40).Contains(x,y)) hLongTextCancel=true;
+            if(RectF(ovX+180,ovY2+276,300,40).Contains(x,y)) hLongTextConfirm=true;
         }
         return;
     }
@@ -1344,6 +1433,8 @@ void ProcessAdultMouseMove(float x, float y) {
     if (rInfoStrict.Contains(x, y)) s_activeTooltip = L"Starts a timed session where Task Manager\n& Registry Editor are totally blocked.";
     else if (rInfoPanic.Contains(x, y)) s_activeTooltip = L"Emergency! Instantly kills all web\nbrowsers for the next 15 minutes.";
 
+    // i icon is now at: toggleX + trackW + 4, toggleY + 1  (trackW=34, total toggle block = 58px from right)
+    // toggleX = cardR.X + cardR.Width - 58,  iX = toggleX + 38 = cardR.X + cardR.Width - 20
     wstring strictTips[5] = {
         L"Saves visited URLs in a hidden text file:\nC:\\ProgramData\\RasFocus\\silent_monitor_log.txt",
         L"Forces Cloudflare 1.1.1.3 DNS to filter\nadult websites at the network level.",
@@ -1352,13 +1443,21 @@ void ProcessAdultMouseMove(float x, float y) {
         L"Locks Task Manager, Control Panel,\nand Registry to prevent bypassing."
     };
     for(int i=0; i<5; i++) {
-        RectF infoR(rCStrict[i].X + rCStrict[i].Width - 24, rCStrict[i].Y + 26, 16, 16);
+        float iX = rCStrict[i].X + rCStrict[i].Width - 20.0f;
+        float iY = rCStrict[i].Y + 10.0f + (18.0f - 16.0f) / 2.0f;
+        RectF infoR(iX, iY, 16.0f, 16.0f);
         if (infoR.Contains(x, y)) s_activeTooltip = strictTips[i];
     }
-    if (RectF(rCard24h.X + rCard24h.Width - 24, rCard24h.Y + 26, 16, 16).Contains(x, y)) 
-        s_activeTooltip = L"Locks the protection for 24 hours.\nEven restarting the PC won't stop it.";
-    if (RectF(rCardPop.X + rCardPop.Width - 24, rCardPop.Y + 26, 16, 16).Contains(x, y)) 
-        s_activeTooltip = L"Shows a fullscreen motivational\nquote automatically every 25 mins.";
+    {
+        float iX24 = rCard24h.X + rCard24h.Width - 20.0f;
+        float iY24 = rCard24h.Y + 10.0f + (18.0f - 16.0f) / 2.0f;
+        if (RectF(iX24, iY24, 16.0f, 16.0f).Contains(x, y))
+            s_activeTooltip = L"Locks the protection for 24 hours.\nEven restarting the PC won't stop it.";
+        float iXPop = rCardPop.X + rCardPop.Width - 20.0f;
+        float iYPop = rCardPop.Y + 10.0f + (18.0f - 16.0f) / 2.0f;
+        if (RectF(iXPop, iYPop, 16.0f, 16.0f).Contains(x, y))
+            s_activeTooltip = L"Shows a fullscreen motivational\nquote automatically every 25 mins.";
+    }
 }
 
 // ==========================================
@@ -1383,6 +1482,17 @@ void ProcessAdultMouseClick(float x, float y) {
         if(hStrictTimeStart){isStrictFocusActive=true;strictFocusEndTime=GetTickCount64()+((ULONGLONG)strictFocusHours*3600000)+((ULONGLONG)strictFocusMins*60000);showStrictTimeOverlay=false;SaveStrictSettings();}
         return;
     }
+    if(showLongTextOverlay){
+        isLongTextInputActive=hLongTextInput;
+        if(hLongTextCancel){showLongTextOverlay=false;inputLongText=L"";}
+        if(hLongTextConfirm&&!inputLongText.empty()){
+            // count words
+            int wc2=0; bool inW2=false;
+            for(auto ch3:inputLongText){if(iswspace(ch3)){inW2=false;}else{if(!inW2){wc2++;inW2=true;}}}
+            if(wc2>=10){isAdultFocusActive=true;showLongTextOverlay=false;SaveAdultSettings();}
+        }
+        return;
+    }
     if(showPassOverlay){
         isPassInputActive=hPassInput;
         if(hPassCancel){showPassOverlay=false;inputPassText=L"";}
@@ -1395,10 +1505,12 @@ void ProcessAdultMouseClick(float x, float y) {
     if(hoverAdultFocusBtn&&!cb24HourLock){
         if(isAdultFocusActive){
             if(controlMode==1){isStoppingFocus=true;showPassOverlay=true;isPassInputActive=true;}
+            else if(controlMode==2){isStoppingFocus=true;showLongTextOverlay=true;isLongTextInputActive=true;}
             else isAdultFocusActive=false;
         } else {
-            if(controlMode==0)showTimeOverlay=true;
-            else{isStoppingFocus=false;showPassOverlay=true;isPassInputActive=true;}
+            if(controlMode==0) showTimeOverlay=true;
+            else if(controlMode==1){isStoppingFocus=false;showPassOverlay=true;isPassInputActive=true;}
+            else{isStoppingFocus=false;inputLongText=L"";showLongTextOverlay=true;isLongTextInputActive=true;}
         }
     }
     if(hoverStrictFocusBtn){
@@ -1512,7 +1624,9 @@ void ProcessAdultMouseClick(float x, float y) {
 // --- KEY INPUT ---
 // ==========================================
 void ProcessAdultKeyPress(wchar_t c) {
-    if(showPassOverlay&&isPassInputActive){
+    if(showLongTextOverlay&&isLongTextInputActive){
+        if((c>=32&&c<=126)||c==L' ') { if(inputLongText.length()<2500) inputLongText+=c; }
+    } else if(showPassOverlay&&isPassInputActive){
         if(c>=32&&c<=126&&inputPassText.length()<20) inputPassText+=c;
     } else if(isCustomInputActive&&c>=32&&c<=126&&customInputText.length()<40){
         customInputText+=c;
@@ -1520,7 +1634,13 @@ void ProcessAdultKeyPress(wchar_t c) {
 }
 
 void ProcessAdultKeyDown(WPARAM key) {
-    if(showPassOverlay&&isPassInputActive){
+    if(key==VK_ESCAPE){
+        if(showLongTextOverlay){showLongTextOverlay=false;inputLongText=L"";return;}
+        if(showPassOverlay){showPassOverlay=false;inputPassText=L"";return;}
+    }
+    if(showLongTextOverlay&&isLongTextInputActive){
+        if(key==VK_BACK&&!inputLongText.empty()) inputLongText.pop_back();
+    } else if(showPassOverlay&&isPassInputActive){
         if(key==VK_BACK&&!inputPassText.empty()) inputPassText.pop_back();
     } else if(isCustomInputActive){
         if(key==VK_BACK&&!customInputText.empty()) customInputText.pop_back();
