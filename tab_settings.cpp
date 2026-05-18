@@ -17,8 +17,13 @@ using namespace std;
 extern HWND hParentWnd;
 
 // ==========================================
-// Your actual profile check function
-extern bool CheckIfAnyProfileIsActive(); 
+// Profile check — returns true if any blocking profile is currently active
+bool CheckIfAnyProfileIsActive() {
+    // TODO: Replace this with your real profile state logic.
+    // For example, query your profile/accounts system here.
+    // Returning false means enforcement thread will skip all blocking.
+    return false;
+}
 // ==========================================
 
 static std::mutex g_setMutex;
