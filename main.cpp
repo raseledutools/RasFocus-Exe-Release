@@ -71,6 +71,8 @@ wstring currentWorkspacePdf = L"";
 // Premium status — accounts.h/cpp must expose this
 extern bool g_isPremiumUser;   // set to true after successful premium login
 extern string g_loggedInUserUid; // Firebase auth UID from accounts.h
+extern wstring g_loggedInName;   // Display name after login
+extern wstring g_loggedInEmail;  // Email after login
 
 // ==========================================
 // SUBSCRIPTION & PACKAGE STATE
@@ -926,7 +928,16 @@ void DrawSubHeader(Graphics& g, int w) {
     g.DrawString(L"\xE77B", -1, &fBtnIcon, RectF(acBtnX + 6.0f, btnY, 20.0f, btnH), &fmtC, &white);
 
     Font fBtnTxt(&ff, 11, FontStyleBold, UnitPixel);
-    g.DrawString(L"My Account", -1, &fBtnTxt, RectF(acBtnX + 28.0f, btnY, acBtnW - 30.0f, btnH), &fmtTL, &white);
+    // Sign in korle name ba email user part dekha, na thakle "My Account"
+    wstring sidebarAccLabel = L"My Account";
+    if (!g_loggedInName.empty()) {
+        sidebarAccLabel = g_loggedInName.length() > 12 ? g_loggedInName.substr(0, 12) : g_loggedInName;
+    } else if (!g_loggedInEmail.empty()) {
+        size_t atPos = g_loggedInEmail.find(L'@');
+        wstring emailUser = (atPos != wstring::npos) ? g_loggedInEmail.substr(0, atPos) : g_loggedInEmail;
+        sidebarAccLabel = emailUser.length() > 12 ? emailUser.substr(0, 12) : emailUser;
+    }
+    g.DrawString(sidebarAccLabel.c_str(), -1, &fBtnTxt, RectF(acBtnX + 28.0f, btnY, acBtnW - 30.0f, btnH), &fmtTL, &white);
 
     float fbIconW = 60.0f;
     float fbIconX = acBtnX - fbIconW - 10.0f;
@@ -1192,6 +1203,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 
     case WM_TIMER: {
         if (wp == 1005) StartSilentUpdateCheck();
+        ProcessFamilyLinkTimer(wp); // Family Link parent command poll
         break;
     }
 

@@ -1378,7 +1378,8 @@ void ProcessAccountsMouseClick(float x, float y, HWND hWnd) {
             
             // 2. Upgrade Button Click
             if (HitRect(x, y, upX, upY, upW, upH)) {
-                string urlStr = "https://rasfocusplus.me/?uid=" + g_loggedInUserUid;
+                // Sidebar upgrade button - same checkout URL as upgrade.cpp popup
+                string urlStr = "https://raseledutools.github.io/checkout.html?uid=" + g_loggedInUserUid;
                 wstring wUrl(urlStr.begin(), urlStr.end());
                 ShellExecuteW(NULL, L"open", wUrl.c_str(), NULL, NULL, SW_SHOWNORMAL);
                 return;

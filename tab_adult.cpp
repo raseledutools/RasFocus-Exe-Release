@@ -1625,7 +1625,10 @@ void ProcessAdultMouseClick(float x, float y) {
 // ==========================================
 void ProcessAdultKeyPress(wchar_t c) {
     if(showLongTextOverlay&&isLongTextInputActive){
-        if((c>=32&&c<=126)||c==L' ') { if(inputLongText.length()<2500) inputLongText+=c; }
+        // Fix: space, printable ASCII and all Unicode chars (Bengali etc.) support
+        if(c == L'\n' || c == L'\r') { /* skip newline */ }
+        else if(c == L'\b') { if(!inputLongText.empty()) inputLongText.pop_back(); }
+        else if(c >= 32) { if(inputLongText.length()<2500) inputLongText+=c; }
     } else if(showPassOverlay&&isPassInputActive){
         if(c>=32&&c<=126&&inputPassText.length()<20) inputPassText+=c;
     } else if(isCustomInputActive&&c>=32&&c<=126&&customInputText.length()<40){
