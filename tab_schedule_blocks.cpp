@@ -589,9 +589,10 @@ static void LoadProfiles() {
     in.imbue(locale(in.getloc(), new codecvt_utf8<wchar_t>));
     if (!in) {
         FocusProfile defProfile; defProfile.profileName = L"Deep Work Session";
-        defProfile.blockedWebsites.push_back({L"facebook.com", false}); defProfile.blockedApps.push_back({L"discord.exe", false});
+        // 🟢 FIXED: Removed Hardcoded Blocks for safety
         defProfile.schAdultWeb = true; defProfile.schHardcore = true;
-        for(int i=1; i<=5; i++) defProfile.activeDays[i] = true;
+        // 🟢 FIXED: Active days turned off by default to prevent unwanted Auto-Activation
+        for(int i=0; i<7; i++) defProfile.activeDays[i] = false;
         g_profiles.push_back(defProfile); return;
     }
     size_t pCount = 0; in >> pCount; in.ignore(); g_profiles.clear();
@@ -811,66 +812,68 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
 
         g_ehb.backBtn = RectF(); g_ehb.nextBtn = RectF();
         if (s_activeSubTab > 0) {
-            g_ehb.backBtn = RectF(contX, footerY + 14.0f, 105.0f, 38.0f); GraphicsPath* bbp = GetSchRoundRectPath(g_ehb.backBtn, 8.0f); SolidBrush bbBr(g_ehb.hBack ? ClrBgHover : Color(255, 240, 243, 248)); g.FillPath(&bbBr, bbp); g.DrawPath(&pDiv, bbp); delete bbp; g.DrawString(L"\xE76B  Back", -1, &fBold, g_ehb.backBtn, &fC, &bDark);
+            g_ehb.backBtn = RectF(contX, footerY + 14.0f, 105.0f, 38.0f); GraphicsPath* bbp = GetSchRoundRectPath(g_ehb.backBtn, 8.0f); SolidBrush bbBr(g_ehb.hBack ? ClrBgHover : Color(255, 240, 243, 248)); g.FillPath(&bbBr, bbp); g.DrawPath(&pDiv, bbp); delete bbp; 
+            g.DrawString(L"Back", -1, &fBold, g_ehb.backBtn, &fC, &bDark);
         }
         if (s_activeSubTab < 3) {
-            float nextX = (s_activeSubTab > 0) ? contX + 120.0f : contX; g_ehb.nextBtn = RectF(nextX, footerY + 14.0f, 105.0f, 38.0f); GraphicsPath* nbp = GetSchRoundRectPath(g_ehb.nextBtn, 8.0f); SolidBrush nbBr(g_ehb.hNext ? ClrTealHover : ClrTeal); g.FillPath(&nbBr, nbp); delete nbp; g.DrawString(L"Next  \xE76C", -1, &fBold, g_ehb.nextBtn, &fC, &bWhite);
+            float nextX = (s_activeSubTab > 0) ? contX + 120.0f : contX; g_ehb.nextBtn = RectF(nextX, footerY + 14.0f, 105.0f, 38.0f); GraphicsPath* nbp = GetSchRoundRectPath(g_ehb.nextBtn, 8.0f); SolidBrush nbBr(g_ehb.hNext ? ClrTealHover : ClrTeal); g.FillPath(&nbBr, nbp); delete nbp; 
+            g.DrawString(L"Next", -1, &fBold, g_ehb.nextBtn, &fC, &bWhite);
         }
-        g_ehb.cancelBtn = RectF(ovX + ovW - 275.0f, footerY + 14.0f, 110.0f, 38.0f); GraphicsPath* cvp = GetSchRoundRectPath(g_ehb.cancelBtn, 8.0f); SolidBrush cvBr(g_ehb.hCancel ? ClrBgHover : Color(255, 240, 243, 248)); g.FillPath(&cvBr, cvp); g.DrawPath(&pDiv, cvp); delete cvp; g.DrawString(L"Cancel", -1, &fBold, g_ehb.cancelBtn, &fC, &bDark);
-        g_ehb.saveBtn = RectF(ovX + ovW - 150.0f, footerY + 14.0f, 120.0f, 38.0f); GraphicsPath* svp = GetSchRoundRectPath(g_ehb.saveBtn, 8.0f); SolidBrush svBr(g_ehb.hSave ? ClrTealHover : ClrTeal); g.FillPath(&svBr, svp); delete svp; g.DrawString(L"\xE74E  Save", -1, &fBold, g_ehb.saveBtn, &fC, &bWhite);
+        g_ehb.cancelBtn = RectF(ovX + ovW - 275.0f, footerY + 14.0f, 110.0f, 38.0f); GraphicsPath* cvp = GetSchRoundRectPath(g_ehb.cancelBtn, 8.0f); SolidBrush cvBr(g_ehb.hCancel ? ClrBgHover : Color(255, 240, 243, 248)); g.FillPath(&cvBr, cvp); g.DrawPath(&pDiv, cvp); delete cvp; 
+        g.DrawString(L"Cancel", -1, &fBold, g_ehb.cancelBtn, &fC, &bDark);
+        
+        g_ehb.saveBtn = RectF(ovX + ovW - 150.0f, footerY + 14.0f, 120.0f, 38.0f); GraphicsPath* svp = GetSchRoundRectPath(g_ehb.saveBtn, 8.0f); SolidBrush svBr(g_ehb.hSave ? ClrTealHover : ClrTeal); g.FillPath(&svBr, svp); delete svp; 
+        g.DrawString(L"Save", -1, &fBold, g_ehb.saveBtn, &fC, &bWhite);
         
         g.SetClip(RectF(ovX, ovY + topH + 1.0f, ovW, footerY - (ovY + topH + 1.0f)));
 
         if (s_activeSubTab == 0) {
-            RectF c1Rect(cardX, contentY, cardW_inner, 100.0f); GraphicsPath* c1P = GetSchRoundRectPath(c1Rect, 10.0f); g.FillPath(&bWhite, c1P); g.DrawPath(&pDiv, c1P); delete c1P;
-            SolidBrush cardLabelBg(Color(255, 245, 250, 255)); g.FillRectangle(&cardLabelBg, cardX + 1.0f, contentY + 1.0f, cardW_inner - 2.0f, 36.0f);
-            g.DrawString(L"\xE77B  General Information", -1, &fBold, RectF(cardX + 18.0f, contentY + 8.0f, 280.0f, 24.0f), &fL, &bDark); g.DrawLine(&pDiv, cardX, contentY + 38.0f, cardX + cardW_inner, contentY + 38.0f);
-            g.DrawString(L"Profile Name", -1, &fSmall, RectF(cardX + 18.0f, contentY + 50.0f, 100.0f, 22.0f), &fL, &bGray);
-            g_ehb.nameInp = RectF(cardX + 125.0f, contentY + 46.0f, 230.0f, 36.0f); GraphicsPath* np = GetSchRoundRectPath(g_ehb.nameInp, 7.0f); g.FillPath(activeInput == 1 ? &bWhite : &bBg, np); g.DrawPath(activeInput == 1 ? &pTeal : &pDiv, np); delete np;
+            g.DrawString(L"Profile Name", -1, &fSmall, RectF(cardX + 18.0f, contentY + 10.0f, 100.0f, 22.0f), &fL, &bGray);
+            g_ehb.nameInp = RectF(cardX + 125.0f, contentY + 6.0f, 230.0f, 36.0f);
+            GraphicsPath* np = GetSchRoundRectPath(g_ehb.nameInp, 7.0f); g.FillPath(activeInput == 1 ? &bWhite : &bBg, np); g.DrawPath(activeInput == 1 ? &pTeal : &pDiv, np); delete np;
             if (inpProfileName.empty() && activeInput != 1) { g.DrawString(L"e.g. Study Time", -1, &fNorm, RectF(g_ehb.nameInp.X+10.0f, g_ehb.nameInp.Y, g_ehb.nameInp.Width-10.0f, g_ehb.nameInp.Height), &fL, &bGray); } else { g.DrawString(inpProfileName.c_str(), -1, &fNorm, RectF(g_ehb.nameInp.X+10.0f, g_ehb.nameInp.Y, g_ehb.nameInp.Width-10.0f, g_ehb.nameInp.Height), &fL, &bDark); if (activeInput == 1 && (GetTickCount()/500)%2==0) { Graphics gT(GetDesktopWindow()); RectF bR; gT.MeasureString(inpProfileName.c_str(), -1, &fNorm, PointF(0,0), &bR); g.FillRectangle(&bDark, g_ehb.nameInp.X+12.0f+(inpProfileName.empty()?0:bR.Width), g_ehb.nameInp.Y+8.0f, 1.5f, 20.0f); } }
-            g.DrawString(L"Lock Mode", -1, &fSmall, RectF(cardX + 375.0f, contentY + 50.0f, 90.0f, 22.0f), &fL, &bGray);
-            g_ehb.modeDrop = RectF(cardX + 460.0f, contentY + 46.0f, 210.0f, 36.0f); GraphicsPath* mdp = GetSchRoundRectPath(g_ehb.modeDrop, 7.0f); SolidBrush dropBg(hoverSchModeDropdown ? ClrBgHover : ClrBg); g.FillPath(&dropBg, mdp); g.DrawPath(&pDiv, mdp); delete mdp;
+            
+            g.DrawString(L"Lock Mode", -1, &fSmall, RectF(cardX + 375.0f, contentY + 10.0f, 90.0f, 22.0f), &fL, &bGray);
+            g_ehb.modeDrop = RectF(cardX + 460.0f, contentY + 6.0f, 210.0f, 36.0f); GraphicsPath* mdp = GetSchRoundRectPath(g_ehb.modeDrop, 7.0f); SolidBrush dropBg(hoverSchModeDropdown ? ClrBgHover : ClrWhite); g.FillPath(&dropBg, mdp); g.DrawPath(&pDiv, mdp); delete mdp;
             wstring curModeTxt = (tempLockMode == 1) ? L"Parents Control" : ((tempLockMode == 2) ? L"Long Text Unlock" : L"Self Control");
             g.DrawString(curModeTxt.c_str(), -1, &fNorm, RectF(g_ehb.modeDrop.X+12.0f, g_ehb.modeDrop.Y, g_ehb.modeDrop.Width-34.0f, g_ehb.modeDrop.Height), &fL, &bDark); g.DrawString(L"\xE70D", -1, &fSmallIcon, RectF(g_ehb.modeDrop.X+g_ehb.modeDrop.Width-30.0f, g_ehb.modeDrop.Y, 28.0f, g_ehb.modeDrop.Height), &fC, &bTeal);
 
-            contentY += 120.0f; RectF c2Rect(cardX, contentY, cardW_inner, 130.0f); GraphicsPath* c2P = GetSchRoundRectPath(c2Rect, 10.0f); g.FillPath(&bWhite, c2P); g.DrawPath(&pDiv, c2P); delete c2P;
-            SolidBrush cardLabelBg2(Color(255, 245, 250, 255)); g.FillRectangle(&cardLabelBg2, cardX + 1.0f, contentY + 1.0f, cardW_inner - 2.0f, 36.0f);
-            g.DrawString(L"\xE787  Schedule Settings", -1, &fBold, RectF(cardX + 18.0f, contentY + 8.0f, 280.0f, 24.0f), &fL, &bDark); g.DrawLine(&pDiv, cardX, contentY + 38.0f, cardX + cardW_inner, contentY + 38.0f);
-            g.DrawString(L"Active Days", -1, &fSmall, RectF(cardX + 18.0f, contentY + 50.0f, 90.0f, 22.0f), &fL, &bGray);
+            contentY += 80.0f; 
+            
+            g.DrawString(L"Active Days", -1, &fSmall, RectF(cardX + 18.0f, contentY + 10.0f, 90.0f, 22.0f), &fL, &bGray);
             wstring dLabels[] = {L"Su", L"Mo", L"Tu", L"We", L"Th", L"Fr", L"Sa"};
             for (int d = 0; d < 7; d++) {
-                g_ehb.days[d] = RectF(cardX + 115.0f + (d * 45.0f), contentY + 45.0f, 38.0f, 38.0f); GraphicsPath* dP = GetSchRoundRectPath(g_ehb.days[d], 8.0f); SolidBrush dBr(editDays[d] ? ClrTeal : (g_ehb.hDay == d ? Color(255,235,248,250) : ClrBg)); g.FillPath(&dBr, dP); g.DrawPath(editDays[d] ? &pTeal : &pDiv, dP); delete dP; g.DrawString(dLabels[d].c_str(), -1, &fSmallBold, g_ehb.days[d], &fC, editDays[d] ? &bWhite : &bDark);
+                g_ehb.days[d] = RectF(cardX + 115.0f + (d * 45.0f), contentY + 5.0f, 38.0f, 38.0f); GraphicsPath* dP = GetSchRoundRectPath(g_ehb.days[d], 8.0f); SolidBrush dBr(editDays[d] ? ClrTeal : (g_ehb.hDay == d ? Color(255,235,248,250) : ClrWhite)); g.FillPath(&dBr, dP); g.DrawPath(editDays[d] ? &pTeal : &pDiv, dP); delete dP; g.DrawString(dLabels[d].c_str(), -1, &fSmallBold, g_ehb.days[d], &fC, editDays[d] ? &bWhite : &bDark);
             }
-            g.DrawString(L"Session Time", -1, &fSmall, RectF(cardX + 18.0f, contentY + 97.0f, 95.0f, 22.0f), &fL, &bGray);
+            g.DrawString(L"Session Time", -1, &fSmall, RectF(cardX + 18.0f, contentY + 65.0f, 95.0f, 22.0f), &fL, &bGray);
             auto DrawModernTimeBox = [&](float tx, float ty, const wstring& lbl, int h, int m, RectF& hBox, RectF& mBox, RectF& ampmBtn, bool hH, bool hM, bool hAmPm) {
                 g.DrawString(lbl.c_str(), -1, &fSmallBold, RectF(tx, ty, 45.0f, 34.0f), &fC, &bGray); int dispH = h % 12; if (dispH == 0) dispH = 12; wstring ampmStr = (h >= 12) ? L"PM" : L"AM";
-                hBox = RectF(tx + 48.0f, ty, 44.0f, 34.0f); GraphicsPath hp; AddRoundedRectPath(hp, hBox.X, hBox.Y, hBox.Width, hBox.Height, 7.0f); SolidBrush hbBr(hH ? ClrBgHover : ClrBg); g.FillPath(&hbBr, &hp); g.DrawPath(&pDiv, &hp); g.DrawString((dispH < 10 ? L"0" + to_wstring(dispH) : to_wstring(dispH)).c_str(), -1, &fBold, hBox, &fC, &bDark);
-                g.DrawString(L":", -1, &fBold, RectF(tx + 93.0f, ty, 12.0f, 34.0f), &fC, &bDark); mBox = RectF(tx + 105.0f, ty, 44.0f, 34.0f); GraphicsPath mp; AddRoundedRectPath(mp, mBox.X, mBox.Y, mBox.Width, mBox.Height, 7.0f); SolidBrush mbBr(hM ? ClrBgHover : ClrBg); g.FillPath(&mbBr, &mp); g.DrawPath(&pDiv, &mp); g.DrawString((m < 10 ? L"0" + to_wstring(m) : to_wstring(m)).c_str(), -1, &fBold, mBox, &fC, &bDark);
-                ampmBtn = RectF(tx + 155.0f, ty, 44.0f, 34.0f); GraphicsPath ap; AddRoundedRectPath(ap, ampmBtn.X, ampmBtn.Y, ampmBtn.Width, ampmBtn.Height, 7.0f); SolidBrush aBr(hAmPm ? ClrTealHover : (h >= 12 ? Color(230, 12, 168, 176) : ClrBg)); g.FillPath(&aBr, &ap); g.DrawPath(h >= 12 ? &pTeal : &pDiv, &ap); g.DrawString(ampmStr.c_str(), -1, &fBold, ampmBtn, &fC, (h >= 12) ? &bWhite : &bDark);
+                hBox = RectF(tx + 48.0f, ty, 44.0f, 34.0f); GraphicsPath hp; AddRoundedRectPath(hp, hBox.X, hBox.Y, hBox.Width, hBox.Height, 7.0f); SolidBrush hbBr(hH ? ClrBgHover : ClrWhite); g.FillPath(&hbBr, &hp); g.DrawPath(&pDiv, &hp); g.DrawString((dispH < 10 ? L"0" + to_wstring(dispH) : to_wstring(dispH)).c_str(), -1, &fBold, hBox, &fC, &bDark);
+                g.DrawString(L":", -1, &fBold, RectF(tx + 93.0f, ty, 12.0f, 34.0f), &fC, &bDark); mBox = RectF(tx + 105.0f, ty, 44.0f, 34.0f); GraphicsPath mp; AddRoundedRectPath(mp, mBox.X, mBox.Y, mBox.Width, mBox.Height, 7.0f); SolidBrush mbBr(hM ? ClrBgHover : ClrWhite); g.FillPath(&mbBr, &mp); g.DrawPath(&pDiv, &mp); g.DrawString((m < 10 ? L"0" + to_wstring(m) : to_wstring(m)).c_str(), -1, &fBold, mBox, &fC, &bDark);
+                ampmBtn = RectF(tx + 155.0f, ty, 44.0f, 34.0f); GraphicsPath ap; AddRoundedRectPath(ap, ampmBtn.X, ampmBtn.Y, ampmBtn.Width, ampmBtn.Height, 7.0f); SolidBrush aBr(hAmPm ? ClrTealHover : (h >= 12 ? Color(230, 12, 168, 176) : ClrWhite)); g.FillPath(&aBr, &ap); g.DrawPath(h >= 12 ? &pTeal : &pDiv, &ap); g.DrawString(ampmStr.c_str(), -1, &fBold, ampmBtn, &fC, (h >= 12) ? &bWhite : &bDark);
             };
-            DrawModernTimeBox(cardX + 115.0f, contentY + 90.0f, L"Start", editStH, editStM, g_ehb.stH_Box, g_ehb.stM_Box, g_ehb.stAmPm, g_ehb.hStH, g_ehb.hStM, g_ehb.hStAmPm); g.DrawString(L"\xE72A", -1, &fSmallIcon, RectF(cardX + 340.0f, contentY + 93.0f, 24.0f, 28.0f), &fC, &bGray); DrawModernTimeBox(cardX + 365.0f, contentY + 90.0f, L"End", editEnH, editEnM, g_ehb.enH_Box, g_ehb.enM_Box, g_ehb.enAmPm, g_ehb.hEnH, g_ehb.hEnM, g_ehb.hEnAmPm);
+            DrawModernTimeBox(cardX + 115.0f, contentY + 58.0f, L"Start", editStH, editStM, g_ehb.stH_Box, g_ehb.stM_Box, g_ehb.stAmPm, g_ehb.hStH, g_ehb.hStM, g_ehb.hStAmPm); g.DrawString(L"\xE72A", -1, &fSmallIcon, RectF(cardX + 340.0f, contentY + 61.0f, 24.0f, 28.0f), &fC, &bGray); DrawModernTimeBox(cardX + 365.0f, contentY + 58.0f, L"End", editEnH, editEnM, g_ehb.enH_Box, g_ehb.enM_Box, g_ehb.enAmPm, g_ehb.hEnH, g_ehb.hEnM, g_ehb.hEnAmPm);
         }
         else if (s_activeSubTab == 1) {
-            RectF c3Rect(cardX, contentY, cardW_inner, 105.0f); GraphicsPath* c3P = GetSchRoundRectPath(c3Rect, 10.0f); g.FillPath(&bWhite, c3P); g.DrawPath(&pDiv, c3P); delete c3P;
-            SolidBrush cardLabelBg3(Color(255, 245, 250, 255)); g.FillRectangle(&cardLabelBg3, cardX + 1.0f, contentY + 1.0f, cardW_inner - 2.0f, 36.0f); g.DrawString(L"\xE774  Internet & Protection", -1, &fBold, RectF(cardX + 18.0f, contentY + 8.0f, 280.0f, 24.0f), &fL, &bDark); g.DrawLine(&pDiv, cardX, contentY + 38.0f, cardX + cardW_inner, contentY + 38.0f);
-
             float cbWidth = (cardW_inner - 30.0f) / 2.0f;
             auto DrawCb = [&](RectF& outHitbox, float cx, float cy, const wstring& label, const wstring& desc, bool val, bool hov) {
                 outHitbox = RectF(cx, cy, cbWidth - 15.0f, 52.0f); if (hov) { GraphicsPath* hp = GetSchRoundRectPath(outHitbox, 8.0f); g.FillPath(&bBgHover, hp); delete hp; }
                 RectF togBg(cx + 12.0f, cy + 15.0f, 44.0f, 24.0f); GraphicsPath* tp = GetSchRoundRectPath(togBg, 12.0f); SolidBrush tBg(val ? ClrTeal : Color(255, 200, 210, 220)); g.FillPath(&tBg, tp); delete tp; g.FillEllipse(&bWhite, val ? togBg.X + togBg.Width - 22.0f : togBg.X + 2.0f, togBg.Y + 2.0f, 20.0f, 20.0f);
                 g.DrawString(label.c_str(), -1, &fBold, RectF(cx + 62.0f, cy + 8.0f, cbWidth - 75.0f, 22.0f), &fL, val ? &bTeal : &bDark); g.DrawString(desc.c_str(),  -1, &fSmall, RectF(cx + 62.0f, cy + 30.0f, cbWidth - 75.0f, 18.0f), &fL, &bGray);
             };
-            DrawCb(g_ehb.toggleInternet, cardX + 15.0f, contentY + 40.0f, L"Block Internet", L"Disables all network access", editBlockInt, g_ehb.hoverToggleInternet); DrawCb(g_ehb.toggleUninstall, cardX + 15.0f + cbWidth, contentY + 40.0f, L"Block Uninstall", L"Locks Task Manager & apps", editBlockUninst, g_ehb.hoverToggleUninstall);
+            DrawCb(g_ehb.toggleInternet, cardX + 15.0f, contentY + 10.0f, L"Block Internet", L"Disables all network access", editBlockInt, g_ehb.hoverToggleInternet); 
+            DrawCb(g_ehb.toggleUninstall, cardX + 15.0f + cbWidth, contentY + 10.0f, L"Block Uninstall", L"Locks Task Manager & apps", editBlockUninst, g_ehb.hoverToggleUninstall);
 
-            contentY += 120.0f; RectF c4Rect(cardX, contentY, cardW_inner, 120.0f); GraphicsPath* c4P = GetSchRoundRectPath(c4Rect, 10.0f); g.FillPath(&bWhite, c4P); g.DrawPath(&pDiv, c4P); delete c4P;
-            SolidBrush cardLabelBg4(Color(255, 245, 250, 255)); g.FillRectangle(&cardLabelBg4, cardX + 1.0f, contentY + 1.0f, cardW_inner - 2.0f, 36.0f); g.DrawString(L"\xE728  Quick Content Filters", -1, &fBold, RectF(cardX + 18.0f, contentY + 8.0f, 280.0f, 24.0f), &fL, &bDark); g.DrawLine(&pDiv, cardX, contentY + 38.0f, cardX + cardW_inner, contentY + 38.0f); g.DrawString(L"One-click blocking for Chrome, Edge, Firefox, Brave and Opera", -1, &fSmall, RectF(cardX + 18.0f, contentY + 46.0f, cardW_inner - 36.0f, 18.0f), &fL, &bGray);
+            contentY += 80.0f; 
+            
+            g.DrawString(L"Quick Content Filters (Chrome, Edge, Firefox, Brave)", -1, &fBold, RectF(cardX + 18.0f, contentY, cardW_inner - 36.0f, 24.0f), &fL, &bDark);
 
-            float qbX = cardX + 18.0f; float qbY = contentY + 68.0f; float qbW = 138.0f; float qbH = 44.0f; float qbGap = 14.0f; s_quickBlockRects.resize(s_quickBlocks.size()); const wchar_t* qbIcons[4] = { L"\xE714", L"\xE8F3", L"\xE90A", L"\xE718" };
+            float qbX = cardX + 18.0f; float qbY = contentY + 35.0f; float qbW = 138.0f; float qbH = 44.0f; float qbGap = 14.0f; s_quickBlockRects.resize(s_quickBlocks.size()); const wchar_t* qbIcons[4] = { L"\xE714", L"\xE8F3", L"\xE90A", L"\xE718" };
             const wchar_t* qbFullLabels[4] = { L"YouTube Shorts", L"Facebook Reels", L"Web & YT Ads", L"Instagram Reels" };
             for (size_t qi = 0; qi < s_quickBlocks.size(); ++qi) {
                 RectF qbRect(qbX + qi * (qbW + qbGap), qbY, qbW, qbH); s_quickBlockRects[qi] = qbRect; bool alreadyAdded = false;
                 if (editingProfileIdx >= 0) { if (qi == 0) alreadyAdded = g_profiles[editingProfileIdx].quickBlockYouTubeShorts; else if (qi == 1) alreadyAdded = g_profiles[editingProfileIdx].quickBlockFacebookReels; else if (qi == 2) alreadyAdded = g_profiles[editingProfileIdx].quickBlockAds; else if (qi == 3) alreadyAdded = g_profiles[editingProfileIdx].quickBlockInstagramReels; }
-                GraphicsPath* qp = GetSchRoundRectPath(qbRect, 8.0f); if (alreadyAdded) { g.FillPath(&bTeal, qp); } else { SolidBrush qbBg(s_quickBlocks[qi].hovered ? ClrBgHover : ClrBg); g.FillPath(&qbBg, qp); g.DrawPath(&pDiv, qp); } delete qp;
+                GraphicsPath* qp = GetSchRoundRectPath(qbRect, 8.0f); if (alreadyAdded) { g.FillPath(&bTeal, qp); } else { SolidBrush qbBg(s_quickBlocks[qi].hovered ? ClrBgHover : ClrWhite); g.FillPath(&qbBg, qp); g.DrawPath(&pDiv, qp); } delete qp;
                 SolidBrush* txtClr = alreadyAdded ? &bWhite : &bDark; SolidBrush iconClrQb(alreadyAdded ? Color(255,255,255,255) : Color(255,12,168,176));
                 g.DrawString(qbIcons[qi], -1, &fSmallIcon, RectF(qbRect.X + 8.0f, qbRect.Y, 20.0f, qbH), &fL, &iconClrQb);
                 g.DrawString(qbFullLabels[qi], -1, &fSmallBold, RectF(qbRect.X + 30.0f, qbRect.Y, qbW - 60.0f, qbH), &fL, txtClr);
@@ -879,7 +882,7 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
         }
         else if (s_activeSubTab == 2) {
             vector<SchBlockItem>* cWebs = nullptr; vector<SchBlockItem>* cApps = nullptr; if(editingProfileIdx >= 0) { cWebs = &g_profiles[editingProfileIdx].blockedWebsites; cApps = &g_profiles[editingProfileIdx].blockedApps; }
-            float listAreaH = footerY - contentY - 15.0f; RectF cRect(cardX, contentY, cardW_inner, listAreaH); GraphicsPath* cP = GetSchRoundRectPath(cRect, 10.0f); g.FillPath(&bWhite, cP); g.DrawPath(&pDiv, cP); delete cP;
+            float listAreaH = footerY - contentY - 15.0f;
             float colGap = 20.0f; float colW = (cardW_inner - (colGap * 3.0f)) / 2.0f;
 
             auto DrawListCol = [&](int colIdx, float colX, const wstring& title, const wstring& icon, const wstring& ph, wstring& inpStr, int inpIdx, vector<SchBlockItem>* list, RectF& outInp, RectF* outCombo, RectF& outAdd, bool hovCombo, bool hovAdd, vector<pair<RectF,int>>& outDel) {
@@ -914,7 +917,7 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
             g_ehb.btnAddTitle = RectF(appColX + btnW * 2.0f + 4.0f, btnY, btnW - 5.0f, 36.0f); GraphicsPath* p3 = GetSchRoundRectPath(g_ehb.btnAddTitle, 8.0f); SolidBrush b3(g_ehb.hBtnAddTitle ? Color(255,75,155,5) : Color(255, 90, 170, 20)); g.FillPath(&b3, p3); delete p3; g.DrawString(L"By Title", -1, &fSmall, g_ehb.btnAddTitle, &fC, &bWhite);
         }
         else if (s_activeSubTab == 3) {
-            float listAreaH = footerY - contentY - 15.0f; RectF cRect(cardX, contentY, cardW_inner, listAreaH); GraphicsPath* cP = GetSchRoundRectPath(cRect, 10.0f); g.FillPath(&bWhite, cP); g.DrawPath(&pDiv, cP); delete cP;
+            float listAreaH = footerY - contentY - 15.0f;
             float colGap = 20.0f; float colW = (cardW_inner - (colGap * 3.0f)) / 2.0f; float startColX = cardX + colGap;
             g.DrawString(L"\xE72E", -1, &fSmallIcon, RectF(startColX, contentY + 10.0f, 22.0f, 26.0f), &fL, &bTeal); g.DrawString(L"Safe Browsing Rules", -1, &fBold, RectF(startColX + 28.0f, contentY + 8.0f, colW, 28.0f), &fL, &bDark); g.DrawLine(&pDiv, startColX, contentY + 42.0f, startColX + colW, contentY + 42.0f);
             bool cA = false, cH = false, cR = false, cD = false; if(editingProfileIdx >= 0) { cA = g_profiles[editingProfileIdx].schAdultWeb; cH = g_profiles[editingProfileIdx].schHardcore; cR = g_profiles[editingProfileIdx].schRomantic; cD = g_profiles[editingProfileIdx].schStrictDns; }
