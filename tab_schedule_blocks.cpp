@@ -20,6 +20,7 @@
 #include <shellapi.h>    
 #include <commdlg.h>     
 #include <windows.h>
+#include <map>           // ← 🟢 NEW: Custom Notification এর জন্য যুক্ত করা হলো
 
 #pragma comment(lib, "wininet.lib")
 
@@ -49,6 +50,110 @@ static void CloseActiveTabOnly(HWND hBrowser) {
         keybd_event('W', 0, KEYEVENTF_KEYUP, 0); 
         keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0); 
     }
+}
+
+// 🟢 NEW: PREMIUM CUSTOM TOAST NOTIFICATION (GDI+ & Win32)
+static std::map<wstring, time_t> g_lastNotifyTime;
+
+struct ToastData {
+    wstring blockedItem;
+    wstring profileName;
+};
+
+LRESULT CALLBACK BlockToastWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    static BYTE alpha = 0;
+    static bool fadingOut = false;
+    static ToastData* td = nullptr;
+
+    switch (uMsg) {
+        case WM_CREATE: {
+            CREATESTRUCT* cs = (CREATESTRUCT*)lParam;
+            td = (ToastData*)cs->lpCreateParams;
+            alpha = 0; fadingOut = false;
+            SetLayeredWindowAttributes(hwnd, 0, 0, LWA_ALPHA);
+            SetTimer(hwnd, 1, 20, NULL); // Fade animation timer
+            SetTimer(hwnd, 2, 3500, NULL); // Hold time on screen (3.5s)
+            return 0;
+        }
+        case WM_TIMER: {
+            if (wParam == 1) { // Fade In/Out logic
+                if (!fadingOut) {
+                    if (alpha < 240) { alpha += 15; if (alpha >= 240) { alpha = 240; KillTimer(hwnd, 1); } }
+                } else {
+                    if (alpha > 0) { alpha -= 15; if (alpha <= 0) { alpha = 0; KillTimer(hwnd, 1); DestroyWindow(hwnd); } }
+                }
+                SetLayeredWindowAttributes(hwnd, 0, alpha, LWA_ALPHA);
+            } else if (wParam == 2) { // Time's up, start fade out
+                KillTimer(hwnd, 2);
+                fadingOut = true;
+                SetTimer(hwnd, 1, 20, NULL); 
+            }
+            return 0;
+        }
+        case WM_PAINT: {
+            PAINTSTRUCT ps; HDC hdc = BeginPaint(hwnd, &ps);
+            Graphics g(hdc); g.SetSmoothingMode(SmoothingModeAntiAlias);
+            RECT r; GetClientRect(hwnd, &r); RectF bgRect(0, 0, (float)r.right, (float)r.bottom);
+
+            // Premium Red/Crimson Background
+            SolidBrush bgBrush(Color(240, 220, 53, 69)); 
+            GraphicsPath path; 
+            float d = 8.0f * 2.0f;
+            path.AddArc(bgRect.X, bgRect.Y, d, d, 180.0f, 90.0f); path.AddArc(bgRect.X + bgRect.Width - d, bgRect.Y, d, d, 270.0f, 90.0f);
+            path.AddArc(bgRect.X + bgRect.Width - d, bgRect.Y + bgRect.Height - d, d, d, 0.0f, 90.0f); path.AddArc(bgRect.X, bgRect.Y + bgRect.Height - d, d, d, 90.0f, 90.0f);
+            path.CloseFigure();
+            g.FillPath(&bgBrush, &path);
+
+            FontFamily ff(L"Segoe UI"); FontFamily ffi(L"Segoe MDL2 Assets");
+            Font fTitle(&ff, 16, FontStyleBold, UnitPixel);
+            Font fSub(&ff, 14, FontStyleRegular, UnitPixel);
+            Font fIcon(&ffi, 22, FontStyleRegular, UnitPixel);
+
+            SolidBrush bWhite(Color(255, 255, 255, 255));
+            StringFormat fL; fL.SetAlignment(StringAlignmentNear); fL.SetLineAlignment(StringAlignmentCenter);
+            StringFormat fC; fC.SetAlignment(StringAlignmentCenter); fC.SetLineAlignment(StringAlignmentCenter);
+
+            // Warning Icon & Dynamic Text
+            g.DrawString(L"\xE7BA", -1, &fIcon, RectF(15.0f, 0.0f, 30.0f, bgRect.Height), &fC, &bWhite);
+            if (td) {
+                wstring titleStr = L"Blocked: " + td->blockedItem;
+                wstring subStr = L"Active Profile: " + td->profileName;
+                g.DrawString(titleStr.c_str(), -1, &fTitle, RectF(60.0f, 15.0f, bgRect.Width - 70.0f, 25.0f), &fL, &bWhite);
+                g.DrawString(subStr.c_str(), -1, &fSub, RectF(60.0f, 40.0f, bgRect.Width - 70.0f, 20.0f), &fL, &bWhite);
+            }
+            EndPaint(hwnd, &ps); return 0;
+        }
+        case WM_DESTROY: {
+            if (td) delete td;
+            PostQuitMessage(0); return 0;
+        }
+    }
+    return DefWindowProc(hwnd, uMsg, wParam, lParam);
+}
+
+static void ShowCustomBlockToast(const wstring& blockedItem, const wstring& profileName) {
+    time_t now = std::time(nullptr);
+    if (now - g_lastNotifyTime[blockedItem] < 10) return; // 10s Anti-spam cooldown
+    g_lastNotifyTime[blockedItem] = now;
+
+    std::thread([blockedItem, profileName]() {
+        HINSTANCE hInstance = GetModuleHandle(NULL);
+        WNDCLASSW wc = {0}; wc.lpfnWndProc = BlockToastWndProc; wc.hInstance = hInstance; wc.lpszClassName = L"RasFocusPremiumToast";
+        RegisterClassW(&wc); 
+
+        ToastData* td = new ToastData{blockedItem, profileName};
+        int screenW = GetSystemMetrics(SM_CXSCREEN); int screenH = GetSystemMetrics(SM_CYSCREEN);
+        int width = 340; int height = 80;
+        int x = screenW - width - 20; int y = screenH - height - 60; // Hovering above taskbar
+
+        HWND hwnd = CreateWindowExW(
+            WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+            L"RasFocusPremiumToast", L"", WS_POPUP,
+            x, y, width, height, NULL, NULL, hInstance, td
+        );
+        ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+        MSG msg; while (GetMessage(&msg, NULL, 0, 0)) { TranslateMessage(&msg); DispatchMessage(&msg); }
+    }).detach();
 }
 
 static void SetInternetStateSch(bool block) {
@@ -331,7 +436,12 @@ static void ApplyHostsFileBlocking(const vector<FocusProfile>& safeProfiles) {
     for (const auto& p : safeProfiles) {
         if (!p.isActive) continue;
         for (const auto& w : p.blockedWebsites) { auto pats = GetAllBlockPatterns(w.name); for (const auto& pt : pats) activePats.push_back(pt); }
-        if (p.quickBlockAds) { activePats.push_back(L"googlevideo.com"); activePats.push_back(L"doubleclick.net"); }
+        // 🟢 FIXED: Removed googlevideo.com to prevent breaking YouTube videos
+        if (p.quickBlockAds) { 
+            activePats.push_back(L"doubleclick.net"); 
+            activePats.push_back(L"googleadservices.com"); 
+            activePats.push_back(L"adservice.google.com"); 
+        }
         if (p.blockInternet) { activePats.push_back(L"www.msftconnecttest.com"); activePats.push_back(L"ipv6.msftconnecttest.com"); }
     }
 
@@ -389,7 +499,8 @@ static void ApplyPACFileBlocking(const vector<FocusProfile>& safeProfiles) {
     }
 }
 
-static void KillBlockedApps(const vector<SchBlockItem>& apps) {
+// 🟢 FIXED: Modified to pass profileName and show Notification
+static void KillBlockedApps(const vector<SchBlockItem>& apps, const wstring& profileName) {
     if (apps.empty()) return;
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snap == INVALID_HANDLE_VALUE) return;
@@ -399,7 +510,14 @@ static void KillBlockedApps(const vector<SchBlockItem>& apps) {
             wstring procName = pe.szExeFile; wstring procLower = procName; transform(procLower.begin(), procLower.end(), procLower.begin(), ::towlower);
             for (const auto& app : apps) {
                 wstring appLower = app.name; transform(appLower.begin(), appLower.end(), appLower.begin(), ::towlower);
-                if (procLower == appLower) { HANDLE hProc = OpenProcess(PROCESS_TERMINATE, FALSE, pe.th32ProcessID); if (hProc) { TerminateProcess(hProc, 1); CloseHandle(hProc); } break; }
+                if (procLower == appLower) { 
+                    HANDLE hProc = OpenProcess(PROCESS_TERMINATE, FALSE, pe.th32ProcessID); 
+                    if (hProc) { 
+                        TerminateProcess(hProc, 1); CloseHandle(hProc); 
+                        ShowCustomBlockToast(procName, profileName); // 🟢 Trigger Notification
+                    } 
+                    break; 
+                }
             }
         } while (Process32NextW(snap, &pe));
     }
@@ -495,17 +613,15 @@ static void ApplySafeSearchEnforcement(bool enable) {
     // ── 3. DNS FLUSH ──
     ShellExecuteW(NULL, L"open", L"cmd.exe", L"/c ipconfig /flushdns", NULL, SW_HIDE);
 
-    // ── 4. BAT for admin-level DNS (Family Filter DNS servers) ──
+    // ── 4. BAT for admin-level DNS (Dynamic Connected Interface) ──
     if (enable) {
         wchar_t tempPath[MAX_PATH]; GetTempPathW(MAX_PATH, tempPath);
         wstring batPath = wstring(tempPath) + L"ras_safedns.bat";
-        // CleanBrowsing Family Filter DNS: 185.228.168.168 / 185.228.169.168
         wstring bat = L"@echo off\n";
-        bat += L"netsh interface ip set dns \"Wi-Fi\" static 185.228.168.168 2>nul\n";
-        bat += L"netsh interface ip add dns \"Wi-Fi\" 185.228.169.168 index=2 2>nul\n";
-        bat += L"netsh interface ip set dns \"Ethernet\" static 185.228.168.168 2>nul\n";
-        bat += L"netsh interface ip add dns \"Ethernet\" 185.228.169.168 index=2 2>nul\n";
-        bat += L"netsh interface ip set dns \"Local Area Connection\" static 185.228.168.168 2>nul\n";
+        bat += L"for /f \"skip=3 tokens=4*\" %%i in ('netsh interface show interface ^| findstr \"Connected\"') do (\n";
+        bat += L"  netsh interface ipv4 set dnsservers name=\"%%j\" static 185.228.168.168 both 2>nul\n";
+        bat += L"  netsh interface ipv4 add dnsservers name=\"%%j\" 185.228.169.168 index=2 2>nul\n";
+        bat += L")\n";
         bat += L"ipconfig /flushdns\n";
         bat += L"del \"%~f0\"\n";
         wofstream out(batPath); out << bat; out.close();
@@ -514,9 +630,9 @@ static void ApplySafeSearchEnforcement(bool enable) {
         wchar_t tempPath[MAX_PATH]; GetTempPathW(MAX_PATH, tempPath);
         wstring batPath = wstring(tempPath) + L"ras_safedns_off.bat";
         wstring bat = L"@echo off\n";
-        bat += L"netsh interface ip set dns \"Wi-Fi\" dhcp 2>nul\n";
-        bat += L"netsh interface ip set dns \"Ethernet\" dhcp 2>nul\n";
-        bat += L"netsh interface ip set dns \"Local Area Connection\" dhcp 2>nul\n";
+        bat += L"for /f \"skip=3 tokens=4*\" %%i in ('netsh interface show interface ^| findstr \"Connected\"') do (\n";
+        bat += L"  netsh interface ipv4 set dnsservers name=\"%%j\" dhcp 2>nul\n";
+        bat += L")\n";
         bat += L"ipconfig /flushdns\n";
         bat += L"del \"%~f0\"\n";
         wofstream out(batPath); out << bat; out.close();
@@ -662,7 +778,7 @@ void ScheduleObserverThread() {
                 if (p.blockUninstall) {
                     appsToKill.push_back({L"taskmgr.exe"}); appsToKill.push_back({L"resmon.exe"}); appsToKill.push_back({L"perfmon.exe"});
                 }
-                if (!appsToKill.empty()) KillBlockedApps(appsToKill); 
+                if (!appsToKill.empty()) KillBlockedApps(appsToKill, p.profileName); // 🟢 Updated here
 
                 HWND hActive = GetForegroundWindow();
                 if (hActive) {
@@ -699,7 +815,17 @@ void ScheduleObserverThread() {
                             if (lowerTitle.find(L"date and time") != wstring::npos || lowerTitle.find(L"time & language") != wstring::npos) triggerBlock = true;
                         }
 
-                        if (triggerBlock) CloseActiveTabOnly(hActive);
+                        // 🟢 Updated here for Custom Notification
+                        if (triggerBlock) {
+                            CloseActiveTabOnly(hActive);
+                            
+                            wstring blockReason = L"Restricted Content";
+                            if (lowerTitle.find(L"shorts") != wstring::npos) blockReason = L"YouTube Shorts";
+                            else if (lowerTitle.find(L"reels") != wstring::npos) blockReason = L"Facebook/IG Reels";
+                            else if (lowerTitle.find(L"task manager") != wstring::npos || lowerTitle.find(L"uninstall") != wstring::npos) blockReason = L"System Settings";
+                            
+                            ShowCustomBlockToast(blockReason, p.profileName);
+                        }
                     }
                 }
             }
