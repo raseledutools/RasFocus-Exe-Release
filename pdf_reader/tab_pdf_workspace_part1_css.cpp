@@ -5,7 +5,7 @@
 
 #define _CRT_SECURE_NO_WARNINGS
 #include "tab_pdf_workspace.h"
-#include "mini_browser.h"
+#include "../mini_browser.h"
 #include <windows.h>
 #include <windowsx.h>
 #include <gdiplus.h>

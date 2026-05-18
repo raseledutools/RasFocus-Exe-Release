@@ -9,7 +9,7 @@
 HWND hParentWnd = NULL;
 
 #include <shellapi.h>
-#include "tab_pdf_workspace.h"
+#include "pdf_reader/tab_pdf_workspace.h"
 #include <shlobj.h>
 #include <gdiplus.h>
 #include <vector>
