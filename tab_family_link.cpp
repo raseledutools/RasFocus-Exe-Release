@@ -298,10 +298,16 @@ void ProcessFamilyLinkMouseClick(float mx, float my, float cX, float cY, HWND hW
                                     g_parentLockAllTabs    = snapshot.Get("lock_all_tabs").boolean_value();
                                     g_parentForceAdultBlock = snapshot.Get("force_adult_block").boolean_value();
 
-                                    if (snapshot.Contains("time_limit_minutes")) {
-                                        std::string timeLimit = snapshot.Get("time_limit_minutes").string_value();
-                                        g_parentTimeLimitMinutes = atoi(timeLimit.c_str());
-                                        g_parentTimeLimitStart = GetTickCount64();
+                                    // Contains() নেই Firebase C++ SDK-এ, তাই Get().is_valid() দিয়ে check
+                                    firebase::firestore::FieldValue tlValue = snapshot.Get("time_limit_minutes");
+                                    if (tlValue.is_valid()) {
+                                        std::string timeLimit = tlValue.is_string()  ? tlValue.string_value()
+                                                              : tlValue.is_integer() ? std::to_string(tlValue.integer_value())
+                                                              : "";
+                                        if (!timeLimit.empty()) {
+                                            g_parentTimeLimitMinutes = atoi(timeLimit.c_str());
+                                            g_parentTimeLimitStart = GetTickCount64();
+                                        }
                                     }
 
                                     // সাথেসাথে application-এর UI/Window refresh হবে
