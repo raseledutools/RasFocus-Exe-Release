@@ -1203,16 +1203,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 
     case WM_TIMER: {
         if (wp == 1005) StartSilentUpdateCheck();
-        ProcessFamilyLinkTimer(wp); // Family Link parent command poll
 
-        // ── Family Link: device_lock চেক করা ──
-        // g_parentLockAllTabs TRUE হলে PC lock করা
-        if (wp == 2001) {
-            // tab_family_link.cpp এ declared, এখানে extern করা হচ্ছে
-            extern bool g_parentLockAllTabs;
-            if (g_parentLockAllTabs) {
-                LockWorkStation(); // PC lock করো
-            }
+        // ── Family Link: Snapshot Listener দিয়ে real-time update হয়, lock check করা ──
+        extern bool g_parentLockAllTabs;
+        if (g_parentLockAllTabs) {
+            LockWorkStation();
         }
         break;
     }
