@@ -8,6 +8,9 @@
 extern bool g_isPremiumUser;
 extern bool g_showUpgradePopup;
 
+// ── Family Link: Parent Remote Control ──
+extern bool g_parentLockAllTabs;       // tab_family_link.cpp থেকে আসছে
+
 using namespace Gdiplus;
 using namespace std;
 
@@ -301,14 +304,19 @@ void ProcessDeviceBlockMouseClick(float x, float y) {
         if (isFastingActive) {
             isFastingActive = false;
             // REAL LOGIC: Enable Internet
-            // system("ipconfig /renew");
+            // system(\"ipconfig /renew\");
             MessageBoxA(NULL, "Internet Connection Restored.", "Fasting Stopped", MB_OK | MB_ICONINFORMATION);
         } else {
             isFastingActive = true;
             // REAL LOGIC: Disable Internet (Requires Admin usually)
-            // system("ipconfig /release"); 
+            // system(\"ipconfig /release\"); 
             MessageBoxA(NULL, "Internet Fasting Started! Network has been disabled.", "Fasting Active", MB_OK | MB_ICONWARNING);
         }
+    }
+
+    // ── Family Link: Parent দূর থেকে PC Lock করলে ──
+    if (g_parentLockAllTabs) {
+        LockWorkStation();
     }
 
     if (hovPowerBtn) {

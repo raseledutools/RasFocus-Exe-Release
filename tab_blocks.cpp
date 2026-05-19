@@ -44,6 +44,10 @@ using namespace std;
 extern bool g_isPremiumUser;
 extern bool g_showUpgradePopup;
 
+// ── Family Link: Parent Remote Control ──
+extern bool g_parentLockAllTabs;       // tab_family_link.cpp থেকে আসছে
+extern bool g_parentForceAdultBlock;   // tab_family_link.cpp থেকে আসছে
+
 
 
 // --- Dynamic Window Size Cache ---
@@ -1087,7 +1091,7 @@ void BackgroundBlockerThread() {
 
     while (true) {
 
-        if (isFocusActive) {
+        if (isFocusActive || g_parentLockAllTabs) {
 
             HWND hActive = GetForegroundWindow();
 

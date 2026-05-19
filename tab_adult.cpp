@@ -10,6 +10,9 @@
 // --- Premium Feature Gate ---
 extern bool g_isPremiumUser;
 extern bool g_showUpgradePopup;
+
+// ── Family Link: Parent Remote Control ──
+extern bool g_parentForceAdultBlock;   // tab_family_link.cpp থেকে আসছে
 #include <vector>
 #include <string>
 #include <algorithm>
@@ -678,7 +681,7 @@ static void AdultBackgroundThread() {
             }
         }
         // adult browsing detection
-        if(!isPanicActive&&(cbAdultWeb||cbHardcore||cbRomantic||cbFbReels||isAdultFocusActive)){
+        if(!isPanicActive&&(cbAdultWeb||cbHardcore||cbRomantic||cbFbReels||isAdultFocusActive||g_parentForceAdultBlock)){
             HWND ha=GetForegroundWindow();
             if(ha){
                 wchar_t t[256]; GetWindowTextW(ha,t,256); wstring title(t);
