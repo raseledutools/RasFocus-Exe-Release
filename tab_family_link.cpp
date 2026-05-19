@@ -3,6 +3,7 @@
 #include <thread>
 #include <atomic>
 #include <windows.h>
+#include "firebase/firestore.h" // ← Firebase Firestore Header
 
 using namespace Gdiplus;
 using namespace std;
@@ -13,6 +14,7 @@ extern bool g_isPremiumUser;
 extern string SendFirestoreRequest(const string& method, const string& path, const string& payload);
 extern string GetHardwareID();
 extern string g_loggedInUserUid;
+extern firebase::App* g_firebaseApp; // ← main.cpp থেকে Firebase App pointer
 
 // পেজের স্টেট ভেরিয়েবল
 wchar_t fl_pinCode[7] = L""; 
@@ -60,41 +62,6 @@ static string ExtractJsonStr(const string& json, const string& key) {
         if (end != string::npos) return json.substr(iv, end - iv);
     }
     return "";
-}
-
-// ── Parent Command Poll (Background Thread) ──
-static atomic<bool> g_pollRunning(false);
-
-static void PollParentCommands() {
-    if (!g_isLinkedToParent || g_parentUid.empty()) return;
-    
-    string hwId = GetHardwareID();
-    string path = "/v1/projects/rasfocus-c746d/databases/(default)/documents/parent_commands/" + hwId;
-    string response = SendFirestoreRequest("GET", path, "");
-    
-    if (response.find("\"error\"") != string::npos || response.find("NOT_FOUND") != string::npos) {
-        return; // কোনো command নেই
-    }
-    
-    // Command fields পড়া
-    string lockAll    = ExtractJsonStr(response, "lock_all_tabs");
-    string forceAdult = ExtractJsonStr(response, "force_adult_block");
-    string timeLimit  = ExtractJsonStr(response, "time_limit_minutes");
-    
-    // Apply commands
-    g_parentLockAllTabs    = (lockAll == "true");
-    g_parentForceAdultBlock = (forceAdult == "true");
-    
-    if (!timeLimit.empty()) {
-        int mins = atoi(timeLimit.c_str());
-        if (mins != g_parentTimeLimitMinutes) {
-            g_parentTimeLimitMinutes = mins;
-            g_parentTimeLimitStart = GetTickCount64();
-        }
-    }
-    
-    // UI refresh
-    if (g_familyHwnd) InvalidateRect(g_familyHwnd, NULL, FALSE);
 }
 
 // ── রাউন্ডেড রেক্ট্যাঙ্গেল হেল্পার ──
@@ -193,7 +160,7 @@ void DrawFamilyLinkTab(Graphics& g, float x, float y, float w, float h) {
 
         // Info note
         Font fSmall(&ff, 11, FontStyleRegular, UnitPixel);
-        g.DrawString(L"Parent controls update automatically every 5 minutes.", -1, &fSmall, RectF(lx, rowY, cardW - 40.0f, 20.0f), &fmtL, &textGray);
+        g.DrawString(L"Parent controls sync in real-time instantly.", -1, &fSmall, RectF(lx, rowY, cardW - 40.0f, 20.0f), &fmtL, &textGray);
 
         return;
     }
@@ -320,11 +287,29 @@ void ProcessFamilyLinkMouseClick(float mx, float my, float cX, float cY, HWND hW
                     fl_connectionState = 2;
                     fl_statusMsg = L"Successfully Linked to Parent Device!";
 
-                    // ── ধাপ ৪: Timer দিয়ে parent commands poll শুরু করা ──
-                    SetTimer(hWnd, 2001, 5 * 60 * 1000, NULL); // 5 মিনিট পরপর poll
+                    // ── ধাপ ৪: Realtime Snapshot Listener Setup (Zero Delay) ──
+                    firebase::firestore::Firestore* db = firebase::firestore::Firestore::GetInstance(g_firebaseApp);
+                    if (db) {
+                        db->Collection("parent_commands").Document(hwId).AddSnapshotListener(
+                            [hWnd](const firebase::firestore::DocumentSnapshot& snapshot, firebase::firestore::Error error, const std::string& error_message) {
+                                if (error == firebase::firestore::kErrorOk && snapshot.exists()) {
 
-                    // প্রথমবার সাথেসাথে poll করা
-                    thread([]() { PollParentCommands(); }).detach();
+                                    // Parent HTML panel থেকে data change হলেই instantly trigger হবে
+                                    g_parentLockAllTabs    = snapshot.Get("lock_all_tabs").boolean_value();
+                                    g_parentForceAdultBlock = snapshot.Get("force_adult_block").boolean_value();
+
+                                    if (snapshot.Contains("time_limit_minutes")) {
+                                        std::string timeLimit = snapshot.Get("time_limit_minutes").string_value();
+                                        g_parentTimeLimitMinutes = atoi(timeLimit.c_str());
+                                        g_parentTimeLimitStart = GetTickCount64();
+                                    }
+
+                                    // সাথেসাথে application-এর UI/Window refresh হবে
+                                    if (hWnd) InvalidateRect(hWnd, NULL, FALSE);
+                                }
+                            }
+                        );
+                    }
                     
                 } else {
                     fl_connectionState = 3;
@@ -338,13 +323,6 @@ void ProcessFamilyLinkMouseClick(float mx, float my, float cX, float cY, HWND hW
             fl_connectionState = 3;
             fl_statusMsg = L"Please enter a valid 6-digit PIN.";
         }
-    }
-}
-
-// ── Family Link Timer Poll (main.cpp এর WM_TIMER থেকে call করতে হবে) ──
-void ProcessFamilyLinkTimer(UINT_PTR timerId) {
-    if (timerId == 2001 && g_isLinkedToParent) {
-        thread([]() { PollParentCommands(); }).detach();
     }
 }
 
