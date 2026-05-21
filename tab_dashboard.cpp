@@ -173,8 +173,8 @@ void DrawDashboardTab(Graphics& g, float cx, float cy, float cw, float ch) {
     InitDashboardData();
 
     FontFamily ff(L"Segoe UI");
-    Font fH1(&ff, 32, FontStyleBold, UnitPixel); // Larger Hero Font
-    Font fSub(&ff, 16, FontStyleRegular, UnitPixel); // Hero Subtext
+    Font fH1(&ff, 28, FontStyleBold, UnitPixel); // Hero Font
+    Font fSub(&ff, 14, FontStyleRegular, UnitPixel); // Hero Subtext
     Font fTabTxt(&ff, 15, FontStyleBold, UnitPixel); 
     Font fBtnTitle(&ff, 15, FontStyleBold, UnitPixel);
     Font fBtnSub(&ff, 12, FontStyleRegular, UnitPixel);
@@ -183,7 +183,6 @@ void DrawDashboardTab(Graphics& g, float cx, float cy, float cw, float ch) {
     Font fIconBig(&ffIc, 24, FontStyleRegular, UnitPixel);
 
     SolidBrush bWhite(Color(255, 255, 255, 255));
-    SolidBrush bBg(Color(255, 248, 250, 252)); 
     SolidBrush bDark(Color(255, 30, 40, 50));
     SolidBrush bGrayText(Color(255, 120, 130, 140));
     SolidBrush bTeal(Color(255, 12, 168, 176));
@@ -193,26 +192,37 @@ void DrawDashboardTab(Graphics& g, float cx, float cy, float cw, float ch) {
     StringFormat fmtL; fmtL.SetAlignment(StringAlignmentNear); fmtL.SetLineAlignment(StringAlignmentCenter);
     StringFormat fmtTL; fmtTL.SetAlignment(StringAlignmentNear); fmtTL.SetLineAlignment(StringAlignmentNear);
 
-    // 1. Background
-    g.FillRectangle(&bBg, cx, cy, cw, ch);
+    // ─── 1. TWO-COLUMN LAYOUT PARTITION ───────────────────────────────────
+    float leftColWidth = 340.0f; // Fixed Sidebar Width
+    float rightColX = cx + leftColWidth;
+    float rightColWidth = cw - leftColWidth;
 
-    // 🟢 Hero Section
-    float marginX = cx + 40.0f;
-    float heroY = cy + 30.0f;
+    SolidBrush leftBg(Color(255, 248, 250, 252)); // Light premium tint for sidebar
+    SolidBrush rightBg(Color(255, 255, 255, 255)); // Clean white for content
+    
+    g.FillRectangle(&leftBg, cx, cy, leftColWidth, ch);
+    g.FillRectangle(&rightBg, rightColX, cy, rightColWidth, ch);
 
+    // Subtle divider line between columns
+    Pen colDivider(Color(255, 230, 235, 240), 1.0f);
+    g.DrawLine(&colDivider, rightColX, cy, rightColX, cy + ch);
+
+    // ─── 2. LEFT SIDEBAR: HERO & ACTION CARDS ─────────────────────────────
+    float marginX = cx + 20.0f;
+    float currentY = cy + 30.0f;
+    float usableLeftW = leftColWidth - 40.0f;
+
+    // Greeting
     wstring greeting = GetGreeting();
-    g.DrawString(greeting.c_str(), -1, &fH1, RectF(marginX, heroY, cw, 40.0f), &fmtL, &bDark);
-    g.DrawString(L"Manage your workflow and boost productivity.", -1, &fSub, RectF(marginX, heroY + 40.0f, cw, 25.0f), &fmtL, &bGrayText);
+    g.DrawString(greeting.c_str(), -1, &fH1, RectF(marginX, currentY, usableLeftW, 35.0f), &fmtL, &bDark);
+    currentY += 35.0f;
+    g.DrawString(L"Manage workflow & boost productivity.", -1, &fSub, RectF(marginX, currentY, usableLeftW, 40.0f), &fmtTL, &bGrayText);
+    currentY += 45.0f;
 
-    // ─── 4 BIG ACTION CARDS ───────────────────────────────────────────────
-    float usableWidth = cw - 80.0f;
-    float acY     = heroY + 80.0f;
-    float acGapX  = 16.0f;
-    float acGapY  = 14.0f;
-    float acW     = (usableWidth - acGapX) / 2.0f;
-    float acH     = 90.0f;
-
-    // Card gradient colours (top-left tint, drawn as flat fill + accent border)
+    // 4 Action Cards (Stacked Vertically)
+    float acH = 75.0f; // Slightly smaller height for vertical stack
+    float acGapY = 12.0f;
+    
     struct CardTheme { Color bg; Color border; Color textC; Color subC; };
     CardTheme acThemes[4] = {
         { Color(255, 13, 158, 126),  Color(255,  9, 110, 88),  Color(255,255,255,255), Color(200,255,255,255) }, // teal
@@ -220,126 +230,121 @@ void DrawDashboardTab(Graphics& g, float cx, float cy, float cw, float ch) {
         { Color(255,245, 158,  11),  Color(255,217,119,  6),   Color(255,255,255,255), Color(200,255,255,255) }, // amber
         { Color(255, 59, 130, 246),  Color(255, 29, 78, 216),  Color(255,255,255,255), Color(200,255,255,255) }, // blue
     };
-    wstring acIcons[4] = { L"\xE72E", L"\xE8D7", L"\xE728", L"\xE774" }; // MDL2: shield, eye-off, brain, globe
+    wstring acIcons[4] = { L"\xE72E", L"\xE8D7", L"\xE728", L"\xE774" }; 
 
-    Font fAcTitle(&ff, 14, FontStyleBold,    UnitPixel);
+    Font fAcTitle(&ff, 14, FontStyleBold, UnitPixel);
     Font fAcSub  (&ff, 11, FontStyleRegular, UnitPixel);
-    FontFamily ffIcAc(L"Segoe MDL2 Assets");
-    Font fAcIcon(&ffIcAc, 26, FontStyleRegular, UnitPixel);
+    Font fAcIcon(&ffIc, 22, FontStyleRegular, UnitPixel);
 
     for (int i = 0; i < 4; i++) {
-        int row = i / 2, col = i % 2;
-        float ax = marginX + col * (acW + acGapX);
-        float ay = acY    + row * (acH + acGapY);
-        s_actionCards[i].bounds = RectF(ax, ay, acW, acH);
-
+        s_actionCards[i].bounds = RectF(marginX, currentY, usableLeftW, acH);
         bool hov = s_actionCards[i].isHovered;
         CardTheme& th = acThemes[i];
 
-        // Shadow
-        DrawSoftShadow(g, s_actionCards[i].bounds, 10);
+        DrawSoftShadow(g, s_actionCards[i].bounds, 8);
 
-        // Fill
         GraphicsPath acPath;
-        AddRoundedRectPath(acPath, ax, ay, acW, acH, 10.0f);
-        Color fillC = hov ? th.border : th.bg;
-        SolidBrush acBg(fillC);
+        AddRoundedRectPath(acPath, marginX, currentY, usableLeftW, acH, 8.0f);
+        SolidBrush acBg(hov ? th.border : th.bg);
         g.FillPath(&acBg, &acPath);
 
         // Icon background circle
-        float icS = 46.0f;
-        RectF icBg(ax + 14.0f, ay + (acH - icS) / 2.0f, icS, icS);
+        float icS = 40.0f;
+        RectF icBg(marginX + 12.0f, currentY + (acH - icS) / 2.0f, icS, icS);
         GraphicsPath icCirc;
-        AddRoundedRectPath(icCirc, icBg.X, icBg.Y, icBg.Width, icBg.Height, 23.0f);
+        AddRoundedRectPath(icCirc, icBg.X, icBg.Y, icBg.Width, icBg.Height, 20.0f);
         SolidBrush icCircFill(Color(55, 255, 255, 255));
         g.FillPath(&icCircFill, &icCirc);
 
-        // Icon
         SolidBrush acIconC(Color(255, 255, 255, 255));
         g.DrawString(acIcons[i].c_str(), -1, &fAcIcon, icBg, &fmtC, &acIconC);
 
         // Arrow hint (right side)
-        FontFamily ffIcArrow(L"Segoe MDL2 Assets");
-        Font fArrow(&ffIcArrow, 14, FontStyleRegular, UnitPixel);
+        Font fArrow(&ffIc, 12, FontStyleRegular, UnitPixel);
         SolidBrush arrowC(Color(120, 255, 255, 255));
-        g.DrawString(L"\xE76C", -1, &fArrow,
-            RectF(ax + acW - 32.0f, ay + (acH - 20.0f) / 2.0f, 24.0f, 20.0f),
-            &fmtC, &arrowC);
+        g.DrawString(L"\xE76C", -1, &fArrow, RectF(marginX + usableLeftW - 28.0f, currentY, 24.0f, acH), &fmtC, &arrowC);
 
-        // Title + subtitle
+        // Text
         float txtX = icBg.X + icS + 12.0f;
-        float txtW = acW - (txtX - ax) - 36.0f;
+        float txtW = usableLeftW - (txtX - marginX) - 30.0f;
         SolidBrush acTxtC(th.textC);
         SolidBrush acSubC(th.subC);
-        g.DrawString(s_actionCards[i].title.c_str(),    -1, &fAcTitle,
-            RectF(txtX, ay + 20.0f, txtW, 22.0f), &fmtTL, &acTxtC);
-        g.DrawString(s_actionCards[i].subtitle.c_str(), -1, &fAcSub,
-            RectF(txtX, ay + 46.0f, txtW, 34.0f), &fmtTL, &acSubC);
+        
+        g.DrawString(s_actionCards[i].title.c_str(), -1, &fAcTitle, RectF(txtX, currentY + 16.0f, txtW, 20.0f), &fmtTL, &acTxtC);
+        g.DrawString(s_actionCards[i].subtitle.c_str(), -1, &fAcSub, RectF(txtX, currentY + 36.0f, txtW, 30.0f), &fmtTL, &acSubC);
+
+        currentY += acH + acGapY;
     }
-    // ─────────────────────────────────────────────────────────────────────
 
-    // 2. Draw 5 Sub-Tabs (Modern Pill/Underline Style)
-    float tabY = acY + 2 * acH + 2 * acGapY + 10.0f;
-    float tabH  = 35.0f;
-    float tabGap = 20.0f; 
-
+    // ─── 3. LEFT SIDEBAR: VERTICAL TABS ───────────────────────────────────
+    currentY += 15.0f; // Gap before tabs
     std::wstring subNames[] = { L"Quick Blocks", L"Web & Cloud", L"Pro Tools", L"Personal Notes", L"Student Corner" };
+    float tabH = 40.0f;
 
-    float currTabX = marginX;
     for (int i = 0; i < 5; i++) {
-        // Measure text width for dynamic tab sizing
-        Graphics gTemp(hParentWnd);
-        RectF textRect;
-        gTemp.MeasureString(subNames[i].c_str(), -1, &fTabTxt, PointF(0, 0), &textRect);
-        float tW = textRect.Width + 20.0f; // Padding
-
-        s_tabRects[i] = RectF(currTabX, tabY, tW, tabH);
+        s_tabRects[i] = RectF(marginX, currentY, usableLeftW, tabH);
         
         if (selectedDashTab == i) {
-            g.DrawString(subNames[i].c_str(), -1, &fTabTxt, s_tabRects[i], &fmtC, &bTeal);
-            // Modern Underline Indicator
-            g.FillRectangle(&bTeal, currTabX + 10.0f, tabY + tabH - 2.0f, tW - 20.0f, 3.0f);
+            // Selected Tab Background
+            GraphicsPath tPath;
+            AddRoundedRectPath(tPath, marginX, currentY, usableLeftW, tabH, 6.0f);
+            SolidBrush selBg(Color(255, 235, 248, 250)); // Very light teal
+            g.FillPath(&selBg, &tPath);
+
+            // Active Left Border Indicator
+            GraphicsPath indPath;
+            AddRoundedRectPath(indPath, marginX, currentY + 6.0f, 4.0f, tabH - 12.0f, 2.0f);
+            g.FillPath(&bTeal, &indPath);
+
+            g.DrawString(subNames[i].c_str(), -1, &fTabTxt, RectF(marginX + 20.0f, currentY, usableLeftW - 20.0f, tabH), &fmtL, &bTeal);
         } else {
-            SolidBrush inactiveTxt(hoveredDashTab == i ? Color(255, 30, 40, 50) : Color(255, 140, 150, 160));
-            g.DrawString(subNames[i].c_str(), -1, &fTabTxt, s_tabRects[i], &fmtC, &inactiveTxt);
+            bool isHov = (hoveredDashTab == i);
+            if (isHov) {
+                GraphicsPath tPath;
+                AddRoundedRectPath(tPath, marginX, currentY, usableLeftW, tabH, 6.0f);
+                SolidBrush hovBg(Color(50, 230, 235, 240)); 
+                g.FillPath(&hovBg, &tPath);
+            }
+            SolidBrush inactiveTxt(isHov ? bDark.GetColor() : Color(255, 140, 150, 160));
+            g.DrawString(subNames[i].c_str(), -1, &fTabTxt, RectF(marginX + 20.0f, currentY, usableLeftW - 20.0f, tabH), &fmtL, &inactiveTxt);
         }
-        currTabX += tW + tabGap;
+        currentY += tabH + 4.0f;
     }
 
-    // Subtle separator line below tabs
-    Pen pSep(Color(255, 230, 235, 240), 1.0f);
-    g.DrawLine(&pSep, marginX, tabY + tabH, cx + cw - 40.0f, tabY + tabH);
-
-
-    // 3. Draw Grid Section for the Selected Tab Only (Modern Card Layout)
-    float currentY = tabY + tabH + 30.0f;
-    int columns = 3; // Reduced columns for wider, more premium cards
+    // ─── 4. RIGHT CONTENT: DYNAMIC GRID ───────────────────────────────────
+    float gridMarginX = rightColX + 35.0f;
+    float gridMarginY = cy + 30.0f;
+    float usableGridWidth = rightColWidth - 70.0f; 
+    
+    // Header for the selected category in the right column
+    g.DrawString(s_sections[selectedDashTab].title.c_str(), -1, &fH1, RectF(gridMarginX, gridMarginY, usableGridWidth, 40.0f), &fmtL, &bDark);
+    
+    float currentGridY = gridMarginY + 60.0f;
+    int columns = 3; 
     float gapX = 20.0f;
     float gapY = 20.0f;
-    float btnW = (usableWidth - (gapX * (columns - 1))) / columns;
-    float btnH = 80.0f; // Taller cards for layout
+    float btnW = (usableGridWidth - (gapX * (columns - 1))) / columns;
+    float btnH = 80.0f; 
 
-    float currentX = marginX;
+    float currentGridX = gridMarginX;
     int colCount = 0;
 
     for (auto& btn : s_sections[selectedDashTab].btns) {
         if (colCount >= columns) {
-            colCount = 0; currentX = marginX; currentY += btnH + gapY;
+            colCount = 0; 
+            currentGridX = gridMarginX; 
+            currentGridY += btnH + gapY;
         }
 
-        btn.bounds = RectF(currentX, currentY, btnW, btnH);
+        btn.bounds = RectF(currentGridX, currentGridY, btnW, btnH);
         
-        // Always draw soft shadow
         DrawSoftShadow(g, btn.bounds, 8);
 
         GraphicsPath bPath;
         AddRoundedRectPath(bPath, btn.bounds.X, btn.bounds.Y, btn.bounds.Width, btn.bounds.Height, 8.0f);
-        
-        SolidBrush btnBg(btn.isHovered ? Color(255, 255, 255, 255) : Color(255, 255, 255, 255));
-        
+        SolidBrush btnBg(Color(255, 255, 255, 255));
         g.FillPath(&btnBg, &bPath);
 
-        // Subtle highlight on hover instead of full color inversion
         if (btn.isHovered) {
             Pen hoverPen(&bTeal, 2.0f);
             g.DrawPath(&hoverPen, &bPath);
@@ -348,32 +353,29 @@ void DrawDashboardTab(Graphics& g, float cx, float cy, float cw, float ch) {
             g.DrawPath(&borderPen, &bPath);
         }
 
-        // Icon with soft tinted background circle
+        // Icon Circle
         float icSize = 40.0f;
         RectF iconBgRect(btn.bounds.X + 15.0f, btn.bounds.Y + (btnH - icSize)/2.0f, icSize, icSize);
         GraphicsPath icBgPath;
-        AddRoundedRectPath(icBgPath, iconBgRect.X, iconBgRect.Y, iconBgRect.Width, iconBgRect.Height, 20.0f); // Circle
-        SolidBrush icBgFill(btn.isHovered ? Color(255, 12, 168, 176) : Color(255, 235, 248, 250));
+        AddRoundedRectPath(icBgPath, iconBgRect.X, iconBgRect.Y, iconBgRect.Width, iconBgRect.Height, 20.0f);
+        SolidBrush icBgFill(btn.isHovered ? Color(255, 12, 168, 176) : Color(255, 240, 250, 252));
         g.FillPath(&icBgFill, &icBgPath);
 
         SolidBrush btnIc(btn.isHovered ? Color(255, 255, 255, 255) : Color(255, 12, 168, 176)); 
         g.DrawString(btn.icon.c_str(), -1, &fIconBig, iconBgRect, &fmtC, &btnIc);
 
-        // Text Layout (Title + Subtext)
+        // Text Layout
         float textStartX = iconBgRect.X + icSize + 15.0f;
         float textW = btn.bounds.Width - (textStartX - btn.bounds.X) - 10.0f;
         
-        RectF titleRect(textStartX, btn.bounds.Y + 18.0f, textW, 20.0f);
-        g.DrawString(btn.title.c_str(), -1, &fBtnTitle, titleRect, &fmtTL, &bDark);
+        g.DrawString(btn.title.c_str(), -1, &fBtnTitle, RectF(textStartX, btn.bounds.Y + 18.0f, textW, 20.0f), &fmtTL, &bDark);
+        g.DrawString(btn.subtext.c_str(), -1, &fBtnSub, RectF(textStartX, btn.bounds.Y + 40.0f, textW, 20.0f), &fmtTL, &bGrayText);
 
-        RectF subRect(textStartX, btn.bounds.Y + 40.0f, textW, 20.0f);
-        g.DrawString(btn.subtext.c_str(), -1, &fBtnSub, subRect, &fmtTL, &bGrayText);
-
-        currentX += btnW + gapX;
+        currentGridX += btnW + gapX;
         colCount++;
     }
 
-    // 4. DEBUG KILL BUTTON (Modernized)
+    // ─── 5. DEBUG KILL BUTTON (Bottom Right of Whole Window) ──────────────
     float killW = 130.0f, killH = 35.0f;
     float killX = cx + cw - killW - 30.0f;
     float killY = cy + ch - killH - 30.0f;
@@ -390,9 +392,9 @@ void DrawDashboardTab(Graphics& g, float cx, float cy, float cw, float ch) {
     Font fKill(&ff, 12, FontStyleBold, UnitPixel);
     g.DrawString(L"DEBUG KILL", -1, &fKill, RectF(killX, killY, killW, killH), &fmtC, &redTxt);
 
-    // 5. PASSWORD NUMPAD OVERLAY (Modernized)
+    // ─── 6. PASSWORD NUMPAD OVERLAY (Centered on Screen) ──────────────────
     if (showKillPrompt) {
-        SolidBrush overBg(Color(200, 10, 15, 20)); // Darker overlay
+        SolidBrush overBg(Color(200, 10, 15, 20)); 
         g.FillRectangle(&overBg, cx, cy, cw, ch);
 
         float pW = 320.0f, pH = 450.0f;
@@ -489,17 +491,20 @@ void ProcessDashboardMouseMove(float x, float y) {
         if (wasHov != s_actionCards[i].isHovered) needsRedraw = true;
     }
 
+    // Tabs hover
     for (int i = 0; i < 5; i++) {
         if (s_tabRects[i].Contains(x, y)) { hoveredDashTab = i; needsRedraw = true; break; }
     }
     if (oldHoverDashTab != hoveredDashTab) needsRedraw = true;
 
+    // Grid buttons hover
     for (auto& btn : s_sections[selectedDashTab].btns) {
         bool wasHovered = btn.isHovered;
         btn.isHovered = btn.bounds.Contains(x, y);
         if (wasHovered != btn.isHovered) needsRedraw = true;
     }
 
+    // Debug Kill button hover
     float killW = 130.0f, killH = 35.0f;
     float killX = d_cX + d_cW - killW - 30.0f; float killY = d_cY + d_cH - killH - 30.0f;
     if (x >= killX && x <= killX + killW && y >= killY && y <= killY + killH) {
@@ -528,10 +533,6 @@ void ProcessDashboardMouseClick(float x, float y, int& selectedTab) {
     if (dash_hovKillBtn) { showKillPrompt = true; killInput = L""; dash_hovKillBtn = false; return; }
 
     // --- Action Card Clicks ---
-    // Card 0: Create Blocking Profile  → Blocks tab (Simple Blocks)
-    // Card 1: Advanced Adult Block     → Blocks tab (Adult Block = tab index 2)
-    // Card 2: Start Deep Study         → Deep Study tab (index 3)
-    // Card 3: Allow Only Websites&Apps → Blocks tab (Simple Blocks, Allow mode)
     for (int i = 0; i < 4; i++) {
         if (s_actionCards[i].bounds.Contains(x, y)) {
             s_actionCards[i].isHovered = false;
@@ -544,6 +545,7 @@ void ProcessDashboardMouseClick(float x, float y, int& selectedTab) {
         }
     }
 
+    // --- Vertical Tab Clicks ---
     for (int i = 0; i < 5; i++) {
         if (s_tabRects[i].Contains(x, y)) {
             if (selectedDashTab != i) {
@@ -554,10 +556,11 @@ void ProcessDashboardMouseClick(float x, float y, int& selectedTab) {
         }
     }
 
+    // --- Right Grid Content Clicks ---
     for (auto& btn : s_sections[selectedDashTab].btns) {
         if (btn.bounds.Contains(x, y)) {
             
-            // 🟢 FIX: PDF Reader-এ ক্লিক করলে এখন সোজা পপ-আপ ওপেন হবে, কালো ট্যাবে যাবে না।
+            // 🟢 PDF Reader
             if (btn.title == L"PDF Reader") {
                 LaunchFoxitStylePdfReader(L"");
             }
