@@ -305,7 +305,9 @@ void DrawDashboardTab(Graphics& g, float cx, float cy, float cw, float ch) {
                 SolidBrush hovBg(Color(50, 230, 235, 240)); 
                 g.FillPath(&hovBg, &tPath);
             }
-            SolidBrush inactiveTxt(isHov ? bDark.GetColor() : Color(255, 140, 150, 160));
+            Gdiplus::Color bDarkColor;
+            bDark.GetColor(&bDarkColor);
+            SolidBrush inactiveTxt(isHov ? bDarkColor : Color(255, 140, 150, 160));
             g.DrawString(subNames[i].c_str(), -1, &fTabTxt, RectF(marginX + 20.0f, currentY, usableLeftW - 20.0f, tabH), &fmtL, &inactiveTxt);
         }
         currentY += tabH + 4.0f;

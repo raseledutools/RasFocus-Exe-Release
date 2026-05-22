@@ -315,6 +315,14 @@ void __cdecl SignUpThread(void* param) {
         if (!res.idToken.empty() && !res.localId.empty())
             CreateFirestoreUserDoc(res.localId, res.idToken, res.email, data->name);
 
+        // ✅ FIX: signup এর পরে g_loggedIn* সেট করা যাতে My Account এ নাম দেখা যায়
+        wchar_t emailW[512] = {}, nameW[512] = {};
+        MultiByteToWideChar(CP_UTF8, 0, res.email.c_str(),  -1, emailW, 511);
+        MultiByteToWideChar(CP_UTF8, 0, data->name.c_str(), -1, nameW,  511);
+        g_loggedInEmail   = emailW;
+        g_loggedInName    = nameW;
+        g_loggedInUserUid = res.localId;
+
         s_su_success   = true;
         s_su_statusMsg = L"";
         s_su_isError   = false;
