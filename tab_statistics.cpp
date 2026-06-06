@@ -3,7 +3,7 @@
 // ============================================================
 void DrawWeeklyAnalytics(Graphics& g, float cx, float cY, float cw, float availH, float r1H, float r2H, float r3H, 
                         Font& fH1, Font& fH2, Font& fBody, Font& fBold, Font& fSm, Font& fMed, 
-                        SolidBrush& bCard, SolidBrush& bTextMain, SolidBrush& bTextMuted, Pen& pBrd) 
+                        SolidBrush& bCard, SolidBrush& bTextMain, SolidBrush& bTextMuted, Pen& pBrd)
 {
     float PAD = 24.0f;
     float r2Y = cY + PAD + r1H + PAD;
@@ -77,9 +77,9 @@ void DrawWeeklyAnalytics(Graphics& g, float cx, float cY, float cw, float availH
 
     struct Badge { wstring icon; wstring title; wstring desc; Color bgC; Color textC; };
     vector<Badge> badges = {
-        { L"\x1F3C6", L"Iron Will", L"7-Day Strict Streak", Color(255, 254, 243, 199), Color(255, 180, 83, 9) }, // Gold
-        { L"\x1F6E1", L"Halal Warrior", L"Blocked 100+ Ads", Color(255, 224, 242, 254), Color(255, 3, 105, 161) }, // Blue
-        { L"\x1F525", L"Deep Work Guru", L"4h Unbroken Focus", Color(255, 254, 226, 226), Color(255, 185, 28, 28) } // Red
+        { L"[Trophy]", L"Iron Will", L"7-Day Strict Streak", Color(255, 254, 243, 199), Color(255, 180, 83, 9) }, // Gold
+        { L"[Shield]", L"Halal Warrior", L"Blocked 100+ Ads", Color(255, 224, 242, 254), Color(255, 3, 105, 161) }, // Blue
+        { L"[Fire]", L"Deep Work Guru", L"4h Unbroken Focus", Color(255, 254, 226, 226), Color(255, 185, 28, 28) } // Red
     };
 
     float bRowH = (r2H - 50.0f) / 3.0f;
@@ -106,7 +106,7 @@ void DrawWeeklyAnalytics(Graphics& g, float cx, float cY, float cw, float availH
 // ============================================================
 void DrawMonthlyAnalytics(Graphics& g, float cx, float cY, float cw, float availH, float r1H, float r2H, float r3H, 
                         Font& fH1, Font& fH2, Font& fBody, Font& fBold, Font& fSm, Font& fMed, 
-                        SolidBrush& bCard, SolidBrush& bTextMain, SolidBrush& bTextMuted, Pen& pBrd) 
+                        SolidBrush& bCard, SolidBrush& bTextMain, SolidBrush& bTextMuted, Pen& pBrd)
 {
     float PAD = 24.0f;
     float r2Y = cY + PAD + r1H + PAD;
@@ -165,7 +165,7 @@ void DrawMonthlyAnalytics(Graphics& g, float cx, float cY, float cw, float avail
     SolidBrush highlightText(Color(255, 67, 56, 202)); // Deep Indigo
     RoundRect(g, &highlightBg, nullptr, rightX + 20.0f, chronoY, halfW - 40.0f, 60.0f, 6);
     
-    g.DrawString(L"\x23F0 Peak Focus Time: 9:00 AM - 12:00 PM", -1, &fBold, RectF(rightX + 30.0f, chronoY + 10.0f, halfW - 60.0f, 20.0f), &fmtTrim, &highlightText);
+    g.DrawString(L"[Clock] Peak Focus Time: 9:00 AM - 12:00 PM", -1, &fBold, RectF(rightX + 30.0f, chronoY + 10.0f, halfW - 60.0f, 20.0f), &fmtTrim, &highlightText);
     g.DrawString(L"Schedule your hardest tasks during this window.", -1, &fSm, RectF(rightX + 30.0f, chronoY + 32.0f, halfW - 60.0f, 18.0f), &fmtTrim, &bTextMain);
 
     // Ergonomics & Posture Reminders Stats
