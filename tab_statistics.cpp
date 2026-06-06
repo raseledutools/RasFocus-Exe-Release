@@ -10,12 +10,12 @@ using namespace Gdiplus;
 using namespace std;
 
 // ============================================================
-//  Extern: Animation progress (defined in main/tab manager)
+//  Global: Animation progress (defined here, extern'd elsewhere)
 // ============================================================
-extern float stat_animProgress;
+float stat_animProgress = 1.0f;
 
 // ============================================================
-//  Helper: DrawRoundRect (GDI+ version, avoids clash with WinGDI RoundRect)
+//  Helper: RoundRect (GDI+ version — avoids WinGDI name clash)
 // ============================================================
 static void RoundRect(Graphics& g, Brush* brush, Pen* pen,
                       float x, float y, float w, float h, int radius)
@@ -23,19 +23,17 @@ static void RoundRect(Graphics& g, Brush* brush, Pen* pen,
     GraphicsPath path;
     float r = (float)radius;
     float d = r * 2.0f;
-
     path.AddArc(x,         y,         d, d, 180, 90);
     path.AddArc(x + w - d, y,         d, d, 270, 90);
     path.AddArc(x + w - d, y + h - d, d, d,   0, 90);
     path.AddArc(x,         y + h - d, d, d,  90, 90);
     path.CloseFigure();
-
     if (brush) g.FillPath(brush, &path);
     if (pen)   g.DrawPath(pen,   &path);
 }
 
 // ============================================================
-//  Helper: FillCircle (GDI+ filled ellipse by center+radius)
+//  Helper: FillCircle (center + radius)
 // ============================================================
 static void FillCircle(Graphics& g, Brush& brush, float cx, float cy, float r)
 {
@@ -235,4 +233,103 @@ void DrawMonthlyAnalytics(Graphics& g, float cx, float cY, float cw, float avail
         float fillW = (halfW - 40.0f) * (ergos[i].pct / 100.0f) * stat_animProgress;
         if(fillW > 4.0f) RoundRect(g, &fillBr, nullptr, rightX + 20.0f, ey + 20.0f, fillW, 4.0f, 2);
     }
+}
+
+// ============================================================
+//  Tab state
+// ============================================================
+static int  stat_activeSubTab = 0;   // 0=Today 1=ThisWeek 2=Monthly
+static float stat_animTimer   = 0.0f;
+
+// ============================================================
+//  DrawStatisticsTab — main entry point called from main.cpp
+// ============================================================
+void DrawStatisticsTab(Graphics& g, float cx, float cy, float cw, float ch)
+{
+    // Animate progress (clamp to 1.0)
+    stat_animProgress = min(stat_animProgress + 0.04f, 1.0f);
+
+    float PAD  = 24.0f;
+    float availH = ch - PAD * 2;
+
+    // Simple row heights — adjust as needed
+    float r1H = 80.0f;
+    float r3H = 100.0f;
+    float r2H = availH - r1H - r3H - PAD * 2;
+
+    // Shared brushes / fonts / pen
+    SolidBrush bCard    (Color(255, 255, 255, 255));
+    SolidBrush bTextMain(Color(255,  30,  41,  59));
+    SolidBrush bTextMuted(Color(255, 100, 116, 139));
+    Pen        pBrd     (Color(255, 226, 232, 240), 1.0f);
+
+    Font fH1(L"Segoe UI", 18.0f, FontStyleBold,   UnitPixel);
+    Font fH2(L"Segoe UI", 13.0f, FontStyleBold,   UnitPixel);
+    Font fBody(L"Segoe UI", 11.0f, FontStyleRegular, UnitPixel);
+    Font fBold(L"Segoe UI", 11.0f, FontStyleBold,   UnitPixel);
+    Font fSm  (L"Segoe UI",  9.0f, FontStyleRegular, UnitPixel);
+    Font fMed (L"Segoe UI", 10.0f, FontStyleBold,   UnitPixel);
+
+    // Sub-tab selector row
+    const wchar_t* tabs[] = { L"Today", L"This Week", L"Monthly" };
+    float tabW = 110.0f, tabH = 32.0f, tabGap = 8.0f;
+    float tabsStartX = cx + PAD;
+    for (int i = 0; i < 3; i++) {
+        float tx = tabsStartX + i * (tabW + tabGap);
+        bool  active = (i == stat_activeSubTab);
+        SolidBrush tabBg(active ? Color(255, 99, 102, 241) : Color(255, 241, 245, 249));
+        RoundRect(g, &tabBg, nullptr, tx, cy + PAD, tabW, tabH, 6);
+        SolidBrush tabTxt(active ? Color(255, 255, 255, 255) : Color(255, 100, 116, 139));
+        StringFormat fmt; fmt.SetAlignment(StringAlignmentCenter); fmt.SetLineAlignment(StringAlignmentCenter);
+        g.DrawString(tabs[i], -1, &fBold, RectF(tx, cy + PAD, tabW, tabH), &fmt, &tabTxt);
+    }
+
+    // Dispatch to sub-tab renderer
+    float contentY = cy + PAD + tabH + PAD;
+    float contentH = ch - (contentY - cy) - PAD;
+
+    if (stat_activeSubTab == 1)
+        DrawWeeklyAnalytics(g, cx, contentY, cw, contentH, r1H, r2H, r3H,
+                            fH1, fH2, fBody, fBold, fSm, fMed,
+                            bCard, bTextMain, bTextMuted, pBrd);
+    else if (stat_activeSubTab == 2)
+        DrawMonthlyAnalytics(g, cx, contentY, cw, contentH, r1H, r2H, r3H,
+                             fH1, fH2, fBody, fBold, fSm, fMed,
+                             bCard, bTextMain, bTextMuted, pBrd);
+    else {
+        // Today placeholder
+        SolidBrush bg(Color(255, 248, 250, 252));
+        g.FillRectangle(&bg, RectF(cx + PAD, contentY, cw - PAD * 2, contentH));
+        StringFormat fc; fc.SetAlignment(StringAlignmentCenter); fc.SetLineAlignment(StringAlignmentCenter);
+        g.DrawString(L"Today's statistics coming soon", -1, &fBody,
+                     RectF(cx + PAD, contentY, cw - PAD * 2, contentH), &fc, &bTextMuted);
+    }
+}
+
+// ============================================================
+//  Mouse interaction
+// ============================================================
+void ProcessStatisticsMouseMove(float mx, float my, float cx, float cy, float cw)
+{
+    // Reserved for hover effects — extend as needed
+    (void)mx; (void)my; (void)cx; (void)cy; (void)cw;
+}
+
+void ProcessStatisticsMouseClick(float mx, float my, float cx, float cy, float cw)
+{
+    // Hit-test the three sub-tabs
+    float PAD  = 24.0f;
+    float tabW = 110.0f, tabH = 32.0f, tabGap = 8.0f;
+    float tabsStartX = cx + PAD;
+
+    for (int i = 0; i < 3; i++) {
+        float tx = tabsStartX + i * (tabW + tabGap);
+        float ty = cy + PAD;
+        if (mx >= tx && mx <= tx + tabW && my >= ty && my <= ty + tabH) {
+            stat_activeSubTab  = i;
+            stat_animProgress  = 0.0f;   // restart animation on tab switch
+            return;
+        }
+    }
+    (void)cw;
 }
