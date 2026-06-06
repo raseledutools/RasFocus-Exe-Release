@@ -10,6 +10,39 @@ using namespace Gdiplus;
 using namespace std;
 
 // ============================================================
+//  Extern: Animation progress (defined in main/tab manager)
+// ============================================================
+extern float stat_animProgress;
+
+// ============================================================
+//  Helper: DrawRoundRect (GDI+ version, avoids clash with WinGDI RoundRect)
+// ============================================================
+static void RoundRect(Graphics& g, Brush* brush, Pen* pen,
+                      float x, float y, float w, float h, int radius)
+{
+    GraphicsPath path;
+    float r = (float)radius;
+    float d = r * 2.0f;
+
+    path.AddArc(x,         y,         d, d, 180, 90);
+    path.AddArc(x + w - d, y,         d, d, 270, 90);
+    path.AddArc(x + w - d, y + h - d, d, d,   0, 90);
+    path.AddArc(x,         y + h - d, d, d,  90, 90);
+    path.CloseFigure();
+
+    if (brush) g.FillPath(brush, &path);
+    if (pen)   g.DrawPath(pen,   &path);
+}
+
+// ============================================================
+//  Helper: FillCircle (GDI+ filled ellipse by center+radius)
+// ============================================================
+static void FillCircle(Graphics& g, Brush& brush, float cx, float cy, float r)
+{
+    g.FillEllipse(&brush, cx - r, cy - r, r * 2.0f, r * 2.0f);
+}
+
+// ============================================================
 //  ២ This Week Tab - Weekly Trends, Top Time Wasters & Gamification
 // ============================================================
 void DrawWeeklyAnalytics(Graphics& g, float cx, float cY, float cw, float availH, float r1H, float r2H, float r3H, 
