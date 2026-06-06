@@ -1,5 +1,16 @@
 // ============================================================
-//  ২. This Week Tab - Weekly Trends, Top Time Wasters & Gamification
+//  Statistics Tab - GDI+ Graphics & Analytics Visualization
+// ============================================================
+#include <windows.h>
+#include <gdiplus.h>
+#include <vector>
+#include <string>
+
+using namespace Gdiplus;
+using namespace std;
+
+// ============================================================
+//  ២ This Week Tab - Weekly Trends, Top Time Wasters & Gamification
 // ============================================================
 void DrawWeeklyAnalytics(Graphics& g, float cx, float cY, float cw, float availH, float r1H, float r2H, float r3H, 
                         Font& fH1, Font& fH2, Font& fBody, Font& fBold, Font& fSm, Font& fMed, 
@@ -102,7 +113,7 @@ void DrawWeeklyAnalytics(Graphics& g, float cx, float cY, float cw, float availH
 }
 
 // ============================================================
-//  ৩. Monthly Tab - Heatmap & Chronotype Analysis
+//  ៣ Monthly Tab - Heatmap & Chronotype Analysis
 // ============================================================
 void DrawMonthlyAnalytics(Graphics& g, float cx, float cY, float cw, float availH, float r1H, float r2H, float r3H, 
                         Font& fH1, Font& fH2, Font& fBody, Font& fBold, Font& fSm, Font& fMed, 
