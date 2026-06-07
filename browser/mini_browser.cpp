@@ -14,6 +14,13 @@
 #include "html_tools.h"
 #include "WebView2.h"
 #include "WebView2EnvironmentOptions.h"
+#include "bookmarks.h"
+#include "settings.h"
+#include "find_in_page.h"
+#include "context_menu.h"
+#include "history_panel.h"
+#include "downloads_panel.h"
+#include "extensions.h"
 
 #include <windows.h>
 #include <windowsx.h>
@@ -656,6 +663,40 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
         if (!(wd.active() && (wd.active()->url == L"LOCAL_NTP" || wd.active()->url == L"about:blank"))) {
             g.DrawLine(&sepPen, 0, navH - 1, W, navH - 1);
         }
+
+        // ── Chrome-style Loading Bar ──
+        if (wd.active() && wd.active()->loading) {
+            static ULONGLONG loadStart = 0;
+            ULONGLONG now = GetTickCount64();
+            if (loadStart == 0 || (now - loadStart) > 4000) loadStart = now;
+
+            // elapsed 0→4000ms → progress 0→95%
+            float elapsed = (float)(now - loadStart);
+            float progress = elapsed / 4000.0f;
+            if (progress > 0.95f) progress = 0.95f;
+
+            // teal loading bar (2px height, just below nav bar)
+            int barY = navH - 2;
+            int barW = (int)(W * progress);
+
+            // glow effect: dark gradient
+            LinearGradientBrush loadBrush(
+                PointF(0.f, (float)barY),
+                PointF((float)barW, (float)barY),
+                Color(255, 12, 168, 176),
+                Color(255, 0, 92, 230)
+            );
+            g.FillRectangle(&loadBrush, 0, barY, barW, 2);
+
+            // shimmer: bright leading edge
+            if (barW > 8) {
+                SolidBrush shimmer(Color(200, 255, 255, 255));
+                g.FillRectangle(&shimmer, barW - 8, barY, 8, 2);
+            }
+
+            // Repaint চালিয়ে যাও animation এর জন্য
+            InvalidateRect(hWnd, NULL, FALSE);
+        }
     }
 
     FontFamily ffSeg(L"Segoe UI");
@@ -977,6 +1018,34 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
             }
         }
     }
+
+    // ── Panel Overlays (menu এর পরে আঁকো যাতে সব কিছুর উপরে থাকে) ──
+    RECT cr2; GetClientRect(hWnd, &cr2);
+    int W2 = cr2.right, H2 = cr2.bottom;
+    POINT mousePt; GetCursorPos(&mousePt); ScreenToClient(hWnd, &mousePt);
+
+    if (g_bookmarkPanelOpen)
+        DrawBookmarkPanel(g, W2, H2, TitleBarH(dpi), ToolbarH(dpi),
+                          wd.isDarkMode, (int)dpi, mousePt.x, mousePt.y,
+                          g_bookmarkHoverIdx);
+
+    if (g_historyPanelOpen)
+        DrawHistoryPanel(g, W2, H2, TitleBarH(dpi), ToolbarH(dpi),
+                         wd.isDarkMode, (int)dpi, mousePt.x, mousePt.y);
+
+    if (g_downloadsPanelOpen)
+        DrawDownloadsPanel(g, W2, H2, TitleBarH(dpi), ToolbarH(dpi),
+                           wd.isDarkMode, (int)dpi, mousePt.x, mousePt.y);
+
+    if (g_extensionPanelOpen)
+        DrawExtensionPanel(g, W2, H2, TitleBarH(dpi), ToolbarH(dpi),
+                           wd.isDarkMode, (int)dpi, mousePt.x, mousePt.y);
+
+    if (g_findBarOpen)
+        DrawFindBar(g, W2, H2, wd.isDarkMode, (int)dpi);
+
+    if (g_contextMenuOpen)
+        DrawContextMenu(g, W2, H2, wd.isDarkMode, (int)dpi, mousePt.x, mousePt.y);
 }
 
 void DrawBrowser(HWND hWnd, HDC hdc) {
@@ -1116,9 +1185,29 @@ public:
             }
         }
 
+        // ── Google Sign-in Fix: Full Anti-Automation Detection Bypass ──
         tab.webview->AddScriptToExecuteOnDocumentCreated(
-            L"Object.defineProperty(navigator, 'webdriver', {get: () => false});"
-            L"window.chrome = { runtime: {} };",
+            // 1. webdriver flag remove
+            L"Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
+            // 2. chrome runtime simulate (Google checks this)
+            L"window.chrome = {"
+            L"  app: { isInstalled: false, InstallState: { DISABLED:'disabled',INSTALLED:'installed',NOT_INSTALLED:'not_installed' }, RunningState: { CANNOT_RUN:'cannot_run',READY_TO_RUN:'ready_to_run',RUNNING:'running' } },"
+            L"  csi: function(){return {};},"
+            L"  loadTimes: function(){return {};},"
+            L"  runtime: { OnInstalledReason: {}, OnRestartRequiredReason: {}, PlatformArch: {}, PlatformNaclArch: {}, PlatformOs: {}, RequestUpdateCheckStatus: {} }"
+            L"};"
+            // 3. permissions API patch (Google checks navigator.permissions)
+            L"const origQuery = window.navigator.permissions.query;"
+            L"window.navigator.permissions.query = (parameters) => ("
+            L"  parameters.name === 'notifications' ?"
+            L"  Promise.resolve({ state: Notification.permission }) :"
+            L"  origQuery(parameters)"
+            L");"
+            // 4. plugins simulate real browser
+            L"Object.defineProperty(navigator, 'plugins', { get: () => [1,2,3,4,5] });"
+            L"Object.defineProperty(navigator, 'languages', { get: () => ['en-US','en'] });"
+            // 5. platform spoof
+            L"Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });",
             nullptr);
 
         tab.webview->add_NavigationStarting(
@@ -1134,8 +1223,18 @@ public:
                             if (w.hAddressBar) SetWindowTextW(w.hAddressBar, L"blocked by rasfocus");
                             if (m_tabIdx >= 0 && m_tabIdx < (int)w.tabs.size()) {
                                 w.tabs[m_tabIdx].url = L"blocked by rasfocus";
+                                w.tabs[m_tabIdx].loading = false;
                                 w.tabs[m_tabIdx].webview->NavigateToString(
                                     GetBlocked_HTML(w.isDarkMode).c_str());
+                            }
+                        }
+                    } else {
+                        // ── Loading শুরু হলে loading = true ──
+                        if (g_windows.count(m_hWnd)) {
+                            auto& w = g_windows[m_hWnd];
+                            if (m_tabIdx >= 0 && m_tabIdx < (int)w.tabs.size()) {
+                                w.tabs[m_tabIdx].loading = true;
+                                InvalidateRect(m_hWnd, NULL, FALSE);
                             }
                         }
                     }
@@ -1203,10 +1302,149 @@ public:
                 auto& w = g_windows[m_hWnd];
                 if (m_tabIdx >= (int)w.tabs.size()) return S_OK;
 
+                // ── Loading শেষ ──
+                w.tabs[m_tabIdx].loading = false;
+                InvalidateRect(m_hWnd, NULL, FALSE);
+
+                // ── AI Inject Script (platform-specific UI hiding) ──
                 std::wstring injectScript = GetAiInjectScript(w.tabs[m_tabIdx].url);
                 if (!injectScript.empty()) {
                     sender->ExecuteScript(injectScript.c_str(), nullptr);
                 }
+
+                // ── 100% Ad Blocker Script ──
+                // YouTube, website banners, popups, tracking scripts সব block করে
+                static const wchar_t* kAdBlockScript = LR"JS(
+(function() {
+  // ── 1. YouTube Ads (video ads + banner ads + overlay) ──
+  function blockYouTubeAds() {
+    // video ad container গুলো hide করো
+    const adSelectors = [
+      '.ytp-ad-module', '.ytp-ad-overlay-container',
+      '.ytp-ad-text-overlay', '.ytp-ad-skip-button-container',
+      '.ytp-ad-progress-bar', '.ytp-ad-player-overlay',
+      '#masthead-ad', '.ytd-banner-promo-renderer',
+      'ytd-ad-slot-renderer', 'ytd-in-feed-ad-layout-renderer',
+      'ytd-promoted-sparkles-web-renderer', '.ytd-promoted-video-renderer',
+      '#player-ads', '.ad-showing .video-ads',
+      'ytd-display-ad-renderer', 'ytd-action-companion-ad-renderer',
+      '.ytd-rich-item-renderer:has(ytd-ad-slot-renderer)',
+      'ytd-promoted-sparkles-text-search-renderer',
+      '.GoogleActiveViewElement', '#feedModuleAdSlot'
+    ];
+    adSelectors.forEach(sel => {
+      document.querySelectorAll(sel).forEach(el => {
+        el.style.setProperty('display', 'none', 'important');
+        el.style.setProperty('visibility', 'hidden', 'important');
+      });
+    });
+
+    // video ad auto-skip
+    const skipBtn = document.querySelector('.ytp-skip-ad-button, .ytp-ad-skip-button');
+    if (skipBtn) skipBtn.click();
+
+    // video playing হলে ad duration check করো
+    const video = document.querySelector('video.html5-main-video');
+    if (video) {
+      const adBadge = document.querySelector('.ytp-ad-badge, .ad-badge');
+      if (adBadge) {
+        // mute করো ad এর সময়
+        const wasMuted = video.muted;
+        video.muted = true;
+        video.playbackRate = 16; // fast forward
+        const restoreCheck = setInterval(() => {
+          const skipNow = document.querySelector('.ytp-skip-ad-button, .ytp-ad-skip-button');
+          if (skipNow) { skipNow.click(); }
+          const stillAd = document.querySelector('.ytp-ad-badge, .ad-badge');
+          if (!stillAd) {
+            video.playbackRate = 1;
+            video.muted = wasMuted;
+            clearInterval(restoreCheck);
+          }
+        }, 200);
+      }
+    }
+  }
+
+  // ── 2. General Website Ad Selectors ──
+  function blockGeneralAds() {
+    const generalAdSelectors = [
+      // Common ad class names
+      '[class*="google-ad"]', '[class*="adsense"]', '[id*="adsense"]',
+      '[class*="ad-banner"]', '[class*="ad-container"]', '[class*="ad-wrapper"]',
+      '[class*="ad-slot"]', '[class*="ad-unit"]', '[class*="ad-placement"]',
+      '[id*="ad-banner"]', '[id*="ad-container"]', '[id*="ad-slot"]',
+      '[id*="google_ads"]', '[id*="gads"]', '[id*="div-gpt-ad"]',
+      '[class*="sponsored"]', '[class*="promo-ad"]', '[class*="advertisement"]',
+      '[data-ad-unit]', '[data-ad-slot]', '[data-ad-client]',
+      'ins.adsbygoogle', 'div[id^="google_ads_iframe"]',
+      'iframe[src*="googlesyndication"]', 'iframe[src*="doubleclick"]',
+      'iframe[src*="adservice"]', 'iframe[src*="ads."]',
+      // Facebook ads
+      '[data-pagelet*="FeedUnit_Sponsor"]', '._7jyg._7jyi',
+      // Generic popups/overlays
+      '[class*="popup-ad"]', '[class*="modal-ad"]', '[id*="popup-ad"]',
+      '[class*="overlay-ad"]', '[class*="interstitial"]',
+      // Sticky banners
+      '[class*="sticky-ad"]', '[class*="floating-ad"]', '[id*="sticky-ad"]'
+    ];
+    generalAdSelectors.forEach(sel => {
+      try {
+        document.querySelectorAll(sel).forEach(el => {
+          el.style.setProperty('display', 'none', 'important');
+        });
+      } catch(e) {}
+    });
+  }
+
+  // ── 3. Popup/Overlay/Cookie Banner Blocker ──
+  function blockPopups() {
+    // Cookie consent overlays
+    const cookieSelectors = [
+      '[class*="cookie-banner"]', '[class*="cookie-consent"]', '[class*="cookie-notice"]',
+      '[id*="cookie-banner"]', '[id*="cookie-consent"]', '[id*="cookiebar"]',
+      '[class*="gdpr"]', '[id*="gdpr"]', '[class*="consent-banner"]',
+      '.cc-window', '#onetrust-banner-sdk', '.evidon-banner',
+      '#cookie-law-info-bar', '.cookiealert', '#CybotCookiebotDialog'
+    ];
+    cookieSelectors.forEach(sel => {
+      try {
+        document.querySelectorAll(sel).forEach(el => {
+          el.style.setProperty('display', 'none', 'important');
+        });
+      } catch(e) {}
+    });
+
+    // Body scroll lock থেকে মুক্তি দাও (popup এর কারণে scroll বন্ধ হলে)
+    document.body.style.removeProperty('overflow');
+    document.documentElement.style.removeProperty('overflow');
+  }
+
+  // ── 4. Run immediately ──
+  blockYouTubeAds();
+  blockGeneralAds();
+  blockPopups();
+
+  // ── 5. DOM changes observe করো (dynamically loaded ads এর জন্য) ──
+  const observer = new MutationObserver(() => {
+    blockYouTubeAds();
+    blockGeneralAds();
+    blockPopups();
+  });
+  observer.observe(document.documentElement, {
+    childList: true, subtree: true
+  });
+
+  // ── 6. interval দিয়েও চালাও (YouTube SPA navigation এর জন্য) ──
+  setInterval(() => {
+    blockYouTubeAds();
+    blockPopups();
+  }, 1000);
+
+})();
+)JS";
+                sender->ExecuteScript(kAdBlockScript, nullptr);
+
                 return S_OK;
             }).Get(), nullptr);
 
@@ -1579,10 +1817,45 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
         UINT dpi = GetWndDpi(hWnd);
         int x = GET_X_LPARAM(lParam), y = GET_Y_LPARAM(lParam);
         RECT cr; GetClientRect(hWnd, &cr); int W = cr.right;
+        RECT crFull; GetClientRect(hWnd, &crFull); int H = crFull.bottom;
 
         if (wd.hMin)   { ShowWindow(hWnd, SW_MINIMIZE); break; }
         if (wd.hMax)   { ShowWindow(hWnd, IsZoomed(hWnd) ? SW_RESTORE : SW_MAXIMIZE); break; }
         if (wd.hClose) { DestroyWindow(hWnd); break; }
+
+        // ── Extension Panel Click ──
+        if (g_extensionPanelOpen) {
+            std::wstring action = HandleExtensionPanelClick(
+                x, y, W, H, TitleBarH(dpi), ToolbarH(dpi), (int)dpi);
+            if (action == L"install") {
+                // Folder browse dialog
+                BROWSEINFOW bi = {};
+                bi.hwndOwner  = hWnd;
+                bi.lpszTitle  = L"Unpacked Extension folder select করুন (manifest.json থাকতে হবে)";
+                bi.ulFlags    = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
+                PIDLIST_ABSOLUTE pidl = SHBrowseForFolderW(&bi);
+                if (pidl) {
+                    wchar_t folderPath[MAX_PATH];
+                    if (SHGetPathFromIDListW(pidl, folderPath)) {
+                        // g_sharedEnv use করো
+                        InstallExtensionFromFolder(g_sharedEnv.Get(), nullptr, folderPath);
+                    }
+                    CoTaskMemFree(pidl);
+                }
+                InvalidateRect(hWnd, NULL, FALSE);
+                return 0;
+            } else if (action.substr(0, 7) == L"toggle:") {
+                int idx = std::stoi(action.substr(7));
+                ToggleExtension(nullptr, idx);
+                InvalidateRect(hWnd, NULL, FALSE);
+                return 0;
+            } else if (action.substr(0, 7) == L"remove:") {
+                int idx = std::stoi(action.substr(7));
+                UninstallExtension(idx);
+                InvalidateRect(hWnd, NULL, FALSE);
+                return 0;
+            }
+        }
 
         if (!g_isPureViewerMode) {
             
@@ -1616,12 +1889,48 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                 if (clickIdx != -1) {
                     if      (clickIdx == 1) AddTab(hWnd, L"LOCAL_NTP");
                     else if (clickIdx == 2) LaunchMiniBrowser(L"LOCAL_NTP", L"New Window");
-                    else if (clickIdx == 3) MessageBoxW(hWnd, L"History Panel will appear here.",    L"History",     MB_OK);
-                    else if (clickIdx == 4) MessageBoxW(hWnd, L"Downloads Panel will appear here.", L"Downloads",   MB_OK);
-                    else if (clickIdx == 5) MessageBoxW(hWnd, L"Bookmarks Panel will appear here.", L"Bookmarks",   MB_OK);
-                    else if (clickIdx == 6) MessageBoxW(hWnd, L"Extensions Panel will appear here.",L"Extensions",  MB_OK);
+                    else if (clickIdx == 3) {
+                        // History
+                        g_historyPanelOpen   = !g_historyPanelOpen;
+                        g_bookmarkPanelOpen  = false;
+                        g_downloadsPanelOpen = false;
+                        if (g_historyPanelOpen) LoadHistory();
+                        InvalidateRect(hWnd, NULL, FALSE);
+                    }
+                    else if (clickIdx == 4) {
+                        // Downloads
+                        g_downloadsPanelOpen = !g_downloadsPanelOpen;
+                        g_historyPanelOpen   = false;
+                        g_bookmarkPanelOpen  = false;
+                        InvalidateRect(hWnd, NULL, FALSE);
+                    }
+                    else if (clickIdx == 5) {
+                        // Bookmarks
+                        g_bookmarkPanelOpen  = !g_bookmarkPanelOpen;
+                        g_historyPanelOpen   = false;
+                        g_downloadsPanelOpen = false;
+                        if (g_bookmarkPanelOpen) LoadBookmarks();
+                        InvalidateRect(hWnd, NULL, FALSE);
+                    }
+                    else if (clickIdx == 6) {
+                        // Extensions Panel
+                        g_extensionPanelOpen = !g_extensionPanelOpen;
+                        g_historyPanelOpen   = false;
+                        g_bookmarkPanelOpen  = false;
+                        g_downloadsPanelOpen = false;
+                        if (g_extensionPanelOpen) ScanExtensionsFolderPublic();
+                        InvalidateRect(hWnd, NULL, FALSE);
+                    }
                     else if (clickIdx == 7) AddTab(hWnd, L"https://gemini.google.com/app");
-                    else if (clickIdx == 8) ShellExecuteW(NULL, L"open", L"ms-settings:defaultapps", NULL, NULL, SW_SHOWNORMAL);
+                    else if (clickIdx == 8) {
+                        // Settings — WebView2 এ settings page খোলো
+                        if (auto* tab = wd.active()) {
+                            if (tab->webview) {
+                                tab->webview->NavigateToString(
+                                    GetSettingsPageHTML(wd.isDarkMode).c_str());
+                            }
+                        }
+                    }
                     else if (clickIdx == 9) DestroyWindow(hWnd);
                     
                     return 0;
@@ -1648,8 +1957,15 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                 if (wd.hRel  && tab->webview)                 tab->webview->Reload();
             }
 
-            if (wd.hProfile) MessageBoxW(hWnd, L"Profile menu will appear here.",    L"Profile",    MB_OK|MB_ICONINFORMATION);
-            if (wd.hExt)     MessageBoxW(hWnd, L"Extensions menu will appear here.", L"Extensions", MB_OK|MB_ICONINFORMATION);
+            if (wd.hProfile) MessageBoxW(hWnd, L"Profile menu will appear here.", L"Profile", MB_OK|MB_ICONINFORMATION);
+            if (wd.hExt) {
+                g_extensionPanelOpen = !g_extensionPanelOpen;
+                g_historyPanelOpen   = false;
+                g_bookmarkPanelOpen  = false;
+                g_downloadsPanelOpen = false;
+                if (g_extensionPanelOpen) ScanExtensionsFolderPublic();
+                InvalidateRect(hWnd, NULL, FALSE);
+            }
             
             if (wd.hMenu) { 
                 wd.isMenuOpen = !wd.isMenuOpen;
@@ -1718,6 +2034,155 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
         return 0;
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // KEYBOARD SHORTCUTS
+    // ─────────────────────────────────────────────────────────────────────────
+    case WM_KEYDOWN: {
+        if (!g_windows.count(hWnd)) break;
+        auto& wd = g_windows[hWnd];
+        bool ctrl  = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+        bool shift = (GetKeyState(VK_SHIFT)   & 0x8000) != 0;
+
+        // Find bar open থাকলে input handle করো
+        if (g_findBarOpen) {
+            if (wParam == VK_ESCAPE) { CloseFindBar(); InvalidateRect(hWnd, NULL, FALSE); return 0; }
+            if (wParam == VK_BACK)   { FindBarBackspace(); if (auto* t = wd.active()) if (t->webview) ExecuteFind(t->webview.Get()); InvalidateRect(hWnd, NULL, FALSE); return 0; }
+            if (wParam == VK_RETURN) { if (auto* t = wd.active()) if (t->webview) ExecuteFind(t->webview.Get(), !shift); return 0; }
+        }
+
+        if (wParam == VK_ESCAPE) {
+            // সব panel বন্ধ করো
+            bool any = g_bookmarkPanelOpen || g_historyPanelOpen ||
+                       g_downloadsPanelOpen || g_findBarOpen ||
+                       g_contextMenuOpen   || g_extensionPanelOpen;
+            g_bookmarkPanelOpen  = g_historyPanelOpen = g_downloadsPanelOpen = false;
+            g_extensionPanelOpen = false;
+            g_findBarOpen        = false;
+            g_contextMenuOpen    = false;
+            if (any) { InvalidateRect(hWnd, NULL, FALSE); return 0; }
+        }
+
+        if (ctrl) {
+            switch (wParam) {
+            case 'T':  // Ctrl+T — New Tab
+                AddTab(hWnd, L"LOCAL_NTP"); return 0;
+
+            case 'W':  // Ctrl+W — Close Tab
+                if (wd.tabs.size() > 1) CloseTab(hWnd, wd.activeTab);
+                else DestroyWindow(hWnd);
+                return 0;
+
+            case 'N':  // Ctrl+N — New Window
+                LaunchMiniBrowser(L"LOCAL_NTP", L"New Window"); return 0;
+
+            case 'H':  // Ctrl+H — History
+                g_historyPanelOpen   = !g_historyPanelOpen;
+                g_bookmarkPanelOpen  = false;
+                g_downloadsPanelOpen = false;
+                if (g_historyPanelOpen) LoadHistory();
+                InvalidateRect(hWnd, NULL, FALSE); return 0;
+
+            case 'J':  // Ctrl+J — Downloads
+                g_downloadsPanelOpen = !g_downloadsPanelOpen;
+                g_historyPanelOpen   = false;
+                g_bookmarkPanelOpen  = false;
+                InvalidateRect(hWnd, NULL, FALSE); return 0;
+
+            case 'D':  // Ctrl+D — Bookmark current page
+                if (auto* tab = wd.active()) {
+                    ToggleBookmark(tab->url, tab->title);
+                    InvalidateRect(hWnd, NULL, FALSE);
+                }
+                return 0;
+
+            case 'B':  // Ctrl+B — Bookmarks Panel
+                g_bookmarkPanelOpen  = !g_bookmarkPanelOpen;
+                g_historyPanelOpen   = false;
+                g_downloadsPanelOpen = false;
+                g_extensionPanelOpen = false;
+                if (g_bookmarkPanelOpen) LoadBookmarks();
+                InvalidateRect(hWnd, NULL, FALSE); return 0;
+
+            case 'E':  // Ctrl+E — Extensions Panel
+                g_extensionPanelOpen = !g_extensionPanelOpen;
+                g_historyPanelOpen   = false;
+                g_bookmarkPanelOpen  = false;
+                g_downloadsPanelOpen = false;
+                if (g_extensionPanelOpen) ScanExtensionsFolderPublic();
+                InvalidateRect(hWnd, NULL, FALSE); return 0;
+
+            case 'F':  // Ctrl+F — Find in Page
+                if (g_findBarOpen) CloseFindBar();
+                else OpenFindBar();
+                InvalidateRect(hWnd, NULL, FALSE); return 0;
+
+            case 'R':  // Ctrl+R — Reload
+                if (auto* tab = wd.active())
+                    if (tab->webview) tab->webview->Reload();
+                return 0;
+
+            case VK_TAB:  // Ctrl+Tab — Next Tab
+                if (!wd.tabs.empty()) {
+                    int next = (wd.activeTab + (shift ? -1 : 1) + (int)wd.tabs.size()) % (int)wd.tabs.size();
+                    SwitchToTab(hWnd, next);
+                }
+                return 0;
+
+            default:
+                // Ctrl+1~9 — Switch Tab
+                if (wParam >= '1' && wParam <= '9') {
+                    int idx = (int)(wParam - '1');
+                    if (idx < (int)wd.tabs.size()) SwitchToTab(hWnd, idx);
+                    return 0;
+                }
+                break;
+            }
+        }
+
+        if (wParam == VK_F5) {  // F5 — Reload
+            if (auto* tab = wd.active())
+                if (tab->webview) tab->webview->Reload();
+            return 0;
+        }
+        break;
+    }
+
+    case WM_CHAR: {
+        // Find bar text input
+        if (g_findBarOpen && !g_windows.empty()) {
+            wchar_t ch = (wchar_t)wParam;
+            if (ch >= L' ' && ch != VK_BACK) {
+                FindBarAddChar(ch);
+                if (g_windows.count(hWnd)) {
+                    auto& wd2 = g_windows[hWnd];
+                    if (auto* tab = wd2.active())
+                        if (tab->webview) ExecuteFind(tab->webview.Get());
+                }
+                InvalidateRect(hWnd, NULL, FALSE);
+            }
+        }
+        break;
+    }
+
+    case WM_RBUTTONDOWN: {
+        if (!g_windows.count(hWnd)) break;
+        int mx = GET_X_LPARAM(lParam), my = GET_Y_LPARAM(lParam);
+        // WebView এর উপরে right-click হলে context menu খোলো
+        if (my > NavTotalH(hWnd)) {
+            OpenContextMenu(mx, my, false, false, false, L"");
+            InvalidateRect(hWnd, NULL, FALSE);
+        }
+        break;
+    }
+
+    case WM_MOUSEWHEEL: {
+        if (g_historyPanelOpen) {
+            HandleHistoryScroll(GET_WHEEL_DELTA_WPARAM(wParam) > 0 ? -3 : 3);
+            InvalidateRect(hWnd, NULL, FALSE);
+        }
+        break;
+    }
+
     case WM_CLOSE:
         DestroyWindow(hWnd);
         break;
@@ -1754,6 +2219,14 @@ void LaunchMiniBrowser(std::wstring url, std::wstring /*title*/) {
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     CreateDesktopShortcut();
     RegisterAppForDefaultBrowser();
+
+    // ── Browser Data Init (প্রথমবার call এ) ──
+    static bool dataLoaded = false;
+    if (!dataLoaded) {
+        LoadBookmarks();
+        LoadSettings();
+        dataLoaded = true;
+    }
 
     static bool registered = false;
     if (!registered) {
