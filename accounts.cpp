@@ -10,8 +10,25 @@
 #include <sstream>
 #include <fstream>
 #include <process.h>
+#include <wrl.h>
+#include "WebView2.h"
 
 #pragma comment(lib, "wininet.lib")
+
+using namespace Microsoft::WRL;
+
+// ── Google OAuth WebView2 Globals ──
+extern ComPtr<ICoreWebView2Environment> g_sharedEnv; // mini_browser.cpp থেকে shared env
+
+static HWND   s_googlePopupHwnd      = NULL;  // OAuth popup window
+static ComPtr<ICoreWebView2Controller> s_googleController;
+static ComPtr<ICoreWebView2>           s_googleWebView;
+static bool   s_googleSignInPending   = false; // sign-in চলছে কিনা
+
+// Google OAuth constants
+static const std::string GOOGLE_CLIENT_ID    = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
+static const std::string GOOGLE_REDIRECT_URI = "http://localhost:7878";
+static const std::string FIREBASE_API_KEY    = "AIzaSyBVl3BuW6gfmp_K2IMYd1rbvLEA2l0yinA";
 
 #ifndef IDI_APP_ICON
 #define IDI_APP_ICON 101
@@ -44,6 +61,7 @@ static bool    s_isLoading      = false;
 static wstring s_statusMsg      = L"";
 static bool    s_isError        = false;
 static DWORD   s_lastBlinkTime  = 0;
+static bool    s_resetLoading   = false;  // Password Reset চলছে কিনা
 
 // ── Hover states ──
 static bool s_hoverLogin      = false;
@@ -56,6 +74,7 @@ static bool s_hoverEye        = false;
 static bool s_hoverLogout     = false;
 static bool s_hoverClose      = false;   // ← close (X) button
 static bool s_hoverUpgrade    = false;   // ← upgrade button
+static bool s_hoverGoogle     = false;   // ← Google Sign-In button
 
 // ── Sign Up State ──
 static bool    s_showSignup         = false;
@@ -276,6 +295,132 @@ static LoginResult FirebaseSignUp(const string& email, const string& password) {
     return res;
 }
 
+// ── GOOGLE ID TOKEN দিয়ে Firebase এ Sign In ──
+static LoginResult FirebaseGoogleSignIn(const string& googleIdToken) {
+    LoginResult res = { false, "", "", "", "" };
+    const string API_KEY = "AIzaSyBVl3BuW6gfmp_K2IMYd1rbvLEA2l0yinA";
+    const string HOST    = "identitytoolkit.googleapis.com";
+    const string PATH    = "/v1/accounts:signInWithIdp?key=" + API_KEY;
+    // Google IdP দিয়ে Firebase login
+    string postBody = "id_token=" + googleIdToken + "&providerId=google.com";
+    string body = "{\"requestUri\":\"http://localhost\","
+                  "\"postBody\":\"" + postBody + "\","
+                  "\"returnSecureToken\":true,"
+                  "\"returnIdpCredential\":true}";
+
+    HINTERNET hInet = InternetOpenA("RasFocus/1.0", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
+    if (!hInet) { res.errorMsg = "No internet connection."; return res; }
+    HINTERNET hConn = InternetConnectA(hInet, HOST.c_str(), INTERNET_DEFAULT_HTTPS_PORT, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
+    if (!hConn) { InternetCloseHandle(hInet); res.errorMsg = "Connection failed."; return res; }
+    HINTERNET hReq = HttpOpenRequestA(hConn, "POST", PATH.c_str(), NULL, NULL, NULL,
+        INTERNET_FLAG_SECURE | INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE, 0);
+    if (!hReq) { InternetCloseHandle(hConn); InternetCloseHandle(hInet); res.errorMsg = "Request failed."; return res; }
+
+    string headers = "Content-Type: application/json\r\n";
+    BOOL sent = HttpSendRequestA(hReq, headers.c_str(), (DWORD)headers.size(), (LPVOID)body.c_str(), (DWORD)body.size());
+    string response = "";
+    if (sent) {
+        char buf[4096]; DWORD bytesRead = 0;
+        while (InternetReadFile(hReq, buf, sizeof(buf) - 1, &bytesRead) && bytesRead > 0) {
+            buf[bytesRead] = '\0'; response += buf;
+        }
+    }
+    InternetCloseHandle(hReq); InternetCloseHandle(hConn); InternetCloseHandle(hInet);
+
+    if (response.empty()) { res.errorMsg = "Empty server response."; return res; }
+    if (response.find("\"error\"") != string::npos) {
+        string msg = JsonExtract(response, "message");
+        res.errorMsg = "Google sign-in failed: " + msg;
+    } else {
+        res.idToken = JsonExtract(response, "idToken");
+        res.localId = JsonExtract(response, "localId");
+        res.email   = JsonExtract(response, "email");
+        res.success = !res.localId.empty();
+        if (!res.success) res.errorMsg = "Google sign-in failed. Please try again.";
+    }
+    return res;
+}
+
+// ── EMAIL VERIFICATION পাঠানোর ফাংশন ──
+static void SendEmailVerification(const string& idToken) {
+    const string API_KEY = "AIzaSyBVl3BuW6gfmp_K2IMYd1rbvLEA2l0yinA";
+    const string HOST    = "identitytoolkit.googleapis.com";
+    const string PATH    = "/v1/accounts:sendOobCode?key=" + API_KEY;
+    string body = "{\"requestType\":\"VERIFY_EMAIL\",\"idToken\":\"" + idToken + "\"}";
+
+    HINTERNET hInet = InternetOpenA("RasFocus/1.0", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
+    if (!hInet) return;
+    HINTERNET hConn = InternetConnectA(hInet, HOST.c_str(), INTERNET_DEFAULT_HTTPS_PORT, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
+    if (!hConn) { InternetCloseHandle(hInet); return; }
+    HINTERNET hReq = HttpOpenRequestA(hConn, "POST", PATH.c_str(), NULL, NULL, NULL,
+        INTERNET_FLAG_SECURE | INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE, 0);
+    if (!hReq) { InternetCloseHandle(hConn); InternetCloseHandle(hInet); return; }
+
+    string headers = "Content-Type: application/json\r\n";
+    HttpSendRequestA(hReq, headers.c_str(), (DWORD)headers.size(), (LPVOID)body.c_str(), (DWORD)body.size());
+    InternetCloseHandle(hReq); InternetCloseHandle(hConn); InternetCloseHandle(hInet);
+}
+
+// ── ইউজার VERIFIED কিনা চেক করার ফাংশন ──
+static bool IsEmailVerified(const string& idToken) {
+    const string API_KEY = "AIzaSyBVl3BuW6gfmp_K2IMYd1rbvLEA2l0yinA";
+    const string HOST    = "identitytoolkit.googleapis.com";
+    const string PATH    = "/v1/accounts:lookup?key=" + API_KEY;
+    string body = "{\"idToken\":\"" + idToken + "\"}";
+
+    HINTERNET hInet = InternetOpenA("RasFocus/1.0", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
+    if (!hInet) return false;
+    HINTERNET hConn = InternetConnectA(hInet, HOST.c_str(), INTERNET_DEFAULT_HTTPS_PORT, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
+    if (!hConn) { InternetCloseHandle(hInet); return false; }
+    HINTERNET hReq = HttpOpenRequestA(hConn, "POST", PATH.c_str(), NULL, NULL, NULL,
+        INTERNET_FLAG_SECURE | INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE, 0);
+    if (!hReq) { InternetCloseHandle(hConn); InternetCloseHandle(hInet); return false; }
+
+    string headers = "Content-Type: application/json\r\n";
+    BOOL sent = HttpSendRequestA(hReq, headers.c_str(), (DWORD)headers.size(), (LPVOID)body.c_str(), (DWORD)body.size());
+    string response = "";
+    if (sent) {
+        char buf[4096]; DWORD bytesRead = 0;
+        while (InternetReadFile(hReq, buf, sizeof(buf) - 1, &bytesRead) && bytesRead > 0) {
+            buf[bytesRead] = '\0'; response += buf;
+        }
+    }
+    InternetCloseHandle(hReq); InternetCloseHandle(hConn); InternetCloseHandle(hInet);
+
+    // JSON response এ "emailVerified":true আছে কিনা চেক করা
+    return response.find("\"emailVerified\":true") != string::npos;
+}
+
+// ── PASSWORD RESET EMAIL পাঠানোর ফাংশন (Firebase REST API) ──
+static bool SendPasswordResetEmail(const string& email) {
+    const string API_KEY = "AIzaSyBVl3BuW6gfmp_K2IMYd1rbvLEA2l0yinA";
+    const string HOST    = "identitytoolkit.googleapis.com";
+    const string PATH    = "/v1/accounts:sendOobCode?key=" + API_KEY;
+    string body = "{\"requestType\":\"PASSWORD_RESET\",\"email\":\"" + email + "\"}";
+
+    HINTERNET hInet = InternetOpenA("RasFocus/1.0", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
+    if (!hInet) return false;
+    HINTERNET hConn = InternetConnectA(hInet, HOST.c_str(), INTERNET_DEFAULT_HTTPS_PORT, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
+    if (!hConn) { InternetCloseHandle(hInet); return false; }
+    HINTERNET hReq = HttpOpenRequestA(hConn, "POST", PATH.c_str(), NULL, NULL, NULL,
+        INTERNET_FLAG_SECURE | INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE, 0);
+    if (!hReq) { InternetCloseHandle(hConn); InternetCloseHandle(hInet); return false; }
+
+    string headers = "Content-Type: application/json\r\n";
+    BOOL sent = HttpSendRequestA(hReq, headers.c_str(), (DWORD)headers.size(), (LPVOID)body.c_str(), (DWORD)body.size());
+    string response = "";
+    if (sent) {
+        char buf[4096]; DWORD bytesRead = 0;
+        while (InternetReadFile(hReq, buf, sizeof(buf) - 1, &bytesRead) && bytesRead > 0) {
+            buf[bytesRead] = '\0'; response += buf;
+        }
+    }
+    InternetCloseHandle(hReq); InternetCloseHandle(hConn); InternetCloseHandle(hInet);
+
+    // সফল হলে response এ "email" থাকবে, error থাকবে না
+    return response.find("\"error\"") == string::npos && response.find("\"email\"") != string::npos;
+}
+
 struct SignUpThreadData { HWND hWnd; string email; string password; string name; };
 
 static void CreateFirestoreUserDoc(const string& uid, const string& idToken,
@@ -314,6 +459,10 @@ void __cdecl SignUpThread(void* param) {
     if (res.success) {
         if (!res.idToken.empty() && !res.localId.empty())
             CreateFirestoreUserDoc(res.localId, res.idToken, res.email, data->name);
+
+        // ✅ Email Verification পাঠানো (signup সফল হলেই)
+        if (!res.idToken.empty())
+            SendEmailVerification(res.idToken);
 
         // ✅ FIX: signup এর পরে g_loggedIn* সেট করা যাতে My Account এ নাম দেখা যায়
         wchar_t emailW[512] = {}, nameW[512] = {};
@@ -386,11 +535,273 @@ static bool CheckPremiumFromFirebase(const string& uid, const string& idToken) {
 
 struct LoginThreadData { HWND hWnd; string email; string password; bool saveLogin; };
 
+// ── PASSWORD RESET THREAD ──
+struct ResetThreadData { HWND hWnd; string email; };
+
+void __cdecl PasswordResetThread(void* param) {
+    ResetThreadData* data = (ResetThreadData*)param;
+    bool ok = SendPasswordResetEmail(data->email);
+    s_resetLoading = false;
+    if (ok) {
+        s_statusMsg = L"Password reset email sent! Please check your inbox.";
+        s_isError   = false;
+    } else {
+        s_statusMsg = L"Could not send reset email. Check your email address.";
+        s_isError   = true;
+    }
+    if (data->hWnd) InvalidateRect(data->hWnd, NULL, FALSE);
+    delete data;
+    _endthread();
+}
+
+// ============================================================
+//  GOOGLE SIGN-IN — WebView2 OAuth Popup
+// ============================================================
+
+// Google OAuth এর URL বানানো
+static wstring BuildGoogleOAuthURL() {
+    string url =
+        "https://accounts.google.com/o/oauth2/v2/auth"
+        "?client_id=" + GOOGLE_CLIENT_ID +
+        "&redirect_uri=" + GOOGLE_REDIRECT_URI +
+        "&response_type=token"          // implicit flow — id_token সরাসরি URL এ আসে
+        "&scope=openid%20email%20profile"
+        "&prompt=select_account";
+    return wstring(url.begin(), url.end());
+}
+
+// OAuth redirect URL থেকে id_token extract করা
+static string ExtractIdTokenFromUrl(const wstring& url) {
+    // URL fragment: #access_token=...&id_token=XXX&...
+    size_t hashPos = url.find(L'#');
+    if (hashPos == wstring::npos) return "";
+    wstring fragment = url.substr(hashPos + 1);
+
+    // id_token= খোঁজা
+    size_t pos = fragment.find(L"id_token=");
+    if (pos == wstring::npos) return "";
+    size_t start = pos + 9;
+    size_t end   = fragment.find(L'&', start);
+    wstring tokenW = (end == wstring::npos)
+        ? fragment.substr(start)
+        : fragment.substr(start, end - start);
+
+    // wstring → string
+    string token(tokenW.begin(), tokenW.end());
+    return token;
+}
+
+// Google Sign-In Thread — token পেলে Firebase login করে
+struct GoogleSignInData { HWND hMainWnd; string idToken; };
+
+void __cdecl GoogleSignInThread(void* param) {
+    GoogleSignInData* data = (GoogleSignInData*)param;
+
+    LoginResult res = FirebaseGoogleSignIn(data->idToken);
+    s_googleSignInPending = false;
+
+    if (res.success) {
+        // Firestore এ user doc তৈরি/আপডেট করা
+        if (!res.idToken.empty() && !res.localId.empty()) {
+            // Google user এর display name বের করার চেষ্টা
+            string nameA = JsonExtract(res.localId, "displayName");
+            if (nameA.empty()) nameA = res.email; // fallback
+            CreateFirestoreUserDoc(res.localId, res.idToken, res.email, nameA);
+        }
+
+        bool isPremium = CheckPremiumFromFirebase(res.localId, res.idToken);
+
+        wchar_t emailW[512] = {};
+        MultiByteToWideChar(CP_UTF8, 0, res.email.c_str(), -1, emailW, 511);
+        g_loggedInEmail   = emailW;
+        g_loggedInUserUid = res.localId;
+
+        s_statusMsg = isPremium
+            ? L"Google sign-in successful! Premium active."
+            : L"Google sign-in successful!";
+        s_isError   = false;
+
+        if (g_openCheckoutAfterLogin && !g_loggedInUserUid.empty()) {
+            g_openCheckoutAfterLogin = false;
+            string urlStr = "https://raseledutools.github.io/checkout.html?uid=" + g_loggedInUserUid;
+            wstring wUrl(urlStr.begin(), urlStr.end());
+            ShellExecuteW(NULL, L"open", wUrl.c_str(), NULL, NULL, SW_SHOWNORMAL);
+        }
+    } else {
+        wchar_t errW[512] = {};
+        MultiByteToWideChar(CP_UTF8, 0, res.errorMsg.c_str(), -1, errW, 511);
+        s_statusMsg = errW;
+        s_isError   = true;
+    }
+
+    if (data->hMainWnd) InvalidateRect(data->hMainWnd, NULL, FALSE);
+    delete data;
+    _endthread();
+}
+
+// Google OAuth Popup এর WndProc
+static HWND s_googleMainHwnd = NULL; // main window ref (thread callback এ দরকার)
+
+LRESULT CALLBACK GoogleOAuthWndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
+    switch (msg) {
+    case WM_SIZE:
+        if (s_googleController) {
+            RECT rc; GetClientRect(hWnd, &rc);
+            s_googleController->put_Bounds(rc);
+        }
+        break;
+    case WM_CLOSE:
+        // Popup বন্ধ হলে cleanup
+        s_googleController = nullptr;
+        s_googleWebView    = nullptr;
+        s_googleSignInPending = false;
+        s_googlePopupHwnd  = NULL;
+        if (s_googleMainHwnd) {
+            s_statusMsg = L"Google sign-in cancelled.";
+            s_isError   = false;
+            InvalidateRect(s_googleMainHwnd, NULL, FALSE);
+        }
+        DestroyWindow(hWnd);
+        break;
+    case WM_DESTROY:
+        s_googlePopupHwnd = NULL;
+        break;
+    }
+    return DefWindowProcW(hWnd, msg, wp, lp);
+}
+
+// Google OAuth Popup তৈরি এবং WebView2 সেট আপ
+static void OpenGoogleSignInPopup(HWND hMainWnd) {
+    if (s_googlePopupHwnd) {
+        // আগেই popup খোলা আছে — সামনে আনো
+        SetForegroundWindow(s_googlePopupHwnd);
+        return;
+    }
+    if (!g_sharedEnv) {
+        s_statusMsg = L"Browser engine not ready. Please open the browser tab first.";
+        s_isError   = true;
+        InvalidateRect(hMainWnd, NULL, FALSE);
+        return;
+    }
+
+    s_googleMainHwnd = hMainWnd;
+
+    // Window class register করা
+    static bool classReg = false;
+    if (!classReg) {
+        WNDCLASSEXW wc = {};
+        wc.cbSize        = sizeof(wc);
+        wc.lpfnWndProc   = GoogleOAuthWndProc;
+        wc.hInstance     = GetModuleHandleW(NULL);
+        wc.hCursor       = LoadCursorW(NULL, IDC_ARROW);
+        wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+        wc.lpszClassName = L"GoogleOAuthPopup";
+        RegisterClassExW(&wc);
+        classReg = true;
+    }
+
+    // Popup window তৈরি
+    int popW = 480, popH = 620;
+    int screenW = GetSystemMetrics(SM_CXSCREEN);
+    int screenH = GetSystemMetrics(SM_CYSCREEN);
+    int popX = (screenW - popW) / 2;
+    int popY = (screenH - popH) / 2;
+
+    s_googlePopupHwnd = CreateWindowExW(
+        WS_EX_DLGMODALFRAME | WS_EX_TOPMOST,
+        L"GoogleOAuthPopup",
+        L"Sign in with Google",
+        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_VISIBLE,
+        popX, popY, popW, popH,
+        hMainWnd, NULL, GetModuleHandleW(NULL), NULL
+    );
+    if (!s_googlePopupHwnd) return;
+
+    // WebView2 Controller তৈরি করা — g_sharedEnv ব্যবহার করে
+    HWND popupHwnd = s_googlePopupHwnd; // lambda capture এর জন্য
+    HWND mainHwnd  = hMainWnd;
+
+    g_sharedEnv->CreateCoreWebView2Controller(
+        s_googlePopupHwnd,
+        Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
+        [popupHwnd, mainHwnd](HRESULT hr, ICoreWebView2Controller* ctl) -> HRESULT {
+            if (FAILED(hr) || !ctl) return S_OK;
+
+            s_googleController = ctl;
+            ctl->get_CoreWebView2(&s_googleWebView);
+
+            // WebView2 size ঠিক করা
+            RECT rc; GetClientRect(popupHwnd, &rc);
+            ctl->put_Bounds(rc);
+
+            // Settings — address bar hide করা
+            ComPtr<ICoreWebView2Settings> settings;
+            if (SUCCEEDED(s_googleWebView->get_Settings(&settings)) && settings) {
+                settings->put_IsStatusBarEnabled(FALSE);
+            }
+
+            // Navigation এ URL monitor করা — redirect ধরব
+            s_googleWebView->add_NavigationStarting(
+                Callback<ICoreWebView2NavigationStartingEventHandler>(
+                [mainHwnd, popupHwnd](ICoreWebView2*, ICoreWebView2NavigationStartingEventArgs* args) -> HRESULT {
+                    LPWSTR uriW = nullptr;
+                    args->get_Uri(&uriW);
+                    if (!uriW) return S_OK;
+                    wstring uri(uriW);
+                    CoTaskMemFree(uriW);
+
+                    // Redirect URI এ পৌঁছলে token ধরা
+                    if (uri.find(L"http://localhost:7878") == 0) {
+                        args->put_Cancel(TRUE); // navigation বন্ধ করা
+
+                        string idToken = ExtractIdTokenFromUrl(uri);
+                        if (!idToken.empty()) {
+                            s_statusMsg = L"Signing in with Google...";
+                            s_isError   = false;
+                            InvalidateRect(mainHwnd, NULL, FALSE);
+
+                            GoogleSignInData* gd = new GoogleSignInData();
+                            gd->hMainWnd = mainHwnd;
+                            gd->idToken  = idToken;
+                            _beginthread(GoogleSignInThread, 0, gd);
+                        } else {
+                            s_statusMsg = L"Google sign-in failed: token not received.";
+                            s_isError   = true;
+                            InvalidateRect(mainHwnd, NULL, FALSE);
+                        }
+
+                        // Popup বন্ধ করা
+                        PostMessageW(popupHwnd, WM_CLOSE, 0, 0);
+                    }
+                    return S_OK;
+                }).Get(), nullptr);
+
+            // Google OAuth URL এ navigate করা
+            s_googleWebView->Navigate(BuildGoogleOAuthURL().c_str());
+            return S_OK;
+        }).Get()
+    );
+}
+
 void __cdecl LoginThread(void* param) {
     LoginThreadData* data = (LoginThreadData*)param;
     LoginResult res = FirebaseLogin(data->email, data->password);
 
     if (res.success) {
+        // ✅ Email Verified কিনা চেক করা
+        bool verified = IsEmailVerified(res.idToken);
+        if (!verified) {
+            // Verified না হলে login বন্ধ, re-send verification email
+            SendEmailVerification(res.idToken);
+            s_isLoading = false;
+            s_statusMsg = L"Please verify your email first. A new verification link has been sent.";
+            s_isError   = true;
+            if (data->hWnd) InvalidateRect(data->hWnd, NULL, FALSE);
+            delete data;
+            _endthread();
+            return;
+        }
+
         bool isPremium = CheckPremiumFromFirebase(res.localId, res.idToken);
 
         wchar_t emailW[512] = {};
@@ -468,12 +879,13 @@ struct CardLayout {
     float signupX, signupY, signupW, signupH;
     float resetX, resetY, resetW, resetH;
     float privacyX, privacyY, privacyW, privacyH;
+    float googleBtnX, googleBtnY, googleBtnW, googleBtnH; // Google Sign-In
 };
 
 static CardLayout GetLayout(float cx, float cy, float cw, float ch) {
     CardLayout L = {};
     L.cardW = 380.0f;
-    L.cardH = 440.0f;
+    L.cardH = 490.0f;  // Google Sign-In button এর জন্য বাড়ানো হয়েছে (ছিল 440)
     L.cardX = cx + (cw - L.cardW) / 2.0f;
     L.cardY = cy + (ch - L.cardH) / 2.0f;
     L.logoSz = 56.0f;
@@ -506,10 +918,15 @@ static CardLayout GetLayout(float cx, float cy, float cw, float ch) {
     L.resetY  = L.linksY;
     L.resetW  = 90.0f;
     L.resetH  = 20.0f;
+    // Google Sign-In button
+    L.googleBtnW = 200.0f;
+    L.googleBtnH = 34.0f;
+    L.googleBtnX = L.cardX + (L.cardW - L.googleBtnW) / 2.0f;
+    L.googleBtnY = L.linksY + 26.0f;
     L.privacyW = 80.0f;
     L.privacyH = 18.0f;
     L.privacyX = L.cardX + (L.cardW - L.privacyW) / 2.0f;
-    L.privacyY = L.cardY + L.cardH - 30.0f;
+    L.privacyY = L.cardY + L.cardH - 22.0f;
     return L;
 }
 
@@ -590,12 +1007,15 @@ static void DrawSignUpForm(Graphics& g, float cx, float cy, float cw, float ch) 
 
     if (s_su_success) {
         Font fBig(&ff, 16, FontStyleBold, UnitPixel);
-        Font fSub(&ff, 12, FontStyleRegular, UnitPixel);
+        Font fSub(&ff, 11, FontStyleRegular, UnitPixel);
         SolidBrush green(Color(255, 0, 160, 90));
+        SolidBrush orange(Color(255, 200, 100, 0));
         g.DrawString(L"\u2713 Account Created Successfully!", -1, &fBig,
-            RectF(cardX, cardY + cardH / 2.0f - 50.0f, cardW, 30.0f), &fmtC, &green);
-        g.DrawString(L"You can now log in with your email.", -1, &fSub,
-            RectF(cardX, cardY + cardH / 2.0f - 10.0f, cardW, 24.0f), &fmtC, &gray);
+            RectF(cardX, cardY + cardH / 2.0f - 70.0f, cardW, 30.0f), &fmtC, &green);
+        g.DrawString(L"A verification email has been sent to your inbox.", -1, &fSub,
+            RectF(cardX, cardY + cardH / 2.0f - 30.0f, cardW, 24.0f), &fmtC, &gray);
+        g.DrawString(L"Please verify your email before logging in.", -1, &fSub,
+            RectF(cardX, cardY + cardH / 2.0f - 8.0f, cardW, 24.0f), &fmtC, &orange);
 
         float btnW = 160.0f, btnH = 38.0f;
         float btnX = cardX + (cardW - btnW) / 2.0f;
@@ -611,7 +1031,7 @@ static void DrawSignUpForm(Graphics& g, float cx, float cy, float cw, float ch) 
             Color(255, 0, 120, 140), Color(255, 0, 180, 200));
         g.FillPath(&btnBg, &bp);
         Font fBtn(&ff, 13, FontStyleBold, UnitPixel);
-        g.DrawString(L"Log In Now", -1, &fBtn, RectF(btnX, btnY, btnW, btnH), &fmtC, &white);
+        g.DrawString(L"Go to Login", -1, &fBtn, RectF(btnX, btnY, btnW, btnH), &fmtC, &white);
         return;
     }
 
@@ -1100,6 +1520,39 @@ void DrawAccountsTab(Graphics& g, float cx, float cy, float cw, float ch) {
     StringFormat fmtR; fmtR.SetAlignment(StringAlignmentFar); fmtR.SetLineAlignment(StringAlignmentCenter);
     g.DrawString(L"Reset Password", -1, &fLinkU, RectF(L.resetX, L.resetY, L.resetW, L.resetH), &fmtR, s_hoverReset ? &linkHover : &linkTeal);
     g.DrawString(L"Privacy Policy", -1, &fLinkU, RectF(L.privacyX, L.privacyY, L.privacyW, L.privacyH), &fmtC, s_hoverPrivacy ? &linkHover : &linkTeal);
+
+    // ── Google Sign-In Button ──
+    float gBtnW = 200.0f, gBtnH = 34.0f;
+    float gBtnX = L.cardX + (L.cardW - gBtnW) / 2.0f;
+    float gBtnY = L.linksY + 26.0f;
+
+    GraphicsPath gBtnPath;
+    float gbr = 6.0f, gbd = gbr * 2.0f;
+    gBtnPath.AddArc(gBtnX, gBtnY, gbd, gbd, 180.0f, 90.0f);
+    gBtnPath.AddArc(gBtnX + gBtnW - gbd, gBtnY, gbd, gbd, 270.0f, 90.0f);
+    gBtnPath.AddArc(gBtnX + gBtnW - gbd, gBtnY + gBtnH - gbd, gbd, gbd, 0.0f, 90.0f);
+    gBtnPath.AddArc(gBtnX, gBtnY + gBtnH - gbd, gbd, gbd, 90.0f, 90.0f);
+    gBtnPath.CloseFigure();
+
+    bool hoverGoogle = s_hoverGoogle;
+    SolidBrush gBtnBg(hoverGoogle ? Color(255, 235, 245, 250) : Color(255, 248, 250, 252));
+    g.FillPath(&gBtnBg, &gBtnPath);
+    Pen gBtnBorder(Color(255, 200, 210, 220), 1.0f);
+    g.DrawPath(&gBtnBorder, &gBtnPath);
+
+    // Google "G" রঙিন আইকন
+    Font fGIcon(&ff, 13, FontStyleBold, UnitPixel);
+    SolidBrush gRed  (Color(255, 234,  67,  53));
+    SolidBrush gBlue (Color(255,  66, 133, 244));
+    SolidBrush gGreen(Color(255,  52, 168,  83));
+    SolidBrush gYellow(Color(255, 251, 188,   4));
+    // "G" এর চার রং — simplified: একটা রঙিন G অক্ষর
+    g.DrawString(L"G", -1, &fGIcon, RectF(gBtnX + 10.0f, gBtnY, 20.0f, gBtnH), &fmtC, &gBlue);
+
+    Font fGText(&ff, 11, FontStyleRegular, UnitPixel);
+    SolidBrush gTextColor(Color(255, 60, 70, 80));
+    g.DrawString(L"Sign in with Google", -1, &fGText,
+        RectF(gBtnX + 28.0f, gBtnY, gBtnW - 30.0f, gBtnH), &fmtL, &gTextColor);
 }
 
 // ============================================================
@@ -1202,6 +1655,7 @@ void ProcessAccountsMouseMove(float x, float y) {
     s_hoverSignup    = HitRect(x, y, L.signupX,    L.signupY,    L.signupW,    L.signupH);
     s_hoverReset     = HitRect(x, y, L.resetX,     L.resetY,     L.resetW,     L.resetH);
     s_hoverPrivacy   = HitRect(x, y, L.privacyX,   L.privacyY,   L.privacyW,   L.privacyH);
+    s_hoverGoogle    = HitRect(x, y, L.googleBtnX, L.googleBtnY, L.googleBtnW, L.googleBtnH);
 
     bool hoverEmailText = HitRect(x, y, L.fieldX, L.emailY, L.fieldW - L.eyeW, L.fldH);
     bool hoverPassText  = HitRect(x, y, L.fieldX, L.passY, L.fieldW - L.eyeW, L.fldH);
@@ -1441,10 +1895,36 @@ void ProcessAccountsMouseClick(float x, float y, HWND hWnd) {
         return;
     }
     if (HitRect(x, y, L.resetX, L.resetY, L.resetW, L.resetH)) {
-        ShellExecuteW(NULL, L"open", L"https://rasfocus.com/reset-password", NULL, NULL, SW_SHOWNORMAL); return;
+        // Email field এ কিছু থাকলে সেই email এ reset পাঠাও
+        wstring emailW(s_email);
+        if (emailW.empty()) {
+            s_statusMsg = L"Enter your email first, then click Forgot Password.";
+            s_isError   = true;
+            InvalidateRect(hWnd, NULL, FALSE);
+            return;
+        }
+        if (!s_resetLoading) {
+            s_resetLoading = true;
+            s_statusMsg    = L"Sending password reset email...";
+            s_isError      = false;
+            InvalidateRect(hWnd, NULL, FALSE);
+            char emailA[512] = {};
+            WideCharToMultiByte(CP_UTF8, 0, emailW.c_str(), -1, emailA, 511, NULL, NULL);
+            ResetThreadData* rd = new ResetThreadData();
+            rd->hWnd  = hWnd;
+            rd->email = emailA;
+            _beginthread(PasswordResetThread, 0, rd);
+        }
+        return;
     }
     if (HitRect(x, y, L.privacyX, L.privacyY, L.privacyW, L.privacyH)) {
         ShellExecuteW(NULL, L"open", L"https://rasfocus.com/privacy", NULL, NULL, SW_SHOWNORMAL); return;
+    }
+
+    // ── Google Sign-In Click ──
+    if (HitRect(x, y, L.googleBtnX, L.googleBtnY, L.googleBtnW, L.googleBtnH)) {
+        OpenGoogleSignInPopup(hWnd);
+        return;
     }
 
     if (HitRect(x, y, L.cancelBtnX, L.cancelBtnY, L.cancelBtnW, L.cancelBtnH)) {
