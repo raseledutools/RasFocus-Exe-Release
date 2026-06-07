@@ -1994,17 +1994,21 @@ void DrawBlocksTab(Graphics& g, float contentX, float contentY, float contentW, 
 
             g.FillPath(&brushWhite, listP); g.DrawPath(&penBorder, listP); delete listP;
 
-            SolidBrush opt1Bg(hoverOptAllow ? SClrBgHover : SClrWhite);
-
+            // Option 1: Allow
+            bool opt1Selected = (simpleBlockMode == 0);
+            Color opt1Color = hoverOptAllow ? SClrBgHover : (opt1Selected ? Color(255, 220, 245, 243) : SClrWhite);
+            SolidBrush opt1Bg(opt1Color);
             g.FillRectangle(&opt1Bg, RectF(listRect.X + 2.0f, listY + 2.0f, listRect.Width - 4.0f, 38.0f));
+            SolidBrush opt1Txt(opt1Selected ? SClrTeal : SClrDark);
+            g.DrawString(L"Allow Apps & Web", -1, &fNormal, RectF(listRect.X + 15.0f, listY + 2.0f, listRect.Width, 38.0f), &fmtL, &opt1Txt);
 
-            g.DrawString(L"Allow Apps & Web", -1, &fNormal, RectF(listRect.X + 15.0f, listY + 2.0f, listRect.Width, 38.0f), &fmtL, &brushDark);
-
-            SolidBrush opt2Bg(hoverOptBlock ? SClrBgHover : SClrWhite);
-
+            // Option 2: Block
+            bool opt2Selected = (simpleBlockMode == 1);
+            Color opt2Color = hoverOptBlock ? SClrBgHover : (opt2Selected ? Color(255, 220, 245, 243) : SClrWhite);
+            SolidBrush opt2Bg(opt2Color);
             g.FillRectangle(&opt2Bg, RectF(listRect.X + 2.0f, listY + 40.0f, listRect.Width - 4.0f, 38.0f));
-
-            g.DrawString(L"Block Apps & Web", -1, &fNormal, RectF(listRect.X + 15.0f, listY + 40.0f, listRect.Width, 38.0f), &fmtL, &brushDark);
+            SolidBrush opt2Txt(opt2Selected ? SClrTeal : SClrDark);
+            g.DrawString(L"Block Apps & Web", -1, &fNormal, RectF(listRect.X + 15.0f, listY + 40.0f, listRect.Width, 38.0f), &fmtL, &opt2Txt);
 
         }
 
@@ -3587,4 +3591,19 @@ void ProcessBlocksMouseWheel(float x, float y, int delta) {
 
     }
 
+}
+
+void SetBlockSubTab(int subTab) {
+    currentBlockTab = subTab;
+}
+
+// Dashboard shortcut: sub-tab + specific action একসাথে trigger করা
+// action: 0=শুধু tab change, 1=Add Profile form (Schedule), 2=Allow mode (Simple)
+void SetBlockSubTabWithAction(int subTab, int action) {
+    currentBlockTab = subTab;
+    if (action == 1 && subTab == 1) {
+        TriggerAddNewProfile(); // Schedule → Add Profile form
+    } else if (action == 2 && subTab == 0) {
+        simpleBlockMode = 0;   // Simple → Allow mode
+    }
 }

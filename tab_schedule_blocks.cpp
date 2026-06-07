@@ -1616,3 +1616,20 @@ void ProcessScheduleBlocksMouseWheel(float x, float y, int delta) {
     float totalRows = ceil((float)g_profiles.size() / 2.0f); float maxScroll = (std::max)(0.0f, (totalRows * 215.0f) - (s_ch - 105.0f));
     sch_tScroll = (std::max)(0.0f, (std::min)(sch_tScroll, maxScroll));
 }
+// ─── Dashboard shortcut: সরাসরি "Add New Profile" form খোলা ───────────────
+void TriggerAddNewProfile() {
+    editingProfileIdx = -2;
+    s_activeSubTab = 0;
+    inpProfileName = L""; inpWeb = L""; inpApp = L""; inpKey = L"";
+    tempLockMode = 0;
+    for (int d = 0; d < 7; d++) editDays[d] = false;
+    editStH = 9; editStM = 0; editEnH = 17; editEnM = 0;
+    editBlockInt = false; editBlockUninst = true;
+    s_listScrollT[0] = s_listScrollT[1] = s_listScrollT[2] = 0;
+    s_listScrollC[0] = s_listScrollC[1] = s_listScrollC[2] = 0;
+    FocusProfile np; np.profileName = L""; np.lockMode = 0;
+    g_profiles.push_back(np);
+    editingProfileIdx = (int)g_profiles.size() - 1;
+    activeInput = 1;
+    if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
+}

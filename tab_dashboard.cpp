@@ -6,6 +6,7 @@
 
 #include "tab_dashboard.h"
 #include "browser/mini_browser.h" // 🟢 FIX: লিংকার এরর এড়াতে এটি অবশ্যই থাকতে হবে
+#include "tab_blocks.h"           // SetBlockSubTab এর জন্য
 #include <string>
 #include <vector>
 #include <ctime>
@@ -538,10 +539,22 @@ void ProcessDashboardMouseClick(float x, float y, int& selectedTab) {
     for (int i = 0; i < 4; i++) {
         if (s_actionCards[i].bounds.Contains(x, y)) {
             s_actionCards[i].isHovered = false;
-            if      (i == 0) selectedTab = 1; // Blocks → Simple
-            else if (i == 1) selectedTab = 2; // Adult Block
-            else if (i == 2) selectedTab = 3; // Deep Study
-            else if (i == 3) selectedTab = 1; // Blocks → Allow mode
+            if (i == 0) {
+                // "Create Blocking Profile" → Schedule Blocks + Add Profile form সরাসরি
+                SetBlockSubTabWithAction(1, 1);
+                selectedTab = 1;
+            } else if (i == 1) {
+                // "Advanced Adult Block" → Adult Block sub-tab
+                SetBlockSubTabWithAction(2, 0);
+                selectedTab = 1;
+            } else if (i == 2) {
+                // "Start Deep Study" → Deep Study tab
+                selectedTab = 2;
+            } else if (i == 3) {
+                // "Allow Only Websites & Apps" → Simple Blocks, Allow mode
+                SetBlockSubTabWithAction(0, 2);
+                selectedTab = 1;
+            }
             if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
             return;
         }

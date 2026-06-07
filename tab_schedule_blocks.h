@@ -11,5 +11,6 @@ void ProcessScheduleBlocksMouseClick(float x, float y);
 void ProcessScheduleBlocksKeyPress(wchar_t c);
 void ProcessScheduleBlocksKeyDown(WPARAM key);
 void ProcessScheduleBlocksMouseWheel(float x, float y, int delta);
+void TriggerAddNewProfile(); // Dashboard shortcut: সরাসরি Add Profile form খোলা
 
 #endif // TAB_SCHEDULE_BLOCKS_H
