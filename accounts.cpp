@@ -717,28 +717,85 @@ static void OpenGoogleSignInPopup(HWND hMainWnd) {
     );
     if (!s_googlePopupHwnd) return;
 
-    // WebView2 Controller তৈরি করা — g_sharedEnv ব্যবহার করে
-    HWND popupHwnd = s_googlePopupHwnd; // lambda capture এর জন্য
+    // ✅ FIX: Google এর WebView detection bypass করতে
+    // g_sharedEnv এর বদলে আলাদা environment তৈরি করা
+    // যেখানে AutomationControlled disable এবং proper browser args আছে
+    HWND popupHwnd = s_googlePopupHwnd;
     HWND mainHwnd  = hMainWnd;
 
-    g_sharedEnv->CreateCoreWebView2Controller(
-        s_googlePopupHwnd,
-        Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
-        [popupHwnd, mainHwnd](HRESULT hr, ICoreWebView2Controller* ctl) -> HRESULT {
-            if (FAILED(hr) || !ctl) return S_OK;
+    // আলাদা user data dir Google এর জন্য
+    wchar_t appDataPath[MAX_PATH];
+    SHGetFolderPathW(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, appDataPath);
+    std::wstring googleUdDir = std::wstring(appDataPath) + L"\\RasFocusGoogleAuth";
+    CreateDirectoryW(googleUdDir.c_str(), NULL);
 
-            s_googleController = ctl;
+    auto options = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
+    options->put_AdditionalBrowserArguments(
+        L"--disable-blink-features=AutomationControlled "
+        L"--disable-features=IsolateOrigins,site-per-process "
+        L"--disable-web-security "
+        L"--allow-running-insecure-content"
+    );
+
+    HRESULT hr2 = CreateCoreWebView2EnvironmentWithOptions(
+        nullptr, googleUdDir.c_str(), options.Get(),
+        Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
+        [popupHwnd, mainHwnd](HRESULT hr, ICoreWebView2Environment* env) -> HRESULT {
+            if (FAILED(hr) || !env) {
+                // Fallback: g_sharedEnv ব্যবহার করা
+                if (g_sharedEnv) {
+                    g_sharedEnv->CreateCoreWebView2Controller(popupHwnd,
+                        Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
+                        [popupHwnd, mainHwnd](HRESULT h2, ICoreWebView2Controller* ctl) -> HRESULT {
+                            if (FAILED(h2) || !ctl) return S_OK;
+                            s_googleController = ctl;
+                            ctl->get_CoreWebView2(&s_googleWebView);
+                            RECT rc; GetClientRect(popupHwnd, &rc);
+                            ctl->put_Bounds(rc);
+                            s_googleWebView->Navigate(BuildGoogleOAuthURL().c_str());
+                            return S_OK;
+                        }).Get());
+                }
+                return S_OK;
+            }
+            env->CreateCoreWebView2Controller(popupHwnd,
             ctl->get_CoreWebView2(&s_googleWebView);
 
             // WebView2 size ঠিক করা
             RECT rc; GetClientRect(popupHwnd, &rc);
             ctl->put_Bounds(rc);
 
-            // Settings — address bar hide করা
+            // ✅ FIX: Google এর WebView block bypass করার জন্য
+            // User-Agent কে Chrome এর মতো করা + WebView string সরানো
             ComPtr<ICoreWebView2Settings> settings;
             if (SUCCEEDED(s_googleWebView->get_Settings(&settings)) && settings) {
                 settings->put_IsStatusBarEnabled(FALSE);
+                settings->put_AreDevToolsEnabled(FALSE);
+
+                // Settings2 দিয়ে User-Agent override করা
+                ComPtr<ICoreWebView2Settings2> settings2;
+                if (SUCCEEDED(settings->QueryInterface(IID_PPV_ARGS(&settings2)))) {
+                    // "WebView/" অংশ সরিয়ে pure Chrome UA দেওয়া
+                    settings2->put_UserAgent(
+                        L"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        L"AppleWebKit/537.36 (KHTML, like Gecko) "
+                        L"Chrome/124.0.0.0 Safari/537.36"
+                    );
+                }
             }
+
+            // ✅ FIX: document.createElement override করে
+            // navigator.userAgent থেকেও WebView string মুছে দেওয়া
+            s_googleWebView->AddScriptToExecuteOnDocumentCreated(
+                L"Object.defineProperty(navigator,'userAgent',{get:function(){"
+                L"return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                L"AppleWebKit/537.36 (KHTML, like Gecko) "
+                L"Chrome/124.0.0.0 Safari/537.36';}});"
+                L"Object.defineProperty(navigator,'webdriver',{get:()=>false});"
+                L"window.chrome={runtime:{},loadTimes:function(){},csi:function(){}};"
+                L"Object.defineProperty(navigator,'plugins',{get:()=>[1,2,3,4,5]});"
+                L"Object.defineProperty(navigator,'languages',{get:()=>['en-US','en']});",
+                nullptr);
 
             // Navigation এ URL monitor করা — redirect ধরব
             s_googleWebView->add_NavigationStarting(
