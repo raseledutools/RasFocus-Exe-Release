@@ -759,6 +759,10 @@ static void OpenGoogleSignInPopup(HWND hMainWnd) {
                 return S_OK;
             }
             env->CreateCoreWebView2Controller(popupHwnd,
+            Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
+            [popupHwnd, mainHwnd](HRESULT h, ICoreWebView2Controller* ctl) -> HRESULT {
+            if (FAILED(h) || !ctl) return S_OK;
+            s_googleController = ctl;
             ctl->get_CoreWebView2(&s_googleWebView);
 
             // WebView2 size ঠিক করা
@@ -835,6 +839,8 @@ static void OpenGoogleSignInPopup(HWND hMainWnd) {
 
             // Google OAuth URL এ navigate করা
             s_googleWebView->Navigate(BuildGoogleOAuthURL().c_str());
+            return S_OK;
+            }).Get());
             return S_OK;
         }).Get()
     );
