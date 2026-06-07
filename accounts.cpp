@@ -12,6 +12,7 @@
 #include <process.h>
 #include <wrl.h>
 #include "WebView2.h"
+#include "WebView2EnvironmentOptions.h"
 
 #pragma comment(lib, "wininet.lib")
 
@@ -693,7 +694,7 @@ static void OpenGoogleSignInPopup(HWND hMainWnd) {
         wc.cbSize        = sizeof(wc);
         wc.lpfnWndProc   = GoogleOAuthWndProc;
         wc.hInstance     = GetModuleHandleW(NULL);
-        wc.hCursor       = LoadCursorW(NULL, IDC_ARROW);
+        wc.hCursor       = LoadCursorW(NULL, (LPCWSTR)IDC_ARROW);
         wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
         wc.lpszClassName = L"GoogleOAuthPopup";
         RegisterClassExW(&wc);
@@ -737,8 +738,11 @@ static void OpenGoogleSignInPopup(HWND hMainWnd) {
         L"--allow-running-insecure-content"
     );
 
+    ComPtr<ICoreWebView2EnvironmentOptions> envOptions;
+    options.As(&envOptions);
+
     HRESULT hr2 = CreateCoreWebView2EnvironmentWithOptions(
-        nullptr, googleUdDir.c_str(), options.Get(),
+        nullptr, googleUdDir.c_str(), envOptions.Get(),
         Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
         [popupHwnd, mainHwnd](HRESULT hr, ICoreWebView2Environment* env) -> HRESULT {
             if (FAILED(hr) || !env) {

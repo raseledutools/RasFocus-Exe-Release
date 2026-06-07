@@ -8,7 +8,9 @@
 #include <WebView2.h>
 
 // Global state
-inline bool g_extensionPanelOpen = false;
+// Note: 'inline bool' requires C++17; using static to maintain C++14 compatibility.
+// Each translation unit that includes this header gets its own copy (stub usage only).
+static bool g_extensionPanelOpen = false;
 
 // Draw the extensions panel
 inline void DrawExtensionPanel(
