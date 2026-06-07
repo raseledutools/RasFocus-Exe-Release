@@ -3,6 +3,7 @@
 // TODO: implement DrawSettingsPage, LoadSettings, SaveSettings
 
 #include <windows.h>
+#include <gdiplus.h>
 #include <string>
 
 struct BrowserSettings {
