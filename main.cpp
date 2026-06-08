@@ -1204,10 +1204,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_TIMER: {
         if (wp == 1005) StartSilentUpdateCheck();
 
-        // ── Family Link: Snapshot Listener দিয়ে real-time update হয়, lock check করা ──
-        extern bool g_parentLockAllTabs;
-        if (g_parentLockAllTabs) {
-            LockWorkStation();
+        // ── Family Link: 1-second tick — polling + enforcement ──
+        if (wp == 1001) {
+            ProcessFamilyLinkTimer(wp, hWnd);           // Firebase poll ticker (every 5s)
+            FamilyLink_EnforceParentCommands(hWnd); // apply all parent commands
         }
         break;
     }
@@ -1685,6 +1685,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
     UpdateWindow(hWnd);
     StartSilentUpdateCheck();
     SetTimer(hWnd, 1005, 300000, NULL);
+    SetTimer(hWnd, 1001,   1000, NULL); // Family Link: 1-second enforcement + poll tick
 
     MSG msg;
     while (GetMessage(&msg, NULL, 0, 0)) {

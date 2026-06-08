@@ -21,6 +21,8 @@
 #include "history_panel.h"
 #include "downloads_panel.h"
 #include "extensions.h"
+#include "advanced_feature.h"   // SetupAdvancedFeatures, SaveToHistory, g_downloads
+#include "feature_browser.h"    // DrawFeatureBrowser
 
 #include <windows.h>
 #include <windowsx.h>
@@ -240,6 +242,10 @@ struct TabData {
     bool         loading = false;
     bool         canBack = false;
     bool         canFwd  = false;
+    // Favicon: GDI+ Bitmap (fetched via JavaScript inject)
+    std::shared_ptr<Bitmap> favicon;
+    // Loading spinner frame counter (0-7, incremented via timer)
+    int          loadingFrame = 0;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -255,8 +261,9 @@ struct BrowserWindowData {
     HFONT                hAddrFont    = NULL;
 
     bool hMin = false, hMax = false, hClose = false;
-    bool hPin = false, hDark = false; 
-    bool isPinned = false; 
+    bool hPin = false, hDark = false, hFocus = false;
+    bool isPinned = false;
+    bool isFocusMode = false; // header+tab লুকানো "native app" mode
     bool hBack = false, hFwd = false, hRel = false;
     
     // Right Icons
@@ -383,7 +390,7 @@ bool IsBlockedContent(const std::wstring& text) {
 // GEOMETRY HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 static int CalcTabWidth(int windowW, int tabCount, UINT dpi) {
-    int winBtnArea = WinBtnW(dpi) * 5; 
+    int winBtnArea = WinBtnW(dpi) * 6; 
     int available  = windowW - winBtnArea - LogoW(dpi) - S(D_NEW_TAB_BTN + 16, dpi);
     int w = (tabCount > 0) ? available / tabCount : S(D_TAB_W_MAX, dpi);
     return max(S(D_TAB_W_MIN, dpi), min(S(D_TAB_W_MAX, dpi), w));
@@ -407,6 +414,10 @@ static RECT GetNewTabBtnRect(int windowW, int tabCount, UINT dpi) {
 
 static RECT GetWebViewRect(HWND hWnd) {
     RECT b; GetClientRect(hWnd, &b);
+    // Focus mode: WebView সম্পূর্ণ window নেয়, কোনো header নেই
+    if (g_windows.count(hWnd) && g_windows[hWnd].isFocusMode) {
+        return b; // top = 0, full window
+    }
     b.top += NavTotalH(hWnd);
     return b;
 }
@@ -419,7 +430,7 @@ static void RepositionAddressBar(HWND hWnd) {
     auto& wd = g_windows[hWnd];
     if (!wd.hAddressBar) return;
 
-    if (g_isPureViewerMode || wd.isFullScreen) {
+    if (g_isPureViewerMode || wd.isFullScreen || wd.isFocusMode) {
         ShowWindow(wd.hAddressBar, SW_HIDE);
         return;
     }
@@ -454,6 +465,9 @@ static void RepositionAddressBar(HWND hWnd) {
         CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
     SendMessage(wd.hAddressBar, WM_SETFONT, (WPARAM)wd.hAddrFont, TRUE);
 }
+
+// Forward declarations
+static void ToggleFocusMode(HWND hWnd);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FULLSCREEN TOGGLE
@@ -517,8 +531,11 @@ public:
         if (kind == COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN || kind == COREWEBVIEW2_KEY_EVENT_KIND_SYSTEM_KEY_DOWN) {
             UINT vk; args->get_VirtualKey(&vk);
             if (vk == VK_F11) { ToggleFullScreen(m_hWnd); args->put_Handled(TRUE); }
-            if (vk == VK_ESCAPE && g_windows.count(m_hWnd) && g_windows[m_hWnd].isFullScreen)
-            { ToggleFullScreen(m_hWnd); args->put_Handled(TRUE); }
+            if (vk == VK_ESCAPE && g_windows.count(m_hWnd)) {
+                auto& wdEsc = g_windows[m_hWnd];
+                if (wdEsc.isFocusMode) { ToggleFocusMode(m_hWnd); args->put_Handled(TRUE); }
+                else if (wdEsc.isFullScreen) { ToggleFullScreen(m_hWnd); args->put_Handled(TRUE); }
+            }
         }
         return S_OK;
     }
@@ -628,6 +645,8 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
     if (!g_windows.count(hWnd)) return;
     auto& wd = g_windows[hWnd];
     if (wd.isFullScreen) return;
+    // Focus mode: header ও tab bar draw করার দরকার নেই
+    if (wd.isFocusMode) return;
 
     UINT dpi = GetWndDpi(hWnd);
     RECT cr;  GetClientRect(hWnd, &cr);
@@ -695,6 +714,10 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
             }
 
             // Repaint চালিয়ে যাও animation এর জন্য
+            // spinner frame advance করো সব loading tab এর জন্য
+            for (auto& t : wd.tabs) {
+                if (t.loading) t.loadingFrame = (t.loadingFrame + 1) % 8;
+            }
             InvalidateRect(hWnd, NULL, FALSE);
         }
     }
@@ -731,7 +754,7 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
 
     // Window controls
     {
-        int bx = W - winBtnW * 5; 
+        int bx = W - winBtnW * 6; 
         auto DrawWinBtn = [&](int x, bool hover, bool isClose, const wchar_t* ico) {
             if (hover) {
                 SolidBrush hb(isClose ? Color(255, 232, 17, 35) : (wd.isDarkMode ? Color(50, 255,255,255) : Color(20, 0,0,0)));
@@ -741,11 +764,12 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
             g.DrawString(ico, -1, &fIconSm, RectF((float)x, 0.f, (float)winBtnW, (float)titleH), &sfC, &txtClr);
         };
 
-        DrawWinBtn(bx,               wd.hPin,   false, wd.isPinned ? L"\xE840" : L"\xE718"); 
-        DrawWinBtn(bx + winBtnW,     wd.hDark,  false, wd.isDarkMode ? L"\xE708" : L"\xE706"); 
-        DrawWinBtn(bx + winBtnW * 2, wd.hMin,   false, L"\xE921");
-        DrawWinBtn(bx + winBtnW * 3, wd.hMax,   false, IsZoomed(hWnd) ? L"\xE923" : L"\xE922");
-        DrawWinBtn(bx + winBtnW * 4, wd.hClose, true,  L"\xE8BB");
+        DrawWinBtn(bx,               wd.hFocus, false, wd.isFocusMode ? L"\xE7B8" : L"\xE7C8"); // Focus/Native App mode
+        DrawWinBtn(bx + winBtnW,     wd.hPin,   false, wd.isPinned ? L"\xE840" : L"\xE718"); 
+        DrawWinBtn(bx + winBtnW * 2, wd.hDark,  false, wd.isDarkMode ? L"\xE708" : L"\xE706"); 
+        DrawWinBtn(bx + winBtnW * 3, wd.hMin,   false, L"\xE921");
+        DrawWinBtn(bx + winBtnW * 4, wd.hMax,   false, IsZoomed(hWnd) ? L"\xE923" : L"\xE922");
+        DrawWinBtn(bx + winBtnW * 5, wd.hClose, true,  L"\xE8BB");
     }
 
     if (!g_isPureViewerMode) {
@@ -772,10 +796,40 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
                 float iconSz = Sf(14.f, dpi);
                 float iconX  = tx + Sf((float)D_TAB_PAD + 4, dpi);
                 float iconY  = ty + (th - iconSz) * 0.5f;
-                SolidBrush fvBrush(isActive ? Color(255,12,168,176) : cTxtDim);
-                g.FillEllipse(&fvBrush, iconX, iconY, iconSz, iconSz); 
 
                 const auto& tab = wd.tabs[i];
+
+                if (tab.loading) {
+                    // ── Spinning dots loading animation ──
+                    int frame = tab.loadingFrame % 8;
+                    float cx = iconX + iconSz * 0.5f;
+                    float cy = iconY + iconSz * 0.5f;
+                    float r  = iconSz * 0.42f;
+                    for (int d = 0; d < 8; d++) {
+                        float angle = (float)d * 3.14159f / 4.0f;
+                        float dx = cx + r * cosf(angle) - 1.5f;
+                        float dy = cy + r * sinf(angle) - 1.5f;
+                        // dot brightness: leading dot = full, trailing = faded
+                        int dist = (d - frame + 8) % 8;
+                        int alpha = 255 - dist * 28;
+                        if (alpha < 40) alpha = 40;
+                        SolidBrush dotBrush(Color(alpha, 12, 168, 176));
+                        g.FillEllipse(&dotBrush, dx, dy, 2.5f, 2.5f);
+                    }
+                } else if (tab.favicon && tab.url != L"LOCAL_NTP" && tab.url != L"about:blank" 
+                           && tab.url.find(L"blocked by rasfocus") == std::wstring::npos) {
+                    // ── Real favicon image ──
+                    g.DrawImage(tab.favicon.get(),
+                        RectF(iconX, iconY, iconSz, iconSz),
+                        0.f, 0.f,
+                        (float)tab.favicon->GetWidth(),
+                        (float)tab.favicon->GetHeight(),
+                        UnitPixel);
+                } else {
+                    // ── Fallback: teal dot ──
+                    SolidBrush fvBrush(isActive ? Color(255,12,168,176) : Color(180,12,168,176));
+                    g.FillEllipse(&fvBrush, iconX, iconY, iconSz, iconSz);
+                }
                 SolidBrush tBrush(isActive ? cTxtPrim : cTxtDim);
                 float titleX = iconX + iconSz + Sf(6.f, dpi);
                 float closeW = Sf(24.f, dpi);
@@ -1071,7 +1125,24 @@ static void CloseTab(HWND, int);
 static void CreateWebViewForTab(HWND, int);
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TAB MANAGEMENT
+// FOCUS MODE TOGGLE  (header + tab bar লুকায়, native app feel)
+// ─────────────────────────────────────────────────────────────────────────────
+static void ToggleFocusMode(HWND hWnd) {
+    if (!g_windows.count(hWnd)) return;
+    auto& wd = g_windows[hWnd];
+    wd.isFocusMode = !wd.isFocusMode;
+
+    // Address bar hide/show
+    ShowWindow(wd.hAddressBar, wd.isFocusMode ? SW_HIDE : SW_SHOW);
+
+    // WebView কে সব জায়গা দাও যদি focus mode চালু থাকে
+    RECT wvr = GetWebViewRect(hWnd);
+    for (auto& tab : wd.tabs)
+        if (tab.controller) tab.controller->put_Bounds(wvr);
+
+    InvalidateRect(hWnd, NULL, TRUE);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 static void SwitchToTab(HWND hWnd, int idx) {
     auto& wd = g_windows[hWnd];
@@ -1160,6 +1231,9 @@ public:
         tab.controller = ctl;
         ctl->get_CoreWebView2(&tab.webview);
 
+        // ── Advanced Features: Download Manager, Custom Context Menu, Privacy Shield ──
+        SetupAdvancedFeatures(m_hWnd, tab.webview);
+
         ComPtr<ICoreWebView2Controller2> ctl2;
         if (SUCCEEDED(ctl->QueryInterface(IID_PPV_ARGS(&ctl2)))) {
             COREWEBVIEW2_COLOR bg = wd.isDarkMode
@@ -1178,44 +1252,126 @@ public:
 
             ComPtr<ICoreWebView2Settings2> s2;
             if (SUCCEEDED(settings->QueryInterface(IID_PPV_ARGS(&s2)))) {
+                // Latest Chrome UA — ChatGPT/OpenAI older UA কে suspicious মনে করে
                 s2->put_UserAgent(
                     L"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                     L"AppleWebKit/537.36 (KHTML, like Gecko) "
-                    L"Chrome/124.0.0.0 Safari/537.36");
+                    L"Chrome/136.0.0.0 Safari/537.36");
             }
         }
 
-        // ── Google Sign-in Fix: Full Anti-Automation Detection Bypass ──
+        // ── Full Anti-Bot Detection Bypass (Google + ChatGPT + OpenAI compatible) ──
         tab.webview->AddScriptToExecuteOnDocumentCreated(
-            // 1. webdriver flag remove
-            L"Object.defineProperty(navigator, 'webdriver', {get: () => undefined});"
-            // 2. chrome runtime simulate (Google checks this)
-            L"window.chrome = {"
-            L"  app: { isInstalled: false, InstallState: { DISABLED:'disabled',INSTALLED:'installed',NOT_INSTALLED:'not_installed' }, RunningState: { CANNOT_RUN:'cannot_run',READY_TO_RUN:'ready_to_run',RUNNING:'running' } },"
-            L"  csi: function(){return {};},"
-            L"  loadTimes: function(){return {};},"
-            L"  runtime: { OnInstalledReason: {}, OnRestartRequiredReason: {}, PlatformArch: {}, PlatformNaclArch: {}, PlatformOs: {}, RequestUpdateCheckStatus: {} }"
-            L"};"
-            // 3. permissions API patch (Google checks navigator.permissions)
-            L"const origQuery = window.navigator.permissions.query;"
-            L"window.navigator.permissions.query = (parameters) => ("
-            L"  parameters.name === 'notifications' ?"
-            L"  Promise.resolve({ state: Notification.permission }) :"
-            L"  origQuery(parameters)"
-            L");"
-            // 4. plugins simulate real browser
-            L"Object.defineProperty(navigator, 'plugins', { get: () => [1,2,3,4,5] });"
-            L"Object.defineProperty(navigator, 'languages', { get: () => ['en-US','en'] });"
-            // 5. platform spoof
-            L"Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });",
+            // ── 1. webdriver flag — most important ──
+            L"(() => {"
+            L"  try { Object.defineProperty(navigator, 'webdriver', { get: () => undefined, configurable: true }); } catch(e){}"
+
+            // ── 2. chrome object — ChatGPT checks window.chrome deeply ──
+            L"  if (!window.chrome) {"
+            L"    window.chrome = {"
+            L"      app: { isInstalled: false },"
+            L"      csi: function(){ return {}; },"
+            L"      loadTimes: function(){ return {}; },"
+            L"      runtime: {},"
+            L"      webstore: {}"
+            L"    };"
+            L"  }"
+
+            // ── 3. permissions API — ChatGPT uses this for microphone/notifications ──
+            L"  const origQuery = window.navigator.permissions && window.navigator.permissions.query ? window.navigator.permissions.query.bind(window.navigator.permissions) : null;"
+            L"  if (origQuery) {"
+            L"    Object.defineProperty(window.navigator.permissions, 'query', {"
+            L"      value: (p) => p.name === 'notifications' ? Promise.resolve({state: Notification.permission}) : origQuery(p),"
+            L"      configurable: true"
+            L"    });"
+            L"  }"
+
+            // ── 4. plugins — empty plugins = automation flag ──
+            L"  try { Object.defineProperty(navigator, 'plugins', { get: () => { const a = [1,2,3,4,5]; a.item = i => a[i]; a.namedItem = () => null; a.refresh = () => {}; return a; }, configurable: true }); } catch(e){}"
+
+            // ── 5. languages ──
+            L"  try { Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'], configurable: true }); } catch(e){}"
+
+            // ── 6. platform ──
+            L"  try { Object.defineProperty(navigator, 'platform', { get: () => 'Win32', configurable: true }); } catch(e){}"
+
+            // ── 7. hardwareConcurrency — 0 = bot flag ──
+            L"  try { Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8, configurable: true }); } catch(e){}"
+
+            // ── 8. deviceMemory — ChatGPT checks this ──
+            L"  try { Object.defineProperty(navigator, 'deviceMemory', { get: () => 8, configurable: true }); } catch(e){}"
+
+            // ── 9. connection — WebView2 lacks this, ChatGPT checks it ──
+            L"  try { if (!navigator.connection) { Object.defineProperty(navigator, 'connection', { get: () => ({ effectiveType: '4g', rtt: 50, downlink: 10, saveData: false }), configurable: true }); } } catch(e){}"
+
+            // ── 10. vendor — should be 'Google Inc.' for Chrome ──
+            L"  try { Object.defineProperty(navigator, 'vendor', { get: () => 'Google Inc.', configurable: true }); } catch(e){}"
+
+            // ── 11. maxTouchPoints — 0 on desktop is OK but some checks look for it ──
+            L"  try { Object.defineProperty(navigator, 'maxTouchPoints', { get: () => 1, configurable: true }); } catch(e){}"
+
+            // ── 12. WebGL fingerprint — some anti-bot checks this ──
+            L"  try {"
+            L"    const origGetParam = WebGLRenderingContext.prototype.getParameter;"
+            L"    WebGLRenderingContext.prototype.getParameter = function(p) {"
+            L"      if (p === 37445) return 'Intel Inc.';"
+            L"      if (p === 37446) return 'Intel Iris OpenGL Engine';"
+            L"      return origGetParam.call(this, p);"
+            L"    };"
+            L"  } catch(e){}"
+
+            // ── 13. Remove WebView2-specific properties from window ──
+            L"  try { delete window.chrome.webview; } catch(e){}"
+
+            // ── 14. Notification permission — ChatGPT checks this on load ──
+            L"  try { if (Notification && Notification.permission === 'default') {} } catch(e){}"
+
+            // ── 15. window.open — Google OAuth uses this for popup flow ──
+            L"  const _origOpen = window.open;"
+            L"  window.open = function(url, target, features) {"
+            L"    if (url && (url.includes('accounts.google.com') || url.includes('google.com/o/oauth'))) {"
+            L"      return _origOpen.call(this, url, '_blank', features);"
+            L"    }"
+            L"    return _origOpen.call(this, url, target, features);"
+            L"  };"
+
+            // ── 16. localStorage / sessionStorage — কিছু auth flow এ দরকার ──
+            L"  try { window.localStorage.setItem('__test__', '1'); window.localStorage.removeItem('__test__'); } catch(e){}"
+
+            // ── 17. Credential Management API — Google One-tap এ দরকার ──
+            L"  if (!navigator.credentials) {"
+            L"    Object.defineProperty(navigator, 'credentials', {"
+            L"      get: () => ({ get: () => Promise.resolve(null), store: () => Promise.resolve(), create: () => Promise.resolve(null) }),"
+            L"      configurable: true"
+            L"    });"
+            L"  }"
+
+            L"})();",
             nullptr);
 
         tab.webview->add_NavigationStarting(
             Callback<ICoreWebView2NavigationStartingEventHandler>(
-            [this](ICoreWebView2*, ICoreWebView2NavigationStartingEventArgs* args) -> HRESULT {
+            [this](ICoreWebView2* sender, ICoreWebView2NavigationStartingEventArgs* args) -> HRESULT {
                 LPWSTR uri = nullptr; args->get_Uri(&uri);
                 if (uri) {
                     std::wstring urlStr(uri);
+
+                    // ── ChatGPT/OpenAI এর জন্য extra headers inject করো ──
+                    bool isChatGPT = (urlStr.find(L"chatgpt.com") != std::wstring::npos ||
+                                      urlStr.find(L"openai.com")  != std::wstring::npos);
+                    if (isChatGPT) {
+                        // Sec-Fetch headers যোগ করো — real browser এর মতো
+                        ComPtr<ICoreWebView2HttpRequestHeaders> headers;
+                        if (SUCCEEDED(args->get_RequestHeaders(&headers)) && headers) {
+                            headers->SetHeader(L"Sec-Fetch-Mode",    L"navigate");
+                            headers->SetHeader(L"Sec-Fetch-Site",    L"none");
+                            headers->SetHeader(L"Sec-Fetch-User",    L"?1");
+                            headers->SetHeader(L"Sec-Fetch-Dest",    L"document");
+                            headers->SetHeader(L"Accept-Language",   L"en-US,en;q=0.9");
+                            headers->SetHeader(L"Upgrade-Insecure-Requests", L"1");
+                        }
+                    }
+
                     if (IsBlockedContent(urlStr)) {
                         args->put_Cancel(TRUE);
                         if (g_windows.count(m_hWnd)) {
@@ -1234,6 +1390,8 @@ public:
                             auto& w = g_windows[m_hWnd];
                             if (m_tabIdx >= 0 && m_tabIdx < (int)w.tabs.size()) {
                                 w.tabs[m_tabIdx].loading = true;
+                                w.tabs[m_tabIdx].favicon = nullptr; // পুরনো favicon সরিয়ে দাও
+                                w.tabs[m_tabIdx].loadingFrame = 0;
                                 InvalidateRect(m_hWnd, NULL, FALSE);
                             }
                         }
@@ -1245,7 +1403,36 @@ public:
 
         tab.webview->add_NewWindowRequested(
             Callback<ICoreWebView2NewWindowRequestedEventHandler>(
-            [](ICoreWebView2*, ICoreWebView2NewWindowRequestedEventArgs*) -> HRESULT {
+            [this](ICoreWebView2* sender, ICoreWebView2NewWindowRequestedEventArgs* args) -> HRESULT {
+                // Google OAuth, "Sign in with Google" এবং যেকোনো popup window handle করো
+                LPWSTR uri = nullptr;
+                args->get_Uri(&uri);
+                std::wstring popupUrl = uri ? uri : L"";
+                if (uri) CoTaskMemFree(uri);
+
+                BOOL isUserInitiated = FALSE;
+                args->get_IsUserInitiated(&isUserInitiated);
+
+                // Google OAuth / SSO popup — accounts.google.com বা auth endpoint
+                bool isGoogleAuth = (
+                    popupUrl.find(L"accounts.google.com") != std::wstring::npos ||
+                    popupUrl.find(L"google.com/o/oauth")  != std::wstring::npos ||
+                    popupUrl.find(L"auth.openai.com")     != std::wstring::npos ||
+                    popupUrl.find(L"login.microsoftonline")!= std::wstring::npos ||
+                    popupUrl.find(L"appleid.apple.com")   != std::wstring::npos ||
+                    popupUrl.find(L"github.com/login")    != std::wstring::npos ||
+                    popupUrl.find(L"facebook.com/login")  != std::wstring::npos
+                );
+
+                if (isGoogleAuth || isUserInitiated) {
+                    // নতুন tab এ খোলো
+                    AddTab(m_hWnd, popupUrl);
+                    args->put_Handled(TRUE);
+                } else if (!popupUrl.empty()) {
+                    // অন্য popup — নতুন tab এ খোলো
+                    AddTab(m_hWnd, popupUrl);
+                    args->put_Handled(TRUE);
+                }
                 return S_OK;
             }).Get(), nullptr);
 
@@ -1276,6 +1463,9 @@ public:
                     std::wstring urlStr(src);
                     w.tabs[m_tabIdx].url = urlStr;
                     
+                    // ── History Auto-save ──
+                    SaveToHistory(urlStr, w.tabs[m_tabIdx].title);
+
                     if (w.hAddressBar) {
                         if (urlStr == L"LOCAL_NTP" || urlStr == L"about:blank" ||
                             urlStr.find(L"blocked by rasfocus") != std::wstring::npos) {
@@ -1304,7 +1494,132 @@ public:
 
                 // ── Loading শেষ ──
                 w.tabs[m_tabIdx].loading = false;
+
+                // ── Favicon fetch via JS ──
+                // favicon কে base64 data URL হিসেবে নিয়ে আসি
+                {
+                    int captureIdx = m_tabIdx;
+                    HWND captureWnd = m_hWnd;
+                    sender->ExecuteScript(
+                        L"(() => {"
+                        L"  const link = document.querySelector(\"link[rel*='icon']\");"
+                        L"  const href = link ? link.href : (location.origin + '/favicon.ico');"
+                        L"  return new Promise(resolve => {"
+                        L"    const img = new Image();"
+                        L"    img.crossOrigin = 'anonymous';"
+                        L"    img.onload = () => {"
+                        L"      const c = document.createElement('canvas');"
+                        L"      c.width = c.height = 32;"
+                        L"      const ctx = c.getContext('2d');"
+                        L"      ctx.drawImage(img, 0, 0, 32, 32);"
+                        L"      resolve(c.toDataURL('image/png'));"
+                        L"    };"
+                        L"    img.onerror = () => resolve('');"
+                        L"    img.src = href;"
+                        L"  });"
+                        L"})()",
+                        Callback<ICoreWebView2ExecuteScriptCompletedHandler>(
+                        [captureIdx, captureWnd](HRESULT, LPCWSTR resultJson) -> HRESULT {
+                            if (!resultJson || !g_windows.count(captureWnd)) return S_OK;
+                            auto& w2 = g_windows[captureWnd];
+                            if (captureIdx >= (int)w2.tabs.size()) return S_OK;
+
+                            // resultJson = "\"data:image/png;base64,AAAA...\""
+                            std::wstring s(resultJson);
+                            // strip leading/trailing quotes
+                            if (s.size() >= 2 && s.front() == L'"') {
+                                s = s.substr(1, s.size() - 2);
+                                // unescape \\/ etc.
+                                std::wstring clean;
+                                for (size_t k = 0; k < s.size(); k++) {
+                                    if (s[k] == L'\\' && k + 1 < s.size()) { clean += s[k+1]; k++; }
+                                    else clean += s[k];
+                                }
+                                s = clean;
+                            }
+                            // data:image/png;base64, prefix কাটো
+                            const std::wstring prefix = L"data:image/png;base64,";
+                            if (s.find(prefix) != 0) return S_OK;
+                            std::wstring b64w = s.substr(prefix.size());
+
+                            // wstring → narrow string
+                            std::string b64(b64w.begin(), b64w.end());
+
+                            // Base64 decode
+                            auto decodeB64 = [](const std::string& in) -> std::vector<BYTE> {
+                                static const std::string tbl =
+                                    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+                                std::vector<BYTE> out;
+                                int val = 0, valb = -8;
+                                for (unsigned char c : in) {
+                                    if (c == '=') break;
+                                    int pos = (int)tbl.find(c);
+                                    if (pos == (int)std::string::npos) continue;
+                                    val = (val << 6) + pos;
+                                    valb += 6;
+                                    if (valb >= 0) {
+                                        out.push_back((BYTE)((val >> valb) & 0xFF));
+                                        valb -= 8;
+                                    }
+                                }
+                                return out;
+                            };
+                            std::vector<BYTE> pngBytes = decodeB64(b64);
+                            if (pngBytes.empty()) return S_OK;
+
+                            // PNG bytes → GDI+ Bitmap (IStream দিয়ে)
+                            HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, pngBytes.size());
+                            if (!hMem) return S_OK;
+                            void* pMem = GlobalLock(hMem);
+                            if (!pMem) { GlobalFree(hMem); return S_OK; }
+                            memcpy(pMem, pngBytes.data(), pngBytes.size());
+                            GlobalUnlock(hMem);
+
+                            IStream* pStream = nullptr;
+                            if (SUCCEEDED(CreateStreamOnHGlobal(hMem, TRUE, &pStream)) && pStream) {
+                                auto bmp = std::make_shared<Bitmap>(pStream);
+                                pStream->Release();
+                                if (bmp && bmp->GetLastStatus() == Ok) {
+                                    w2.tabs[captureIdx].favicon = bmp;
+                                    InvalidateRect(captureWnd, NULL, FALSE);
+                                }
+                            }
+                            return S_OK;
+                        }).Get()
+                    );
+                }
+
                 InvalidateRect(m_hWnd, NULL, FALSE);
+
+                // ── ChatGPT / OpenAI post-load bot-check bypass ──
+                {
+                    const std::wstring& curUrl = w.tabs[m_tabIdx].url;
+                    bool isChatGPT = (curUrl.find(L"chatgpt.com") != std::wstring::npos ||
+                                      curUrl.find(L"openai.com")  != std::wstring::npos);
+                    if (isChatGPT) {
+                        sender->ExecuteScript(
+                            L"(() => {"
+                            // webdriver আবার remove করো (some SPAs re-check on route change)
+                            L"  try { Object.defineProperty(navigator, 'webdriver', { get: () => undefined, configurable: true }); } catch(e){}"
+                            // chrome object reinforce করো
+                            L"  if (!window.chrome || !window.chrome.runtime) {"
+                            L"    window.chrome = { app:{isInstalled:false}, csi:()=>({}), loadTimes:()=>({}), runtime:{}, webstore:{} };"
+                            L"  }"
+                            // vendor
+                            L"  try { Object.defineProperty(navigator, 'vendor', { get: () => 'Google Inc.', configurable: true }); } catch(e){}"
+                            // hardwareConcurrency
+                            L"  try { Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8, configurable: true }); } catch(e){}"
+                            // deviceMemory
+                            L"  try { Object.defineProperty(navigator, 'deviceMemory', { get: () => 8, configurable: true }); } catch(e){}"
+                            // connection
+                            L"  try { if (!navigator.connection) Object.defineProperty(navigator, 'connection', { get: () => ({effectiveType:'4g',rtt:50,downlink:10,saveData:false}), configurable: true }); } catch(e){}"
+                            // WebView2 specific flag remove
+                            L"  try { delete window.__WebView2__; } catch(e){}"
+                            L"  try { delete window.chrome.webview; } catch(e){}"
+                            L"})();",
+                            nullptr);
+                    }
+                }
 
                 // ── AI Inject Script (platform-specific UI hiding) ──
                 std::wstring injectScript = GetAiInjectScript(w.tabs[m_tabIdx].url);
@@ -1527,11 +1842,23 @@ static void CreateWebViewForTab(HWND hWnd, int tabIdx) {
     } else {
         auto options = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
         options->put_AdditionalBrowserArguments(
+            // Extension support
             L"--enable-features=msWebView2EnableExtensions "
+            // GPU
             L"--enable-gpu-rasterization "
             L"--enable-zero-copy "
+            // Bot detection bypass — সবচেয়ে গুরুত্বপূর্ণ
+            L"--disable-blink-features=AutomationControlled "
+            // Google Sign-in এর জন্য — third-party cookie দরকার
+            L"--disable-features=SameSiteByDefaultCookies,CookiesWithoutSameSiteMustBeSecure "
+            // Google OAuth popup এর জন্য
+            L"--disable-features=BlockInsecurePrivateNetworkRequests "
+            // General compatibility
             L"--disable-features=Translate "
-            L"--disable-blink-features=AutomationControlled"
+            L"--no-first-run "
+            L"--no-default-browser-check "
+            // Web Audio API — কিছু site sign-in verify তে ব্যবহার করে
+            L"--autoplay-policy=no-user-gesture-required"
         );
 
         wchar_t appDataPath[MAX_PATH];
@@ -1589,7 +1916,7 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                 if (pt.x >= cr.right - border)  return HTRIGHT;
 
                 if (g_isPureViewerMode) {
-                    int winBtnX = cr.right - WinBtnW(dpi) * 5; 
+                    int winBtnX = cr.right - WinBtnW(dpi) * 6; 
                     if (pt.y < TitleBarH(dpi)) {
                         if (pt.x >= winBtnX) return HTCLIENT; 
                         return HTCAPTION; 
@@ -1598,7 +1925,7 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                 }
 
                 if (pt.y < TitleBarH(dpi)) {
-                    int winBtnX = cr.right - WinBtnW(dpi) * 5; 
+                    int winBtnX = cr.right - WinBtnW(dpi) * 6; 
                     if (pt.x >= winBtnX) return HTCLIENT; 
                     
                     bool onTab = false;
@@ -1711,14 +2038,15 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
         int toolY   = titleH;
 
         {
-            int bx = W - winBtnW * 5; 
-            bool p  = (y < titleH && x >= bx             && x < bx + winBtnW);
-            bool dk = (y < titleH && x >= bx + winBtnW   && x < bx + winBtnW*2);
-            bool nm = (y < titleH && x >= bx + winBtnW*2 && x < bx + winBtnW*3);
-            bool mx = (y < titleH && x >= bx + winBtnW*3 && x < bx + winBtnW*4);
-            bool cl = (y < titleH && x >= bx + winBtnW*4);
-            if (wd.hPin!=p||wd.hDark!=dk||wd.hMin!=nm||wd.hMax!=mx||wd.hClose!=cl)
-                { wd.hPin=p; wd.hDark=dk; wd.hMin=nm; wd.hMax=mx; wd.hClose=cl; dirty=true; }
+            int bx = W - winBtnW * 6; 
+            bool fc = (y < titleH && x >= bx             && x < bx + winBtnW);
+            bool p  = (y < titleH && x >= bx + winBtnW   && x < bx + winBtnW*2);
+            bool dk = (y < titleH && x >= bx + winBtnW*2 && x < bx + winBtnW*3);
+            bool nm = (y < titleH && x >= bx + winBtnW*3 && x < bx + winBtnW*4);
+            bool mx = (y < titleH && x >= bx + winBtnW*4 && x < bx + winBtnW*5);
+            bool cl = (y < titleH && x >= bx + winBtnW*5);
+            if (wd.hFocus!=fc||wd.hPin!=p||wd.hDark!=dk||wd.hMin!=nm||wd.hMax!=mx||wd.hClose!=cl)
+                { wd.hFocus=fc; wd.hPin=p; wd.hDark=dk; wd.hMin=nm; wd.hMax=mx; wd.hClose=cl; dirty=true; }
         }
 
         if (!g_isPureViewerMode) {
@@ -1793,6 +2121,20 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
             InvalidateRect(hWnd, &r, FALSE);
             if (wd.isMenuOpen) InvalidateRect(hWnd, NULL, FALSE);
         }
+
+        // ── Panel hover updates (panels need full redraw on mouse move) ──
+        if (g_bookmarkPanelOpen || g_historyPanelOpen || g_downloadsPanelOpen ||
+            g_findBarOpen || g_contextMenuOpen || g_extensionPanelOpen) {
+            // Update hover indices for panels that use them
+            if (g_historyPanelOpen) {
+                // history_panel tracks hover internally via mouseX/mouseY passed in Draw
+                InvalidateRect(hWnd, NULL, FALSE);
+            }
+            if (g_bookmarkPanelOpen || g_downloadsPanelOpen ||
+                g_contextMenuOpen   || g_extensionPanelOpen) {
+                InvalidateRect(hWnd, NULL, FALSE);
+            }
+        }
         break;
     }
 
@@ -1801,7 +2143,7 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
             auto& wd = g_windows[hWnd];
             wd.hMin=wd.hMax=wd.hClose=false;
             wd.hBack=wd.hFwd=wd.hRel=false;
-            wd.hPin=wd.hDark=wd.hProfile=wd.hExt=wd.hMenu=false;
+            wd.hPin=wd.hDark=wd.hFocus=wd.hProfile=wd.hExt=wd.hMenu=false;
             wd.hNewTab=false; wd.hoverTabIndex=-1;
             RECT cr; GetClientRect(hWnd, &cr);
             cr.bottom = NavTotalH(hWnd);
@@ -1822,6 +2164,74 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
         if (wd.hMin)   { ShowWindow(hWnd, SW_MINIMIZE); break; }
         if (wd.hMax)   { ShowWindow(hWnd, IsZoomed(hWnd) ? SW_RESTORE : SW_MAXIMIZE); break; }
         if (wd.hClose) { DestroyWindow(hWnd); break; }
+
+        // ── Context Menu Click ──
+        if (g_contextMenuOpen) {
+            std::wstring action = HandleContextMenuClick(x, y, (int)dpi);
+            CloseContextMenu();
+            if (!action.empty() && action != L"" && wd.active()) {
+                if      (action == L"back"    && wd.active()->webview && wd.active()->canBack) wd.active()->webview->GoBack();
+                else if (action == L"forward" && wd.active()->webview && wd.active()->canFwd)  wd.active()->webview->GoForward();
+                else if (action == L"reload"  && wd.active()->webview) wd.active()->webview->Reload();
+                else if (action == L"open_new_tab" && wd.active()) AddTab(hWnd, wd.active()->url);
+            }
+            InvalidateRect(hWnd, NULL, FALSE);
+            return 0;
+        }
+
+        // ── Find Bar Click ──
+        if (g_findBarOpen) {
+            bool closed = HandleFindBarClick(x, y, W, H, (int)dpi);
+            if (closed) { CloseFindBar(); InvalidateRect(hWnd, NULL, FALSE); return 0; }
+        }
+
+        // ── Bookmark Panel Click ──
+        if (g_bookmarkPanelOpen) {
+            std::wstring navUrl;
+            int removeIdx = -1;
+            bool hit = HandleBookmarkPanelClick(x, y, W, H, TitleBarH(dpi), ToolbarH(dpi), (int)dpi, navUrl, removeIdx);
+            if (removeIdx >= 0) {
+                RemoveBookmark(removeIdx);
+                InvalidateRect(hWnd, NULL, FALSE);
+                return 0;
+            }
+            if (!navUrl.empty()) {
+                g_bookmarkPanelOpen = false;
+                if (wd.active() && wd.active()->webview) wd.active()->webview->Navigate(navUrl.c_str());
+                InvalidateRect(hWnd, NULL, FALSE);
+                return 0;
+            }
+            if (hit) return 0; // click was inside panel but no action
+        }
+
+        // ── History Panel Click ──
+        if (g_historyPanelOpen) {
+            std::wstring navUrl = HandleHistoryPanelClick(x, y, W, H, TitleBarH(dpi), ToolbarH(dpi), (int)dpi);
+            if (!navUrl.empty()) {
+                g_historyPanelOpen = false;
+                if (wd.active() && wd.active()->webview) wd.active()->webview->Navigate(navUrl.c_str());
+                InvalidateRect(hWnd, NULL, FALSE);
+                return 0;
+            }
+        }
+
+        // ── Downloads Panel Click ──
+        if (g_downloadsPanelOpen) {
+            std::wstring action = HandleDownloadsPanelClick(x, y, W, H, TitleBarH(dpi), ToolbarH(dpi), (int)dpi);
+            if (action == L"clear_all") {
+                ClearCompletedDownloads();
+                InvalidateRect(hWnd, NULL, FALSE);
+                return 0;
+            } else if (action.substr(0, 10) == L"open_file:") {
+                std::wstring path = action.substr(10);
+                ShellExecuteW(NULL, L"open", path.c_str(), NULL, NULL, SW_SHOWNORMAL);
+                return 0;
+            } else if (action.substr(0, 12) == L"open_folder:") {
+                std::wstring path = action.substr(12);
+                ShellExecuteW(NULL, L"explore", path.c_str(), NULL, NULL, SW_SHOWNORMAL);
+                return 0;
+            }
+        }
 
         // ── Extension Panel Click ──
         if (g_extensionPanelOpen) {
@@ -1974,6 +2384,10 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
             }
         }
 
+        if (wd.hFocus) {
+            ToggleFocusMode(hWnd);
+        }
+
         if (wd.hPin) { 
             wd.isPinned = !wd.isPinned;
             SetWindowPos(hWnd, wd.isPinned ? HWND_TOPMOST : HWND_NOTOPMOST,
@@ -2020,8 +2434,8 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
     case WM_GETMINMAXINFO: {
         UINT dpi = GetWndDpi(hWnd);
         auto* mm = (LPMINMAXINFO)lParam;
-        mm->ptMinTrackSize.x = S(640, dpi);
-        mm->ptMinTrackSize.y = S(480, dpi);
+        mm->ptMinTrackSize.x = S(380, dpi);
+        mm->ptMinTrackSize.y = S(260, dpi);
 
         HMONITOR hMonitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
         MONITORINFO mi = { sizeof(mi) };
@@ -2051,6 +2465,11 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
         }
 
         if (wParam == VK_ESCAPE) {
+            // Focus mode বন্ধ করো সবার আগে
+            if (g_windows.count(hWnd) && g_windows[hWnd].isFocusMode) {
+                ToggleFocusMode(hWnd);
+                return 0;
+            }
             // সব panel বন্ধ করো
             bool any = g_bookmarkPanelOpen || g_historyPanelOpen ||
                        g_downloadsPanelOpen || g_findBarOpen ||
@@ -2176,8 +2595,12 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
     }
 
     case WM_MOUSEWHEEL: {
+        int delta = GET_WHEEL_DELTA_WPARAM(wParam) > 0 ? -3 : 3;
         if (g_historyPanelOpen) {
-            HandleHistoryScroll(GET_WHEEL_DELTA_WPARAM(wParam) > 0 ? -3 : 3);
+            HandleHistoryScroll(delta);
+            InvalidateRect(hWnd, NULL, FALSE);
+        } else if (g_bookmarkPanelOpen || g_downloadsPanelOpen) {
+            // panels handle their own scroll via redraw
             InvalidateRect(hWnd, NULL, FALSE);
         }
         break;
