@@ -14,14 +14,20 @@
 #include <string>
 #include <vector>
 #include <sstream>
+#include <fstream>
+#include <codecvt>
+#include <locale>
 #include <thread>
 #include <atomic>
 #include <algorithm>
+// winsock2.h MUST come before windows.h to avoid winsock/winsock2 redefinition errors
+#define WIN32_LEAN_AND_MEAN
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <iphlpapi.h>
 #include <windows.h>
 #include <tlhelp32.h>
 #include <powrprof.h>
-#include <winsock2.h>
-#include <iphlpapi.h>
 #include <uiautomation.h>
 #include <comdef.h>
 #pragma comment(lib, "PowrProf.lib")
@@ -786,7 +792,7 @@ void FamilyLink_EnforceParentCommands(HWND hWnd) {
 // ════════════════════════════════════════════════════════════════════
 static void DrawFieldLabel(Graphics& g, FontFamily& ff, float x, float y, float w,
                            const wchar_t* text) {
-    Font fLabel(&ff, 11, FontStyleBold, UnitPixel);
+    Gdiplus::Gdiplus::Font fLabel(&ff, 11, FontStyleBold, UnitPixel);
     StringFormat fmtL;
     fmtL.SetAlignment(StringAlignmentNear);
     fmtL.SetLineAlignment(StringAlignmentCenter);
@@ -831,7 +837,7 @@ static void DrawInputBox(Graphics& g, FontFamily& ff, float x, float y, float w,
     fmtL.SetFormatFlags(StringFormatFlagsNoWrap);
     fmtL.SetTrimming(StringTrimmingEllipsisCharacter);
 
-    Font fInput(&ff, 14, FontStyleRegular, UnitPixel);
+    Gdiplus::Font fInput(&ff, 14, FontStyleRegular, UnitPixel);
     wstring display(text);
     float textX = x + 12.0f;
     float textW = w - 24.0f;
@@ -888,7 +894,7 @@ static void DrawButton(Graphics& g, FontFamily& ff, float x, float y, float w, f
         g.FillPath(&shine, &shinePath);
     }
 
-    Font fBtn(&ff, 13, FontStyleBold, UnitPixel);
+    Gdiplus::Font fBtn(&ff, 13, FontStyleBold, UnitPixel);
     StringFormat fmtC;
     fmtC.SetAlignment(StringAlignmentCenter);
     fmtC.SetLineAlignment(StringAlignmentCenter);
@@ -901,7 +907,7 @@ static void DrawButton(Graphics& g, FontFamily& ff, float x, float y, float w, f
 // ════════════════════════════════════════════════════════════════════
 static void DrawStatusBadge(Graphics& g, FontFamily& ff, float x, float y,
                             const wchar_t* text, Color bg, Color txtColor) {
-    Font fBadge(&ff, 11, FontStyleBold, UnitPixel);
+    Gdiplus::Font fBadge(&ff, 11, FontStyleBold, UnitPixel);
     StringFormat fmtL;
     fmtL.SetAlignment(StringAlignmentNear);
     fmtL.SetLineAlignment(StringAlignmentCenter);
@@ -939,7 +945,7 @@ static void DrawConnectedView(Graphics& g, float x, float y, float w, float h,
     g.FillRectangle(&barBg, x, y, w, barH);
 
     // Connected icon (shield)
-    Font fIcon(&ff, 20, FontStyleBold, UnitPixel);
+    Gdiplus::Font fIcon(&ff, 20, FontStyleBold, UnitPixel);
     SolidBrush white(Color(255, 255, 255, 255));
     g.DrawString(L"✓", -1, &fIcon, RectF(x + 16.0f, y, 36.0f, barH), &fmtL, &white);
 
@@ -954,7 +960,7 @@ static void DrawConnectedView(Graphics& g, float x, float y, float w, float h,
         pinInfo += L"  •  ";
         pinInfo += fl_relations[fl_savedRelation];
     }
-    Font fPinInfo(&ff, 11, FontStyleRegular, UnitPixel);
+    Gdiplus::Font fPinInfo(&ff, 11, FontStyleRegular, UnitPixel);
     SolidBrush whiteAlpha(Color(200, 255, 255, 255));
     g.DrawString(pinInfo.c_str(), -1, &fPinInfo,
         RectF(x + 56.0f, y + barH * 0.58f, w - 270.0f, barH * 0.42f), &fmtL, &whiteAlpha);
@@ -974,7 +980,7 @@ static void DrawConnectedView(Graphics& g, float x, float y, float w, float h,
         ? Color(255, 255, 255, 255)
         : Color(60, 255, 255, 255));
     g.FillPath(&dbgBg, &dbgPath);
-    Font fDbg(&ff, 11, FontStyleBold, UnitPixel);
+    Gdiplus::Font fDbg(&ff, 11, FontStyleBold, UnitPixel);
     SolidBrush dbgTxt(fl_hoverDebugBtn
         ? Color(255, 0, 120, 135)
         : Color(255, 255, 255, 255));
@@ -991,7 +997,7 @@ static void DrawConnectedView(Graphics& g, float x, float y, float w, float h,
         ? Color(255, 220, 50, 50)
         : Color(60, 230, 60, 60));
     g.FillPath(&ulBg, &ulPath);
-    Font fUl(&ff, 11, FontStyleBold, UnitPixel);
+    Gdiplus::Font fUl(&ff, 11, FontStyleBold, UnitPixel);
     SolidBrush ulTxt(Color(255, 255, 255, 255));
     g.DrawString(L"Unlink", -1, &fUl, RectF(ulX, btnY2, ulW, btnH2), &fmtC, &ulTxt);
 
@@ -1158,14 +1164,14 @@ static void DrawSetupView(Graphics& g, float x, float y, float w, float h,
     g.FillPath(&headerBg, &headerPath);
 
     // Header icon + text
-    Font fHIcon(&ff, 22, FontStyleBold, UnitPixel);
+    Gdiplus::Font fHIcon(&ff, 22, FontStyleBold, UnitPixel);
     SolidBrush white(Color(255, 255, 255, 255));
     g.DrawString(L"🔗", -1, &fHIcon, RectF(cardX + 18.0f, cardY, 40.0f, 56.0f), &fmtL, &white);
 
-    Font fHTitle(&ff, 16, FontStyleBold, UnitPixel);
+    Gdiplus::Font fHTitle(&ff, 16, FontStyleBold, UnitPixel);
     g.DrawString(L"Family Link Setup", -1, &fHTitle,
         RectF(cardX + 62.0f, cardY, cardW - 80.0f, 56.0f), &fmtL, &white);
-    Font fHSub(&ff, 11, FontStyleRegular, UnitPixel);
+    Gdiplus::Font fHSub(&ff, 11, FontStyleRegular, UnitPixel);
     SolidBrush whiteAlpha(Color(200, 255, 255, 255));
     g.DrawString(L"Connect this device to a parent account",
         -1, &fHSub, RectF(cardX + 62.0f, cardY + 28.0f, cardW - 80.0f, 28.0f), &fmtL, &whiteAlpha);
@@ -1212,7 +1218,7 @@ static void DrawSetupView(Graphics& g, float x, float y, float w, float h,
         int pinLen = lstrlenW(fl_pinCode);
         float slotW = (formW - 40.0f) / 6.0f;
         float slotStartX = formX + 20.0f;
-        Font fPinDigit(&ff, 20, FontStyleBold, UnitPixel);
+        Gdiplus::Font fPinDigit(&ff, 20, FontStyleBold, UnitPixel);
         Font fPinDot  (&ff, 28, FontStyleBold, UnitPixel);
 
         for (int i = 0; i < 6; i++) {
@@ -1278,14 +1284,14 @@ static void DrawSetupView(Graphics& g, float x, float y, float w, float h,
             g.DrawPath(&relBorder, &relPath);
         }
 
-        Font fRel(&ff, 14, FontStyleRegular, UnitPixel);
+        Gdiplus::Font fRel(&ff, 14, FontStyleRegular, UnitPixel);
         bool isPlaceholder = (fl_relationIdx == 0);
         SolidBrush relTxt(isPlaceholder ? Color(255, 175, 180, 195) : Color(255, 30, 35, 55));
         g.DrawString(fl_relations[fl_relationIdx], -1, &fRel,
             RectF(formX + 12.0f, fieldY, formW - 40.0f, fieldH), &fmtL, &relTxt);
 
         // Chevron
-        Font fChev(&ff, 11, FontStyleBold, UnitPixel);
+        Gdiplus::Font fChev(&ff, 11, FontStyleBold, UnitPixel);
         SolidBrush chevCol(Color(255, 130, 140, 160));
         g.DrawString(fl_showRelationDrop ? L"▲" : L"▼", -1, &fChev,
             RectF(formX + formW - 30.0f, fieldY, 20.0f, fieldH), &fmtC, &chevCol);
@@ -1361,7 +1367,7 @@ static void DrawSetupView(Graphics& g, float x, float y, float w, float h,
                     : (fl_connectionState == 1) ? Color::MakeARGB(255, 0, 148, 163)
                                                 : Color::MakeARGB(255, 210, 40, 40);
         SolidBrush smBrush(smARGB);
-        Font fSm(&ff, 12, FontStyleBold, UnitPixel);
+        Gdiplus::Font fSm(&ff, 12, FontStyleBold, UnitPixel);
         g.DrawString(fl_statusMsg.c_str(), -1, &fSm,
             RectF(cardX, smY, cardW, 22.0f), &fmtC, &smBrush);
     }
@@ -1394,8 +1400,8 @@ void DrawFamilyLinkTab(Graphics& g, float x, float y, float w, float h) {
                       g_currentPackage == "PARENTAL" ||
                       g_currentPackage == "TRIAL");
     if (!hasAccess) {
-        Font fH(&ff, 22, FontStyleBold, UnitPixel);
-        Font fD(&ff, 13, FontStyleRegular, UnitPixel);
+        Gdiplus::Font fH(&ff, 22, FontStyleBold, UnitPixel);
+        Gdiplus::Font fD(&ff, 13, FontStyleRegular, UnitPixel);
         SolidBrush colDark(Color(255, 50, 55, 70));
         SolidBrush colGray(Color(255, 120, 125, 140));
         g.DrawString(L"Family Link — Premium Feature", -1, &fH,
