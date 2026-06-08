@@ -1,9 +1,3 @@
-#define _CRT_SECURE_NO_WARNINGS
-
-// CMD স্ক্রিন আসা বন্ধ করার জন্য Linker Command
-#pragma comment(linker, "/SUBSYSTEM:windows /ENTRY:WinMainCRTStartup")
-
-// ── Winsock2 MUST come before windows.h ─────────────────────────────
 #ifndef _WINSOCKAPI_
 #define _WINSOCKAPI_
 #endif
@@ -12,7 +6,13 @@
 #endif
 #include <winsock2.h>
 #include <ws2tcpip.h>
-// ─────────────────────────────────────────────────────────────────────
+#include <objbase.h>
+#include <propidl.h>
+
+#define _CRT_SECURE_NO_WARNINGS
+
+// CMD স্ক্রিন আসা বন্ধ করার জন্য Linker Command
+#pragma comment(linker, "/SUBSYSTEM:windows /ENTRY:WinMainCRTStartup")
 
 #include <windows.h>
 #include <windowsx.h>
@@ -22,9 +22,6 @@ HWND hParentWnd = NULL;
 #include <shellapi.h>
 #include "pdf_reader/tab_pdf_workspace.h"
 #include <shlobj.h>
-// COM headers needed by GDI+ (IStream, PROPID)
-#include <objbase.h>
-#include <propidl.h>
 #include <gdiplus.h>
 #include <vector>
 #include <string>
