@@ -10,12 +10,9 @@
 //   • সুন্দর card-based UI
 // ════════════════════════════════════════════════════════════════════
 
-// ── CRITICAL: these defines MUST appear before ANY include (including our own header)
-// _WINSOCKAPI_  -> blocks <winsock.h> from loading (which windows.h pulls in via tab_family_link.h)
-// WIN32_LEAN_AND_MEAN -> stops windows.h from auto-including winsock.h in other translation units
-#define _WINSOCKAPI_
-#define WIN32_LEAN_AND_MEAN
-
+// tab_family_link.h already handles the correct include order:
+//   winsock2.h -> ws2tcpip.h -> windows.h -> objbase.h -> propidl.h -> gdiplus.h
+// So we just include our header first, then the extras this .cpp needs.
 #include "tab_family_link.h"
 #include <string>
 #include <vector>
@@ -26,9 +23,6 @@
 #include <thread>
 #include <atomic>
 #include <algorithm>
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <windows.h>
 #include <tlhelp32.h>
 #include <powrprof.h>
 #include <iphlpapi.h>
@@ -38,7 +32,6 @@
 #pragma comment(lib, "iphlpapi.lib")
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "UIAutomationCore.lib")
-
 using namespace Gdiplus;
 using namespace std;
 

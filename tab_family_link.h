@@ -1,7 +1,32 @@
 #pragma once
 
+// ── Winsock2 MUST come before windows.h ──────────────────────────────
+// _WINSOCKAPI_ blocks the old winsock.h that windows.h would auto-pull in.
+// Without this every .cpp that includes this header gets hundreds of
+// "sockaddr/WSAData/etc redefinition" errors.
+#ifndef _WINSOCKAPI_
+#define _WINSOCKAPI_
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+
+#include <winsock2.h>
+#include <ws2tcpip.h>
+
+// ── Windows core (after winsock2) ────────────────────────────────────
 #include <windows.h>
+
+// ── COM / OLE (IStream, PROPID, IUnknown ...) — needed by GDI+ ───────
+// objbase.h brings in objidl.h which defines IStream.
+// propidl.h defines PROPID / PROPVARIANT used by GDI+ property methods.
+#include <objbase.h>
+#include <propidl.h>
+
+// ── GDI+ (must come AFTER IStream / PROPID are defined) ──────────────
 #include <gdiplus.h>
+#pragma comment(lib, "gdiplus.lib")
+
 #include <string>
 
 // ════════════════════════════════════════════════════════════════════
