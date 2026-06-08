@@ -1,5 +1,16 @@
 #define _CRT_SECURE_NO_WARNINGS
 
+// ── Winsock2 MUST come before windows.h ──────────────────────────────
+#ifndef _WINSOCKAPI_
+#define _WINSOCKAPI_
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <winsock2.h>
+#include <ws2tcpip.h>
+// ─────────────────────────────────────────────────────────────────────
+
 // CMD স্ক্রিন আসা বন্ধ করার জন্য Linker Command
 #pragma comment(linker, "/SUBSYSTEM:windows /ENTRY:WinMainCRTStartup")
 

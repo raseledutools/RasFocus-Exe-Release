@@ -23,6 +23,7 @@
 #include <thread>
 #include <atomic>
 #include <algorithm>
+#include <shellapi.h>
 #include <tlhelp32.h>
 #include <powrprof.h>
 #include <iphlpapi.h>
@@ -789,7 +790,7 @@ void FamilyLink_EnforceParentCommands(HWND hWnd) {
 // ════════════════════════════════════════════════════════════════════
 static void DrawFieldLabel(Graphics& g, FontFamily& ff, float x, float y, float w,
                            const wchar_t* text) {
-    Gdiplus::Gdiplus::Font fLabel(&ff, 11, FontStyleBold, UnitPixel);
+    Gdiplus::Font fLabel(&ff, 11, FontStyleBold, UnitPixel);
     StringFormat fmtL;
     fmtL.SetAlignment(StringAlignmentNear);
     fmtL.SetLineAlignment(StringAlignmentCenter);
@@ -928,10 +929,10 @@ static void DrawConnectedView(Graphics& g, float x, float y, float w, float h,
     fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
     fmtL.SetAlignment(StringAlignmentNear);   fmtL.SetLineAlignment(StringAlignmentCenter);
 
-    Font fTitle (&ff, 20, FontStyleBold,    UnitPixel);
-    Font fDesc  (&ff, 12, FontStyleRegular, UnitPixel);
-    Font fBold  (&ff, 12, FontStyleBold,    UnitPixel);
-    Font fSmall (&ff, 11, FontStyleRegular, UnitPixel);
+    Gdiplus::Font fTitle (&ff, 20, FontStyleBold,    UnitPixel);
+    Gdiplus::Font fDesc  (&ff, 12, FontStyleRegular, UnitPixel);
+    Gdiplus::Font fBold  (&ff, 12, FontStyleBold,    UnitPixel);
+    Gdiplus::Font fSmall (&ff, 11, FontStyleRegular, UnitPixel);
 
     // ── Top status bar ──────────────────────────────────────────────
     float barH = 52.0f;
@@ -1127,9 +1128,9 @@ static void DrawSetupView(Graphics& g, float x, float y, float w, float h,
     fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
     fmtL.SetAlignment(StringAlignmentNear);   fmtL.SetLineAlignment(StringAlignmentCenter);
 
-    Font fTitle (&ff, 22, FontStyleBold,    UnitPixel);
-    Font fDesc  (&ff, 12, FontStyleRegular, UnitPixel);
-    Font fSmall (&ff, 11, FontStyleRegular, UnitPixel);
+    Gdiplus::Font fTitle (&ff, 22, FontStyleBold,    UnitPixel);
+    Gdiplus::Font fDesc  (&ff, 12, FontStyleRegular, UnitPixel);
+    Gdiplus::Font fSmall (&ff, 11, FontStyleRegular, UnitPixel);
 
     // ── Centered card ───────────────────────────────────────────────
     float cardW = min(w - 40.0f, 480.0f);
@@ -1216,7 +1217,7 @@ static void DrawSetupView(Graphics& g, float x, float y, float w, float h,
         float slotW = (formW - 40.0f) / 6.0f;
         float slotStartX = formX + 20.0f;
         Gdiplus::Font fPinDigit(&ff, 20, FontStyleBold, UnitPixel);
-        Font fPinDot  (&ff, 28, FontStyleBold, UnitPixel);
+        Gdiplus::Font fPinDot  (&ff, 28, FontStyleBold, UnitPixel);
 
         for (int i = 0; i < 6; i++) {
             float sx = slotStartX + i * slotW;
