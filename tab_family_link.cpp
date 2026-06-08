@@ -20,7 +20,14 @@
 #include <windows.h>
 #include <tlhelp32.h>
 #include <powrprof.h>
+#include <winsock2.h>
+#include <iphlpapi.h>
+#include <uiautomation.h>
+#include <comdef.h>
 #pragma comment(lib, "PowrProf.lib")
+#pragma comment(lib, "iphlpapi.lib")
+#pragma comment(lib, "ws2_32.lib")
+#pragma comment(lib, "UIAutomationCore.lib")
 
 using namespace Gdiplus;
 using namespace std;
@@ -65,6 +72,17 @@ int    g_parentPowerAction       = 0;
 
 int         g_parentTimeLimitMinutes = 0;
 ULONGLONG   g_parentTimeLimitStart   = 0;
+
+// ── Timed Lock System ──────────────────────────────────────────────
+// lock_until_epoch: Unix time ms যতক্ষণ না হয় PC locked থাকবে
+// lock_type: "lock" | "sleep" | "shutdown"
+// lock_active: parent set করেছে কিনা
+long long   g_lockUntilEpoch     = 0;   // ms
+string      g_lockType           = "";  // "lock" | "sleep" | "shutdown"
+bool        g_lockActive         = false;
+// local tracking
+static bool fl_timedLockApplied  = false;  // এই cycle-এ action নেওয়া হয়েছে কিনা
+static ULONGLONG fl_lastLockTick = 0;      // শেষবার lock call দেওয়া হয়েছিল কখন
 
 // ════════════════════════════════════════════════════════════════════
 // INTERNAL UI STATE
@@ -233,6 +251,30 @@ static void PollParentCommands() {
             g_parentTimeLimitStart   = GetTickCount64();
         }
     }
+
+    // ── Timed Lock fields ──
+    v = ExtractJsonStr(resp, "lock_until_epoch");
+    if (!v.empty()) {
+        long long newEpoch = atoll(v.c_str());
+        if (newEpoch != g_lockUntilEpoch) {
+            g_lockUntilEpoch    = newEpoch;
+            fl_timedLockApplied = false;   // নতুন epoch → নতুন lock cycle শুরু
+        }
+    } else {
+        g_lockUntilEpoch    = 0;
+        fl_timedLockApplied = false;
+    }
+    v = ExtractJsonStr(resp, "lock_type");
+    if (!v.empty()) g_lockType = v;
+
+    // lock_active: epoch > now এবং parent clear করেনি
+    bool nowActive = (g_lockUntilEpoch > 0);
+    if (!nowActive && g_lockActive) {
+        // Parent unlock করেছে — fl_timedLockApplied reset
+        fl_timedLockApplied = false;
+    }
+    g_lockActive = nowActive;
+
     if (fl_hwnd) InvalidateRect(fl_hwnd, NULL, FALSE);
 }
 
@@ -278,12 +320,225 @@ static void InitParentCommandsDocument(const string& hwId, const string& parentU
 }
 
 // ════════════════════════════════════════════════════════════════════
-// ENFORCEMENT
+// PARENT CONTROL DETECTION — tab_adult.cpp এর verified logic exact copy
+// (adultsites.txt / resource ID 105 দিয়ে site list load হয়)
+// ════════════════════════════════════════════════════════════════════
+
+// ── Adult sites list (tab_adult এর মতোই resource + file fallback) ──
+static vector<wstring> fl_adultWebsites;
+
+static void FL_LoadAdultSites() {
+    if (!fl_adultWebsites.empty()) return;
+
+    // 1st: resource ID 105 থেকে (tab_adult এর মতোই)
+    HRSRC hRes = FindResource(NULL, MAKEINTRESOURCE(105), RT_RCDATA);
+    if (hRes) {
+        HGLOBAL hData = LoadResource(NULL, hRes);
+        DWORD size    = SizeofResource(NULL, hRes);
+        const char* data = (const char*)LockResource(hData);
+        if (data && size > 0) {
+            string fc(data, size); stringstream ss(fc); string line;
+            while (getline(ss, line)) {
+                if (!line.empty() && line.back() == '\r') line.pop_back();
+                if (!line.empty())
+                    fl_adultWebsites.push_back(wstring(line.begin(), line.end()));
+            }
+        }
+    }
+
+    // 2nd: assets/adultsites.txt fallback (exe পাশের folder)
+    if (fl_adultWebsites.empty()) {
+        wchar_t exePath[MAX_PATH] = {};
+        GetModuleFileNameW(NULL, exePath, MAX_PATH);
+        wstring dir(exePath);
+        size_t sl = dir.rfind(L'\\');
+        if (sl != wstring::npos) dir = dir.substr(0, sl);
+        wstring txtPath = dir + L"\\assets\\adultsites.txt";
+        wifstream in(txtPath.c_str());
+        in.imbue(locale(in.getloc(), new codecvt_utf8<wchar_t>));
+        if (in.is_open()) {
+            wstring line;
+            while (getline(in, line)) {
+                if (!line.empty() && line.back() == L'\r') line.pop_back();
+                if (!line.empty()) fl_adultWebsites.push_back(line);
+            }
+        }
+    }
+
+    // hardcoded fallback (tab_adult এর মতোই)
+    if (fl_adultWebsites.empty()) {
+        fl_adultWebsites = {
+            L"pornhub.com", L"xvideos.com", L"xnxx.com",
+            L"xhamster.com", L"redtube.com"
+        };
+    }
+}
+
+// ── UIA instance (tab_adult এর GetBrowserURL_Fallback exact copy) ──
+static IUIAutomation* fl_pAutomation = NULL;
+
+static wstring FL_GetBrowserURL(HWND hBrowser) {
+    wstring url = L"";
+    if (!fl_pAutomation) return url;
+    IUIAutomationElement* pEl = NULL;
+    if (SUCCEEDED(fl_pAutomation->ElementFromHandle(hBrowser, &pEl)) && pEl) {
+        IUIAutomationCondition* pCond = NULL; IUIAutomationElement* pEdit = NULL;
+        VARIANT v; v.vt = VT_I4; v.lVal = UIA_EditControlTypeId;
+        fl_pAutomation->CreatePropertyCondition(UIA_ControlTypePropertyId, v, &pCond);
+        if (pCond) { pEl->FindFirst(TreeScope_Descendants, pCond, &pEdit); pCond->Release(); }
+        if (!pEdit) {
+            VARIANT vn; vn.vt = VT_BSTR; vn.bstrVal = SysAllocString(L"Address and search bar");
+            fl_pAutomation->CreatePropertyCondition(UIA_NamePropertyId, vn, &pCond);
+            if (pCond) { pEl->FindFirst(TreeScope_Descendants, pCond, &pEdit); pCond->Release(); }
+            SysFreeString(vn.bstrVal);
+        }
+        if (pEdit) {
+            VARIANT vv; VariantInit(&vv);
+            if (SUCCEEDED(pEdit->GetCurrentPropertyValue(UIA_ValueValuePropertyId, &vv))
+                && vv.vt == VT_BSTR && vv.bstrVal)
+                url = wstring(vv.bstrVal);
+            VariantClear(&vv); pEdit->Release();
+        }
+        pEl->Release();
+    }
+    return url;
+}
+
+// ── tab_adult এর closeActiveTab exact copy ──
+static void FL_CloseActiveTab() {
+    keybd_event(VK_CONTROL, 0, 0, 0); keybd_event('W', 0, 0, 0);
+    keybd_event('W', 0, KEYEVENTF_KEYUP, 0); keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0);
+}
+
+static wstring FL_ToLower(wstring s) {
+    transform(s.begin(), s.end(), s.begin(), ::towlower);
+    return s;
+}
+
+// ════════════════════════════════════════════════════════════════════
+// PARENT DETECTION THREAD
+// tab_adult AdultBackgroundThread এর detection block exact copy —
+// শুধু parent flags (g_parentForce*) দিয়ে trigger হয়
+// ════════════════════════════════════════════════════════════════════
+static bool fl_detectionThreadStarted = false;
+
+static void FL_ParentDetectionThread() {
+    CoInitializeEx(NULL, COINIT_MULTITHREADED);
+    CoCreateInstance(CLSID_CUIAutomation, NULL, CLSCTX_INPROC_SERVER,
+                     IID_IUIAutomation, (void**)&fl_pAutomation);
+
+    FL_LoadAdultSites();
+
+    wstring lastTitle = L"";
+
+    while (true) {
+        Sleep(500); // tab_adult এর মতোই 500ms
+
+        if (!g_isLinkedToParent) continue;
+
+        // ── Lock All Tabs ──
+        // tab_adult এর closeActiveTab logic — foreground browser-এ Ctrl+W
+        if (g_parentLockAllTabs) {
+            HWND ha = GetForegroundWindow();
+            if (ha) {
+                wchar_t t[256]; GetWindowTextW(ha, t, 256);
+                wstring lt = FL_ToLower(wstring(t));
+                if (lt.find(L"chrome")  != wstring::npos ||
+                    lt.find(L"edge")    != wstring::npos  ||
+                    lt.find(L"brave")   != wstring::npos  ||
+                    lt.find(L"firefox") != wstring::npos  ||
+                    lt.find(L"opera")   != wstring::npos) {
+                    FL_CloseActiveTab();
+                }
+            }
+            continue; // lock হলে adult check দরকার নেই
+        }
+
+        // ── Adult / Reels / Shorts — tab_adult AdultBackgroundThread exact logic ──
+        bool doAdult = g_parentForceAdultBlock;
+        bool doReels = g_parentForceReelsBlock || g_parentForceShortsBlock;
+        if (!doAdult && !doReels) continue;
+
+        // tab_adult এর exact detection block:
+        HWND ha = GetForegroundWindow();
+        if (ha) {
+            wchar_t t[256]; GetWindowTextW(ha, t, 256); wstring title(t);
+            if (!title.empty() && title != lastTitle) {
+                lastTitle = title;
+                wstring lt = FL_ToLower(title);
+                bool blk = false;
+
+                // browser window কিনা (tab_adult এর মতো title দিয়ে check)
+                if (lt.find(L"chrome") != wstring::npos ||
+                    lt.find(L"edge")   != wstring::npos ||
+                    lt.find(L"brave")  != wstring::npos) {
+
+                    wstring url = FL_GetBrowserURL(ha);
+                    wstring lu  = FL_ToLower(url);
+                    bool ub = false;
+
+                    // Adult site check (tab_adult cbAdultWeb block exact copy)
+                    if (doAdult && !ub)
+                        for (const auto& s : fl_adultWebsites)
+                            if (url.find(s) != wstring::npos || lt.find(s) != wstring::npos)
+                                { ub = true; break; }
+
+                    // Reels/Shorts check (tab_adult cbFbReels block exact copy)
+                    if (!ub && doReels) {
+                        if (lu.find(L"facebook.com/reel")  != wstring::npos ||
+                            lu.find(L"instagram.com/reels")!= wstring::npos ||
+                            lu.find(L"youtube.com/shorts") != wstring::npos)
+                            ub = true;
+                    }
+
+                    if (ub) { FL_CloseActiveTab(); Sleep(280); lastTitle = L""; }
+                }
+            }
+        }
+    }
+}
+
+static void FL_EnsureDetectionThreadRunning() {
+    if (!fl_detectionThreadStarted) {
+        fl_detectionThreadStarted = true;
+        thread(FL_ParentDetectionThread).detach();
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════
+// INTERNET FASTING — UAC-free approach (netsh advfirewall rule)
+// ════════════════════════════════════════════════════════════════════
+static void FL_ApplyInternetFasting(bool enable) {
+    // Firewall rule দিয়ে সব outbound block করি — elevated process হলে কাজ করবে
+    // Rule name unique রাখি যাতে toggle করতে পারি
+    const char* ruleName = "RasFocusInternetFasting";
+    if (enable) {
+        // প্রথমে পুরনো rule delete করি (যদি থাকে)
+        string delCmd = string("/c netsh advfirewall firewall delete rule name=\"") + ruleName + "\" >nul 2>&1";
+        // তারপর outbound block rule add করি
+        string addCmd = string("/c netsh advfirewall firewall add rule name=\"") + ruleName +
+                        "\" dir=out action=block protocol=any enable=yes >nul 2>&1";
+        ShellExecuteA(NULL, "open", "cmd.exe", delCmd.c_str(), NULL, SW_HIDE);
+        Sleep(300);
+        ShellExecuteA(NULL, "open", "cmd.exe", addCmd.c_str(), NULL, SW_HIDE);
+    } else {
+        // Block rule সরিয়ে দিই
+        string delCmd = string("/c netsh advfirewall firewall delete rule name=\"") + ruleName + "\" >nul 2>&1";
+        ShellExecuteA(NULL, "open", "cmd.exe", delCmd.c_str(), NULL, SW_HIDE);
+    }
+}
+
+
+// ════════════════════════════════════════════════════════════════════
+// ENFORCEMENT (system-level — browser detection thread এ আলাদা)
 // ════════════════════════════════════════════════════════════════════
 void FamilyLink_EnforceParentCommands(HWND hWnd) {
     if (!g_isLinkedToParent) return;
 
-    // 1. Task Manager
+    // Detection thread চালু রাখি (adult/reels/shorts/lock_all_tabs সব ওখানে)
+    FL_EnsureDetectionThreadRunning();
+
+    // ── 1. Task Manager ───────────────────────────────────────────
     if (g_parentBlockTaskManager) {
         HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
         PROCESSENTRY32 pe = { sizeof(pe) };
@@ -300,7 +555,7 @@ void FamilyLink_EnforceParentCommands(HWND hWnd) {
         CloseHandle(hSnap);
     }
 
-    // 2. Windows Settings
+    // ── 3. Windows Settings ───────────────────────────────────────
     if (g_parentBlockSettings) {
         HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
         PROCESSENTRY32 pe = { sizeof(pe) };
@@ -335,14 +590,14 @@ void FamilyLink_EnforceParentCommands(HWND hWnd) {
         }
     }
 
-    // 3. File Manager
+    // ── 4. File Manager ───────────────────────────────────────────
     if (g_parentBlockFileManager) {
         HWND hFE = NULL;
         while ((hFE = FindWindowExA(NULL, hFE, "CabinetWClass", NULL)) != NULL)
             PostMessage(hFE, WM_CLOSE, 0, 0);
     }
 
-    // 4. Folder Block
+    // ── 5. Folder Block ───────────────────────────────────────────
     if (!g_parentBlockedFoldersCSV.empty()) {
         vector<string> blockedFolders = CSVToVector(g_parentBlockedFoldersCSV);
         HWND hFE = NULL;
@@ -358,7 +613,7 @@ void FamilyLink_EnforceParentCommands(HWND hWnd) {
         }
     }
 
-    // 5. App Control
+    // ── 6. App Control ────────────────────────────────────────────
     if (g_parentAppControlEnabled) {
         HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
         PROCESSENTRY32 pe = { sizeof(pe) };
@@ -406,7 +661,7 @@ void FamilyLink_EnforceParentCommands(HWND hWnd) {
         CloseHandle(hSnap);
     }
 
-    // 6. Website Block
+    // ── 7. Website Block ──────────────────────────────────────────
     if (g_parentWebBlockEnabled && !g_parentBlockedWebsCSV.empty()) {
         vector<string> blockedWebs = CSVToVector(g_parentBlockedWebsCSV);
         HWND hActive = GetForegroundWindow();
@@ -432,22 +687,16 @@ void FamilyLink_EnforceParentCommands(HWND hWnd) {
         }
     }
 
-    // 7. Internet Fasting
+    // ── 8. Internet Fasting (UAC-free via firewall rule) ──────────
     if (g_parentInternetFasting && !fl_fastingApplied) {
         fl_fastingApplied = true;
-        SHELLEXECUTEINFOA sei = { sizeof(sei) };
-        sei.lpVerb = "runas"; sei.lpFile = "cmd.exe";
-        sei.lpParameters = "/c ipconfig /release"; sei.nShow = SW_HIDE;
-        ShellExecuteExA(&sei);
+        thread([]() { FL_ApplyInternetFasting(true); }).detach();
     } else if (!g_parentInternetFasting && fl_fastingApplied) {
         fl_fastingApplied = false;
-        SHELLEXECUTEINFOA sei = { sizeof(sei) };
-        sei.lpVerb = "runas"; sei.lpFile = "cmd.exe";
-        sei.lpParameters = "/c ipconfig /renew"; sei.nShow = SW_HIDE;
-        ShellExecuteExA(&sei);
+        thread([]() { FL_ApplyInternetFasting(false); }).detach();
     }
 
-    // 8. Power Action
+    // ── 9. Power Action (instant — no timer) ─────────────────────
     if (g_parentPowerAction != 0 && g_parentPowerAction != fl_lastPowerAction) {
         fl_lastPowerAction = g_parentPowerAction;
         if (g_parentPowerAction == 1) LockWorkStation();
@@ -467,12 +716,67 @@ void FamilyLink_EnforceParentCommands(HWND hWnd) {
         }).detach();
     }
 
-    // 9. Screen Time
+    // ── 10. Timed Lock Enforcement ────────────────────────────────
+    // g_lockUntilEpoch (ms) পর্যন্ত PC locked থাকবে।
+    // প্রতি enforcement cycle-এ: time শেষ না হলে lock করো।
+    // Parent unlock করলে g_lockActive = false হয়ে যাবে।
+    if (g_lockActive && g_lockUntilEpoch > 0) {
+        // বর্তমান system time (ms) পাই
+        FILETIME ft; GetSystemTimeAsFileTime(&ft);
+        ULARGE_INTEGER ui; ui.LowPart = ft.dwLowDateTime; ui.HighPart = ft.dwHighDateTime;
+        long long nowMs = (long long)(ui.QuadPart / 10000LL) - 11644473600000LL;
+
+        if (nowMs < g_lockUntilEpoch) {
+            // সময় এখনো শেষ হয়নি — প্রতি 2 সেকেন্ডে lock enforce করো
+            ULONGLONG nowTick = GetTickCount64();
+            if (nowTick - fl_lastLockTick >= 2000) {
+                fl_lastLockTick = nowTick;
+                if (g_lockType == "sleep") {
+                    SetSuspendState(FALSE, FALSE, FALSE);
+                } else if (g_lockType == "shutdown") {
+                    // shutdown এ বারবার call করা ঠিক না — একবার দিলেই হয়
+                    if (!fl_timedLockApplied) {
+                        fl_timedLockApplied = true;
+                        SHELLEXECUTEINFOA sei = { sizeof(sei) };
+                        sei.lpVerb = "runas"; sei.lpFile = "cmd.exe";
+                        sei.lpParameters = "/c shutdown /s /t 0"; sei.nShow = SW_HIDE;
+                        ShellExecuteExA(&sei);
+                    }
+                } else {
+                    // default: lock
+                    LockWorkStation();
+                }
+            }
+        } else {
+            // সময় শেষ — lock_until_epoch Firebase থেকে clear করো
+            g_lockActive    = false;
+            g_lockUntilEpoch = 0;
+            string hwId = GetHardwareID();
+            string clrPath = FB_BASE + "parent_commands/" + hwId +
+                             "?updateMask.fieldPaths=lock_until_epoch"
+                             "&updateMask.fieldPaths=lock_type";
+            string clrPayload = "{\"fields\":{"
+                "\"lock_until_epoch\":{\"integerValue\":\"0\"},"
+                "\"lock_type\":{\"stringValue\":\"\"}"
+                "}}";
+            thread([clrPath, clrPayload]() {
+                SendFirestoreRequest("PATCH", clrPath, clrPayload);
+            }).detach();
+        }
+    }
+
+    // ── 10. Screen Time — time শেষ হলে lock, তারপর timer reset নয় ──
+    // ফলে প্রতিবার lock হবে না — parent নতুন সময় set না করলে locked থাকবে।
     if (g_parentTimeLimitMinutes > 0 && g_parentTimeLimitStart > 0) {
         ULONGLONG elapsed = (GetTickCount64() - g_parentTimeLimitStart) / 60000ULL;
         if (elapsed >= (ULONGLONG)g_parentTimeLimitMinutes) {
+            // Timer reset করি না — parent নতুন time_limit_minutes set না করলে
+            // LockWorkStation প্রতি poll-tick এ ডাকা হবে না।
+            // g_parentTimeLimitStart = 0 করে দিই, Firestore poll-এ নতুন value
+            // না আসা পর্যন্ত আর lock হবে না।
+            g_parentTimeLimitStart   = 0;
+            g_parentTimeLimitMinutes = 0;
             LockWorkStation();
-            g_parentTimeLimitStart = GetTickCount64();
         }
     }
 }
@@ -712,6 +1016,38 @@ static void DrawConnectedView(Graphics& g, float x, float y, float w, float h,
         tlStr = to_wstring(remaining) + L" min left";
     }
 
+    // Timed lock countdown string
+    wstring lockTimerStr = L"Off";
+    bool    lockIsActive = false;
+    if (g_lockActive && g_lockUntilEpoch > 0) {
+        FILETIME ft; GetSystemTimeAsFileTime(&ft);
+        ULARGE_INTEGER ui; ui.LowPart = ft.dwLowDateTime; ui.HighPart = ft.dwHighDateTime;
+        long long nowMs  = (long long)(ui.QuadPart / 10000LL) - 11644473600000LL;
+        long long remMs  = g_lockUntilEpoch - nowMs;
+        if (remMs > 0) {
+            long long remSec = remMs / 1000LL;
+            long long remMin = remSec / 60LL;
+            long long remH   = remMin / 60LL;
+            remMin %= 60; remSec %= 60;
+            wchar_t tbuf[64];
+            if (remH > 0)
+                swprintf_s(tbuf, L"%lluh %02llum %02llus left", remH, remMin, remSec);
+            else if (remMin > 0)
+                swprintf_s(tbuf, L"%llum %02llus left", remMin, remSec);
+            else
+                swprintf_s(tbuf, L"%llus left", remSec);
+
+            // Lock type label
+            wstring ltLabel = L"🔒 LOCK";
+            if (g_lockType == "sleep")    ltLabel = L"😴 SLEEP";
+            if (g_lockType == "shutdown") ltLabel = L"⛔ SHUTDOWN";
+            lockTimerStr = ltLabel + L" — " + wstring(tbuf);
+            lockIsActive = true;
+        } else {
+            lockTimerStr = L"Unlocking…";
+        }
+    }
+
     // Short parent UID
     wchar_t parentW[64] = {};
     string shortP = g_parentUid.size() > 14
@@ -741,6 +1077,7 @@ static void DrawConnectedView(Graphics& g, float x, float y, float w, float h,
         { L"File Manager",  g_parentBlockFileManager? L"🔒 BLOCKED": L"Off", g_parentBlockFileManager? Color::MakeARGB(255,175,45,45) : Color::MakeARGB(255,130,135,150) },
         { L"Net Fasting",   g_parentInternetFasting ? L"⚡ ACTIVE" : L"Off", g_parentInternetFasting ? Color::MakeARGB(255,220,115,0) : Color::MakeARGB(255,130,135,150) },
         { L"Screen Time",   tlStr.c_str(),                                   g_parentTimeLimitMinutes>0 ? Color::MakeARGB(255,225,115,0) : Color::MakeARGB(255,130,135,150) },
+        { L"Timed Lock",    lockTimerStr.c_str(),                             lockIsActive ? Color::MakeARGB(255,210,40,40) : Color::MakeARGB(255,130,135,150) },
     };
 
     int nRows  = sizeof(rows) / sizeof(rows[0]);
@@ -1338,6 +1675,10 @@ void ProcessFamilyLinkTimer(UINT_PTR timerId, HWND hWnd) {
 
     // Caret blinking — redraw if any input is focused
     if (fl_isPinFocused || fl_isGmailFocused)
+        InvalidateRect(hWnd, NULL, FALSE);
+
+    // Live countdown redraw — প্রতি timer tick-এ redraw যাতে countdown সেকেন্ড-by-সেকেন্ড আপডেট হয়
+    if (g_lockActive && g_lockUntilEpoch > 0)
         InvalidateRect(hWnd, NULL, FALSE);
 
     if (!g_isLinkedToParent) return;
