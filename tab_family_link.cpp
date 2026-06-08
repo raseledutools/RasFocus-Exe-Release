@@ -10,6 +10,12 @@
 //   • সুন্দর card-based UI
 // ════════════════════════════════════════════════════════════════════
 
+// ── CRITICAL: these defines MUST appear before ANY include (including our own header)
+// _WINSOCKAPI_  -> blocks <winsock.h> from loading (which windows.h pulls in via tab_family_link.h)
+// WIN32_LEAN_AND_MEAN -> stops windows.h from auto-including winsock.h in other translation units
+#define _WINSOCKAPI_
+#define WIN32_LEAN_AND_MEAN
+
 #include "tab_family_link.h"
 #include <string>
 #include <vector>
@@ -20,14 +26,12 @@
 #include <thread>
 #include <atomic>
 #include <algorithm>
-// winsock2.h MUST come before windows.h to avoid winsock/winsock2 redefinition errors
-#define WIN32_LEAN_AND_MEAN
 #include <winsock2.h>
 #include <ws2tcpip.h>
-#include <iphlpapi.h>
 #include <windows.h>
 #include <tlhelp32.h>
 #include <powrprof.h>
+#include <iphlpapi.h>
 #include <uiautomation.h>
 #include <comdef.h>
 #pragma comment(lib, "PowrProf.lib")
