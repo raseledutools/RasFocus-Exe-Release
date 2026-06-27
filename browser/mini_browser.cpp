@@ -59,6 +59,113 @@ extern bool  g_isPureViewerMode;
 extern float g_scaleFactor;
 
 // ─────────────────────────────────────────────────────────────────────────────
+// AD BLOCK SCRIPT (global scope — ContentLoading + HistoryChanged দুটোতেই দরকার)
+// ─────────────────────────────────────────────────────────────────────────────
+static const wchar_t* kAdBlockScript = LR"JS(
+(function() {
+  // ── 1. YouTube Ads (video ads + banner ads + overlay) ──
+  function blockYouTubeAds() {
+    const adSelectors = [
+      '.ytp-ad-module', '.ytp-ad-overlay-container',
+      '.ytp-ad-text-overlay', '.ytp-ad-skip-button-container',
+      '.ytp-ad-progress-bar', '.ytp-ad-player-overlay',
+      '#masthead-ad', '.ytd-banner-promo-renderer',
+      'ytd-ad-slot-renderer', 'ytd-in-feed-ad-layout-renderer',
+      'ytd-promoted-sparkles-web-renderer', '.ytd-promoted-video-renderer',
+      '#player-ads', '.ad-showing .video-ads',
+      'ytd-display-ad-renderer', 'ytd-action-companion-ad-renderer',
+      '.ytd-rich-item-renderer:has(ytd-ad-slot-renderer)',
+      'ytd-promoted-sparkles-text-search-renderer',
+      '.GoogleActiveViewElement', '#feedModuleAdSlot'
+    ];
+    adSelectors.forEach(sel => {
+      document.querySelectorAll(sel).forEach(el => {
+        el.style.setProperty('display', 'none', 'important');
+        el.style.setProperty('visibility', 'hidden', 'important');
+      });
+    });
+    const skipBtn = document.querySelector('.ytp-skip-ad-button, .ytp-ad-skip-button');
+    if (skipBtn) skipBtn.click();
+    const video = document.querySelector('video.html5-main-video');
+    if (video) {
+      const adBadge = document.querySelector('.ytp-ad-badge, .ad-badge');
+      if (adBadge) {
+        const wasMuted = video.muted;
+        video.muted = true;
+        video.playbackRate = 16;
+        const restoreCheck = setInterval(() => {
+          const skipNow = document.querySelector('.ytp-skip-ad-button, .ytp-ad-skip-button');
+          if (skipNow) { skipNow.click(); }
+          const stillAd = document.querySelector('.ytp-ad-badge, .ad-badge');
+          if (!stillAd) {
+            video.playbackRate = 1;
+            video.muted = wasMuted;
+            clearInterval(restoreCheck);
+          }
+        }, 200);
+      }
+    }
+  }
+  function blockGeneralAds() {
+    const generalAdSelectors = [
+      '[class*="google-ad"]', '[class*="adsense"]', '[id*="adsense"]',
+      '[class*="ad-banner"]', '[class*="ad-container"]', '[class*="ad-wrapper"]',
+      '[class*="ad-slot"]', '[class*="ad-unit"]', '[class*="ad-placement"]',
+      '[id*="ad-banner"]', '[id*="ad-container"]', '[id*="ad-slot"]',
+      '[id*="google_ads"]', '[id*="gads"]', '[id*="div-gpt-ad"]',
+      '[class*="sponsored"]', '[class*="promo-ad"]', '[class*="advertisement"]',
+      '[data-ad-unit]', '[data-ad-slot]', '[data-ad-client]',
+      'ins.adsbygoogle', 'div[id^="google_ads_iframe"]',
+      'iframe[src*="googlesyndication"]', 'iframe[src*="doubleclick"]',
+      'iframe[src*="adservice"]', 'iframe[src*="ads."]',
+      '[data-pagelet*="FeedUnit_Sponsor"]', '._7jyg._7jyi',
+      '[class*="popup-ad"]', '[class*="modal-ad"]', '[id*="popup-ad"]',
+      '[class*="overlay-ad"]', '[class*="interstitial"]',
+      '[class*="sticky-ad"]', '[class*="floating-ad"]', '[id*="sticky-ad"]'
+    ];
+    generalAdSelectors.forEach(sel => {
+      try {
+        document.querySelectorAll(sel).forEach(el => {
+          el.style.setProperty('display', 'none', 'important');
+        });
+      } catch(e) {}
+    });
+  }
+  function blockPopups() {
+    const cookieSelectors = [
+      '[class*="cookie-banner"]', '[class*="cookie-consent"]', '[class*="cookie-notice"]',
+      '[id*="cookie-banner"]', '[id*="cookie-consent"]', '[id*="cookiebar"]',
+      '[class*="gdpr"]', '[id*="gdpr"]', '[class*="consent-banner"]',
+      '.cc-window', '#onetrust-banner-sdk', '.evidon-banner',
+      '#cookie-law-info-bar', '.cookiealert', '#CybotCookiebotDialog'
+    ];
+    cookieSelectors.forEach(sel => {
+      try {
+        document.querySelectorAll(sel).forEach(el => {
+          el.style.setProperty('display', 'none', 'important');
+        });
+      } catch(e) {}
+    });
+    document.body.style.removeProperty('overflow');
+    document.documentElement.style.removeProperty('overflow');
+  }
+  blockYouTubeAds();
+  blockGeneralAds();
+  blockPopups();
+  const observer = new MutationObserver(() => {
+    blockYouTubeAds();
+    blockGeneralAds();
+    blockPopups();
+  });
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+  setInterval(() => {
+    blockYouTubeAds();
+    blockPopups();
+  }, 1000);
+})();
+)JS";
+
+// ─────────────────────────────────────────────────────────────────────────────
 // RESOURCE IDs
 // ─────────────────────────────────────────────────────────────────────────────
 #define IDI_APP_ICON    101
@@ -184,7 +291,7 @@ std::wstring GetAiInjectScript(const std::wstring& currentUrl) {
         if (ytBlurThumbnails)  css += L"ytd-thumbnail img { filter: blur(15px) !important; } ";
         if (ytHideSubs)        css += L"a[title='Subscriptions'], ytd-mini-guide-entry-renderer[aria-label='Subscriptions'] { display: none !important; } ";
         if (ytHideExplore)     css += L"ytd-guide-section-renderer:nth-child(3) { display: none !important; } ";
-        if (ytHideTopBar)      css += L"ytd-masthead { display: none !important; } #page-manager { margin-top: 0 !important; } ";
+        if (ytHideTopBar)      css += L"ytd-masthead #masthead-container #logo-icon-container, ytd-masthead #start, ytd-masthead #end, ytd-masthead #buttons, ytd-masthead #masthead-container ytd-topbar-logo-renderer { display: none !important; } ytd-masthead #center { visibility: visible !important; display: flex !important; } #page-manager { margin-top: 0 !important; } ";
         if (ytDisableEndCards) css += L".ytp-ce-element { display: none !important; } ";
         if (ytBlackWhiteMode)  css += L"html { filter: grayscale(100%) !important; } ";
     } 
@@ -1627,137 +1734,7 @@ public:
                     sender->ExecuteScript(injectScript.c_str(), nullptr);
                 }
 
-                // ── 100% Ad Blocker Script ──
-                // YouTube, website banners, popups, tracking scripts সব block করে
-                static const wchar_t* kAdBlockScript = LR"JS(
-(function() {
-  // ── 1. YouTube Ads (video ads + banner ads + overlay) ──
-  function blockYouTubeAds() {
-    // video ad container গুলো hide করো
-    const adSelectors = [
-      '.ytp-ad-module', '.ytp-ad-overlay-container',
-      '.ytp-ad-text-overlay', '.ytp-ad-skip-button-container',
-      '.ytp-ad-progress-bar', '.ytp-ad-player-overlay',
-      '#masthead-ad', '.ytd-banner-promo-renderer',
-      'ytd-ad-slot-renderer', 'ytd-in-feed-ad-layout-renderer',
-      'ytd-promoted-sparkles-web-renderer', '.ytd-promoted-video-renderer',
-      '#player-ads', '.ad-showing .video-ads',
-      'ytd-display-ad-renderer', 'ytd-action-companion-ad-renderer',
-      '.ytd-rich-item-renderer:has(ytd-ad-slot-renderer)',
-      'ytd-promoted-sparkles-text-search-renderer',
-      '.GoogleActiveViewElement', '#feedModuleAdSlot'
-    ];
-    adSelectors.forEach(sel => {
-      document.querySelectorAll(sel).forEach(el => {
-        el.style.setProperty('display', 'none', 'important');
-        el.style.setProperty('visibility', 'hidden', 'important');
-      });
-    });
-
-    // video ad auto-skip
-    const skipBtn = document.querySelector('.ytp-skip-ad-button, .ytp-ad-skip-button');
-    if (skipBtn) skipBtn.click();
-
-    // video playing হলে ad duration check করো
-    const video = document.querySelector('video.html5-main-video');
-    if (video) {
-      const adBadge = document.querySelector('.ytp-ad-badge, .ad-badge');
-      if (adBadge) {
-        // mute করো ad এর সময়
-        const wasMuted = video.muted;
-        video.muted = true;
-        video.playbackRate = 16; // fast forward
-        const restoreCheck = setInterval(() => {
-          const skipNow = document.querySelector('.ytp-skip-ad-button, .ytp-ad-skip-button');
-          if (skipNow) { skipNow.click(); }
-          const stillAd = document.querySelector('.ytp-ad-badge, .ad-badge');
-          if (!stillAd) {
-            video.playbackRate = 1;
-            video.muted = wasMuted;
-            clearInterval(restoreCheck);
-          }
-        }, 200);
-      }
-    }
-  }
-
-  // ── 2. General Website Ad Selectors ──
-  function blockGeneralAds() {
-    const generalAdSelectors = [
-      // Common ad class names
-      '[class*="google-ad"]', '[class*="adsense"]', '[id*="adsense"]',
-      '[class*="ad-banner"]', '[class*="ad-container"]', '[class*="ad-wrapper"]',
-      '[class*="ad-slot"]', '[class*="ad-unit"]', '[class*="ad-placement"]',
-      '[id*="ad-banner"]', '[id*="ad-container"]', '[id*="ad-slot"]',
-      '[id*="google_ads"]', '[id*="gads"]', '[id*="div-gpt-ad"]',
-      '[class*="sponsored"]', '[class*="promo-ad"]', '[class*="advertisement"]',
-      '[data-ad-unit]', '[data-ad-slot]', '[data-ad-client]',
-      'ins.adsbygoogle', 'div[id^="google_ads_iframe"]',
-      'iframe[src*="googlesyndication"]', 'iframe[src*="doubleclick"]',
-      'iframe[src*="adservice"]', 'iframe[src*="ads."]',
-      // Facebook ads
-      '[data-pagelet*="FeedUnit_Sponsor"]', '._7jyg._7jyi',
-      // Generic popups/overlays
-      '[class*="popup-ad"]', '[class*="modal-ad"]', '[id*="popup-ad"]',
-      '[class*="overlay-ad"]', '[class*="interstitial"]',
-      // Sticky banners
-      '[class*="sticky-ad"]', '[class*="floating-ad"]', '[id*="sticky-ad"]'
-    ];
-    generalAdSelectors.forEach(sel => {
-      try {
-        document.querySelectorAll(sel).forEach(el => {
-          el.style.setProperty('display', 'none', 'important');
-        });
-      } catch(e) {}
-    });
-  }
-
-  // ── 3. Popup/Overlay/Cookie Banner Blocker ──
-  function blockPopups() {
-    // Cookie consent overlays
-    const cookieSelectors = [
-      '[class*="cookie-banner"]', '[class*="cookie-consent"]', '[class*="cookie-notice"]',
-      '[id*="cookie-banner"]', '[id*="cookie-consent"]', '[id*="cookiebar"]',
-      '[class*="gdpr"]', '[id*="gdpr"]', '[class*="consent-banner"]',
-      '.cc-window', '#onetrust-banner-sdk', '.evidon-banner',
-      '#cookie-law-info-bar', '.cookiealert', '#CybotCookiebotDialog'
-    ];
-    cookieSelectors.forEach(sel => {
-      try {
-        document.querySelectorAll(sel).forEach(el => {
-          el.style.setProperty('display', 'none', 'important');
-        });
-      } catch(e) {}
-    });
-
-    // Body scroll lock থেকে মুক্তি দাও (popup এর কারণে scroll বন্ধ হলে)
-    document.body.style.removeProperty('overflow');
-    document.documentElement.style.removeProperty('overflow');
-  }
-
-  // ── 4. Run immediately ──
-  blockYouTubeAds();
-  blockGeneralAds();
-  blockPopups();
-
-  // ── 5. DOM changes observe করো (dynamically loaded ads এর জন্য) ──
-  const observer = new MutationObserver(() => {
-    blockYouTubeAds();
-    blockGeneralAds();
-    blockPopups();
-  });
-  observer.observe(document.documentElement, {
-    childList: true, subtree: true
-  });
-
-  // ── 6. interval দিয়েও চালাও (YouTube SPA navigation এর জন্য) ──
-  setInterval(() => {
-    blockYouTubeAds();
-    blockPopups();
-  }, 1000);
-
-})();
-)JS";
+                // ── 100% Ad Blocker Script (global kAdBlockScript ব্যবহার করা হচ্ছে) ──
                 sender->ExecuteScript(kAdBlockScript, nullptr);
 
                 return S_OK;
@@ -1775,6 +1752,8 @@ public:
                 w.tabs[m_tabIdx].canBack = !!canB;
                 w.tabs[m_tabIdx].canFwd  = !!canF;
                 InvalidateRect(m_hWnd, NULL, FALSE);
+                // ── YouTube SPA navigation এ ad block re-inject (HistoryChanged = নতুন page) ──
+                sender->ExecuteScript(kAdBlockScript, nullptr);
                 return S_OK;
             }).Get(), nullptr);
 
@@ -1849,12 +1828,9 @@ static void CreateWebViewForTab(HWND hWnd, int tabIdx) {
             L"--enable-zero-copy "
             // Bot detection bypass — সবচেয়ে গুরুত্বপূর্ণ
             L"--disable-blink-features=AutomationControlled "
-            // Google Sign-in এর জন্য — third-party cookie দরকার
-            L"--disable-features=SameSiteByDefaultCookies,CookiesWithoutSameSiteMustBeSecure "
-            // Google OAuth popup এর জন্য
-            L"--disable-features=BlockInsecurePrivateNetworkRequests "
-            // General compatibility
-            L"--disable-features=Translate "
+            // Google Sign-in, OAuth popup, general compatibility
+            // NOTE: সব --disable-features একটায় merge করা হয়েছে (একাধিক flag দিলে শেষেরটা override করে)
+            L"--disable-features=SameSiteByDefaultCookies,CookiesWithoutSameSiteMustBeSecure,BlockInsecurePrivateNetworkRequests,Translate "
             L"--no-first-run "
             L"--no-default-browser-check "
             // Web Audio API — কিছু site sign-in verify তে ব্যবহার করে
