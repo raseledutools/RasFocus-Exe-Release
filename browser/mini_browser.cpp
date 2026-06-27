@@ -684,7 +684,7 @@ static void RepositionAddressBar(HWND hWnd) {
     int W = cr.right;
 
     int navBtnArea    = S(8 + 36*3 + 8, dpi);
-    int rightIconArea = S(38*3 + 12,    dpi); 
+    int rightIconArea = S(36*3 + 8,     dpi); // draw/hit এর সাথে match করা হয়েছে
     int addrH         = S(30,           dpi); 
     int toolY         = TitleBarH(dpi);
     int addrY         = toolY + (ToolbarH(dpi) - addrH) / 2;
@@ -1142,7 +1142,7 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
 
             {
                 int addrX  = curX + S(4, dpi);
-                int rightIX = W - S(38*3 + 12, dpi); 
+                int rightIX = W - S(36*3 + 8, dpi); // rightIconArea এর সাথে match
                 int addrW  = rightIX - addrX - S(8, dpi);
                 int addrH  = S(30, dpi);
                 int addrY  = toolY + (toolH - addrH) / 2;
@@ -2183,16 +2183,16 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
             {
                 int btnStep = S(36, dpi);
                 int cx = S(8, dpi);
-                bool b  = (y>=toolY&&y<toolY+ToolbarH(dpi)&&x>=cx&&x<cx+S(34,dpi)); cx+=btnStep;
-                bool f  = (y>=toolY&&y<toolY+ToolbarH(dpi)&&x>=cx&&x<cx+S(34,dpi)); cx+=btnStep;
-                bool rl = (y>=toolY&&y<toolY+ToolbarH(dpi)&&x>=cx&&x<cx+S(34,dpi));
+                bool b  = (y>=toolY&&y<toolY+ToolbarH(dpi)&&x>=cx&&x<cx+S(36,dpi)); cx+=btnStep;
+                bool f  = (y>=toolY&&y<toolY+ToolbarH(dpi)&&x>=cx&&x<cx+S(36,dpi)); cx+=btnStep;
+                bool rl = (y>=toolY&&y<toolY+ToolbarH(dpi)&&x>=cx&&x<cx+S(36,dpi));
                 if (wd.hBack!=b||wd.hFwd!=f||wd.hRel!=rl)
                     { wd.hBack=b; wd.hFwd=f; wd.hRel=rl; dirty=true; }
 
-                int rx = W - S(36*3+8, dpi); 
-                bool pr = (y>=toolY&&y<toolY+ToolbarH(dpi)&&x>=rx&&x<rx+S(34,dpi)); rx+=btnStep;
-                bool e  = (y>=toolY&&y<toolY+ToolbarH(dpi)&&x>=rx&&x<rx+S(34,dpi)); rx+=btnStep;
-                bool m  = (y>=toolY&&y<toolY+ToolbarH(dpi)&&x>=rx&&x<rx+S(34,dpi));
+                int rx = W - S(36*3+8, dpi);
+                bool pr = (y>=toolY&&y<toolY+ToolbarH(dpi)&&x>=rx&&x<rx+S(36,dpi)); rx+=btnStep;
+                bool e  = (y>=toolY&&y<toolY+ToolbarH(dpi)&&x>=rx&&x<rx+S(36,dpi)); rx+=btnStep;
+                bool m  = (y>=toolY&&y<toolY+ToolbarH(dpi)&&x>=rx&&x<rx+S(36,dpi));
                 if (wd.hProfile!=pr||wd.hExt!=e||wd.hMenu!=m)
                     { wd.hProfile=pr; wd.hExt=e; wd.hMenu=m; dirty=true; }
             }
