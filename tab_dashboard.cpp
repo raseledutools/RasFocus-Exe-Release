@@ -174,226 +174,302 @@ void DrawDashboardTab(Graphics& g, float cx, float cy, float cw, float ch) {
     InitDashboardData();
 
     FontFamily ff(L"Segoe UI");
-    Font fH1(&ff, 28, FontStyleBold, UnitPixel); // Hero Font
-    Font fSub(&ff, 14, FontStyleRegular, UnitPixel); // Hero Subtext
-    Font fTabTxt(&ff, 15, FontStyleBold, UnitPixel); 
-    Font fBtnTitle(&ff, 15, FontStyleBold, UnitPixel);
-    Font fBtnSub(&ff, 12, FontStyleRegular, UnitPixel);
-    
-    FontFamily ffIc(L"Segoe MDL2 Assets");
-    Font fIconBig(&ffIc, 24, FontStyleRegular, UnitPixel);
+    Font fH1(&ff, 20, FontStyleBold, UnitPixel);
+    Font fSub(&ff, 11, FontStyleRegular, UnitPixel);
+    Font fTabTxt(&ff, 12, FontStyleBold, UnitPixel);
+    Font fBtnTitle(&ff, 12, FontStyleBold, UnitPixel);
+    Font fBtnSub(&ff, 10, FontStyleRegular, UnitPixel);
 
-    SolidBrush bWhite(Color(255, 255, 255, 255));
-    SolidBrush bDark(Color(255, 30, 40, 50));
-    SolidBrush bGrayText(Color(255, 120, 130, 140));
-    SolidBrush bTeal(Color(255, 12, 168, 176));
-    SolidBrush bTealHover(Color(255, 30, 185, 195));
-    
+    FontFamily ffIc(L"Segoe MDL2 Assets");
+    Font fIconBig(&ffIc, 18, FontStyleRegular, UnitPixel);
+
+    // ── Dark Theme Palette ──────────────────────────────────────────────
+    // Backgrounds
+    Color clrPageBg(255, 15, 17, 23);       // #0f1117 - main page bg
+    Color clrSideBg(255, 19, 22, 31);       // #13161f - sidebar bg
+    Color clrDivider(255, 30, 35, 48);      // #1e2330 - borders
+    Color clrCardBg(255, 19, 22, 31);       // #13161f - grid cards
+    Color clrCardHovBg(255, 21, 27, 40);    // #151b28 - card hover bg
+    Color clrIconBg(255, 13, 21, 32);       // #0d1520 - icon bg default
+    Color clrIconHovBg(255, 10, 42, 47);    // #0a2a2f - icon hover bg
+    Color clrTabSelBg(255, 26, 58, 74);     // #1a3a4a - selected tab bg
+    Color clrTabHovBg(255, 28, 33, 51);     // #1c2133 - tab hover bg
+
+    // Text
+    Color clrTextPrimary(255, 232, 234, 240);   // #e8eaf0
+    Color clrTextSecondary(255, 192, 200, 224); // #c0c8e0
+    Color clrTextMuted(255, 58, 69, 96);        // #3a4560
+    Color clrTextTab(255, 90, 96, 128);         // #5a6080
+    Color clrTextTabHov(255, 160, 170, 200);    // #a0aac8
+
+    // Accent
+    Color clrTeal(255, 11, 191, 168);       // #0bbfa8
+    Color clrTealDim(255, 9, 140, 122);     // #098c7a
+    Color clrRed(255, 192, 57, 43);         // #c0392b
+    Color clrRedHov(255, 220, 60, 50);      // #dc3c32
+
+    SolidBrush brTeal(clrTeal);
     StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
     StringFormat fmtL; fmtL.SetAlignment(StringAlignmentNear); fmtL.SetLineAlignment(StringAlignmentCenter);
     StringFormat fmtTL; fmtTL.SetAlignment(StringAlignmentNear); fmtTL.SetLineAlignment(StringAlignmentNear);
 
-    // ─── 1. TWO-COLUMN LAYOUT PARTITION ───────────────────────────────────
-    float leftColWidth = 340.0f; // Fixed Sidebar Width
+    // ─── 1. BACKGROUND FILL ──────────────────────────────────────────────
+    float leftColWidth = 260.0f;
     float rightColX = cx + leftColWidth;
     float rightColWidth = cw - leftColWidth;
 
-    SolidBrush leftBg(Color(255, 248, 250, 252)); // Light premium tint for sidebar
-    SolidBrush rightBg(Color(255, 255, 255, 255)); // Clean white for content
-    
-    g.FillRectangle(&leftBg, cx, cy, leftColWidth, ch);
-    g.FillRectangle(&rightBg, rightColX, cy, rightColWidth, ch);
+    SolidBrush brSideBg(clrSideBg);
+    SolidBrush brPageBg(clrPageBg);
+    g.FillRectangle(&brSideBg, cx, cy, leftColWidth, ch);
+    g.FillRectangle(&brPageBg, rightColX, cy, rightColWidth, ch);
 
-    // Subtle divider line between columns
-    Pen colDivider(Color(255, 230, 235, 240), 1.0f);
-    g.DrawLine(&colDivider, rightColX, cy, rightColX, cy + ch);
+    Pen penDivider(clrDivider, 1.0f);
+    g.DrawLine(&penDivider, rightColX, cy, rightColX, cy + ch);
 
-    // ─── 2. LEFT SIDEBAR: HERO & ACTION CARDS ─────────────────────────────
-    float marginX = cx + 20.0f;
-    float currentY = cy + 30.0f;
-    float usableLeftW = leftColWidth - 40.0f;
+    // ─── 2. SIDEBAR: GREETING ────────────────────────────────────────────
+    float marginX = cx + 16.0f;
+    float currentY = cy + 20.0f;
+    float usableLeftW = leftColWidth - 32.0f;
 
-    // Greeting
     wstring greeting = GetGreeting();
-    g.DrawString(greeting.c_str(), -1, &fH1, RectF(marginX, currentY, usableLeftW, 35.0f), &fmtL, &bDark);
-    currentY += 35.0f;
-    g.DrawString(L"Manage workflow & boost productivity.", -1, &fSub, RectF(marginX, currentY, usableLeftW, 40.0f), &fmtTL, &bGrayText);
-    currentY += 45.0f;
+    SolidBrush brPrimary(clrTextPrimary);
+    SolidBrush brMuted(clrTextMuted);
+    g.DrawString(greeting.c_str(), -1, &fH1, RectF(marginX, currentY, usableLeftW, 28.0f), &fmtL, &brPrimary);
+    currentY += 28.0f;
+    g.DrawString(L"Manage workflow & boost productivity", -1, &fSub, RectF(marginX, currentY, usableLeftW, 18.0f), &fmtTL, &brMuted);
+    currentY += 24.0f;
 
-    // 4 Action Cards (Stacked Vertically)
-    float acH = 75.0f; // Slightly smaller height for vertical stack
-    float acGapY = 12.0f;
-    
-    struct CardTheme { Color bg; Color border; Color textC; Color subC; };
-    CardTheme acThemes[4] = {
-        { Color(255, 13, 158, 126),  Color(255,  9, 110, 88),  Color(255,255,255,255), Color(200,255,255,255) }, // teal
-        { Color(255,124,  58, 237),  Color(255, 91, 33, 182),  Color(255,255,255,255), Color(200,255,255,255) }, // purple
-        { Color(255,245, 158,  11),  Color(255,217,119,  6),   Color(255,255,255,255), Color(200,255,255,255) }, // amber
-        { Color(255, 59, 130, 246),  Color(255, 29, 78, 216),  Color(255,255,255,255), Color(200,255,255,255) }, // blue
+    // ─── 3. ACTION CARDS (compact, dark gradient style) ──────────────────
+    float acH = 62.0f;
+    float acGapY = 8.0f;
+
+    struct DarkCardTheme {
+        Color bgFrom; Color bgTo; Color border;
     };
-    wstring acIcons[4] = { L"\xE72E", L"\xE8D7", L"\xE728", L"\xE774" }; 
+    DarkCardTheme acThemes[4] = {
+        { Color(255, 13, 140, 122), Color(255, 11, 191, 168), Color(255, 9, 110, 88)   }, // teal
+        { Color(255, 107, 47, 212), Color(255, 145, 85, 245), Color(255, 80, 30, 170)  }, // purple
+        { Color(255, 196, 122, 10), Color(255, 240, 162, 32), Color(255, 160, 90, 5)   }, // amber
+        { Color(255, 26, 85, 200),  Color(255, 61, 130, 245), Color(255, 18, 62, 160)  }, // blue
+    };
+    wstring acIcons[4] = { L"\xE72E", L"\xE8D7", L"\xE728", L"\xE774" };
 
-    Font fAcTitle(&ff, 14, FontStyleBold, UnitPixel);
-    Font fAcSub  (&ff, 11, FontStyleRegular, UnitPixel);
-    Font fAcIcon(&ffIc, 22, FontStyleRegular, UnitPixel);
+    Font fAcTitle(&ff, 12, FontStyleBold, UnitPixel);
+    Font fAcSub(&ff, 10, FontStyleRegular, UnitPixel);
+    Font fAcIcon(&ffIc, 18, FontStyleRegular, UnitPixel);
 
     for (int i = 0; i < 4; i++) {
         s_actionCards[i].bounds = RectF(marginX, currentY, usableLeftW, acH);
         bool hov = s_actionCards[i].isHovered;
-        CardTheme& th = acThemes[i];
-
-        DrawSoftShadow(g, s_actionCards[i].bounds, 8);
+        DarkCardTheme& th = acThemes[i];
 
         GraphicsPath acPath;
-        AddRoundedRectPath(acPath, marginX, currentY, usableLeftW, acH, 8.0f);
-        SolidBrush acBg(hov ? th.border : th.bg);
+        AddRoundedRectPath(acPath, marginX, currentY, usableLeftW, acH, 10.0f);
+
+        // Use hovered (darker) or normal color
+        SolidBrush acBg(hov ? th.bgTo : th.bgFrom);
         g.FillPath(&acBg, &acPath);
 
-        // Icon background circle
-        float icS = 40.0f;
-        RectF icBg(marginX + 12.0f, currentY + (acH - icS) / 2.0f, icS, icS);
-        GraphicsPath icCirc;
-        AddRoundedRectPath(icCirc, icBg.X, icBg.Y, icBg.Width, icBg.Height, 20.0f);
-        SolidBrush icCircFill(Color(55, 255, 255, 255));
-        g.FillPath(&icCircFill, &icCirc);
+        if (hov) {
+            Pen hBorder(th.bgTo, 1.5f);
+            g.DrawPath(&hBorder, &acPath);
+        }
 
-        SolidBrush acIconC(Color(255, 255, 255, 255));
-        g.DrawString(acIcons[i].c_str(), -1, &fAcIcon, icBg, &fmtC, &acIconC);
+        // Icon box
+        float icS = 32.0f;
+        RectF icBg(marginX + 10.0f, currentY + (acH - icS) / 2.0f, icS, icS);
+        GraphicsPath icBgPath;
+        AddRoundedRectPath(icBgPath, icBg.X, icBg.Y, icBg.Width, icBg.Height, 7.0f);
+        SolidBrush icFill(Color(55, 255, 255, 255));
+        g.FillPath(&icFill, &icBgPath);
 
-        // Arrow hint (right side)
-        Font fArrow(&ffIc, 12, FontStyleRegular, UnitPixel);
-        SolidBrush arrowC(Color(120, 255, 255, 255));
-        g.DrawString(L"\xE76C", -1, &fArrow, RectF(marginX + usableLeftW - 28.0f, currentY, 24.0f, acH), &fmtC, &arrowC);
+        SolidBrush brWhite(Color(255, 255, 255, 255));
+        g.DrawString(acIcons[i].c_str(), -1, &fAcIcon, icBg, &fmtC, &brWhite);
 
-        // Text
-        float txtX = icBg.X + icS + 12.0f;
-        float txtW = usableLeftW - (txtX - marginX) - 30.0f;
-        SolidBrush acTxtC(th.textC);
-        SolidBrush acSubC(th.subC);
-        
-        g.DrawString(s_actionCards[i].title.c_str(), -1, &fAcTitle, RectF(txtX, currentY + 16.0f, txtW, 20.0f), &fmtTL, &acTxtC);
-        g.DrawString(s_actionCards[i].subtitle.c_str(), -1, &fAcSub, RectF(txtX, currentY + 36.0f, txtW, 30.0f), &fmtTL, &acSubC);
+        // Arrow
+        Font fArrow(&ffIc, 11, FontStyleRegular, UnitPixel);
+        SolidBrush brArrow(Color(100, 255, 255, 255));
+        g.DrawString(L"\xE76C", -1, &fArrow,
+            RectF(marginX + usableLeftW - 22.0f, currentY, 18.0f, acH), &fmtC, &brArrow);
+
+        // Title & subtitle
+        float txtX = icBg.X + icS + 10.0f;
+        float txtW = usableLeftW - (txtX - marginX) - 25.0f;
+        SolidBrush brW(Color(255, 255, 255, 255));
+        SolidBrush brWFade(Color(185, 255, 255, 255));
+        g.DrawString(s_actionCards[i].title.c_str(), -1, &fAcTitle,
+            RectF(txtX, currentY + 13.0f, txtW, 18.0f), &fmtTL, &brW);
+        g.DrawString(s_actionCards[i].subtitle.c_str(), -1, &fAcSub,
+            RectF(txtX, currentY + 32.0f, txtW, 16.0f), &fmtTL, &brWFade);
 
         currentY += acH + acGapY;
     }
 
-    // ─── 3. LEFT SIDEBAR: VERTICAL TABS ───────────────────────────────────
-    currentY += 15.0f; // Gap before tabs
+    // ─── 4. SIDEBAR: TAB SECTION LABEL ───────────────────────────────────
+    currentY += 10.0f;
+    Font fSecLabel(&ff, 9, FontStyleBold, UnitPixel);
+    SolidBrush brSecLabel(Color(255, 58, 64, 96));
+    g.DrawString(L"QUICK ACCESS", -1, &fSecLabel,
+        RectF(marginX + 8.0f, currentY, usableLeftW, 14.0f), &fmtL, &brSecLabel);
+    currentY += 18.0f;
+
+    // ─── 5. SIDEBAR: VERTICAL TABS ───────────────────────────────────────
     std::wstring subNames[] = { L"Quick Blocks", L"Web & Cloud", L"Pro Tools", L"Personal Notes", L"Student Corner" };
-    float tabH = 40.0f;
+    float tabH = 36.0f;
 
     for (int i = 0; i < 5; i++) {
         s_tabRects[i] = RectF(marginX, currentY, usableLeftW, tabH);
-        
+
         if (selectedDashTab == i) {
-            // Selected Tab Background
             GraphicsPath tPath;
-            AddRoundedRectPath(tPath, marginX, currentY, usableLeftW, tabH, 6.0f);
-            SolidBrush selBg(Color(255, 235, 248, 250)); // Very light teal
-            g.FillPath(&selBg, &tPath);
+            AddRoundedRectPath(tPath, marginX, currentY, usableLeftW, tabH, 8.0f);
+            SolidBrush brSelBg(clrTabSelBg);
+            g.FillPath(&brSelBg, &tPath);
 
-            // Active Left Border Indicator
+            // Left accent bar
             GraphicsPath indPath;
-            AddRoundedRectPath(indPath, marginX, currentY + 6.0f, 4.0f, tabH - 12.0f, 2.0f);
-            g.FillPath(&bTeal, &indPath);
+            AddRoundedRectPath(indPath, marginX, currentY + 8.0f, 3.0f, tabH - 16.0f, 2.0f);
+            g.FillPath(&brTeal, &indPath);
 
-            g.DrawString(subNames[i].c_str(), -1, &fTabTxt, RectF(marginX + 20.0f, currentY, usableLeftW - 20.0f, tabH), &fmtL, &bTeal);
-        } else {
+            g.DrawString(subNames[i].c_str(), -1, &fTabTxt,
+                RectF(marginX + 18.0f, currentY, usableLeftW - 18.0f, tabH), &fmtL, &brTeal);
+        }
+        else {
             bool isHov = (hoveredDashTab == i);
             if (isHov) {
                 GraphicsPath tPath;
-                AddRoundedRectPath(tPath, marginX, currentY, usableLeftW, tabH, 6.0f);
-                SolidBrush hovBg(Color(50, 230, 235, 240)); 
-                g.FillPath(&hovBg, &tPath);
+                AddRoundedRectPath(tPath, marginX, currentY, usableLeftW, tabH, 8.0f);
+                SolidBrush brHovBg(clrTabHovBg);
+                g.FillPath(&brHovBg, &tPath);
             }
-            Gdiplus::Color bDarkColor;
-            bDark.GetColor(&bDarkColor);
-            SolidBrush inactiveTxt(isHov ? bDarkColor : Color(255, 140, 150, 160));
-            g.DrawString(subNames[i].c_str(), -1, &fTabTxt, RectF(marginX + 20.0f, currentY, usableLeftW - 20.0f, tabH), &fmtL, &inactiveTxt);
+            SolidBrush brTabTxt(isHov ? clrTextTabHov : clrTextTab);
+            g.DrawString(subNames[i].c_str(), -1, &fTabTxt,
+                RectF(marginX + 18.0f, currentY, usableLeftW - 18.0f, tabH), &fmtL, &brTabTxt);
         }
         currentY += tabH + 4.0f;
     }
 
-    // ─── 4. RIGHT CONTENT: DYNAMIC GRID ───────────────────────────────────
-    float gridMarginX = rightColX + 35.0f;
-    float gridMarginY = cy + 30.0f;
-    float usableGridWidth = rightColWidth - 70.0f; 
-    
-    // Header for the selected category in the right column
-    g.DrawString(s_sections[selectedDashTab].title.c_str(), -1, &fH1, RectF(gridMarginX, gridMarginY, usableGridWidth, 40.0f), &fmtL, &bDark);
-    
-    float currentGridY = gridMarginY + 60.0f;
-    int columns = 3; 
-    float gapX = 20.0f;
-    float gapY = 20.0f;
+    // ─── 6. UPGRADE BUTTON ───────────────────────────────────────────────
+    float upBtnY = cy + ch - 52.0f;
+    GraphicsPath upPath;
+    AddRoundedRectPath(upPath, marginX, upBtnY, usableLeftW, 36.0f, 10.0f);
+    SolidBrush brUpBtn(Color(255, 196, 122, 10));
+    g.FillPath(&brUpBtn, &upPath);
+    Font fUpBtn(&ff, 12, FontStyleBold, UnitPixel);
+    SolidBrush brUpTxt(Color(255, 255, 255, 255));
+    g.DrawString(L"\xE74B  Upgrade Now", -1, &fUpBtn,
+        RectF(marginX, upBtnY, usableLeftW, 36.0f), &fmtC, &brUpTxt);
+
+    // ─── 7. RIGHT PANEL: HEADER ──────────────────────────────────────────
+    float gridMarginX = rightColX + 22.0f;
+    float gridMarginY = cy + 20.0f;
+    float usableGridWidth = rightColWidth - 44.0f;
+
+    // Section title
+    g.DrawString(s_sections[selectedDashTab].title.c_str(), -1, &fH1,
+        RectF(gridMarginX, gridMarginY, usableGridWidth, 28.0f), &fmtL, &brPrimary);
+    gridMarginY += 28.0f;
+
+    // Sub label for section
+    wstring sectionSubs[] = {
+        L"Quick block toggles",
+        L"AI tools, browsers & cloud platforms",
+        L"PDF, image & utility tools",
+        L"Your private space",
+        L"Study tools & trackers"
+    };
+    g.DrawString(sectionSubs[selectedDashTab].c_str(), -1, &fSub,
+        RectF(gridMarginX, gridMarginY, usableGridWidth, 16.0f), &fmtL, &brMuted);
+    gridMarginY += 22.0f;
+
+    // Hairline separator
+    Pen penSep(clrDivider, 1.0f);
+    g.DrawLine(&penSep, rightColX + 22.0f, gridMarginY, cx + cw - 22.0f, gridMarginY);
+    gridMarginY += 14.0f;
+
+    // ─── 8. RIGHT PANEL: GRID ────────────────────────────────────────────
+    float currentGridY = gridMarginY;
+    int columns = 3;
+    float gapX = 10.0f;
+    float gapY = 10.0f;
     float btnW = (usableGridWidth - (gapX * (columns - 1))) / columns;
-    float btnH = 80.0f; 
+    float btnH = 68.0f;
 
     float currentGridX = gridMarginX;
     int colCount = 0;
 
     for (auto& btn : s_sections[selectedDashTab].btns) {
         if (colCount >= columns) {
-            colCount = 0; 
-            currentGridX = gridMarginX; 
+            colCount = 0;
+            currentGridX = gridMarginX;
             currentGridY += btnH + gapY;
         }
 
         btn.bounds = RectF(currentGridX, currentGridY, btnW, btnH);
-        
-        DrawSoftShadow(g, btn.bounds, 8);
 
+        // Card background
         GraphicsPath bPath;
-        AddRoundedRectPath(bPath, btn.bounds.X, btn.bounds.Y, btn.bounds.Width, btn.bounds.Height, 8.0f);
-        SolidBrush btnBg(Color(255, 255, 255, 255));
-        g.FillPath(&btnBg, &bPath);
+        AddRoundedRectPath(bPath, btn.bounds.X, btn.bounds.Y, btn.bounds.Width, btn.bounds.Height, 10.0f);
 
+        SolidBrush brCardBg(btn.isHovered ? clrCardHovBg : clrCardBg);
+        g.FillPath(&brCardBg, &bPath);
+
+        // Border
         if (btn.isHovered) {
-            Pen hoverPen(&bTeal, 2.0f);
-            g.DrawPath(&hoverPen, &bPath);
+            Pen penHov(clrTeal, 1.5f);
+            g.DrawPath(&penHov, &bPath);
         } else {
-            Pen borderPen(Color(255, 235, 240, 245), 1.0f);
-            g.DrawPath(&borderPen, &bPath);
+            Pen penBrd(clrDivider, 1.0f);
+            g.DrawPath(&penBrd, &bPath);
         }
 
-        // Icon Circle
-        float icSize = 40.0f;
-        RectF iconBgRect(btn.bounds.X + 15.0f, btn.bounds.Y + (btnH - icSize)/2.0f, icSize, icSize);
+        // Icon box
+        float icSize = 34.0f;
+        RectF iconBgRect(btn.bounds.X + 12.0f, btn.bounds.Y + (btnH - icSize) / 2.0f, icSize, icSize);
         GraphicsPath icBgPath;
-        AddRoundedRectPath(icBgPath, iconBgRect.X, iconBgRect.Y, iconBgRect.Width, iconBgRect.Height, 20.0f);
-        SolidBrush icBgFill(btn.isHovered ? Color(255, 12, 168, 176) : Color(255, 240, 250, 252));
-        g.FillPath(&icBgFill, &icBgPath);
+        AddRoundedRectPath(icBgPath, iconBgRect.X, iconBgRect.Y, iconBgRect.Width, iconBgRect.Height, 8.0f);
+        SolidBrush brIconBg(btn.isHovered ? clrIconHovBg : clrIconBg);
+        g.FillPath(&brIconBg, &icBgPath);
 
-        SolidBrush btnIc(btn.isHovered ? Color(255, 255, 255, 255) : Color(255, 12, 168, 176)); 
-        g.DrawString(btn.icon.c_str(), -1, &fIconBig, iconBgRect, &fmtC, &btnIc);
+        SolidBrush brIcon(btn.isHovered ? clrTeal : Color(255, 80, 100, 150));
+        g.DrawString(btn.icon.c_str(), -1, &fIconBig, iconBgRect, &fmtC, &brIcon);
 
-        // Text Layout
-        float textStartX = iconBgRect.X + icSize + 15.0f;
-        float textW = btn.bounds.Width - (textStartX - btn.bounds.X) - 10.0f;
-        
-        g.DrawString(btn.title.c_str(), -1, &fBtnTitle, RectF(textStartX, btn.bounds.Y + 18.0f, textW, 20.0f), &fmtTL, &bDark);
-        g.DrawString(btn.subtext.c_str(), -1, &fBtnSub, RectF(textStartX, btn.bounds.Y + 40.0f, textW, 20.0f), &fmtTL, &bGrayText);
+        // Text
+        float textStartX = iconBgRect.X + icSize + 10.0f;
+        float textW = btn.bounds.Width - (textStartX - btn.bounds.X) - 8.0f;
+        SolidBrush brBtnTitle(clrTextSecondary);
+        SolidBrush brBtnSub(btn.isHovered ? clrTeal : clrTextMuted);
+        g.DrawString(btn.title.c_str(), -1, &fBtnTitle,
+            RectF(textStartX, btn.bounds.Y + 16.0f, textW, 18.0f), &fmtTL, &brBtnTitle);
+        g.DrawString(btn.subtext.c_str(), -1, &fBtnSub,
+            RectF(textStartX, btn.bounds.Y + 36.0f, textW, 16.0f), &fmtTL, &brBtnSub);
 
         currentGridX += btnW + gapX;
         colCount++;
     }
 
-    // ─── 5. DEBUG KILL BUTTON (Bottom Right of Whole Window) ──────────────
-    float killW = 130.0f, killH = 35.0f;
-    float killX = cx + cw - killW - 30.0f;
-    float killY = cy + ch - killH - 30.0f;
-    DrawSoftShadow(g, RectF(killX, killY, killW, killH), 4);
+    // ─── 9. DEBUG KILL BUTTON ────────────────────────────────────────────
+    float killW = 110.0f, killH = 28.0f;
+    float killX = cx + cw - killW - 20.0f;
+    float killY = cy + ch - killH - 18.0f;
     GraphicsPath kPath;
-    AddRoundedRectPath(kPath, killX, killY, killW, killH, 4.0f);
-    SolidBrush redBtn(dash_hovKillBtn ? Color(255, 220, 50, 50) : Color(255, 255, 255, 255));
-    SolidBrush redTxt(dash_hovKillBtn ? Color(255, 255, 255, 255) : Color(255, 200, 50, 50));
-    g.FillPath(&redBtn, &kPath);
-    if (!dash_hovKillBtn) {
-        Pen redPen(Color(255, 200, 50, 50), 1.0f);
-        g.DrawPath(&redPen, &kPath);
+    AddRoundedRectPath(kPath, killX, killY, killW, killH, 5.0f);
+
+    if (dash_hovKillBtn) {
+        SolidBrush brRedFill(clrRedHov);
+        g.FillPath(&brRedFill, &kPath);
+        SolidBrush brRedTxtH(Color(255, 255, 255, 255));
+        Font fKill(&ff, 10, FontStyleBold, UnitPixel);
+        g.DrawString(L"DEBUG KILL", -1, &fKill, RectF(killX, killY, killW, killH), &fmtC, &brRedTxtH);
+    } else {
+        SolidBrush brKillBg(clrPageBg);
+        g.FillPath(&brKillBg, &kPath);
+        Pen penRed(clrRed, 1.0f);
+        g.DrawPath(&penRed, &kPath);
+        SolidBrush brRedTxt(clrRed);
+        Font fKill(&ff, 10, FontStyleBold, UnitPixel);
+        g.DrawString(L"DEBUG KILL", -1, &fKill, RectF(killX, killY, killW, killH), &fmtC, &brRedTxt);
     }
-    Font fKill(&ff, 12, FontStyleBold, UnitPixel);
-    g.DrawString(L"DEBUG KILL", -1, &fKill, RectF(killX, killY, killW, killH), &fmtC, &redTxt);
 
     // ─── 6. PASSWORD NUMPAD OVERLAY (Centered on Screen) ──────────────────
     if (showKillPrompt) {
