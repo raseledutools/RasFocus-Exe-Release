@@ -27,6 +27,13 @@ let g_panning = false, g_panX0 = 0, g_panY0 = 0, g_scrollX0 = 0, g_scrollY0 = 0;
 
 // Undo/redo
 const MAX_HIST = 60;
+
+// Current visible page tracking (for statusbar)
+let g_currentVisiblePage = 1;
+
+// Lazy render tracking
+let g_pageObserver = null;   // IntersectionObserver for lazy render
+let g_renderedPages = new Set(); // which pageIndex slots already rendered
 )JS";
 
 ss << LR"JS(
@@ -89,12 +96,24 @@ async function saveBytesToFile(blob, name, ext='pdf', mime='application/pdf') {
   }
 }
 
-function updateStatusBar() {
+function updateStatusBar(currentPage) {
   const t = activeTab();
-  if (!t) { document.getElementById('sb-page').textContent = 'Page 0 of 0'; return; }
-  document.getElementById('sb-page').textContent = 'Page 1 of ' + t.pageOrder.length;
+  if (!t) {
+    const inp = document.getElementById('sb-page-input');
+    if (inp) inp.value = 0;
+    const tot = document.getElementById('sb-page-total');
+    if (tot) tot.textContent = 'of 0';
+    return;
+  }
+  const pg = (typeof currentPage === 'number') ? currentPage : (g_currentVisiblePage || 1);
+  const inp = document.getElementById('sb-page-input');
+  if (inp && document.activeElement !== inp) inp.value = pg; // focus এ থাকলে overwrite না
+  const tot = document.getElementById('sb-page-total');
+  if (tot) tot.textContent = 'of ' + t.pageOrder.length;
+  if (inp) inp.max = t.pageOrder.length;
   const zv = Math.round(t.zoom * 100) + '%';
   document.getElementById('sb-zoom-val').textContent = zv;
+  const qd = document.getElementById('qb-zoom-display'); if(qd && document.activeElement !== qd) qd.value = zv;
   document.getElementById('rp-zoom').textContent = zv;
   document.getElementById('rp-rotate').textContent = t.rotation + '°';
   document.getElementById('rp-filename').textContent = t.name;
@@ -152,19 +171,22 @@ function renderRecentFiles() {
   const list = document.getElementById('recent-files-list');
   if (!list) return;
   if (g_recentFiles.length === 0) {
-    list.innerHTML = '<p style="font-size:11px;color:#bbb;padding:10px 0;text-align:center;">No recent files yet</p>';
+    list.innerHTML = '<p style="font-size:11px;color:#888;padding:10px 0;text-align:center;">No recent files</p>';
     return;
   }
   list.innerHTML = g_recentFiles.map((r, i) => `
-    <div onclick="reopenRecent(${i})" style="display:flex;align-items:center;gap:10px;padding:9px 12px;
-      background:#fff;border:1px solid #e8e8e8;border-radius:5px;margin-bottom:6px;
-      cursor:pointer;transition:background .12s;" onmouseover="this.style.background='#f5f5f5'" onmouseout="this.style.background='#fff'">
-      <span style="font-size:22px;">&#128196;</span>
+    <div onclick="reopenRecent(${i})"
+      style="display:flex;align-items:center;gap:10px;padding:8px 10px;
+        background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.10);
+        border-radius:2px;margin-bottom:5px;cursor:pointer;"
+      onmouseover="this.style.background='rgba(255,255,255,.13)'"
+      onmouseout="this.style.background='rgba(255,255,255,.07)'">
+      <span style="font-size:20px;opacity:.7;">&#128196;</span>
       <div style="flex:1;min-width:0;">
-        <p style="font-size:12px;font-weight:600;color:#333;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.name}</p>
-        <p style="font-size:10px;color:#aaa;margin-top:1px;">${r.date}</p>
+        <p style="font-size:12px;font-weight:600;color:#ddd;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${r.name}</p>
+        <p style="font-size:10px;color:#888;margin-top:1px;">${r.date}</p>
       </div>
-      <span style="font-size:10px;color:#c0392b;font-weight:700;">Open ›</span>
+      <span style="font-size:10px;color:#1473E6;font-weight:700;">Open ›</span>
     </div>`).join('');
 }
 
@@ -312,8 +334,19 @@ function setViewerMode(native) {
   g_nativeMode = native;
   const btnRead = document.getElementById('rb-readmode');
   const btnEdit = document.getElementById('rb-editmode');
-  if (btnRead) btnRead.classList.toggle('active', native);
+  if (btnRead) btnRead.classList.toggle('active',  native);
   if (btnEdit) btnEdit.classList.toggle('active', !native);
+
+  // Restore container style if leaving native mode
+  if (!native) {
+    const container = document.getElementById('pdf-container');
+    const old = container.querySelector('#native-pdf-iframe');
+    if (old && old._restoreContainer) old._restoreContainer();
+  }
+
+  const sbMode = document.getElementById('sb-mode');
+  if (sbMode) sbMode.textContent = native ? 'View' : 'Annotate';
+
   renderViewer();
   updateStatusBar();
 }
@@ -323,6 +356,11 @@ function applyZoomTransform() {
   const t = activeTab(); if (!t) return;
   const container = document.getElementById('pdf-container');
   container.style.transform = g_nativeMode ? '' : `scale(${t.zoom})`;
+  // Zoom বদলালে canvas quality ঠিক রাখতে re-render দরকার
+  if (!g_nativeMode) {
+    g_renderedPages.clear();
+    observePageWrappers(); // observer re-trigger করো
+  }
   updateStatusBar();
 }
 
@@ -345,30 +383,40 @@ async function renderViewer() {
 // Pure vector, text-selectable, smooth zoom — exactly like Edge.
 function renderNative(t) {
   const container = document.getElementById('pdf-container');
-  container.style.transform = '';
+  container.style.cssText = 'width:100%;height:100%;padding:0;gap:0;';
   container.innerHTML = '';
 
   const url = getOrCreateBlobUrl(t);
 
-  // Wrapper fills the viewer-area completely
-  const wrap = document.createElement('div');
-  wrap.style.cssText = 'width:100%;height:100%;display:flex;flex-direction:column;';
-
+  // Full-bleed iframe — no padding/gap, no browser chrome leaking in
   const iframe = document.createElement('iframe');
   iframe.id  = 'native-pdf-iframe';
-  iframe.src = url;
+  // #toolbar=0 suppresses Edge/Chrome PDF toolbar so only our UI shows
+  iframe.src = url + '#toolbar=0&navpanes=0&scrollbar=1&view=FitH';
   iframe.style.cssText = [
-    'flex:1',
     'width:100%',
+    'height:100%',
     'border:none',
-    'background:#808080',
+    'background:#606060',   // match --ac-viewer exactly
     'display:block',
+    'flex:1',
   ].join(';');
-  // Allow the browser's built-in PDF toolbar to appear
   iframe.setAttribute('allowfullscreen', '');
 
-  wrap.appendChild(iframe);
-  container.appendChild(wrap);
+  container.appendChild(iframe);
+
+  // Restore container layout after native mode exits
+  iframe._restoreContainer = () => {
+    container.style.cssText = '';
+    container.style.display = 'flex';
+    container.style.flexDirection = 'column';
+    container.style.gap = '12px';
+    container.style.alignItems = 'center';
+    container.style.padding = '16px 20px';
+    container.style.width = '100%';
+    container.style.transformOrigin = 'top center';
+  };
+
   updateStatusBar();
 }
 </script>
@@ -379,22 +427,25 @@ ss << LR"JS(
 <script>
 const BASE_SCALE = 1.0;
 
+// ── Virtual/Lazy Canvas Render — Sumatra PDF এর মতো fast ─────
+// Step 1: সব পেজের জন্য সঠিক size এর placeholder তৈরি করে DOM এ রাখে।
+//         এতে scrollbar সঠিক থাকে এবং scroll করা যায়।
+// Step 2: IntersectionObserver (setupPageObserver) দেখে কোন page
+//         viewport এ এসেছে, তখনই শুধু সেটা render করে।
 async function renderCanvas(t) {
-  const myToken = ++g_renderToken;
+  ++g_renderToken;
+  g_renderedPages.clear();
+
   const container = document.getElementById('pdf-container');
   container.style.transform = `scale(${t.zoom})`;
   container.innerHTML = '';
 
-  const DPR = window.devicePixelRatio || 1;
-
+  // First pass: প্রতিটি page এর আসল size বের করে placeholder বসাও।
+  // getPage() cheap — শুধু metadata লোড হয়, pixel render হয় না।
   for (let i = 0; i < t.pageOrder.length; i++) {
-    if (myToken !== g_renderToken) return;
-
     const pNum = t.pageOrder[i];
     const page = await t.doc.getPage(pNum);
-
     const vpCss = page.getViewport({ scale: BASE_SCALE, rotation: t.rotation });
-    const vp    = page.getViewport({ scale: BASE_SCALE * DPR, rotation: t.rotation });
 
     const wrapper = document.createElement('div');
     wrapper.className = 'page-wrapper';
@@ -403,49 +454,50 @@ async function renderCanvas(t) {
     wrapper.dataset.pdfPage   = pNum;
     wrapper.style.width  = vpCss.width  + 'px';
     wrapper.style.height = vpCss.height + 'px';
+    // সঠিক position maintain করার জন্য position relative দরকার
+    wrapper.style.position = 'relative';
 
-    const pdfCanvas = document.createElement('canvas');
-    pdfCanvas.className    = 'pdf-canvas';
-    pdfCanvas.width        = Math.round(vp.width);
-    pdfCanvas.height       = Math.round(vp.height);
-    pdfCanvas.style.width  = vpCss.width  + 'px';
-    pdfCanvas.style.height = vpCss.height + 'px';
-    const pdfCtx = pdfCanvas.getContext('2d');
+    // Placeholder — gray background + page number, actual render এর আগে দেখায়
+    const placeholder = document.createElement('div');
+    placeholder.className = 'page-placeholder';
+    placeholder.style.cssText = [
+      'width:100%', 'height:100%',
+      'display:flex', 'align-items:center', 'justify-content:center',
+      'background:#e8e8e8', 'color:#999', 'font-size:13px',
+      'position:absolute', 'top:0', 'left:0'
+    ].join(';');
+    placeholder.textContent = i + 1;
 
+    // Draw canvas (annotation layer) — সবসময় থাকে
     const drawCanvas = document.createElement('canvas');
     drawCanvas.className    = 'draw-canvas';
     drawCanvas.width        = vpCss.width;
     drawCanvas.height       = vpCss.height;
     drawCanvas.style.width  = vpCss.width  + 'px';
     drawCanvas.style.height = vpCss.height + 'px';
+    drawCanvas.style.position = 'absolute';
+    drawCanvas.style.top = '0'; drawCanvas.style.left = '0';
 
-    const grid    = document.createElement('div');
+    const grid = document.createElement('div');
     grid.className = 'grid-overlay' + (g_showGrid ? ' show' : '');
-    const selRect   = document.createElement('div');
+    const selRect = document.createElement('div');
     selRect.className = 'sel-rect';
 
-    wrapper.appendChild(pdfCanvas);
+    wrapper.appendChild(placeholder);
     wrapper.appendChild(drawCanvas);
     wrapper.appendChild(grid);
     wrapper.appendChild(selRect);
     container.appendChild(wrapper);
-
-    try {
-      await page.render({ canvasContext: pdfCtx, viewport: vp }).promise;
-    } catch(e) { /* cancelled */ }
-
-    if (myToken !== g_renderToken) return;
-
-    restoreDrawAnnotations(i, drawCanvas, vp.width, vp.height);
-    restoreShapes(t, i, wrapper);
-    restoreTextBoxes(t, i, wrapper);
-    restorePasteImages(t, i, wrapper);
-    restoreStickyNotes(t, i, wrapper);
-    restoreStamps(t, i, wrapper);
-    restoreRedactions(t, i, wrapper);
   }
+
+  // Observer setup: visible page এ render trigger করবে
+  setupPageObserver(t.pageOrder.length);
+  observePageWrappers();
+
   applyZoomTransform();
   refreshStats();
+  g_currentVisiblePage = 1;
+  updateStatusBar(1);
 }
 </script>
 )JS";
@@ -457,7 +509,7 @@ ss << LR"JS(
 <script>
 function zoomBy(delta) {
   const t = activeTab(); if (!t) return;
-  if (g_nativeMode) return; // native iframe handles its own zoom
+  if (g_nativeMode) return;
   t.zoom = Math.min(5, Math.max(0.1, t.zoom + delta));
   applyZoomTransform();
 }
@@ -467,9 +519,16 @@ function zoomTo(v) {
   t.zoom = v;
   applyZoomTransform();
 }
+function applyZoomInput(val) {
+  // Accept "125%" or "1.25" or "125"
+  const clean = String(val).replace('%','').trim();
+  const pct   = parseFloat(clean);
+  if (!isNaN(pct) && pct > 0) zoomTo(pct / 100);
+}
 function rotatePDFAll() {
   const t = activeTab(); if (!t) return;
   t.rotation = (t.rotation + 90) % 360;
+  g_renderedPages.clear(); // rotation বদলালে সব page re-render দরকার
   updateStatusBar(); scheduleRender();
 }
 
@@ -503,11 +562,12 @@ document.addEventListener('keydown', e => {
   if (ctrl && e.key === 'z') { e.preventDefault(); histUndo(); }
   if (ctrl && e.key === 'y') { e.preventDefault(); histRedo(); }
   if (ctrl && e.key === 'f') { e.preventDefault(); toggleFindBar(); }
-  if (ctrl && e.key === '0') { zoomTo(1.0); }
-  if (ctrl && e.key === '=') { zoomBy(0.15); }
-  if (ctrl && e.key === '-') { zoomBy(-0.15); }
-  // Ctrl+R — toggle native reader / edit (canvas) mode
+  if (ctrl && e.key === '0') { e.preventDefault(); zoomTo(1.0); }
+  if (ctrl && e.key === '=') { e.preventDefault(); zoomBy(0.15); }
+  if (ctrl && e.key === '-') { e.preventDefault(); zoomBy(-0.15); }
   if (ctrl && (e.key === 'r' || e.key === 'R')) { e.preventDefault(); setViewerMode(!g_nativeMode); return; }
+  // F4 = toggle thumbnail panel (Acrobat shortcut)
+  if (e.key === 'F4') { e.preventDefault(); toggleLeftPanel(); return; }
   if (e.key === 'Escape') {
     if (document.querySelector('.modal-overlay[style*="flex"]') ||
         document.getElementById('loading-overlay')?.style.display === 'flex') {
@@ -515,10 +575,18 @@ document.addEventListener('keydown', e => {
     }
     if (document.querySelector('.dropdown.open')) { closeAllMenus(); closeCtx(); return; }
     if (document.body.classList.contains('present')) { enterPresentation(); return; }
-    if (document.body.classList.contains('read')) { exitReadMode(); return; }
+    if (document.body.classList.contains('read'))    { exitReadMode(); return; }
   }
   if (e.key === 'Delete') deleteSelectedAnnotation();
-  // Tool keys
+  // Acrobat-style tool keys
+  if (e.key === 'h' || e.key === 'H') setTool('hand');
+  if (e.key === 'v' || e.key === 'V') setTool('select');
+  if (e.key === 'd' || e.key === 'D') setTool('pen');
+  if (e.key === 'u' || e.key === 'U') setTool('highlight');
+  if (e.key === 'e' || e.key === 'E') setTool('eraser');
+  if (e.key === 'n' || e.key === 'N') setTool('note');
+  if (e.key === 't' || e.key === 'T') setTool('textbox');
+  // Number shortcuts kept as fallback
   if (e.key === '1') setTool('hand');
   if (e.key === '2') setTool('select');
   if (e.key === '3') setTool('pen');
@@ -527,7 +595,7 @@ document.addEventListener('keydown', e => {
   if (e.key === '6') setTool('note');
   if (e.key === '7') setTool('textbox');
   if (e.key === '8') setTool('stamp');
-  if (e.key === 'r' || e.key === 'R') rotatePDFAll();
+  if ((e.key === 'r' || e.key === 'R') && !ctrl) rotatePDFAll();
 });
 
 let g_selectedAnnot = null;
@@ -555,7 +623,7 @@ const TOOL_LABELS = {
 
 function setTool(tool) {
   g_tool = tool;
-  document.querySelectorAll('.rbtn[id^="rb-"]').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.qb-btn[id^="rb-"]').forEach(b => b.classList.remove('active'));
   const rbtn = document.getElementById('rb-' + tool);
   if (rbtn) rbtn.classList.add('active');
 
@@ -577,8 +645,108 @@ function setTool(tool) {
 )JS";
 
 ss << LR"JS(
-// ── Hand pan — requestAnimationFrame for buttery smooth panning ──
+// ── Page Visibility Tracker (IntersectionObserver) ───────────────────────
+// Scroll করলে কোন page visible তা track করে statusbar update করে।
+// Canvas mode তে lazy rendering ও করে।
 const viewerArea = document.getElementById('viewer-area');
+
+function setupPageObserver(totalPages) {
+  // আগের observer থাকলে disconnect করো
+  if (g_pageObserver) { g_pageObserver.disconnect(); g_pageObserver = null; }
+
+  g_pageObserver = new IntersectionObserver((entries) => {
+    // সবচেয়ে বেশি visible যে page সেটা current page
+    let best = -1, bestRatio = 0;
+    entries.forEach(entry => {
+      if (entry.isIntersecting && entry.intersectionRatio > bestRatio) {
+        bestRatio = entry.intersectionRatio;
+        best = parseInt(entry.target.dataset.pageIndex, 10);
+      }
+    });
+    if (best >= 0) {
+      g_currentVisiblePage = best + 1; // 1-indexed
+      updateStatusBar(g_currentVisiblePage);
+    }
+
+    // Lazy canvas render: এখন দেখা যাচ্ছে কিন্তু আগে render হয়নি এমন page গুলো render করো
+    if (!g_nativeMode) {
+      entries.forEach(entry => {
+        if (!entry.isIntersecting) return;
+        const idx = parseInt(entry.target.dataset.pageIndex, 10);
+        if (!isNaN(idx) && !g_renderedPages.has(idx)) {
+          renderSinglePageCanvas(idx);
+        }
+      });
+    }
+  }, {
+    root: viewerArea,
+    rootMargin: '200px 0px',  // 200px আগে থেকেই pre-render শুরু
+    threshold: [0, 0.1, 0.5, 1.0]
+  });
+}
+
+function observePageWrappers() {
+  if (!g_pageObserver) return;
+  document.querySelectorAll('.page-wrapper').forEach(w => g_pageObserver.observe(w));
+}
+
+// Single page canvas render (lazy mode তে ব্যবহার হয়)
+async function renderSinglePageCanvas(pageIndex) {
+  const t = activeTab(); if (!t) return;
+  if (g_renderedPages.has(pageIndex)) return;
+  g_renderedPages.add(pageIndex);
+
+  const wrapper = document.getElementById('pw-' + pageIndex);
+  if (!wrapper) return;
+
+  const pNum = t.pageOrder[pageIndex];
+  if (!pNum) return;
+
+  try {
+    const page = await t.doc.getPage(pNum);
+    const DPR = window.devicePixelRatio || 1;
+    const vpCss = page.getViewport({ scale: 1.0, rotation: t.rotation });
+    const vp    = page.getViewport({ scale: 1.0 * DPR, rotation: t.rotation });
+
+    // Placeholder spinner সরাও, canvas যোগ করো
+    const placeholder = wrapper.querySelector('.page-placeholder');
+    if (placeholder) placeholder.remove();
+
+    let pdfCanvas = wrapper.querySelector('.pdf-canvas');
+    if (!pdfCanvas) {
+      pdfCanvas = document.createElement('canvas');
+      pdfCanvas.className = 'pdf-canvas';
+      wrapper.insertBefore(pdfCanvas, wrapper.firstChild);
+    }
+    pdfCanvas.width        = Math.round(vp.width);
+    pdfCanvas.height       = Math.round(vp.height);
+    pdfCanvas.style.width  = vpCss.width  + 'px';
+    pdfCanvas.style.height = vpCss.height + 'px';
+
+    const pdfCtx = pdfCanvas.getContext('2d');
+    await page.render({ canvasContext: pdfCtx, viewport: vp }).promise;
+
+    // Draw canvas restore
+    const drawCanvas = wrapper.querySelector('.draw-canvas');
+    if (drawCanvas) {
+      drawCanvas.width  = vpCss.width;
+      drawCanvas.height = vpCss.height;
+      drawCanvas.style.width  = vpCss.width  + 'px';
+      drawCanvas.style.height = vpCss.height + 'px';
+      restoreDrawAnnotations(pageIndex, drawCanvas, vp.width, vp.height);
+    }
+    restoreShapes(t, pageIndex, wrapper);
+    restoreTextBoxes(t, pageIndex, wrapper);
+    restorePasteImages(t, pageIndex, wrapper);
+    restoreStickyNotes(t, pageIndex, wrapper);
+    restoreStamps(t, pageIndex, wrapper);
+    restoreRedactions(t, pageIndex, wrapper);
+  } catch(e) {
+    g_renderedPages.delete(pageIndex); // fail হলে retry allow করো
+  }
+}
+
+// ── Hand pan — requestAnimationFrame for buttery smooth panning ──
 let g_panRAF = null;
 let g_panTargetX = 0, g_panTargetY = 0;
 

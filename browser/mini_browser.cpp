@@ -108,6 +108,90 @@ static const wchar_t* kAdBlockScript = LR"JS(
   };
 
   // ══════════════════════════════════════════════════════════════════
+  // LAYER 1.5 — YouTube /youtubei/v1/player JSON prune
+  // Kotlin YouTubeAdPruner.getJsInjectScript() এর C++ port।
+  // fetch() + XHR intercept করে /player response এর adPlacements,
+  // playerAds, adSlots সরায় — YouTube player মনে করে ad নেই।
+  // uBlock Origin json-prune approach।
+  // ══════════════════════════════════════════════════════════════════
+  const YT_AD_PRUNE_FIELDS = [
+    'adPlacements','playerAds','adSlots',
+    'adBreakHeartbeatParams','auxiliaryUi',
+    'adMessagingConfig','adVideoId'
+  ];
+
+  function isYtPlayerUrl(url) {
+    return url && (
+      url.includes('/youtubei/v1/player') ||
+      url.includes('/youtubei/v1/next') ||
+      url.includes('/youtubei/v1/browse')
+    );
+  }
+
+  function pruneYtAdFields(obj) {
+    if (!obj || typeof obj !== 'object') return;
+    YT_AD_PRUNE_FIELDS.forEach(f => { delete obj[f]; });
+    if (obj.playerResponse) {
+      YT_AD_PRUNE_FIELDS.forEach(f => { delete obj.playerResponse[f]; });
+    }
+    Object.values(obj).forEach(val => {
+      if (Array.isArray(val)) val.forEach(item => pruneYtAdFields(item));
+      else if (val && typeof val === 'object') pruneYtAdFields(val);
+    });
+  }
+
+  function pruneYtJsonText(text) {
+    try {
+      const obj = JSON.parse(text);
+      pruneYtAdFields(obj);
+      return JSON.stringify(obj);
+    } catch(e) { return text; }
+  }
+
+  // fetch() intercept — /player response prune
+  if (!window.__RAS_YT_PRUNER__) {
+    window.__RAS_YT_PRUNER__ = true;
+    const _ytOrigFetch = window.fetch;
+    window.fetch = function(input, init) {
+      const url = (typeof input === 'string') ? input : (input && input.url) || '';
+      return _ytOrigFetch.call(this, input, init).then(resp => {
+        if (!isYtPlayerUrl(url)) return resp;
+        return resp.clone().text().then(text => {
+          const pruned = pruneYtJsonText(text);
+          return new Response(pruned, {
+            status: resp.status, statusText: resp.statusText, headers: resp.headers
+          });
+        });
+      });
+    };
+
+    // XHR intercept — /player response prune
+    const _ytXhrOpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function(method, url) {
+      this._rasYtUrl = url;
+      // LAYER 1 এ already XHR block আছে — ad URL এর জন্য
+      // এখানে শুধু player URL track করছি
+      return _ytXhrOpen.apply(this, arguments);
+    };
+    const _ytXhrSend = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.send = function() {
+      if (isYtPlayerUrl(this._rasYtUrl)) {
+        const xhr = this;
+        Object.defineProperty(xhr, 'responseText', {
+          get() {
+            const raw = Object.getOwnPropertyDescriptor(XMLHttpRequest.prototype, 'responseText');
+            const text = raw ? raw.get.call(xhr) : '';
+            if (xhr.readyState === 4) return pruneYtJsonText(text);
+            return text;
+          },
+          configurable: true
+        });
+      }
+      return _ytXhrSend.apply(this, arguments);
+    };
+  }
+
+  // ══════════════════════════════════════════════════════════════════
   // LAYER 2 — ytInitialPlayerResponse patch: YouTube player config এ
   // ads array খালি করে দেওয়া — page load এর আগেই কাজ করে
   // ══════════════════════════════════════════════════════════════════
@@ -227,10 +311,9 @@ static const wchar_t* kAdBlockScript = LR"JS(
     );
 
     if (!isAd) {
-      // ad নেই — normal state নিশ্চিত করো
+      // ad নেই — mute state restore করো
       if (video._rasWasMuted !== undefined) {
-        video.muted        = video._rasWasMuted;
-        video.playbackRate = 1;
+        video.muted = video._rasWasMuted;
         delete video._rasWasMuted;
       }
       if (_adSkipInterval) {
@@ -246,27 +329,32 @@ static const wchar_t* kAdBlockScript = LR"JS(
     );
     if (skipBtn) { skipBtn.click(); return; }
 
-    // Skip নেই — mute + 16x speed এ শেষ করো
+    // Skip নেই — শুধু mute করো, speed বা currentTime jump করবে না
+    // (16x speed + currentTime jump করলে YouTube video black হয়ে hang করে)
     if (video._rasWasMuted === undefined) {
       video._rasWasMuted = video.muted;
     }
-    video.muted        = true;
-    video.playbackRate = 16;
+    video.muted = true;
 
-    // currentTime কে duration এ jump করো (instant skip)
-    if (video.duration && video.duration > 0 && isFinite(video.duration)) {
-      try { video.currentTime = video.duration - 0.1; } catch(e) {}
-    }
-
-    // interval এ skip button চেক করো
+    // interval এ skip button চেক করো (100ms — দ্রুত detect)
     if (!_adSkipInterval) {
       _adSkipInterval = setInterval(() => {
         const sb = document.querySelector(
-          '.ytp-skip-ad-button, .ytp-ad-skip-button, .ytp-ad-skip-button-modern'
+          '.ytp-skip-ad-button, .ytp-ad-skip-button, .ytp-ad-skip-button-modern, [class*="skip-button"]'
         );
-        if (sb) { sb.click(); }
-        handleVideoAd();
-      }, 150);
+        if (sb) { sb.click(); clearInterval(_adSkipInterval); _adSkipInterval = null; return; }
+        // ad শেষ হয়েছে কিনা চেক করো
+        const stillAd = !!(
+          document.querySelector('.ytp-ad-badge') ||
+          document.querySelector('.ad-showing') ||
+          document.querySelector('.ytp-ad-player-overlay') ||
+          document.querySelector('.ytp-ad-progress')
+        );
+        if (!stillAd) {
+          clearInterval(_adSkipInterval);
+          _adSkipInterval = null;
+        }
+      }, 100);
     }
   }
 
@@ -663,6 +751,14 @@ static RECT GetWebViewRect(HWND hWnd) {
         return b; // top = 0, full window
     }
     b.top += NavTotalH(hWnd);
+    // Menu open থাকলে right side এ 340px খালি রাখো — WebView2 GDI+ এর উপরে থাকে
+    // তাই menu area তে WebView shrink করলেই menu দেখা যাবে
+    if (g_windows.count(hWnd) && g_windows[hWnd].isMenuOpen) {
+        UINT dpi = GetWndDpi(hWnd);
+        int menuAreaW = S(340, dpi); // menuW(320) + margin(10) + extra(10)
+        b.right -= menuAreaW;
+        if (b.right < b.left + S(100, dpi)) b.right = b.left + S(100, dpi);
+    }
     return b;
 }
 
@@ -1593,6 +1689,98 @@ public:
             L"})();",
             nullptr);
 
+        // ── Network-level Ad Block (Kotlin shouldInterceptRequest এর C++ port) ──
+        // WebView2 এর add_WebResourceRequested দিয়ে ad/tracker domain গুলো
+        // network level এ block করা হয় — JS inject এর চেয়ে বেশি কার্যকর।
+        // Kotlin AdBlocker.kt এর AD_DOMAINS + TRACKER_DOMAINS এর subset।
+        {
+            // Filter pattern: wildcard দিয়ে সব ad domain match করো
+            static const wchar_t* kAdNetworkFilters[] = {
+                L"*://doubleclick.net/*",
+                L"*://*.doubleclick.net/*",
+                L"*://googlesyndication.com/*",
+                L"*://*.googlesyndication.com/*",
+                L"*://googleadservices.com/*",
+                L"*://*.googleadservices.com/*",
+                L"*://adservice.google.com/*",
+                L"*://imasdk.googleapis.com/*",
+                L"*://*.imasdk.googleapis.com/*",
+                L"*://amazon-adsystem.com/*",
+                L"*://*.amazon-adsystem.com/*",
+                L"*://adnxs.com/*",
+                L"*://*.adnxs.com/*",
+                L"*://rubiconproject.com/*",
+                L"*://*.rubiconproject.com/*",
+                L"*://pubmatic.com/*",
+                L"*://*.pubmatic.com/*",
+                L"*://openx.net/*",
+                L"*://*.openx.net/*",
+                L"*://criteo.com/*",
+                L"*://*.criteo.com/*",
+                L"*://taboola.com/*",
+                L"*://*.taboola.com/*",
+                L"*://outbrain.com/*",
+                L"*://*.outbrain.com/*",
+                L"*://scorecardresearch.com/*",
+                L"*://*.scorecardresearch.com/*",
+                L"*://google-analytics.com/*",
+                L"*://*.google-analytics.com/*",
+                L"*://googletagmanager.com/*",
+                L"*://*.googletagmanager.com/*",
+                L"*://hotjar.com/*",
+                L"*://*.hotjar.com/*",
+                // YouTube specific ad endpoints
+                L"*://youtube.com/pagead/*",
+                L"*://youtube.com/get_midroll_info*",
+                L"*://youtube.com/api/stats/ads*",
+                L"*://youtube.com/ad_data_204*",
+                L"*://www.youtube.com/pagead/*",
+                L"*://www.youtube.com/get_midroll_info*",
+                L"*://www.youtube.com/api/stats/ads*",
+            };
+            for (auto& pattern : kAdNetworkFilters) {
+                tab.webview->AddWebResourceRequestedFilter(
+                    pattern, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
+            }
+
+            EventRegistrationToken adBlockTok{};
+            tab.webview->add_WebResourceRequested(
+                Callback<ICoreWebView2WebResourceRequestedEventHandler>(
+                [](ICoreWebView2* sender,
+                   ICoreWebView2WebResourceRequestedEventArgs* args) -> HRESULT {
+                    // ── Empty 200 response দিয়ে ad request block করো ──
+                    ComPtr<ICoreWebView2WebResourceRequest> req;
+                    args->get_Request(&req);
+                    if (!req) return S_OK;
+
+                    LPWSTR uriRaw = nullptr;
+                    req->get_Uri(&uriRaw);
+                    if (!uriRaw) return S_OK;
+                    std::wstring uri(uriRaw);
+                    CoTaskMemFree(uriRaw);
+
+                    // YouTube /youtubei/v1/player এবং /next, /browse কে block করবো না
+                    // শুধু pure ad endpoints block করো
+                    bool isYtPlayer = (uri.find(L"/youtubei/v1/player") != std::wstring::npos ||
+                                       uri.find(L"/youtubei/v1/next")   != std::wstring::npos ||
+                                       uri.find(L"/youtubei/v1/browse") != std::wstring::npos);
+                    if (isYtPlayer) return S_OK; // pruner এ handle হবে
+
+                    // Empty response দিয়ে block করো — g_sharedEnv use করো
+                    if (g_sharedEnv) {
+                        ComPtr<IStream> emptyStream;
+                        CreateStreamOnHGlobal(nullptr, TRUE, &emptyStream);
+                        ComPtr<ICoreWebView2WebResourceResponse> resp;
+                        g_sharedEnv->CreateWebResourceResponse(
+                            emptyStream.Get(), 200, L"OK",
+                            L"Content-Type: text/plain\r\nContent-Length: 0",
+                            &resp);
+                        if (resp) args->put_Response(resp.Get());
+                    }
+                    return S_OK;
+                }).Get(), &adBlockTok);
+        }
+
         tab.webview->add_NavigationStarting(
             Callback<ICoreWebView2NavigationStartingEventHandler>(
             [this](ICoreWebView2* sender, ICoreWebView2NavigationStartingEventArgs* args) -> HRESULT {
@@ -2235,12 +2423,24 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
             if (wd.isMenuOpen) InvalidateRect(hWnd, NULL, FALSE);
         }
 
-        // ── Panel hover updates (panels need full redraw on mouse move) ──
+        // ── Panel hover updates ──
         if (g_bookmarkPanelOpen || g_historyPanelOpen || g_downloadsPanelOpen ||
             g_findBarOpen || g_contextMenuOpen || g_extensionPanelOpen) {
-            // Update hover indices for panels that use them
             if (g_historyPanelOpen) {
-                // history_panel tracks hover internally via mouseX/mouseY passed in Draw
+                // history hover index 업데이트
+                UINT dpi2 = GetWndDpi(hWnd);
+                int panelY2  = TitleBarH(dpi2) + ToolbarH(dpi2);
+                int headerH2 = MulDiv(56, (int)dpi2, 96);
+                int itemH2   = MulDiv(52, (int)dpi2, 96);
+                int newHover = -1;
+                if (y > panelY2 + headerH2) {
+                    int relY2 = y - panelY2 - headerH2;
+                    int idx2  = relY2 / itemH2 + g_historyScrollOffset;
+                    if (idx2 >= 0 && idx2 < (int)g_history.size()) newHover = idx2;
+                }
+                if (g_historyHoverIdx != newHover) {
+                    g_historyHoverIdx = newHover;
+                }
                 InvalidateRect(hWnd, NULL, FALSE);
             }
             if (g_bookmarkPanelOpen || g_downloadsPanelOpen ||
@@ -2320,12 +2520,20 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
         // ── History Panel Click ──
         if (g_historyPanelOpen) {
             std::wstring navUrl = HandleHistoryPanelClick(x, y, W, H, TitleBarH(dpi), ToolbarH(dpi), (int)dpi);
+            if (navUrl == L"__cleared__") {
+                // cleared — stay open, just refresh
+                InvalidateRect(hWnd, NULL, FALSE);
+                return 0;
+            }
             if (!navUrl.empty()) {
-                g_historyPanelOpen = false;
+                // g_historyPanelOpen already set false in handler
                 if (wd.active() && wd.active()->webview) wd.active()->webview->Navigate(navUrl.c_str());
                 InvalidateRect(hWnd, NULL, FALSE);
                 return 0;
             }
+            // empty return = delete click (refresh) OR click was inside panel
+            InvalidateRect(hWnd, NULL, FALSE);
+            return 0;
         }
 
         // ── Downloads Panel Click ──
@@ -2407,6 +2615,12 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 
                 wd.isMenuOpen   = false;
                 wd.hoverMenuIdx = -1;
+                // WebView bounds full restore করো
+                {
+                    RECT wvr = GetWebViewRect(hWnd);
+                    if (wd.active() && wd.active()->controller)
+                        wd.active()->controller->put_Bounds(wvr);
+                }
                 InvalidateRect(hWnd, NULL, TRUE);
 
                 if (clickIdx != -1) {
@@ -2492,6 +2706,10 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
             
             if (wd.hMenu) { 
                 wd.isMenuOpen = !wd.isMenuOpen;
+                // WebView bounds update করো — menu area খালি/ভরাট করতে
+                RECT wvr = GetWebViewRect(hWnd);
+                if (wd.active() && wd.active()->controller)
+                    wd.active()->controller->put_Bounds(wvr);
                 InvalidateRect(hWnd, NULL, TRUE);
                 return 0;
             }

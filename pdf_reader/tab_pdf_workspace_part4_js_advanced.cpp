@@ -1,6 +1,34 @@
 // ─────────────────────────────────────────────────────────────
 ss << LR"JS(
 <script>
+// ── Page jump from statusbar input or prev/next buttons ──────
+function jumpToPageFromInput(pageArg) {
+  const t = activeTab(); if (!t) return;
+  let pg;
+  if (typeof pageArg === 'number' || (typeof pageArg === 'string' && pageArg !== '')) {
+    pg = parseInt(pageArg) || 1;
+  } else {
+    const inp = document.getElementById('sb-page-input');
+    pg = parseInt(inp ? inp.value : 1) || 1;
+  }
+  pg = Math.min(t.pageOrder.length, Math.max(1, pg));
+  const inp = document.getElementById('sb-page-input');
+  if (inp) { inp.value = pg; inp.blur(); }
+  // native mode: tell iframe to jump via fragment
+  if (g_nativeMode) {
+    const iframe = document.getElementById('native-pdf-iframe');
+    if (iframe) {
+      const url = getOrCreateBlobUrl(t);
+      iframe.src = url + '#toolbar=0&navpanes=0&page=' + pg;
+      g_currentVisiblePage = pg;
+      updateStatusBar(pg);
+    }
+    return;
+  }
+  const target = document.getElementById('pw-' + (pg - 1));
+  if (target) target.scrollIntoView({ block: 'start', behavior: 'smooth' });
+}
+
 async function buildThumbs() {
   const t = activeTab(); if (!t) return;
   const list = document.getElementById('lp-thumb'); list.innerHTML = '';
@@ -294,12 +322,9 @@ document.addEventListener('click', e=>{
   if (!e.target.closest('.dropdown') && !e.target.closest('.top-menu')) closeAllMenus();
 });
 
-// ── Ribbon tabs ───────────────────────────────────────────────
+// ── Ribbon tabs (legacy stub — quick-bar replaces ribbon) ─────
 function switchRibbon(id, btn) {
-  document.querySelectorAll('.ribbon-panel').forEach(p=>p.classList.remove('active'));
-  document.querySelectorAll('.rtab').forEach(b=>b.classList.remove('active'));
-  document.getElementById(id).classList.add('active');
-  btn.classList.add('active');
+  // No-op: ribbon replaced by quick-bar in Acrobat DC design
 }
 
 // ── Right-panel section toggle ─────────────────────────────────
@@ -1069,27 +1094,53 @@ function showShortcutModal() {
 // ─────────────────────────────────────────────────────────────
 ss << LR"JS(
 <script>
-// ── Drag-drop open PDF ─────────────────────────────────────────
-const va=document.getElementById('viewer-area');
-va.addEventListener('dragover', e=>{
-  e.preventDefault();
-  va.style.outline='3px dashed var(--c-accent2)';
+// ── Drag-drop open PDF — whole window (Acrobat style) ─────────
+let g_dragDepth = 0;
+
+document.addEventListener('dragenter', e => {
+  if (!e.dataTransfer.types.includes('Files')) return;
+  g_dragDepth++;
+  if (g_dragDepth === 1) showDragOverlay(true);
 });
-va.addEventListener('dragleave', ()=>{ va.style.outline=''; });
-va.addEventListener('drop', async e=>{
-  e.preventDefault(); va.style.outline='';
+document.addEventListener('dragleave', e => {
+  g_dragDepth--;
+  if (g_dragDepth <= 0) { g_dragDepth = 0; showDragOverlay(false); }
+});
+document.addEventListener('dragover', e => { e.preventDefault(); });
+document.addEventListener('drop', async e => {
+  e.preventDefault();
+  g_dragDepth = 0;
+  showDragOverlay(false);
   for (const f of e.dataTransfer.files) {
     if (!f.name.toLowerCase().endsWith('.pdf')) continue;
-    const bytes=new Uint8Array(await f.arrayBuffer());
-    await createTab(f.name,bytes);
+    const bytes = new Uint8Array(await f.arrayBuffer());
+    await createTab(f.name, bytes);
   }
 });
 
+function showDragOverlay(show) {
+  let ov = document.getElementById('drag-overlay');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'drag-overlay';
+    ov.style.cssText = [
+      'position:fixed','inset:0','z-index:99999',
+      'background:rgba(20,115,230,.18)',
+      'border:3px dashed #1473E6',
+      'display:flex','align-items:center','justify-content:center',
+      'pointer-events:none',
+    ].join(';');
+    ov.innerHTML = '<div style="background:#1473E6;color:#fff;padding:16px 32px;border-radius:3px;font-size:18px;font-weight:700;">Drop PDF to Open</div>';
+    document.body.appendChild(ov);
+  }
+  ov.style.display = show ? 'flex' : 'none';
+}
+
 // ── Window resize → re-render ─────────────────────────────────
-let g_resizeTimer=null;
-window.addEventListener('resize',()=>{
+let g_resizeTimer = null;
+window.addEventListener('resize', () => {
   if (g_resizeTimer) clearTimeout(g_resizeTimer);
-  g_resizeTimer=setTimeout(()=>scheduleRender(),150);
+  g_resizeTimer = setTimeout(() => scheduleRender(), 150);
 });
 
 // ── Expose bridge for C++ WebView2 ───────────────────────────
