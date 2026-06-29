@@ -483,6 +483,8 @@ void DrawDashboardTab(Graphics& g, float cx, float cy, float cw, float ch) {
         DrawSoftShadow(g, RectF(pX, pY, pW, pH), 12);
         GraphicsPath popPath;
         AddRoundedRectPath(popPath, pX, pY, pW, pH, 12.0f);
+        SolidBrush bWhite(Color(255, 255, 255, 255));
+        SolidBrush bDark(Color(255, 30, 40, 50));
         g.FillPath(&bWhite, &popPath);
 
         Font fH2(&ff, 20, FontStyleBold, UnitPixel);
