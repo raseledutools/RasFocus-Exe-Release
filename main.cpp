@@ -1131,70 +1131,8 @@ void DrawMainArea(Graphics& g, int w, int h) {
     else if (selectedTab == 6) { DrawPdfWorkspaceTab (g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 7) { DrawAccountsTab     (g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 8) { DrawFamilyLinkTab   (g, contentX, contentY, contentW, contentH); } // ← Family Link Tab Draw Call
-    else if (selectedTab == 9 || selectedTab == 10) {
-        // ── Coming Soon overlay ──────────────────────────────────────────
-        SolidBrush bgBrush(ColBgContent);
-        g.FillRectangle(&bgBrush, contentX, contentY, contentW, contentH);
-
-        FontFamily ff(L"Segoe UI");
-        FontFamily ffIcons(L"Segoe MDL2 Assets");
-        StringFormat fmtC;
-        fmtC.SetAlignment(StringAlignmentCenter);
-        fmtC.SetLineAlignment(StringAlignmentCenter);
-
-        float cx = contentX + contentW / 2.0f;
-        float cy = contentY + contentH / 2.0f;
-
-        // Icon circle background
-        float circR = 50.0f;
-        SolidBrush circleBg(Color(30, 0, 150, 160));
-        g.FillEllipse(&circleBg, cx - circR, cy - circR - 50.0f, circR * 2.0f, circR * 2.0f);
-
-        // Tab icon
-        const wchar_t* tabIcon = (selectedTab == 9) ? L"\xE774" : L"\xEA38";
-        Font fIcon(&ffIcons, 38, FontStyleRegular, UnitPixel);
-        SolidBrush tealBrush(ColSubHeader);
-        g.DrawString(tabIcon, -1, &fIcon,
-                     RectF(cx - circR, cy - circR - 50.0f, circR * 2.0f, circR * 2.0f),
-                     &fmtC, &tealBrush);
-
-        // Tab name
-        const wchar_t* tabName = (selectedTab == 9) ? L"RasBrowser" : L"PDF Tools";
-        Font fTitle(&ff, 24, FontStyleBold, UnitPixel);
-        SolidBrush darkBrush(ColTextDark);
-        g.DrawString(tabName, -1, &fTitle,
-                     RectF(contentX, cy + 20.0f, contentW, 36.0f),
-                     &fmtC, &darkBrush);
-
-        // Coming Soon badge
-        float badgeW = 160.0f, badgeH = 32.0f;
-        float badgeX = cx - badgeW / 2.0f;
-        float badgeY = cy + 66.0f;
-        GraphicsPath badgePath;
-        float rb = 14.0f;
-        badgePath.AddArc(badgeX, badgeY, rb, rb, 180.0f, 90.0f);
-        badgePath.AddArc(badgeX + badgeW - rb, badgeY, rb, rb, 270.0f, 90.0f);
-        badgePath.AddArc(badgeX + badgeW - rb, badgeY + badgeH - rb, rb, rb, 0.0f, 90.0f);
-        badgePath.AddArc(badgeX, badgeY + badgeH - rb, rb, rb, 90.0f, 90.0f);
-        badgePath.CloseFigure();
-        SolidBrush badgeBg(ColSubHeader);
-        g.FillPath(&badgeBg, &badgePath);
-        Font fBadge(&ff, 13, FontStyleBold, UnitPixel);
-        SolidBrush white(ColWhite);
-        g.DrawString(L"✦  Coming Soon", -1, &fBadge,
-                     RectF(badgeX, badgeY, badgeW, badgeH),
-                     &fmtC, &white);
-
-        // Sub text
-        Font fSub(&ff, 11, FontStyleRegular, UnitPixel);
-        SolidBrush grayBrush(ColTextGray);
-        const wchar_t* subText = (selectedTab == 9)
-            ? L"A secure, focused browser — under construction"
-            : L"View, annotate & manage PDFs — under construction";
-        g.DrawString(subText, -1, &fSub,
-                     RectF(contentX + 40.0f, badgeY + 42.0f, contentW - 80.0f, 24.0f),
-                     &fmtC, &grayBrush);
-    }
+    else if (selectedTab == 9) { LaunchMiniBrowser(L"LOCAL_NTP", L"RasBrowser"); }
+    else if (selectedTab == 10) { DrawPdfWorkspaceTab(g, contentX, contentY, contentW, contentH); }
 }
 
 // ------------------------------------------
