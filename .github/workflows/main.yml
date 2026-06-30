@@ -7,6 +7,9 @@ on:
     branches: [ "main", "master" ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -14,6 +17,9 @@ jobs:
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        persist-credentials: true
 
     - name: Setup MSVC Compiler Environment
       uses: ilammy/msvc-dev-cmd@v1
@@ -87,3 +93,17 @@ jobs:
       with:
         name: RasFocus-App-Signed
         path: RasFocus.exe
+
+    # 🟢 Build হওয়া exe কে repo এর exe/ ফোল্ডারে commit-push করা হচ্ছে
+    # যাতে git pull করলেই সরাসরি exe পাওয়া যায়
+    - name: Commit & Push EXE to exe/ folder
+      if: github.event_name == 'push'
+      shell: bash
+      run: |
+        mkdir -p exe
+        cp RasFocus.exe exe/RasFocus.exe
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add exe/RasFocus.exe
+        git diff --staged --quiet || git commit -m "Auto-build: RasFocus.exe (${{ github.sha }}) [skip ci]"
+        git push origin HEAD:${{ github.ref_name }}
