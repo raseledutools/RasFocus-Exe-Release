@@ -1131,7 +1131,20 @@ void DrawMainArea(Graphics& g, int w, int h) {
     else if (selectedTab == 6) { DrawPdfWorkspaceTab (g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 7) { DrawAccountsTab     (g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 8) { DrawFamilyLinkTab   (g, contentX, contentY, contentW, contentH); } // ← Family Link Tab Draw Call
-    else if (selectedTab == 9) { LaunchMiniBrowser(L"LOCAL_NTP", L"RasBrowser"); }
+    else if (selectedTab == 9) {
+        // RasBrowser একটি আলাদা window-এ চলে; এখানে শুধু একটি নিউট্রাল ব্যাকগ্রাউন্ড দেখানো হচ্ছে
+        SolidBrush bgBrush(ColBgContent);
+        g.FillRectangle(&bgBrush, contentX, contentY, contentW, contentH);
+        FontFamily ff(L"Segoe UI");
+        StringFormat fmtC;
+        fmtC.SetAlignment(StringAlignmentCenter);
+        fmtC.SetLineAlignment(StringAlignmentCenter);
+        Font fInfo(&ff, 14, FontStyleRegular, UnitPixel);
+        SolidBrush grayBrush(ColTextGray);
+        g.DrawString(L"RasBrowser আলাদা একটি উইন্ডোতে খোলা হয়েছে", -1, &fInfo,
+                     RectF(contentX, contentY + contentH / 2.0f - 12.0f, contentW, 24.0f),
+                     &fmtC, &grayBrush);
+    }
     else if (selectedTab == 10) { DrawPdfWorkspaceTab(g, contentX, contentY, contentW, contentH); }
 }
 
@@ -1467,7 +1480,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             int idx = (int)((y - tabsStartY) / tabH);
             if (idx >= 0 && idx < (int)sidebarTabs.size()) {
                 int logicalTab = (idx == 6) ? 8 : (idx == 7) ? 9 : (idx == 8) ? 10 : idx; // ← 7=RasBrowser→9, 8=PDFTools→10
-                if (selectedTab != logicalTab) { selectedTab = logicalTab; HideAllWebViews(); }
+                if (selectedTab != logicalTab) {
+                    selectedTab = logicalTab;
+                    HideAllWebViews();
+                    if (logicalTab == 9) { LaunchMiniBrowser(L"LOCAL_NTP", L"RasBrowser"); }
+                }
             }
         }
 
