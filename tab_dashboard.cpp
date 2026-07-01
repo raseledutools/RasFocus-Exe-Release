@@ -183,30 +183,30 @@ void DrawDashboardTab(Graphics& g, float cx, float cy, float cw, float ch) {
     FontFamily ffIc(L"Segoe MDL2 Assets");
     Font fIconBig(&ffIc, 18, FontStyleRegular, UnitPixel);
 
-    // ── Dark Theme Palette ──────────────────────────────────────────────
+    // ── Light Theme Palette ─────────────────────────────────────────────
     // Backgrounds
-    Color clrPageBg(255, 15, 17, 23);       // #0f1117 - main page bg
-    Color clrSideBg(255, 19, 22, 31);       // #13161f - sidebar bg
-    Color clrDivider(255, 30, 35, 48);      // #1e2330 - borders
-    Color clrCardBg(255, 19, 22, 31);       // #13161f - grid cards
-    Color clrCardHovBg(255, 21, 27, 40);    // #151b28 - card hover bg
-    Color clrIconBg(255, 13, 21, 32);       // #0d1520 - icon bg default
-    Color clrIconHovBg(255, 10, 42, 47);    // #0a2a2f - icon hover bg
-    Color clrTabSelBg(255, 26, 58, 74);     // #1a3a4a - selected tab bg
-    Color clrTabHovBg(255, 28, 33, 51);     // #1c2133 - tab hover bg
+    Color clrPageBg(255, 255, 255, 255);    // #ffffff - main page bg
+    Color clrSideBg(255, 248, 250, 252);    // #f8fafc - sidebar bg
+    Color clrDivider(255, 226, 232, 240);   // #e2e8f0 - borders
+    Color clrCardBg(255, 248, 250, 252);    // #f8fafc - grid cards
+    Color clrCardHovBg(255, 240, 244, 248); // #f0f4f8 - card hover bg
+    Color clrIconBg(255, 237, 242, 247);    // #edf2f7 - icon bg default
+    Color clrIconHovBg(255, 224, 246, 243); // #e0f6f3 - icon hover bg
+    Color clrTabSelBg(255, 209, 245, 240);  // #d1f5f0 - selected tab bg
+    Color clrTabHovBg(255, 237, 242, 247);  // #edf2f7 - tab hover bg
 
     // Text
-    Color clrTextPrimary(255, 232, 234, 240);   // #e8eaf0
-    Color clrTextSecondary(255, 192, 200, 224); // #c0c8e0
-    Color clrTextMuted(255, 58, 69, 96);        // #3a4560
-    Color clrTextTab(255, 90, 96, 128);         // #5a6080
-    Color clrTextTabHov(255, 160, 170, 200);    // #a0aac8
+    Color clrTextPrimary(255, 30, 41, 59);      // #1e293b
+    Color clrTextSecondary(255, 71, 85, 105);   // #475569
+    Color clrTextMuted(255, 148, 163, 184);     // #94a3b8
+    Color clrTextTab(255, 100, 116, 139);       // #64748b
+    Color clrTextTabHov(255, 51, 65, 85);       // #334155
 
     // Accent
-    Color clrTeal(255, 11, 191, 168);       // #0bbfa8
-    Color clrTealDim(255, 9, 140, 122);     // #098c7a
-    Color clrRed(255, 192, 57, 43);         // #c0392b
-    Color clrRedHov(255, 220, 60, 50);      // #dc3c32
+    Color clrTeal(255, 8, 145, 130);        // #089182 (deepened for white bg)
+    Color clrTealDim(255, 6, 110, 98);      // #066e62
+    Color clrRed(255, 197, 48, 48);         // #c53030
+    Color clrRedHov(255, 220, 38, 38);      // #dc2626
 
     SolidBrush brTeal(clrTeal);
     StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
