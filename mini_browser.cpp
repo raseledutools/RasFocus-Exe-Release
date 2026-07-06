@@ -1131,6 +1131,7 @@ static void CreateWebViewForTab(HWND hWnd, int tabIdx) {
             L"--disable-blink-features=AutomationControlled "
             L"--enable-features=CookiesWithoutSameSiteMustBeSecure "
             L"--disable-web-security=false "
+            L"--no-proxy-server "
         );
 
         // User data dir in LocalAppData (required for Gemini login persistence)
