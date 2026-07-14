@@ -2059,8 +2059,19 @@ public:
                     sender->ExecuteScript(injectScript.c_str(), nullptr);
                 }
 
-                // ── 100% Ad Blocker Script (global kAdBlockScript ব্যবহার করা হচ্ছে) ──
-                sender->ExecuteScript(kAdBlockScript, nullptr);
+                // ── 100% Ad Blocker Script — শুধু YouTube এ চালাও ──
+                // NOTE: এই script এর MutationObserver + 300ms interval সব সাইটে
+                // চালালে heavy/dynamic DOM (Google search, Wikipedia, GitHub) এ
+                // main thread block হয়ে page কালো/ফাঁকা থেকে যায়। তাই YouTube
+                // ছাড়া অন্য সাইটে এটা inject করা হবে না।
+                {
+                    const std::wstring& curUrl2 = w.tabs[m_tabIdx].url;
+                    bool isYouTube = (curUrl2.find(L"youtube.com") != std::wstring::npos ||
+                                      curUrl2.find(L"youtu.be")    != std::wstring::npos);
+                    if (isYouTube) {
+                        sender->ExecuteScript(kAdBlockScript, nullptr);
+                    }
+                }
 
                 return S_OK;
             }).Get(), nullptr);
@@ -2078,7 +2089,15 @@ public:
                 w.tabs[m_tabIdx].canFwd  = !!canF;
                 InvalidateRect(m_hWnd, NULL, FALSE);
                 // ── YouTube SPA navigation এ ad block re-inject (HistoryChanged = নতুন page) ──
-                sender->ExecuteScript(kAdBlockScript, nullptr);
+                // শুধু YouTube এ — অন্য সাইটে চালালে heavy DOM এ page কালো হয়ে যায়
+                {
+                    const std::wstring& curUrl3 = w.tabs[m_tabIdx].url;
+                    bool isYouTube2 = (curUrl3.find(L"youtube.com") != std::wstring::npos ||
+                                       curUrl3.find(L"youtu.be")    != std::wstring::npos);
+                    if (isYouTube2) {
+                        sender->ExecuteScript(kAdBlockScript, nullptr);
+                    }
+                }
                 return S_OK;
             }).Get(), nullptr);
 
