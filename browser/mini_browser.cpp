@@ -180,15 +180,8 @@ static const wchar_t* kAdBlockScript = LR"JS(
     if (isAdUrl(url)) {
       return Promise.resolve(new Response('', { status: 204 }));
     }
-    if (isYtPlayerUrl(url)) {
-      return _origFetch.call(this, resource, init).then(resp => {
-        return resp.clone().text().then(text => {
-          return new Response(pruneYtJsonText(text), {
-            status: resp.status, statusText: resp.statusText, headers: resp.headers
-          });
-        }).catch(() => resp);
-      });
-    }
+    // YouTube player/next endpoint কখনো intercept করবো না —
+    // response modify করলে video content load হয় না (blank screen)
     return _origFetch.apply(this, arguments);
   };
 
