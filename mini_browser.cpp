@@ -79,10 +79,10 @@ std::wstring GetLocalNTP_HTML(bool isDark) {
     L".logo{font-size:64px;font-weight:bold;margin-bottom:5px;letter-spacing:-1.5px;user-select:none;}"
     L".logo span{color:" + teal + L";}"
     L".subtitle{font-size:15px;color:" + subText + L";margin-bottom:35px;font-weight:500;letter-spacing:1px;text-transform:uppercase;}"
-    L"form{width:100%;max-width:620px;position:relative;margin-bottom:50px;}"
+    L".search-wrap{width:100%;max-width:620px;position:relative;margin-bottom:50px;}"
     L".search-box{width:100%;padding:18px 50px;font-size:16px;border-radius:30px;border:1px solid " + boxBorder + L";background:" + boxBg + L";color:" + text + L";outline:none;box-shadow:" + shadow + L";box-sizing:border-box;transition:all 0.3s ease;}"
     L".search-box:focus{border-color:" + teal + L";box-shadow:0 4px 20px rgba(12,168,176,0.25);}"
-    L".icon-search{position:absolute;left:20px;top:50%;transform:translateY(-50%);width:22px;fill:#9aa0a6;}"
+    L".icon-search{position:absolute;left:20px;top:50%;transform:translateY(-50%);width:22px;fill:#9aa0a6;pointer-events:none;}"
     L".quick-links{display:flex;gap:30px;}"
     L".link-item{display:flex;flex-direction:column;align-items:center;text-decoration:none;color:" + text + L";font-size:14px;font-weight:600;transition:transform 0.2s;}"
     L".link-item:hover{transform:translateY(-5px);}"
@@ -91,10 +91,10 @@ std::wstring GetLocalNTP_HTML(bool isDark) {
     L"</style></head><body>"
     L"<div class='logo'><span>Ras</span>Browser</div>"
     L"<div class='subtitle'>A Powerful &amp; Safe Browsing Experience</div>"
-    L"<form action='https://www.google.com/search' method='GET'>"
+    L"<div class='search-wrap'>"
     L"<svg class='icon-search' viewBox='0 0 24 24'><path d='M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z'/></svg>"
-    L"<input type='text' name='q' class='search-box' placeholder='Search securely or type a URL' autocomplete='off' autofocus />"
-    L"</form>"
+    L"<input id='q' type='text' class='search-box' placeholder='Search or type a URL' autocomplete='off' autofocus />"
+    L"</div>"
     L"<div class='quick-links'>"
     L"<a href='https://www.youtube.com' class='link-item'><div class='link-icon'>&#9654;</div>YouTube</a>"
     L"<a href='https://gemini.google.com' class='link-item'><div class='link-icon'>AI</div>Gemini</a>"
@@ -102,6 +102,19 @@ std::wstring GetLocalNTP_HTML(bool isDark) {
     L"<a href='https://chatgpt.com' class='link-item'><div class='link-icon'>&#129302;</div>ChatGPT</a>"
     L"<a href='https://github.com' class='link-item'><div class='link-icon'>&lt;/&gt;</div>GitHub</a>"
     L"</div>"
+    L"<script>"
+    L"document.getElementById('q').addEventListener('keydown',function(e){"
+    L"  if(e.key==='Enter'){"
+    L"    var v=this.value.trim();if(!v)return;"
+    L"    var url=v.indexOf(' ')===-1&&(v.indexOf('.')!==-1||v.startsWith('http'))?"
+    L"            (v.startsWith('http')?v:'https://'+v):"
+    L"            'https://www.google.com/search?q='+encodeURIComponent(v);"
+    L"    if(window.chrome&&window.chrome.webview)"
+    L"      window.chrome.webview.postMessage(url);"
+    L"    else window.location.href=url;"
+    L"  }"
+    L"});"
+    L"</script>"
     L"</body></html>";
 }
 
@@ -1057,6 +1070,22 @@ public:
                 return S_OK;
             }).Get(),nullptr);
 
+        // WebMessage — NTP search box postMessage navigation
+        tab.webview->add_WebMessageReceived(
+            Callback<ICoreWebView2WebMessageReceivedEventHandler>(
+            [this](ICoreWebView2*,ICoreWebView2WebMessageReceivedEventArgs* args)->HRESULT{
+                LPWSTR msg=nullptr; args->TryGetWebMessageAsString(&msg);
+                if (msg) {
+                    std::wstring url(msg); CoTaskMemFree(msg);
+                    if (!url.empty() && g_windows.count(m_hWnd)) {
+                        auto& w=g_windows[m_hWnd];
+                        if (m_tabIdx<(int)w.tabs.size()&&w.tabs[m_tabIdx].webview)
+                            w.tabs[m_tabIdx].webview->Navigate(url.c_str());
+                    }
+                }
+                return S_OK;
+            }).Get(),nullptr);
+
         // F11 accelerator
         ComPtr<ICoreWebView2Controller3> ctl3;
         if (SUCCEEDED(ctl->QueryInterface(IID_PPV_ARGS(&ctl3)))) {
@@ -1412,7 +1441,7 @@ void LaunchMiniBrowser(std::wstring url, std::wstring /*title*/) {
         wc.hInstance=GetModuleHandle(NULL); wc.lpszClassName=L"RasBrowserWnd";
         wc.hCursor=LoadCursor(NULL,IDC_ARROW);
         wc.style=CS_DBLCLKS|CS_HREDRAW|CS_VREDRAW;
-        wc.hbrBackground=(HBRUSH)GetStockObject(BLACK_BRUSH);
+        wc.hbrBackground=CreateSolidBrush(RGB(30,30,30)); // dark bg before WebView2 loads
         RegisterClassExW(&wc); registered=true;
     }
 
