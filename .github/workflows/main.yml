@@ -94,16 +94,14 @@ jobs:
         name: RasFocus-App-Signed
         path: RasFocus.exe
 
-    # 🟢 Build হওয়া exe কে repo এর exe/ ফোল্ডারে commit-push করা হচ্ছে
-    # যাতে git pull করলেই সরাসরি exe পাওয়া যায়
-    - name: Commit & Push EXE to exe/ folder
+    # 🟢 Build হওয়া exe কে GitHub এর Release section এ আপলোড করা হচ্ছে
+    - name: Create Release with EXE
       if: github.event_name == 'push'
-      shell: bash
-      run: |
-        mkdir -p exe
-        cp RasFocus.exe exe/RasFocus.exe
-        git config user.name "github-actions[bot]"
-        git config user.email "github-actions[bot]@users.noreply.github.com"
-        git add exe/RasFocus.exe
-        git diff --staged --quiet || git commit -m "Auto-build: RasFocus.exe (${{ github.sha }}) [skip ci]"
-        git push origin HEAD:${{ github.ref_name }}
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: build-${{ github.run_number }}
+        name: RasFocus Build ${{ github.run_number }}
+        files: RasFocus.exe
+        make_latest: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
