@@ -66,255 +66,57 @@ static const wchar_t* kAdBlockScript = LR"JS(
   if (window.__RAS_ADBLOCK_RUNNING__) return;
   window.__RAS_ADBLOCK_RUNNING__ = true;
 
-  const isYouTube = /(^|\.)youtube\.com$/.test(location.hostname) ||
-                     /(^|\.)youtu\.be$/.test(location.hostname);
+  if (!/(^|\.)youtube\.com$/.test(location.hostname)) return;
 
-  // ══════════════════════════════════════════════════════════════════
-  // SINGLE fetch/XHR hook (no double-wrapping). Network-level ad block
-  // for known ad/tracker hosts, applied on every site — cheap string
-  // check only, no body parsing unless it's a YouTube player/next call.
-  // ══════════════════════════════════════════════════════════════════
-  const AD_HOSTS = [
-    'doubleclick.net', 'googlesyndication.com', 'googleadservices.com',
-    'youtube.com/pagead', 'youtube.com/get_midroll_info',
-    'youtube.com/api/stats/ads', 'youtube.com/ad_data_204',
-    'yt3.ggpht.com/ytts', 'static.doubleclick.net',
-    'adservice.google.com', 'securepubads.g.doubleclick.net',
-    'pagead2.googlesyndication.com', 'tpc.googlesyndication.com',
-    'stats.g.doubleclick.net', 'cm.g.doubleclick.net', 'ad.doubleclick.net',
-    'googleads.g.doubleclick.net', 'imasdk.googleapis.com',
-    'www.googleadservices.com', 'amazon-adsystem.com', 'adsystem.amazon.com',
-    'fls-na.amazon.com', 'an.facebook.com', 'connect.facebook.net',
-    'adnxs.com', 'ib.adnxs.com', 'secure.adnxs.com', 'acdn.adnxs.com',
-    'rubiconproject.com', 'pixel.rubiconproject.com', 'pubmatic.com',
-    'ads.pubmatic.com', 'simage2.pubmatic.com', 'openx.net', 'criteo.com',
-    'criteo.net', 'adsrvr.org', 'advertising.com', 'appnexus.com',
-    'bidswitch.net', 'casalemedia.com', 'indexexchange.com', 'lijit.com',
-    'sovrn.com', 'yieldmo.com', 'media.net', 'mathtag.com',
-    'pixel.mathtag.com', 'adsafeprotected.com', 'eyeota.net', 'moatads.com',
-    'pixel.moatads.com', 'taboola.com', 'cdn.taboola.com', 'trc.taboola.com',
-    'outbrain.com', 'revcontent.com', 'mgid.com', 'zergnet.com',
-    'adblade.com', 'ads.twitter.com', 'static.ads-twitter.com',
-    'analytics.twitter.com', 'bat.bing.com', 'hotjar.com', 'mouseflow.com',
-    'fullstory.com', 'logrocket.com', 'scorecardresearch.com',
-    'quantserve.com', 'semasio.net', 'exelate.com', 'bluekai.com',
-    'demdex.net', 'turn.com', 'agkn.com', 'segment.io',
-    'banner.siteimprove.com',
-    'google-analytics.com', 'googletagmanager.com', 'googletagservices.com',
-    'analytics.google.com', 'ssl.google-analytics.com',
-    'www.google-analytics.com', 'stats.wp.com', 'pixel.wp.com',
-    'graph.facebook.com', 'analytics.yahoo.com', 'beacon.yahoo.com',
-    'clicks.beap.bc.yahoo.com', 'piwik.org', 'matomo.org',
-    'statcounter.com', 'clicktale.net', 'clicktale.com', 'crazyegg.com',
-    'trackjs.com', 'raygun.io', 'bugsnag.com', 'newrelic.com', 'nr-data.net',
-    'amplitude.com', 'api.amplitude.com', 'cdn.amplitude.com',
-    'mixpanel.com', 'cdn4.mxpnl.com', 'segment.com', 'cdn.segment.com',
-    'api.segment.io', 'cdn.heapanalytics.com', 'heapanalytics.com',
-    'rollbar.com', 'sentry.io', 'ingest.sentry.io',
-    'browser.sentry-cdn.com', 'intercom.io', 'widget.intercom.io',
-    'nexus.ensighten.com'
-  ];
-  const AD_HOST_SET = new Set();
-  const AD_HOST_SUBSTR = [];
-  AD_HOSTS.forEach(h => (h.includes('/') ? AD_HOST_SUBSTR.push(h) : AD_HOST_SET.add(h)));
-
-  function isAdUrl(url) {
-    if (!url) return false;
-    try {
-      // exact / subdomain host match — O(1), no substring scan of the URL
-      const host = url.startsWith('http') ? new URL(url, location.href).hostname : '';
-      if (host) {
-        let h = host;
-        while (h) {
-          if (AD_HOST_SET.has(h)) return true;
-          const dot = h.indexOf('.');
-          if (dot === -1) break;
-          h = h.slice(dot + 1);
-        }
-      }
-    } catch (e) { /* relative url or parse fail — fall through */ }
-    for (let i = 0; i < AD_HOST_SUBSTR.length; i++) {
-      if (url.includes(AD_HOST_SUBSTR[i])) return true;
-    }
-    return false;
-  }
-
-  const YT_AD_PRUNE_FIELDS = [
-    'adPlacements','playerAds','adSlots',
-    'adBreakHeartbeatParams','auxiliaryUi',
-    'adMessagingConfig','adVideoId'
-  ];
-
-  function isYtPlayerUrl(url) {
-    return isYouTube && url && (
-      url.includes('/youtubei/v1/player') ||
-      url.includes('/youtubei/v1/next')
-    );
-  }
-
-  function pruneYtAdFields(obj, depth) {
-    if (!obj || typeof obj !== 'object' || depth > 8) return;
-    YT_AD_PRUNE_FIELDS.forEach(f => { delete obj[f]; });
-    if (obj.playerResponse) {
-      YT_AD_PRUNE_FIELDS.forEach(f => { delete obj.playerResponse[f]; });
-    }
-    for (const key in obj) {
-      const val = obj[key];
-      if (Array.isArray(val)) val.forEach(item => pruneYtAdFields(item, depth + 1));
-      else if (val && typeof val === 'object') pruneYtAdFields(val, depth + 1);
-    }
-  }
-
-  function pruneYtJsonText(text) {
-    try {
-      const obj = JSON.parse(text);
-      pruneYtAdFields(obj, 0);
-      return JSON.stringify(obj);
-    } catch (e) { return text; }
-  }
-
-  // ── ONE fetch hook total ──
-  const _origFetch = window.fetch;
-  window.fetch = function(resource, init) {
-    const url = (typeof resource === 'string') ? resource : (resource && resource.url) || '';
-    if (isAdUrl(url)) {
-      return Promise.resolve(new Response('', { status: 204 }));
-    }
-    // YouTube player/next endpoint কখনো intercept করবো না —
-    // response modify করলে video content load হয় না (blank screen)
-    return _origFetch.apply(this, arguments);
-  };
-
-  // ── ONE XHR hook total ──
-  const _XHROpen = XMLHttpRequest.prototype.open;
-  const _XHRSend = XMLHttpRequest.prototype.send;
-  XMLHttpRequest.prototype.open = function(method, url) {
-    this._rasUrl = url;
-    if (isAdUrl(url)) this._rasBlocked = true;
-    return _XHROpen.apply(this, arguments);
-  };
-  XMLHttpRequest.prototype.send = function() {
-    if (this._rasBlocked) {
-      // fire a benign load event instead of silently hanging the caller
-      const xhr = this;
-      setTimeout(() => {
-        Object.defineProperty(xhr, 'readyState', { value: 4, configurable: true });
-        Object.defineProperty(xhr, 'status', { value: 204, configurable: true });
-        Object.defineProperty(xhr, 'responseText', { value: '', configurable: true });
-        if (typeof xhr.onreadystatechange === 'function') xhr.onreadystatechange();
-        if (typeof xhr.onload === 'function') xhr.onload();
-      }, 0);
-      return;
-    }
-    return _XHRSend.apply(this, arguments);
-  };
-
-  // ══════════════════════════════════════════════════════════════════
-  // YouTube-only from here down — never runs on other sites, so it
-  // can't slow down or break non-YouTube pages.
-  // ══════════════════════════════════════════════════════════════════
-  if (!isYouTube) { return; }
-
-  function patchYtInitialData() {
-    try {
-      if (window.ytInitialPlayerResponse) {
-        const r = window.ytInitialPlayerResponse;
-        if (r.adPlacements)       r.adPlacements       = [];
-        if (r.playerAds)          r.playerAds          = [];
-        if (r.adSlots)            r.adSlots            = [];
-        if (r.adBreakHeartbeatParams) r.adBreakHeartbeatParams = '';
-      }
-    } catch (e) {}
-  }
-
-  let _ytIPR = undefined;
-  try {
-    Object.defineProperty(window, 'ytInitialPlayerResponse', {
-      get: () => _ytIPR,
-      set: (val) => {
-        if (val) {
-          if (val.adPlacements)   val.adPlacements   = [];
-          if (val.playerAds)      val.playerAds      = [];
-          if (val.adSlots)        val.adSlots        = [];
-          if (val.adBreakHeartbeatParams) val.adBreakHeartbeatParams = '';
-        }
-        _ytIPR = val;
-      },
-      configurable: true
-    });
-  } catch (e) {}
-
+  // শুধু DOM থেকে ad element সরানো — কোনো fetch/XHR/response hook নেই
+  // কারণ সেগুলো YouTube player কে corrupt করে blank screen দেখায়
   const YT_AD_SELECTORS = [
-    '.ytp-ad-module', '.ytp-ad-overlay-container', '.ytp-ad-text-overlay',
+    '.ytp-ad-module', '.ytp-ad-overlay-container',
     '.ytp-ad-skip-button-container', '.ytp-ad-skip-button-modern',
-    '.ytp-ad-progress', '.ytp-ad-progress-bar', '.ytp-ad-player-overlay',
-    '.ytp-ad-player-overlay-instream-info', '.ytp-ad-preview-container',
+    '.ytp-ad-progress', '.ytp-ad-progress-bar',
+    '.ytp-ad-player-overlay', '.ytp-ad-preview-container',
     '.ytp-ad-message-container', '.ytp-ad-action-interstitial',
-    '.ytp-ad-action-interstitial-slot', '.ytp-ad-image-overlay',
-    '.ytp-featured-product', '.ytp-suggested-action',
     '#player-ads', '#ad-text',
     'ytd-ad-slot-renderer', 'ytd-in-feed-ad-layout-renderer',
-    'ytd-display-ad-renderer', 'ytd-action-companion-ad-renderer',
-    'ytd-promoted-sparkles-web-renderer',
-    'ytd-promoted-sparkles-text-search-renderer',
+    'ytd-display-ad-renderer', 'ytd-promoted-sparkles-web-renderer',
     'ytd-promoted-video-renderer', 'ytd-banner-promo-renderer',
-    'ytd-statement-banner-renderer',
-    '#masthead-ad', '#feedModuleAdSlot', '.GoogleActiveViewElement',
-    '.ytd-banner-promo-renderer',
-    'ytd-merch-shelf-renderer', '.ytd-merch-shelf-renderer',
-    '.ytd-ticket-shelf-renderer'
-  ];
-
-  const YT_AD_SELECTOR_STR = YT_AD_SELECTORS.join(',');
+    '#masthead-ad', '#feedModuleAdSlot'
+  ].join(',');
 
   function blockDomAds() {
     try {
-      document.querySelectorAll(YT_AD_SELECTOR_STR).forEach(el => {
+      document.querySelectorAll(YT_AD_SELECTORS).forEach(el => {
         el.style.setProperty('display', 'none', 'important');
       });
-    } catch (e) {}
+    } catch(e) {}
   }
-
-  let _adSkipInterval = null;
 
   function handleVideoAd() {
-    const video = document.querySelector('video.html5-main-video');
-    if (!video) return;
-    const player = document.querySelector('.html5-video-player');
-    const isAd = player && player.classList.contains('ad-showing');
-    if (!isAd) return;
-
-    const skipBtn = document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern');
-    if (skipBtn) { skipBtn.click(); return; }
-
-    if (video.playbackRate < 16) video.playbackRate = 16;
-    if (video.muted !== true) video.muted = true;
+    try {
+      const video = document.querySelector('video.html5-main-video');
+      if (!video) return;
+      const player = document.querySelector('.html5-video-player');
+      if (!player || !player.classList.contains('ad-showing')) return;
+      const skipBtn = document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern');
+      if (skipBtn) { skipBtn.click(); return; }
+      if (video.playbackRate < 16) video.playbackRate = 16;
+      video.muted = true;
+    } catch(e) {}
   }
 
-  function runAll() {
-    blockDomAds();
-    handleVideoAd();
-    patchYtInitialData();
-  }
+  function runAll() { blockDomAds(); handleVideoAd(); }
 
-  // Debounced MutationObserver instead of firing on every DOM mutation —
-  // this was the main cause of slowness/high CPU on YouTube.
   let _mutTimer = null;
-  const observer = new MutationObserver(() => {
+  new MutationObserver(() => {
     if (_mutTimer) return;
-    _mutTimer = setTimeout(() => { _mutTimer = null; runAll(); }, 200);
-  });
-  observer.observe(document.documentElement, { childList: true, subtree: true });
+    _mutTimer = setTimeout(() => { _mutTimer = null; runAll(); }, 300);
+  }).observe(document.documentElement, { childList: true, subtree: true });
 
-  // Slower poll (was 300ms) just as a safety net for ad-skip timing.
   setInterval(handleVideoAd, 500);
-
   document.addEventListener('yt-navigate-finish', runAll);
   document.addEventListener('yt-page-data-updated', runAll);
   window.addEventListener('load', runAll);
-
   runAll();
-
 })();
 )JS";
 
@@ -1745,8 +1547,6 @@ public:
                 L"*://googleadservices.com/*",
                 L"*://*.googleadservices.com/*",
                 L"*://adservice.google.com/*",
-                L"*://imasdk.googleapis.com/*",
-                L"*://*.imasdk.googleapis.com/*",
                 L"*://amazon-adsystem.com/*",
                 L"*://*.amazon-adsystem.com/*",
                 L"*://adnxs.com/*",
@@ -2141,16 +1941,7 @@ public:
                 w.tabs[m_tabIdx].canBack = !!canB;
                 w.tabs[m_tabIdx].canFwd  = !!canF;
                 InvalidateRect(m_hWnd, NULL, FALSE);
-                // ── YouTube SPA navigation এ ad block re-inject (HistoryChanged = নতুন page) ──
-                // শুধু YouTube এ — অন্য সাইটে চালালে heavy DOM এ page কালো হয়ে যায়
-                {
-                    const std::wstring& curUrl3 = w.tabs[m_tabIdx].url;
-                    bool isYouTube2 = (curUrl3.find(L"youtube.com") != std::wstring::npos ||
-                                       curUrl3.find(L"youtu.be")    != std::wstring::npos);
-                    if (isYouTube2) {
-                        sender->ExecuteScript(kAdBlockScript, nullptr);
-                    }
-                }
+
                 return S_OK;
             }).Get(), nullptr);
 
