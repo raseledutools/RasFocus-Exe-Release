@@ -326,18 +326,134 @@ static void RegisterAppForDefaultBrowser() {}
 // ─────────────────────────────────────────────────────────────────────────────
 // CONTENT BLOCKER
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// RasFocus Adult + Ad + Tracker Block System
+// Ported from Android AdBlocker.kt + UnifiedBlockerService.kt
+// ─────────────────────────────────────────────────────────────────────────────
+
+static const std::vector<std::wstring> ADULT_KEYWORDS = {
+    L"porn", L"xxx", L"nude", L"nsfw", L"sexy", L"hentai", L"rule34", L"milf",
+    L"blowjob", L"tits", L"boobs", L"pussy", L"dick", L"cock", L"escort", L"bdsm",
+    L"fetish", L"erotica", L"dildo", L"webcam", L"camgirls", L"onlyfans", L"chaturbate",
+    L"hot dance", L"seductive dance", L"item song", L"belly dance", L"kissing scene",
+    L"bikini", L"swimsuit", L"sexy dance", L"cleavage", L"hot scene", L"romantic kiss",
+    L"bedroom scene", L"bath scene", L"rain dance", L"bold scene", L"semi nude",
+    L"lingerie", L"erotic", L"hot song", L"romantic video hot", L"navel show",
+    L"deep neck", L"short dress sexy", L"unfaithful scene",
+    L"18videosz", L"24porn", L"3movs", L"4tube", L"adulttime", L"beeg", L"brazzers",
+    L"eporner", L"redtube", L"spankbang", L"stripchat", L"xhamster", L"xnxx",
+    L"xvideos", L"youporn"
+};
+
+static const std::vector<std::wstring> ADULT_DOMAINS = {
+    L"pornhub.com", L"xvideos.com", L"xnxx.com", L"xhamster.com", L"redtube.com",
+    L"youporn.com", L"brazzers.com", L"spankbang.com", L"eporner.com", L"chaturbate.com",
+    L"onlyfans.com", L"stripchat.com", L"beeg.com", L"hentaigasm.com", L"hentaihaven.org",
+    L"playboy.com", L"pornmd.com", L"tube8.com", L"tubegalore.com", L"txxx.com",
+    L"realitykings.com", L"digitalplayground.com", L"fakehub.com", L"evilangel.com",
+    L"teamskeet.com", L"mofosex.com", L"bangbrosnetwork.com", L"jerkmate.com",
+    L"luckycrush.live", L"redgifs.com", L"motherless.com", L"hardsextube.com"
+};
+
+static const std::vector<std::wstring> AD_DOMAINS = {
+    L"doubleclick.net", L"googlesyndication.com", L"adservice.google.com",
+    L"googleadservices.com", L"pagead2.googlesyndication.com", L"tpc.googlesyndication.com",
+    L"securepubads.g.doubleclick.net", L"imasdk.googleapis.com", L"amazon-adsystem.com",
+    L"an.facebook.com", L"adnxs.com", L"rubiconproject.com", L"pubmatic.com",
+    L"openx.net", L"criteo.com", L"criteo.net", L"adsrvr.org", L"advertising.com",
+    L"appnexus.com", L"bidswitch.net", L"taboola.com", L"outbrain.com", L"revcontent.com",
+    L"mgid.com", L"zergnet.com", L"adblade.com", L"ads.twitter.com", L"moatads.com",
+    L"scorecardresearch.com", L"quantserve.com", L"demdex.net", L"turn.com"
+};
+
+static const std::vector<std::wstring> TRACKER_DOMAINS = {
+    L"google-analytics.com", L"googletagmanager.com", L"googletagservices.com",
+    L"analytics.google.com", L"ssl.google-analytics.com", L"stats.wp.com",
+    L"bat.bing.com", L"analytics.twitter.com", L"piwik.org", L"matomo.org",
+    L"statcounter.com", L"crazyegg.com", L"amplitude.com", L"mixpanel.com",
+    L"segment.com", L"heap.io", L"rollbar.com", L"sentry.io", L"hotjar.com",
+    L"mouseflow.com", L"fullstory.com", L"logrocket.com"
+};
+
+// Extract domain/host from URL
+static std::wstring ExtractHost(const std::wstring& url) {
+    std::wstring s = url;
+    // remove scheme
+    auto pos = s.find(L"://");
+    if (pos != std::wstring::npos) s = s.substr(pos + 3);
+    // remove path
+    auto slash = s.find(L'/');
+    if (slash != std::wstring::npos) s = s.substr(0, slash);
+    // remove port
+    auto colon = s.rfind(L':');
+    if (colon != std::wstring::npos && colon > s.find(L'.')) s = s.substr(0, colon);
+    // lowercase
+    std::transform(s.begin(), s.end(), s.begin(), ::towlower);
+    // remove www.
+    if (s.substr(0,4) == L"www.") s = s.substr(4);
+    return s;
+}
+
+static bool HostMatchesDomain(const std::wstring& host, const std::wstring& domain) {
+    if (host == domain) return true;
+    std::wstring suffix = L"." + domain;
+    if (host.size() >= suffix.size() &&
+        host.compare(host.size() - suffix.size(), suffix.size(), suffix) == 0)
+        return true;
+    return false;
+}
+
 bool IsBlockedContent(const std::wstring& text) {
     std::wstring lower = text;
     std::transform(lower.begin(),lower.end(),lower.begin(),::towlower);
-    static const std::vector<std::wstring> kBad = {
-        L"porn",L"xxx",L"sex",L"nude",L"nsfw",L"sexy",L"hentai",L"rule34",
-        L"milf",L"blowjob",L"tits",L"boobs",L"pussy",L"dick",L"cock",
-        L"escort",L"bdsm",L"fetish",L"erotica",L"dildo",L"webcam",
-        L"camgirls",L"xvideos",L"pornhub",L"xnxx",L"xhamster",L"brazzers",
-        L"onlyfans",L"playboy",L"chaturbate",L"stripchat",L"eporner"
-    };
-    for (const auto& kw : kBad) if (lower.find(kw)!=std::wstring::npos) return true;
+    // keyword check
+    for (const auto& kw : ADULT_KEYWORDS)
+        if (lower.find(kw) != std::wstring::npos) return true;
+    // domain check
+    std::wstring host = ExtractHost(text);
+    for (const auto& d : ADULT_DOMAINS)
+        if (HostMatchesDomain(host, d)) return true;
     return false;
+}
+
+bool IsAdDomain(const std::wstring& url) {
+    std::wstring host = ExtractHost(url);
+    for (const auto& d : AD_DOMAINS)
+        if (HostMatchesDomain(host, d)) return true;
+    return false;
+}
+
+bool IsTrackerDomain(const std::wstring& url) {
+    std::wstring host = ExtractHost(url);
+    for (const auto& d : TRACKER_DOMAINS)
+        if (HostMatchesDomain(host, d)) return true;
+    return false;
+}
+
+// SafeSearch enforcer
+static std::wstring ApplySafeSearch(const std::wstring& url) {
+    std::wstring lower = url;
+    std::transform(lower.begin(),lower.end(),lower.begin(),::towlower);
+
+    if (lower.find(L"google.") != std::wstring::npos && lower.find(L"/search") != std::wstring::npos) {
+        if (url.find(L"safe=strict") != std::wstring::npos) return L"";
+        if (url.find(L"safe=") != std::wstring::npos) {
+            // replace existing safe param
+            std::wstring r = url;
+            auto p = r.find(L"safe=");
+            if (p != std::wstring::npos) {
+                auto end = r.find(L'&', p);
+                r = r.substr(0, p) + L"safe=strict" + (end != std::wstring::npos ? r.substr(end) : L"");
+                return r;
+            }
+        }
+        return url + (url.find(L'?') != std::wstring::npos ? L"&" : L"?") + L"safe=strict";
+    }
+    if (lower.find(L"bing.com") != std::wstring::npos && lower.find(L"/search") != std::wstring::npos) {
+        if (url.find(L"adlt=strict") != std::wstring::npos) return L"";
+        return url + (url.find(L'?') != std::wstring::npos ? L"&" : L"?") + L"adlt=strict";
+    }
+    return L"";
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1070,17 +1186,53 @@ public:
                 return S_OK;
             }).Get(),nullptr);
 
-        // WebMessage — NTP search box postMessage navigation
+        // Ad + Tracker Block (WebResourceRequested)
+        tab.webview->add_WebResourceRequested(
+            Callback<ICoreWebView2WebResourceRequestedEventHandler>(
+            [this](ICoreWebView2* sender, ICoreWebView2WebResourceRequestedEventArgs* args)->HRESULT{
+                ComPtr<ICoreWebView2WebResourceRequest> req;
+                args->get_Request(&req);
+                if (!req) return S_OK;
+                LPWSTR uri=nullptr; req->get_Uri(&uri);
+                if (uri) {
+                    std::wstring url(uri); CoTaskMemFree(uri);
+                    if (IsAdDomain(url) || IsTrackerDomain(url)) {
+                        // Return empty 200 response — block silently
+                        if (g_sharedEnv) {
+                            ComPtr<ICoreWebView2WebResourceResponse> resp;
+                            g_sharedEnv->CreateWebResourceResponse(
+                                nullptr, 200, L"OK", L"Content-Type: text/plain",
+                                &resp);
+                            if (resp) args->put_Response(resp.Get());
+                        }
+                    }
+                }
+                return S_OK;
+            }).Get(), nullptr);
+
+        // Register WebResourceRequested filter — all URIs
+        tab.webview->AddWebResourceRequestedFilter(L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
+
+        // WebMessage — NTP search + block overlay bridge
         tab.webview->add_WebMessageReceived(
             Callback<ICoreWebView2WebMessageReceivedEventHandler>(
             [this](ICoreWebView2*,ICoreWebView2WebMessageReceivedEventArgs* args)->HRESULT{
                 LPWSTR msg=nullptr; args->TryGetWebMessageAsString(&msg);
                 if (msg) {
-                    std::wstring url(msg); CoTaskMemFree(msg);
-                    if (!url.empty() && g_windows.count(m_hWnd)) {
+                    std::wstring str(msg); CoTaskMemFree(msg);
+                    if (!str.empty() && g_windows.count(m_hWnd)) {
                         auto& w=g_windows[m_hWnd];
-                        if (m_tabIdx<(int)w.tabs.size()&&w.tabs[m_tabIdx].webview)
-                            w.tabs[m_tabIdx].webview->Navigate(url.c_str());
+                        if (m_tabIdx<(int)w.tabs.size()&&w.tabs[m_tabIdx].webview) {
+                            if (str == L"BLOCK_CLOSE") {
+                                // Navigate to blank/NTP after block
+                                w.tabs[m_tabIdx].url = L"LOCAL_NTP";
+                                w.tabs[m_tabIdx].webview->NavigateToString(
+                                    GetLocalNTP_HTML(w.isDarkMode).c_str());
+                            } else {
+                                // NTP search navigation
+                                w.tabs[m_tabIdx].webview->Navigate(str.c_str());
+                            }
+                        }
                     }
                 }
                 return S_OK;
