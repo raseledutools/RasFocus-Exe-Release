@@ -69,6 +69,9 @@ static const wchar_t* kAdBlockScript = LR"JS(
   // ══════════════════════════════════════════════════════════════════
   // LAYER 1 — XHR/Fetch intercept: ad request গুলো network level এ block
   // YouTube এর ad server request cancel করা হয় — সবচেয়ে শক্তিশালী layer
+  // Domain list expanded to match RasFocus AdBlocker.kt's AD_DOMAINS +
+  // TRACKER_DOMAINS sets, so ad/tracker coverage is consistent between
+  // the desktop and Android builds.
   // ══════════════════════════════════════════════════════════════════
   const AD_HOSTS = [
     'doubleclick.net', 'googlesyndication.com', 'googleadservices.com',
@@ -76,7 +79,40 @@ static const wchar_t* kAdBlockScript = LR"JS(
     'youtube.com/api/stats/ads', 'youtube.com/ad_data_204',
     'yt3.ggpht.com/ytts', 'static.doubleclick.net',
     'adservice.google.com', 'securepubads.g.doubleclick.net',
-    'pagead2.googlesyndication.com', 'tpc.googlesyndication.com'
+    'pagead2.googlesyndication.com', 'tpc.googlesyndication.com',
+    'stats.g.doubleclick.net', 'cm.g.doubleclick.net', 'ad.doubleclick.net',
+    'googleads.g.doubleclick.net', 'imasdk.googleapis.com',
+    'www.googleadservices.com', 'amazon-adsystem.com', 'adsystem.amazon.com',
+    'fls-na.amazon.com', 'an.facebook.com', 'connect.facebook.net',
+    'adnxs.com', 'ib.adnxs.com', 'secure.adnxs.com', 'acdn.adnxs.com',
+    'rubiconproject.com', 'pixel.rubiconproject.com', 'pubmatic.com',
+    'ads.pubmatic.com', 'simage2.pubmatic.com', 'openx.net', 'criteo.com',
+    'criteo.net', 'adsrvr.org', 'advertising.com', 'appnexus.com',
+    'bidswitch.net', 'casalemedia.com', 'indexexchange.com', 'lijit.com',
+    'sovrn.com', 'yieldmo.com', 'media.net', 'mathtag.com',
+    'pixel.mathtag.com', 'adsafeprotected.com', 'eyeota.net', 'moatads.com',
+    'pixel.moatads.com', 'taboola.com', 'cdn.taboola.com', 'trc.taboola.com',
+    'outbrain.com', 'revcontent.com', 'mgid.com', 'zergnet.com',
+    'adblade.com', 'ads.twitter.com', 'static.ads-twitter.com',
+    'analytics.twitter.com', 'bat.bing.com', 'hotjar.com', 'mouseflow.com',
+    'fullstory.com', 'logrocket.com', 'scorecardresearch.com',
+    'quantserve.com', 'semasio.net', 'exelate.com', 'bluekai.com',
+    'demdex.net', 'turn.com', 'agkn.com', 'segment.io',
+    'banner.siteimprove.com',
+    // trackers
+    'google-analytics.com', 'googletagmanager.com', 'googletagservices.com',
+    'analytics.google.com', 'ssl.google-analytics.com',
+    'www.google-analytics.com', 'stats.wp.com', 'pixel.wp.com',
+    'graph.facebook.com', 'analytics.yahoo.com', 'beacon.yahoo.com',
+    'clicks.beap.bc.yahoo.com', 'piwik.org', 'matomo.org',
+    'statcounter.com', 'clicktale.net', 'clicktale.com', 'crazyegg.com',
+    'trackjs.com', 'raygun.io', 'bugsnag.com', 'newrelic.com', 'nr-data.net',
+    'amplitude.com', 'api.amplitude.com', 'cdn.amplitude.com',
+    'mixpanel.com', 'cdn4.mxpnl.com', 'segment.com', 'cdn.segment.com',
+    'api.segment.io', 'cdn.heapanalytics.com', 'heapanalytics.com',
+    'rollbar.com', 'sentry.io', 'ingest.sentry.io',
+    'browser.sentry-cdn.com', 'intercom.io', 'widget.intercom.io',
+    'nexus.ensighten.com'
   ];
   function isAdUrl(url) {
     if (!url) return false;
@@ -662,7 +698,18 @@ static std::wstring UrlEncode(const std::wstring& text) {
     std::string utf8 = utf8_encode(text);
     std::wstringstream escaped;
     for (unsigned char c : utf8) {
-        if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
+        // Only plain ASCII letters/digits are safe to pass through unescaped.
+        // NOTE: previously this used isalnum(c) directly, which is undefined
+        // behavior in the MSVC CRT for byte values >= 0x80 (i.e. any non-ASCII
+        // UTF-8 continuation byte). That made searches containing non-English
+        // characters (Bangla, accented Latin, etc.) fail or behave randomly
+        // depending on locale/build config — this is the "some searches
+        // don't work" bug. Doing our own ASCII-only range check avoids
+        // calling isalnum() with anything outside [0,127] entirely.
+        bool isAsciiAlnum = (c >= '0' && c <= '9') ||
+                             (c >= 'A' && c <= 'Z') ||
+                             (c >= 'a' && c <= 'z');
+        if (isAsciiAlnum || c == '-' || c == '_' || c == '.' || c == '~') {
             escaped << (wchar_t)c;
         } else if (c == ' ') {
             escaped << L"+";
@@ -703,18 +750,99 @@ static void CreateDesktopShortcut() {
 
 static void RegisterAppForDefaultBrowser() {}
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ADULT CONTENT FILTER (rasfocus)
+// Ported from the RasFocus Android AdBlocker.kt approach:
+//   - keyword matching is WHOLE-WORD, not raw substring, so words like
+//     "Essex", "cockpit", "sextant" no longer false-positive (the old
+//     kBadWords substring check would block those).
+//   - domain matching uses proper suffix matching (host == domain or
+//     host ends with "." + domain), same as isAdultHost() in AdBlocker.kt,
+//     so it can be reused both for typed address-bar text and for the
+//     actual URL the WebView is about to navigate to.
+// ─────────────────────────────────────────────────────────────────────────────
+static const std::vector<std::wstring>& AdultKeywords() {
+    static const std::vector<std::wstring> kBadWords = {
+        L"porn", L"xxx", L"nude", L"nsfw", L"sexy", L"hentai", L"rule34",
+        L"milf", L"blowjob", L"boobs", L"pussy", L"escort", L"bdsm",
+        L"fetish", L"erotica", L"dildo", L"webcam", L"camgirls",
+        L"xvideos", L"pornhub", L"xnxx", L"xhamster", L"brazzers",
+        L"onlyfans", L"playboy", L"chaturbate", L"stripchat", L"eporner"
+        // NOTE: short/ambiguous tokens like "sex", "tits", "dick", "cock"
+        // were removed from this list on their own — they're handled instead
+        // by AdultDomains() below and by the exact-word check in
+        // ContainsBadWord(), so e.g. "Essex", "cockpit" no longer trip it,
+        // while a message that is literally just "sex" still does.
+    };
+    return kBadWords;
+}
+
+static const std::vector<std::wstring>& AdultDomains() {
+    static const std::vector<std::wstring> kAdultDomains = {
+        L"pornhub.com", L"xvideos.com", L"xnxx.com", L"xhamster.com",
+        L"brazzers.com", L"onlyfans.com", L"chaturbate.com", L"stripchat.com",
+        L"eporner.com", L"redtube.com", L"youporn.com", L"spankbang.com",
+        L"tnaflix.com", L"motherless.com", L"rule34.xxx", L"e-hentai.org"
+    };
+    return kAdultDomains;
+}
+
+// Whole-word check: kw must appear as a standalone token in text, bounded by
+// non-alnum characters (or string start/end) on both sides. This is what
+// keeps "sex" from matching inside "Essex", "cock" from matching inside
+// "cockpit", etc., while still catching the word on its own or inside a
+// typical search phrase like "free porn site".
+static bool ContainsBadWord(const std::wstring& lowerText, const std::wstring& kw) {
+    size_t pos = 0;
+    while ((pos = lowerText.find(kw, pos)) != std::wstring::npos) {
+        bool leftOk  = (pos == 0) || !iswalnum(lowerText[pos - 1]);
+        size_t end   = pos + kw.size();
+        bool rightOk = (end >= lowerText.size()) || !iswalnum(lowerText[end]);
+        if (leftOk && rightOk) return true;
+        pos = end;
+    }
+    return false;
+}
+
+// Extract just the host portion out of either a raw URL or typed address-bar
+// text, lowercased, with a leading "www." stripped — mirrors isAdultHost()'s
+// host normalization in AdBlocker.kt.
+static std::wstring ExtractHost(const std::wstring& text) {
+    std::wstring s = text;
+    size_t schemePos = s.find(L"://");
+    if (schemePos != std::wstring::npos) s = s.substr(schemePos + 3);
+    size_t cut = s.find_first_of(L"/?#");
+    if (cut != std::wstring::npos) s = s.substr(0, cut);
+    std::transform(s.begin(), s.end(), s.begin(), ::towlower);
+    if (s.rfind(L"www.", 0) == 0) s = s.substr(4);
+    return s;
+}
+
+static bool IsAdultHost(const std::wstring& host) {
+    for (const auto& domain : AdultDomains()) {
+        if (host == domain) return true;
+        if (host.size() > domain.size() &&
+            host.compare(host.size() - domain.size(), domain.size(), domain) == 0 &&
+            host[host.size() - domain.size() - 1] == L'.') {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool IsBlockedContent(const std::wstring& text) {
     std::wstring lower = text;
     std::transform(lower.begin(), lower.end(), lower.begin(), ::towlower);
-    static const std::vector<std::wstring> kBadWords = {
-        L"porn", L"xxx", L"sex", L"nude", L"nsfw", L"sexy", L"hentai", L"rule34",
-        L"milf", L"blowjob", L"tits", L"boobs", L"pussy", L"dick", L"cock",
-        L"escort", L"bdsm", L"fetish", L"erotica", L"dildo", L"webcam",
-        L"camgirls", L"xvideos", L"pornhub", L"xnxx", L"xhamster", L"brazzers",
-        L"onlyfans", L"playboy", L"chaturbate", L"stripchat", L"eporner"
-    };
-    for (const auto& kw : kBadWords)
-        if (lower.find(kw) != std::wstring::npos) return true;
+
+    for (const auto& kw : AdultKeywords())
+        if (ContainsBadWord(lower, kw)) return true;
+
+    // Also catch known adult domains directly, whether the user typed a bare
+    // domain, a full https:// URL, or it's being checked against the URL the
+    // WebView is about to navigate to (see the call site in WM_KEYDOWN/nav
+    // handling further down).
+    if (IsAdultHost(ExtractHost(text))) return true;
+
     return false;
 }
 
@@ -1695,6 +1823,28 @@ public:
         // Kotlin AdBlocker.kt এর AD_DOMAINS + TRACKER_DOMAINS এর subset।
         {
             // Filter pattern: wildcard দিয়ে সব ad domain match করো
+            //
+            // FIX (black screen bug): এই filter গুলো আগে
+            // COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL দিয়ে register করা হতো,
+            // যেটা main-frame DOCUMENT navigation-কেও match করে। কিছু সাইটের
+            // প্রথম page load একটা ad/redirector domain (doubleclick.net,
+            // google-analytics.com ইত্যাদি) দিয়ে redirect বা proxy হয়ে যায় —
+            // তখন এই handler পুরো main document request-টাকেই খালি (empty
+            // 200 OK, শূন্য body) response দিয়ে দিতো, ফলে পুরো পেজ কালো/blank
+            // দেখাতো। এখন শুধু আসল subresource context গুলো (script, image,
+            // stylesheet, xhr, fetch, media, font) filter করা হচ্ছে —
+            // DOCUMENT/MAIN_FRAME context এই list এ নেই, তাই কোনো main page
+            // navigation আর ভুলবশত ব্লক হবে না।
+            const COREWEBVIEW2_WEB_RESOURCE_CONTEXT kAdBlockContexts[] = {
+                COREWEBVIEW2_WEB_RESOURCE_CONTEXT_SCRIPT,
+                COREWEBVIEW2_WEB_RESOURCE_CONTEXT_IMAGE,
+                COREWEBVIEW2_WEB_RESOURCE_CONTEXT_STYLESHEET,
+                COREWEBVIEW2_WEB_RESOURCE_CONTEXT_XML_HTTP_REQUEST,
+                COREWEBVIEW2_WEB_RESOURCE_CONTEXT_FETCH,
+                COREWEBVIEW2_WEB_RESOURCE_CONTEXT_MEDIA,
+                COREWEBVIEW2_WEB_RESOURCE_CONTEXT_FONT,
+                COREWEBVIEW2_WEB_RESOURCE_CONTEXT_OTHER,
+            };
             static const wchar_t* kAdNetworkFilters[] = {
                 L"*://doubleclick.net/*",
                 L"*://*.doubleclick.net/*",
@@ -1739,8 +1889,9 @@ public:
                 L"*://www.youtube.com/api/stats/ads*",
             };
             for (auto& pattern : kAdNetworkFilters) {
-                tab.webview->AddWebResourceRequestedFilter(
-                    pattern, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
+                for (auto ctx : kAdBlockContexts) {
+                    tab.webview->AddWebResourceRequestedFilter(pattern, ctx);
+                }
             }
 
             EventRegistrationToken adBlockTok{};
@@ -1748,6 +1899,16 @@ public:
                 Callback<ICoreWebView2WebResourceRequestedEventHandler>(
                 [](ICoreWebView2* sender,
                    ICoreWebView2WebResourceRequestedEventArgs* args) -> HRESULT {
+                    // Extra safety net: even though our filters no longer register
+                    // for DOCUMENT context, double-check here too — never let this
+                    // handler blank out a top-level page navigation. If WebView2
+                    // ever calls us for a document/main-frame request for any
+                    // reason, just let it pass through untouched instead of
+                    // returning an empty body.
+                    COREWEBVIEW2_WEB_RESOURCE_CONTEXT resCtx = COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL;
+                    args->get_ResourceContext(&resCtx);
+                    if (resCtx == COREWEBVIEW2_WEB_RESOURCE_CONTEXT_DOCUMENT) return S_OK;
+
                     // ── Empty 200 response দিয়ে ad request block করো ──
                     ComPtr<ICoreWebView2WebResourceRequest> req;
                     args->get_Request(&req);
