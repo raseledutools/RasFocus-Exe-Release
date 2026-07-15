@@ -382,17 +382,22 @@ static void CreateDesktopShortcut() {
 
 static void RegisterAppForDefaultBrowser() {}
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ADULT CONTENT FILTER (rasfocus)
-// Ported from the RasFocus Android AdBlocker.kt approach:
-//   - keyword matching is WHOLE-WORD, not raw substring, so words like
-//     "Essex", "cockpit", "sextant" no longer false-positive (the old
-//     kBadWords substring check would block those).
-//   - domain matching uses proper suffix matching (host == domain or
-//     host ends with "." + domain), same as isAdultHost() in AdBlocker.kt,
-//     so it can be reused both for typed address-bar text and for the
-//     actual URL the WebView is about to navigate to.
-// ─────────────────────────────────────────────────────────────────────────────
+// ═════════════════════════════════════════════════════════════════════════════
+// RASFOCUS FULL CONTENT BLOCKER  (AdBlocker.kt → C++/WebView2 port)
+//
+// Layer 1 : NavigationStarting  → adult URL / keyword block  (main frame)
+// Layer 2 : WebResourceRequested → ad / tracker sub-resource block
+// Layer 3 : NavigationCompleted  → YouTube ad-prune JS + content scanner JS
+//
+// Mirrors AdBlocker.kt 1-to-1:
+//   isAdultHost()       → IsAdultHost()
+//   isAdOrTrackerUrl()  → IsAdOrTrackerUrl()
+//   shouldBlock()       → called in add_WebResourceRequested handler
+//   injectContentScanner() / YouTubeAdPruner.getJsInjectScript()
+//                       → GetContentScannerScript() / GetYouTubeAdPrunerScript()
+// ═════════════════════════════════════════════════════════════════════════════
+
+// ─── Adult URL Keywords (= AdBlocker.kt ADULT_URL_KEYWORDS) ──────────────────
 static const std::vector<std::wstring>& AdultKeywords() {
     static const std::vector<std::wstring> kBadWords = {
         L"porn", L"xxx", L"nude", L"nsfw", L"sexy", L"hentai", L"rule34",
@@ -400,30 +405,146 @@ static const std::vector<std::wstring>& AdultKeywords() {
         L"fetish", L"erotica", L"dildo", L"webcam", L"camgirls",
         L"xvideos", L"pornhub", L"xnxx", L"xhamster", L"brazzers",
         L"onlyfans", L"playboy", L"chaturbate", L"stripchat", L"eporner"
-        // NOTE: short/ambiguous tokens like "sex", "tits", "dick", "cock"
-        // were removed from this list on their own — they're handled instead
-        // by AdultDomains() below and by the exact-word check in
-        // ContainsBadWord(), so e.g. "Essex", "cockpit" no longer trip it,
-        // while a message that is literally just "sex" still does.
+        // "sex","cock","dick","tits" → whole-word match নিচে ContainsBadWord()-এ
     };
     return kBadWords;
 }
 
+// ─── Adult Domains (= AdBlocker.kt ADULT_DOMAINS) ────────────────────────────
 static const std::vector<std::wstring>& AdultDomains() {
-    static const std::vector<std::wstring> kAdultDomains = {
+    static const std::vector<std::wstring> kList = {
         L"pornhub.com", L"xvideos.com", L"xnxx.com", L"xhamster.com",
         L"brazzers.com", L"onlyfans.com", L"chaturbate.com", L"stripchat.com",
         L"eporner.com", L"redtube.com", L"youporn.com", L"spankbang.com",
-        L"tnaflix.com", L"motherless.com", L"rule34.xxx", L"e-hentai.org"
+        L"tnaflix.com", L"motherless.com", L"rule34.xxx", L"e-hentai.org",
+        L"nhentai.net", L"hentaihaven.xxx", L"hentai2read.com", L"fakku.net",
+        L"literotica.com", L"sexstories.com", L"adultfriendfinder.com",
+        L"ashleymadison.com", L"bongacams.com", L"livejasmin.com",
+        L"myfreecams.com", L"cam4.com", L"camsoda.com", L"flirt4free.com"
     };
-    return kAdultDomains;
+    return kList;
 }
 
-// Whole-word check: kw must appear as a standalone token in text, bounded by
-// non-alnum characters (or string start/end) on both sides. This is what
-// keeps "sex" from matching inside "Essex", "cock" from matching inside
-// "cockpit", etc., while still catching the word on its own or inside a
-// typical search phrase like "free porn site".
+// ─── Adult TLDs (= AdBlocker.kt ADULT_TLDS) ──────────────────────────────────
+static const std::vector<std::wstring>& AdultTlds() {
+    static const std::vector<std::wstring> kList = {
+        L".xxx", L".adult", L".porn", L".sex"
+    };
+    return kList;
+}
+
+// ─── Ad Network Domains (= AdBlocker.kt AD_DOMAINS) ─────────────────────────
+static const std::vector<std::wstring>& AdDomains() {
+    static const std::vector<std::wstring> kList = {
+        L"doubleclick.net", L"googlesyndication.com", L"adservice.google.com",
+        L"googleadservices.com", L"pagead2.googlesyndication.com",
+        L"tpc.googlesyndication.com", L"securepubads.g.doubleclick.net",
+        L"stats.g.doubleclick.net", L"cm.g.doubleclick.net",
+        L"ad.doubleclick.net", L"googleads.g.doubleclick.net",
+        L"imasdk.googleapis.com", L"static.doubleclick.net",
+        L"www.googleadservices.com", L"amazon-adsystem.com",
+        L"adsystem.amazon.com", L"fls-na.amazon.com",
+        L"an.facebook.com", L"connect.facebook.net",
+        L"adnxs.com", L"ib.adnxs.com", L"secure.adnxs.com", L"acdn.adnxs.com",
+        L"rubiconproject.com", L"pixel.rubiconproject.com",
+        L"pubmatic.com", L"ads.pubmatic.com", L"simage2.pubmatic.com",
+        L"openx.net", L"criteo.com", L"criteo.net", L"adsrvr.org",
+        L"advertising.com", L"appnexus.com", L"bidswitch.net",
+        L"casalemedia.com", L"indexexchange.com", L"lijit.com",
+        L"sovrn.com", L"yieldmo.com", L"media.net",
+        L"mathtag.com", L"pixel.mathtag.com", L"adsafeprotected.com",
+        L"eyeota.net", L"moatads.com", L"pixel.moatads.com",
+        L"taboola.com", L"cdn.taboola.com", L"trc.taboola.com",
+        L"outbrain.com", L"revcontent.com", L"mgid.com", L"zergnet.com",
+        L"adblade.com", L"ads.twitter.com", L"static.ads-twitter.com",
+        L"analytics.twitter.com", L"bat.bing.com",
+        L"hotjar.com", L"mouseflow.com", L"fullstory.com", L"logrocket.com",
+        L"scorecardresearch.com", L"quantserve.com", L"semasio.net",
+        L"exelate.com", L"bluekai.com", L"demdex.net", L"turn.com",
+        L"agkn.com", L"segment.io", L"banner.siteimprove.com"
+    };
+    return kList;
+}
+
+// ─── Tracker Domains (= AdBlocker.kt TRACKER_DOMAINS) ───────────────────────
+static const std::vector<std::wstring>& TrackerDomains() {
+    static const std::vector<std::wstring> kList = {
+        L"google-analytics.com", L"googletagmanager.com", L"googletagservices.com",
+        L"analytics.google.com", L"ssl.google-analytics.com",
+        L"www.google-analytics.com", L"stats.wp.com", L"pixel.wp.com",
+        L"bat.bing.com", L"analytics.twitter.com", L"t.co",
+        L"connect.facebook.net", L"graph.facebook.com",
+        L"analytics.yahoo.com", L"beacon.yahoo.com",
+        L"clicks.beap.bc.yahoo.com", L"piwik.org", L"matomo.org",
+        L"statcounter.com", L"clicktale.net", L"clicktale.com",
+        L"crazyegg.com", L"trackjs.com", L"raygun.io", L"bugsnag.com",
+        L"newrelic.com", L"nr-data.net",
+        L"amplitude.com", L"api.amplitude.com", L"cdn.amplitude.com",
+        L"mixpanel.com", L"cdn4.mxpnl.com",
+        L"segment.com", L"cdn.segment.com", L"api.segment.io",
+        L"cdn.heapanalytics.com", L"heapanalytics.com",
+        L"rollbar.com", L"sentry.io", L"ingest.sentry.io",
+        L"browser.sentry-cdn.com", L"intercom.io", L"widget.intercom.io",
+        L"nexus.ensighten.com"
+    };
+    return kList;
+}
+
+// ─── Shared host-extract helper ───────────────────────────────────────────────
+// URL থেকে normalized lowercase host বের করে (www. ছাড়া)।
+// AdBlocker.kt এর ExtractHost() + isAdultHost() এর host normalization এর মতো।
+static std::wstring ExtractHost(const std::wstring& text) {
+    std::wstring s = text;
+    size_t schemePos = s.find(L"://");
+    if (schemePos != std::wstring::npos) s = s.substr(schemePos + 3);
+    size_t cut = s.find_first_of(L"/?#");
+    if (cut != std::wstring::npos) s = s.substr(0, cut);
+    // strip port
+    size_t portPos = s.find(L':');
+    if (portPos != std::wstring::npos) s = s.substr(0, portPos);
+    std::transform(s.begin(), s.end(), s.begin(), ::towlower);
+    if (s.rfind(L"www.", 0) == 0) s = s.substr(4);
+    return s;
+}
+
+// ─── Suffix domain match (= AdBlocker.kt HostMatchesDomain) ──────────────────
+static bool HostMatchesDomain(const std::wstring& host, const std::wstring& domain) {
+    if (host == domain) return true;
+    if (host.size() > domain.size()) {
+        size_t off = host.size() - domain.size();
+        return host[off - 1] == L'.' && host.substr(off) == domain;
+    }
+    return false;
+}
+
+// ─── isAdultHost() port ───────────────────────────────────────────────────────
+static bool IsAdultHost(const std::wstring& host) {
+    // TLD চেক (AdBlocker.kt ADULT_TLDS)
+    for (const auto& tld : AdultTlds())
+        if (host.size() >= tld.size() &&
+            host.compare(host.size() - tld.size(), tld.size(), tld) == 0)
+            return true;
+    // Domain চেক
+    for (const auto& domain : AdultDomains())
+        if (HostMatchesDomain(host, domain)) return true;
+    return false;
+}
+
+// ─── Ad / Tracker host check (= AdBlocker.kt shouldBlock inner logic) ────────
+static bool IsAdHost(const std::wstring& host) {
+    for (const auto& d : AdDomains())
+        if (HostMatchesDomain(host, d)) return true;
+    return false;
+}
+
+static bool IsTrackerHost(const std::wstring& host) {
+    for (const auto& d : TrackerDomains())
+        // exact host বা proper subdomain — substring নয় (AdBlocker.kt FIX comment দ্রষ্টব্য)
+        if (host == d || HostMatchesDomain(host, d)) return true;
+    return false;
+}
+
+// ─── Whole-word keyword check ─────────────────────────────────────────────────
 static bool ContainsBadWord(const std::wstring& lowerText, const std::wstring& kw) {
     size_t pos = 0;
     while ((pos = lowerText.find(kw, pos)) != std::wstring::npos) {
@@ -436,46 +557,183 @@ static bool ContainsBadWord(const std::wstring& lowerText, const std::wstring& k
     return false;
 }
 
-// Extract just the host portion out of either a raw URL or typed address-bar
-// text, lowercased, with a leading "www." stripped — mirrors isAdultHost()'s
-// host normalization in AdBlocker.kt.
-static std::wstring ExtractHost(const std::wstring& text) {
-    std::wstring s = text;
-    size_t schemePos = s.find(L"://");
-    if (schemePos != std::wstring::npos) s = s.substr(schemePos + 3);
-    size_t cut = s.find_first_of(L"/?#");
-    if (cut != std::wstring::npos) s = s.substr(0, cut);
-    std::transform(s.begin(), s.end(), s.begin(), ::towlower);
-    if (s.rfind(L"www.", 0) == 0) s = s.substr(4);
-    return s;
-}
-
-static bool IsAdultHost(const std::wstring& host) {
-    for (const auto& domain : AdultDomains()) {
-        if (host == domain) return true;
-        if (host.size() > domain.size() &&
-            host.compare(host.size() - domain.size(), domain.size(), domain) == 0 &&
-            host[host.size() - domain.size() - 1] == L'.') {
-            return true;
-        }
-    }
-    return false;
-}
-
+// ─── IsBlockedContent — NavigationStarting (main frame adult block) ───────────
+// AdBlocker.kt: shouldBlockNavigation() + shouldBlock() main-frame adult path
 bool IsBlockedContent(const std::wstring& text) {
     std::wstring lower = text;
     std::transform(lower.begin(), lower.end(), lower.begin(), ::towlower);
 
+    // keyword check
     for (const auto& kw : AdultKeywords())
         if (ContainsBadWord(lower, kw)) return true;
 
-    // Also catch known adult domains directly, whether the user typed a bare
-    // domain, a full https:// URL, or it's being checked against the URL the
-    // WebView is about to navigate to (see the call site in WM_KEYDOWN/nav
-    // handling further down).
+    // domain / TLD check
     if (IsAdultHost(ExtractHost(text))) return true;
 
     return false;
+}
+
+// ─── IsAdOrTrackerUrl — WebResourceRequested (sub-resource block) ─────────────
+// AdBlocker.kt: shouldBlock() → AD_DOMAINS + TRACKER_DOMAINS path
+static bool IsAdOrTrackerUrl(const std::wstring& url) {
+    std::wstring host = ExtractHost(url);
+    if (host.empty()) return false;
+    if (IsAdHost(host))     return true;
+    if (IsTrackerHost(host)) return true;
+    return false;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// YOUTUBE AD PRUNER JS  (= AdBlocker.kt YouTubeAdPruner.getJsInjectScript())
+//
+// uBlock Origin json-prune approach:
+//   fetch() + XHR intercept → /youtubei/v1/player response এর adPlacements,
+//   playerAds, adSlots ইত্যাদি field সরিয়ে দাও।
+//   MutationObserver + setInterval → skip button auto-click (fallback)।
+// ─────────────────────────────────────────────────────────────────────────────
+static std::wstring GetYouTubeAdPrunerScript() {
+    return
+    L"(function(){"
+    L"if(window.__rasAdPrunerInstalled)return;"
+    L"window.__rasAdPrunerInstalled=true;"
+    // ad fields — uBlock Origin json-prune এর exact list
+    L"var AF=['adPlacements','playerAds','adSlots','adBreakHeartbeatParams',"
+    L"'auxiliaryUi','adMessagingConfig','adVideoId'];"
+    L"function prune(json){"
+    L"  try{var o=JSON.parse(json);rm(o);return JSON.stringify(o);}catch(e){return json;}"
+    L"}"
+    L"function rm(o){"
+    L"  if(!o||typeof o!=='object')return;"
+    L"  AF.forEach(function(f){delete o[f];});"
+    L"  if(o.playerResponse)AF.forEach(function(f){delete o.playerResponse[f];});"
+    L"  Object.keys(o).forEach(function(k){"
+    L"    var v=o[k];"
+    L"    if(Array.isArray(v))v.forEach(function(i){rm(i);});"
+    L"    else if(v&&typeof v==='object')rm(v);"
+    L"  });"
+    L"}"
+    L"function isYT(url){"
+    L"  return url&&(url.includes('/youtubei/v1/player')||"
+    L"    url.includes('/youtubei/v1/next')||url.includes('/youtubei/v1/browse'));"
+    L"}"
+    // fetch() intercept
+    L"var oF=window.fetch;"
+    L"window.fetch=function(input,init){"
+    L"  var url=typeof input==='string'?input:(input&&input.url)||'';"
+    L"  return oF.call(this,input,init).then(function(r){"
+    L"    if(!isYT(url))return r;"
+    L"    return r.clone().text().then(function(t){"
+    L"      return new Response(prune(t),{status:r.status,statusText:r.statusText,headers:r.headers});"
+    L"    });"
+    L"  });"
+    L"};"
+    // XHR intercept
+    L"var oO=XMLHttpRequest.prototype.open;"
+    L"XMLHttpRequest.prototype.open=function(m,url){"
+    L"  this._rasUrl=url;return oO.apply(this,arguments);"
+    L"};"
+    L"var oS=XMLHttpRequest.prototype.send;"
+    L"XMLHttpRequest.prototype.send=function(){"
+    L"  if(isYT(this._rasUrl)){"
+    L"    var x=this;"
+    L"    var d=Object.getOwnPropertyDescriptor(XMLHttpRequest.prototype,'responseText');"
+    L"    Object.defineProperty(x,'responseText',{"
+    L"      get:function(){var t=d?d.get.call(x):'';return(x.readyState===4&&isYT(x._rasUrl))?prune(t):t;},"
+    L"      configurable:true"
+    L"    });"
+    L"  }"
+    L"  return oS.apply(this,arguments);"
+    L"};"
+    // Skip ad button + video fast-forward fallback
+    L"function skipAds(){"
+    L"  var s=document.querySelector('.ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-ad-skip-button-modern');"
+    L"  if(s){s.click();return;}"
+    L"  var v=document.querySelector('video');"
+    L"  var a=document.querySelector('.ad-showing,.ad-interrupting');"
+    L"  if(v&&a&&!v.paused)v.currentTime=v.duration||9999;"
+    L"}"
+    L"var obs=new MutationObserver(function(){skipAds();});"
+    L"if(document.body)obs.observe(document.body,{childList:true,subtree:true});"
+    L"setInterval(skipAds,500);"
+    L"console.log('[RasBrowser] YT ad pruner installed');"
+    L"})();";
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONTENT SCANNER JS  (= AdBlocker.kt injectContentScanner())
+//
+// DOM text, image alt/src, meta rating scan করে adult content detect করলে
+// full-screen block overlay দেখায়।
+// AdBlocker.kt এর exact JS logic এর C++ wstring version।
+// ─────────────────────────────────────────────────────────────────────────────
+static std::wstring GetContentScannerScript() {
+    // keyword array — AdultKeywords() থেকে JS array বানাও
+    std::wstring kwArray = L"[";
+    bool first = true;
+    for (const auto& kw : AdultKeywords()) {
+        if (!first) kwArray += L",";
+        kwArray += L"'" + kw + L"'";
+        first = false;
+    }
+    kwArray += L"]";
+
+    return
+    L"(function(){"
+    L"var badWords=" + kwArray + L";"
+    L"var QUOTES=["
+    L"['\\u09A4\\u09CB\\u09AE\\u09BE\\u09B0 \\u09B8\\u09AE\\u09AF\\u09BC \\u09A4\\u09CB\\u09AE\\u09BE\\u09B0 \\u09B8\\u09AC\\u099A\\u09C7\\u09AF\\u09BC\\u09C7 \\u09AC\\u09DC \\u09B8\\u09AE\\u09CD\\u09AA\\u09A6\\u0964','Your time is your greatest asset.'],"
+    L"['\\u09AB\\u09CB\\u0995\\u09BE\\u09B8 \\u09AE\\u09BE\\u09A8\\u09C7\\u0987 \\u09B8\\u09CD\\u09AC\\u09BE\\u09A7\\u09C0\\u09A8\\u09A4\\u09BE\\u0964','Focus is freedom.'],"
+    L"['\\u09A4\\u09C1\\u09AE\\u09BF \\u09AF\\u09BE \\u09AC\\u09BE\\u09B0\\u09AC\\u09BE\\u09B0 \\u0995\\u09B0\\u09CB, \\u09A4\\u09C1\\u09AE\\u09BF \\u09A4\\u09BE\\u0987 \\u09B9\\u09AF\\u09BC\\u09C7 \\u0993\\u09A0\\u09CB\\u0964','You become what you repeatedly do.']"
+    L"];"
+    L"function execBlock(){"
+    L"  window.stop();"
+    L"  if(window.__rasBlockOverlayShown)return;"
+    L"  window.__rasBlockOverlayShown=true;"
+    L"  var pick=QUOTES[Math.floor(Math.random()*QUOTES.length)];"
+    L"  var ov=document.createElement('div');"
+    L"  ov.id='ras-block-overlay';"
+    L"  ov.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;z-index:2147483647;"
+    L"background:linear-gradient(160deg,#0f2027 0%,#203a43 45%,#2c5364 100%);"
+    L"display:flex;align-items:center;justify-content:center;padding:24px;';"
+    L"  ov.innerHTML="
+    L"'<div style=\"width:100%;max-width:380px;text-align:center;\">'"
+    L"+'<div style=\"font-size:58px;margin-bottom:14px;\">\\uD83D\\uDEE1\\uFE0F</div>'"
+    L"+'<div style=\"color:#fff;font-size:21px;font-weight:700;margin-bottom:6px;\">RasFocus Safe Mode</div>'"
+    L"+'<div style=\"color:rgba(255,255,255,0.55);font-size:12px;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:22px;\">Content Blocked</div>'"
+    L"+'<div style=\"background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.12);border-radius:18px;padding:22px 20px;margin-bottom:22px;\">'"
+    L"+'<div style=\"color:#7EE8C7;font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px;\">\\u2728 Motivation</div>'"
+    L"+'<div style=\"color:#fff;font-size:16px;line-height:1.55;font-weight:600;margin-bottom:6px;\">'+pick[0]+'</div>'"
+    L"+'<div style=\"color:rgba(255,255,255,0.6);font-size:12.5px;line-height:1.5;font-style:italic;\">'+pick[1]+'</div>'"
+    L"+'</div>'"
+    L"+'<button onclick=\"history.back()\" style=\"width:100%;padding:15px;border:none;border-radius:14px;"
+    L"background:linear-gradient(135deg,#43e97b,#38f9d7);color:#0f2027;font-size:15px;font-weight:700;cursor:pointer;\">"
+    L"\\u2190 Go Back</button>'"
+    L"+'</div>';"
+    L"  document.documentElement.appendChild(ov);"
+    L"  if(document.body)document.body.style.overflow='hidden';"
+    L"}"
+    L"function check(){"
+    L"  var metaR=document.querySelector('meta[name=\"rating\" i]');"
+    L"  var metaRTA=document.querySelector('meta[name=\"RATING\" i]');"
+    L"  if((metaR&&metaR.content.toLowerCase()==='adult')||"
+    L"     (metaRTA&&metaRTA.content.includes('RTA-5042'))){execBlock();return;}"
+    L"  var txt=(document.title+' '+(document.body?document.body.innerText.substring(0,5000):'')).toLowerCase();"
+    L"  if(badWords.some(function(w){var r=new RegExp('\\\\b'+w+'\\\\b');return r.test(txt);})){execBlock();return;}"
+    L"  var imgs=document.getElementsByTagName('img');"
+    L"  var max=Math.min(imgs.length,100);"
+    L"  for(var i=0;i<max;i++){"
+    L"    var src=(imgs[i].src||'').toLowerCase();"
+    L"    var alt=(imgs[i].alt||'').toLowerCase();"
+    L"    if(badWords.some(function(w){return src.includes(w)||alt.includes(w);})){execBlock();return;}"
+    L"  }"
+    L"}"
+    L"check();"
+    L"if(!window.__rasScannerObs){"
+    L"  window.__rasScannerObs=true;"
+    L"  var ob=new MutationObserver(function(){check();});"
+    L"  if(document.body)ob.observe(document.body,{childList:true,subtree:true});"
+    L"}"
+    L"})();";
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
