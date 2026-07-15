@@ -1618,6 +1618,34 @@ public:
             }
         }
 
+        // ── Layer 2 (AdBlocker.kt shouldBlock()/AD_DOMAINS+TRACKER_DOMAINS) ──
+        // সব sub-resource request filter করো, তারপর WebResourceRequested এ
+        // ad/tracker host হলে empty response দিয়ে block করে দাও।
+        tab.webview->AddWebResourceRequestedFilter(L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
+        tab.webview->add_WebResourceRequested(
+            Callback<ICoreWebView2WebResourceRequestedEventHandler>(
+            [](ICoreWebView2* /*sender*/, ICoreWebView2WebResourceRequestedEventArgs* args) -> HRESULT {
+                ComPtr<ICoreWebView2WebResourceRequest> req;
+                args->get_Request(&req);
+                if (!req) return S_OK;
+                LPWSTR uri = nullptr;
+                req->get_Uri(&uri);
+                if (uri) {
+                    std::wstring urlStr(uri);
+                    CoTaskMemFree(uri);
+                    if (IsAdOrTrackerUrl(urlStr) && g_sharedEnv) {
+                        ComPtr<IStream> emptyStream;
+                        emptyStream.Attach(SHCreateMemStream(nullptr, 0));
+                        ComPtr<ICoreWebView2WebResourceResponse> response;
+                        if (SUCCEEDED(g_sharedEnv->CreateWebResourceResponse(
+                                emptyStream.Get(), 204, L"No Content", L"", &response))) {
+                            args->put_Response(response.Get());
+                        }
+                    }
+                }
+                return S_OK;
+            }).Get(), nullptr);
+
         // ── Full Anti-Bot Detection Bypass (Google + ChatGPT + OpenAI compatible) ──
         tab.webview->AddScriptToExecuteOnDocumentCreated(
             // ── 1. webdriver flag — most important ──
@@ -1706,6 +1734,12 @@ public:
 
             L"})();",
             nullptr);
+
+        // ── Layer 3a (AdBlocker.kt YouTubeAdPruner.getJsInjectScript()) ──
+        // প্রতি navigation এ document তৈরি হওয়ার আগেই fetch/XHR patch করে দাও,
+        // যাতে YouTube নিজের script চালানোর আগেই ad fields prune হয়ে যায়।
+        tab.webview->AddScriptToExecuteOnDocumentCreated(
+            GetYouTubeAdPrunerScript().c_str(), nullptr);
 
         tab.webview->add_NavigationStarting(
             Callback<ICoreWebView2NavigationStartingEventHandler>(
@@ -1984,6 +2018,11 @@ public:
                 if (!injectScript.empty()) {
                     sender->ExecuteScript(injectScript.c_str(), nullptr);
                 }
+
+                // ── Layer 3b (AdBlocker.kt injectContentScanner()) ──
+                // onPageFinished এর সমতুল্য — DOM text/image/meta scan করে adult
+                // content ধরা পড়লে full-screen block overlay দেখায়।
+                sender->ExecuteScript(GetContentScannerScript().c_str(), nullptr);
 
                 return S_OK;
             }).Get(), nullptr);
