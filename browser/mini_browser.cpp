@@ -228,7 +228,7 @@ static const int D_TAB_W_MAX   = 240;
 static const int D_TAB_W_MIN   = 80;
 static const int D_TAB_PAD     = 10;
 static const int D_WIN_BTN_W   = 46;
-static const int D_LOGO_W      = 140; 
+static const int D_LOGO_W      = 46; 
 static const int D_NEW_TAB_BTN = 28;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -581,6 +581,37 @@ static bool IsAdOrTrackerUrl(const std::wstring& url) {
     if (IsAdHost(host))     return true;
     if (IsTrackerHost(host)) return true;
     return false;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 🟢 M.YOUTUBE SYSTEM — desktop www.youtube.com কে জোর করে mobile
+// m.youtube.com এ পাঠানো হয় + mobile UA বসানো হয়, কারণ YouTube-এর
+// anti-adblock/SSAI detection desktop web player-এ অনেক বেশি aggressive।
+// ─────────────────────────────────────────────────────────────────────────────
+static const wchar_t* kMobileUA =
+    L"Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 "
+    L"(KHTML, like Gecko) Chrome/136.0.0.0 Mobile Safari/537.36";
+
+static const wchar_t* kDesktopUA =
+    L"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    L"AppleWebKit/537.36 (KHTML, like Gecko) "
+    L"Chrome/136.0.0.0 Safari/537.36";
+
+// youtube.com পরিবারের host কিনা (video CDN / thumbnail CDN সহ) — এগুলোর
+// request-এও mobile UA পাঠানো দরকার, নাহলে Google পক্ষে UA/host mismatch ধরা পড়ে।
+static bool IsYouTubeFamilyHost(const std::wstring& host) {
+    static const std::vector<std::wstring> kHosts = {
+        L"youtube.com", L"googlevideo.com", L"ytimg.com", L"ggpht.com"
+    };
+    for (const auto& d : kHosts)
+        if (HostMatchesDomain(host, d)) return true;
+    return false;
+}
+
+// শুধু main site (www.youtube.com / youtube.com) — m.youtube.com বা
+// music.youtube.com বাদ, redirect loop এড়াতে।
+static bool NeedsMobileYouTubeRedirect(const std::wstring& host) {
+    return host == L"youtube.com" || host == L"www.youtube.com";
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1015,15 +1046,15 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
     int navH    = NavTotalH(hWnd);
     int winBtnW = WinBtnW(dpi);
 
-    Color cBgFrame   = wd.isDarkMode ? Color(255, 30, 30, 30)    : Color(255, 230, 230, 235);
-    Color cBgTool    = wd.isDarkMode ? Color(255, 43, 43, 43)    : Color(255, 255, 255, 255);
+    Color cBgFrame   = wd.isDarkMode ? Color(255, 32, 33, 36)    : Color(255, 230, 230, 235);
+    Color cBgTool    = wd.isDarkMode ? Color(255, 32, 33, 36)    : Color(255, 255, 255, 255);
     Color cTxtPrim   = wd.isDarkMode ? Color(255, 255, 255, 255) : Color(255, 32, 33, 36);
     Color cTxtDim    = wd.isDarkMode ? Color(255, 154, 156, 160) : Color(255, 95, 99, 104);
-    Color cTabActive = wd.isDarkMode ? Color(255, 43, 43, 43)    : Color(255, 255, 255, 255);
-    Color cTabHover  = wd.isDarkMode ? Color(255, 45, 45, 45)    : Color(255, 235, 236, 240);
-    Color cAddrBg    = wd.isDarkMode ? Color(255, 26, 26, 26)    : Color(255, 241, 243, 244);
-    Color cAddrBord  = wd.isDarkMode ? Color(255, 68, 68, 68)    : Color(255, 160, 180, 210);
-    Color cDivLine   = wd.isDarkMode ? Color(255, 45, 45, 45)    : Color(255, 218, 220, 224);
+    Color cTabActive = wd.isDarkMode ? Color(255, 53, 54, 58)    : Color(255, 255, 255, 255);
+    Color cTabHover  = wd.isDarkMode ? Color(255, 45, 46, 49)    : Color(255, 235, 236, 240);
+    Color cAddrBg    = wd.isDarkMode ? Color(255, 48, 49, 52)    : Color(255, 241, 243, 244);
+    Color cAddrBord  = wd.isDarkMode ? Color(255, 90, 92, 96)    : Color(255, 160, 180, 210);
+    Color cDivLine   = wd.isDarkMode ? Color(255, 45, 46, 49)    : Color(255, 218, 220, 224);
 
     Graphics g(hdc);
     g.SetSmoothingMode(SmoothingModeAntiAlias);
@@ -1096,18 +1127,19 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
     SolidBrush brPrim(cTxtPrim);
     SolidBrush brDim (cTxtDim);
 
-    // Title bar: Branding
+    // Title bar: Branding (compact circular app icon, Chrome-style)
     {
-        int iconX = S(15, dpi);
-        SolidBrush brTeal (Color(255, 12, 168, 176)); 
+        float iconSz = Sf(18.f, dpi);
+        float iconX  = (float)(LogoW(dpi) - S(18+14, dpi)) * 0.5f + Sf(4.f, dpi);
+        float iconY  = ((float)titleH - iconSz) * 0.5f;
+
+        LinearGradientBrush brIcon(
+            PointF(iconX, iconY), PointF(iconX + iconSz, iconY + iconSz),
+            Color(255, 12, 168, 176), Color(255, 0, 92, 230));
+        g.FillEllipse(&brIcon, iconX, iconY, iconSz, iconSz);
+
         SolidBrush brWhite(Color(255, 255, 255, 255));
-        SolidBrush brDark (Color(255, 32, 33, 36));
-
-        RectF rRas((float)iconX, 0.f, (float)S(40, dpi), (float)titleH); 
-        g.DrawString(L"Ras", -1, &fBrand, rRas, &sfL, &brTeal);
-
-        RectF rBrowser((float)(iconX + S(32, dpi)), 0.f, (float)S(100, dpi), (float)titleH);
-        g.DrawString(L"Browser", -1, &fBrand, rBrowser, &sfL, wd.isDarkMode ? &brWhite : &brDark);
+        g.DrawString(L"R", -1, &fSmallBd, RectF(iconX, iconY, iconSz, iconSz), &sfC, &brWhite);
     }
 
     // Window controls
@@ -1281,9 +1313,7 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
                 GraphicsPath aiPill;
                 AddRoundRect(aiPill, aiX, aiY, aiW, aiH, Sf(10.f, dpi));
                 
-                LinearGradientBrush aiBg(
-                    PointF(aiX, aiY), PointF(aiX + aiW, aiY),
-                    Color(255, 12, 168, 176), Color(255, 0, 92, 230));
+                SolidBrush aiBg(Color(255, 61, 133, 245));
                 g.FillPath(&aiBg, &aiPill);
                 
                 SolidBrush aiTxt(Color(255, 255, 255, 255));
@@ -1302,7 +1332,22 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
                 g.DrawString(ico, -1, &fIcon,
                     RectF((float)x, (float)toolY, (float)btnSz, btnHf), &sfC, &brPrim);
             };
-            DrawRightBtn(wd.hProfile, L"\xE77B", rx); rx += btnStep; 
+            // Profile avatar: filled circle with initial (Chrome-style)
+            {
+                float avSz = Sf(24.f, dpi);
+                float avX  = (float)rx + ((float)btnSz - avSz) * 0.5f;
+                float avY  = (float)toolY + ((float)toolH - avSz) * 0.5f;
+                if (wd.hProfile) {
+                    SolidBrush hb(wd.isDarkMode ? Color(50,255,255,255) : Color(20,0,0,0));
+                    g.FillEllipse(&hb, (float)(rx+S(2,dpi)), (float)(toolY+S(4,dpi)),
+                                  (float)S(28,dpi), (float)S(28,dpi));
+                }
+                SolidBrush avBg(Color(255, 30, 164, 90));
+                g.FillEllipse(&avBg, avX, avY, avSz, avSz);
+                SolidBrush avTxt(Color(255, 255, 255, 255));
+                g.DrawString(L"R", -1, &fSmallBd, RectF(avX, avY, avSz, avSz), &sfC, &avTxt);
+            }
+            rx += btnStep;
             DrawRightBtn(wd.hExt,     L"\xE9D2", rx); rx += btnStep; 
             DrawRightBtn(wd.hMenu,    L"\xE712", rx); 
         }
@@ -1610,11 +1655,10 @@ public:
 
             ComPtr<ICoreWebView2Settings2> s2;
             if (SUCCEEDED(settings->QueryInterface(IID_PPV_ARGS(&s2)))) {
-                // Latest Chrome UA — ChatGPT/OpenAI older UA কে suspicious মনে করে
-                s2->put_UserAgent(
-                    L"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    L"AppleWebKit/537.36 (KHTML, like Gecko) "
-                    L"Chrome/136.0.0.0 Safari/537.36");
+                // Latest Chrome UA — ChatGPT/OpenAI older UA কে suspicious মনে করে।
+                // YouTube family hosts-এর জন্য mobile UA নিচে WebResourceRequested
+                // এ per-request override করা হয় (m.youtube system)।
+                s2->put_UserAgent(kDesktopUA);
             }
         }
 
@@ -1774,6 +1818,29 @@ public:
                                 w.tabs[m_tabIdx].loading = false;
                                 w.tabs[m_tabIdx].webview->NavigateToString(
                                     GetBlocked_HTML(w.isDarkMode).c_str());
+                            }
+                        }
+                    } else if (NeedsMobileYouTubeRedirect(ExtractHost(urlStr))) {
+                        // ── m.youtube.com redirect ──
+                        // Desktop youtube.com এ Google-এর SSAI (server-side ad
+                        // injection) অনেক বেশি aggressive — ad সরাসরি video
+                        // stream এর ভেতরে stitched থাকে, তাই কোনো JSON-prune/
+                        // domain-block কাজ করে না। m.youtube.com (mobile web)
+                        // এ SSAI হালকা এবং client-side ad request আলাদা থাকে,
+                        // তাই GetYouTubeAdPrunerScript() + AD_DOMAINS block
+                        // effective হয়। এই path টা আগে define করা ছিল কিন্তু
+                        // কখনো call হতো না — সেটাই মূল bug।
+                        args->put_Cancel(TRUE);
+                        std::wstring path = urlStr;
+                        size_t schemePos = path.find(L"://");
+                        size_t hostStart = (schemePos != std::wstring::npos) ? schemePos + 3 : 0;
+                        size_t pathStart = path.find(L'/', hostStart);
+                        std::wstring rest = (pathStart != std::wstring::npos) ? path.substr(pathStart) : L"/";
+                        std::wstring mobileUrl = L"https://m.youtube.com" + rest;
+                        if (g_windows.count(m_hWnd)) {
+                            auto& w = g_windows[m_hWnd];
+                            if (m_tabIdx >= 0 && m_tabIdx < (int)w.tabs.size() && w.tabs[m_tabIdx].webview) {
+                                w.tabs[m_tabIdx].webview->Navigate(mobileUrl.c_str());
                             }
                         }
                     } else {
