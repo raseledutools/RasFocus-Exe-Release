@@ -228,7 +228,7 @@ static const int D_TAB_W_MAX   = 240;
 static const int D_TAB_W_MIN   = 80;
 static const int D_TAB_PAD     = 10;
 static const int D_WIN_BTN_W   = 46;
-static const int D_LOGO_W      = 46; 
+static const int D_LOGO_W      = 140; 
 static const int D_NEW_TAB_BTN = 28;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -614,6 +614,18 @@ static bool NeedsMobileYouTubeRedirect(const std::wstring& host) {
     return host == L"youtube.com" || host == L"www.youtube.com";
 }
 
+// "https://www.youtube.com/watch?v=xyz" → "https://m.youtube.com/watch?v=xyz"
+// host অংশটুকু বাদ দিয়ে বাকিটা (scheme + path + query) অবিকৃত রাখা হয়।
+static std::wstring RewriteToMobileYouTube(const std::wstring& url) {
+    size_t schemeEnd = url.find(L"://");
+    if (schemeEnd == std::wstring::npos) return url;
+    size_t hostStart = schemeEnd + 3;
+    size_t hostEnd = url.find_first_of(L"/?#", hostStart);
+    if (hostEnd == std::wstring::npos) hostEnd = url.size();
+    std::wstring rest = url.substr(hostEnd); // path + query + fragment (থাকলে)
+    return url.substr(0, hostStart) + L"m.youtube.com" + rest;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // YOUTUBE AD PRUNER JS  (= AdBlocker.kt YouTubeAdPruner.getJsInjectScript())
 //
@@ -627,12 +639,9 @@ static std::wstring GetYouTubeAdPrunerScript() {
     L"(function(){"
     L"if(window.__rasAdPrunerInstalled)return;"
     L"window.__rasAdPrunerInstalled=true;"
-    // ad fields — AdGuard + uBlock Origin combined list
+    // ad fields — uBlock Origin json-prune এর exact list
     L"var AF=['adPlacements','playerAds','adSlots','adBreakHeartbeatParams',"
-    L"'auxiliaryUi','adMessagingConfig','adVideoId',"
-    L"'adBreakParams','adPreviewConfig','instreamVideoAdConfig',"
-    L"'adMarkers','playerAdParams','openMeasurement',"
-    L"'linearAd','nonLinearAd','companionAds'];"
+    L"'auxiliaryUi','adMessagingConfig','adVideoId'];"
     L"function prune(json){"
     L"  try{var o=JSON.parse(json);rm(o);return JSON.stringify(o);}catch(e){return json;}"
     L"}"
@@ -640,12 +649,6 @@ static std::wstring GetYouTubeAdPrunerScript() {
     L"  if(!o||typeof o!=='object')return;"
     L"  AF.forEach(function(f){delete o[f];});"
     L"  if(o.playerResponse)AF.forEach(function(f){delete o.playerResponse[f];});"
-    // SSAI ad segments সরাও streamingData থেকে
-    L"  if(o.streamingData&&o.streamingData.adaptiveFormats){"
-    L"    o.streamingData.adaptiveFormats=o.streamingData.adaptiveFormats.filter(function(f){"
-    L"      return !(f.url&&(f.url.includes('&ad_type=')||f.url.includes('ctier=A')));"
-    L"    });"
-    L"  }"
     L"  Object.keys(o).forEach(function(k){"
     L"    var v=o[k];"
     L"    if(Array.isArray(v))v.forEach(function(i){rm(i);});"
@@ -653,24 +656,13 @@ static std::wstring GetYouTubeAdPrunerScript() {
     L"  });"
     L"}"
     L"function isYT(url){"
-    L"  return url&&("
-    L"    url.includes('/youtubei/v1/player')||"
-    L"    url.includes('/youtubei/v1/next')||"
-    L"    url.includes('/youtubei/v1/browse')||"
-    L"    url.includes('/youtubei/v1/guide')||"
-    L"    url.includes('youtube.com/ptracking')||"
-    L"    url.includes('youtube.com/pagead/')||"
-    L"    url.includes('/api/stats/ads'));"
+    L"  return url&&(url.includes('/youtubei/v1/player')||"
+    L"    url.includes('/youtubei/v1/next')||url.includes('/youtubei/v1/browse'));"
     L"}"
     // fetch() intercept
     L"var oF=window.fetch;"
     L"window.fetch=function(input,init){"
     L"  var url=typeof input==='string'?input:(input&&input.url)||'';"
-    // ad beacon/tracking silently drop করো
-    L"  if(url.includes('/api/stats/ads')||url.includes('youtube.com/pagead/')||"
-    L"     url.includes('youtube.com/ptracking')){"
-    L"    return Promise.resolve(new Response('',{status:204}));"
-    L"  }"
     L"  return oF.call(this,input,init).then(function(r){"
     L"    if(!isYT(url))return r;"
     L"    return r.clone().text().then(function(t){"
@@ -695,269 +687,19 @@ static std::wstring GetYouTubeAdPrunerScript() {
     L"  }"
     L"  return oS.apply(this,arguments);"
     L"};"
-    // Skip button + fast-forward (সব known variants)
+    // Skip ad button + video fast-forward fallback
     L"function skipAds(){"
-    L"  var s=document.querySelector("
-    L"    '.ytp-skip-ad-button,.ytp-ad-skip-button,"
-    L"     .ytp-ad-skip-button-modern,.ytp-ad-skip-button-slot button');"
-    L"  if(s&&s.offsetParent){s.click();return;}"
+    L"  var s=document.querySelector('.ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-ad-skip-button-modern');"
+    L"  if(s){s.click();return;}"
     L"  var v=document.querySelector('video');"
     L"  var a=document.querySelector('.ad-showing,.ad-interrupting');"
-    L"  if(v&&a&&!v.paused){v.currentTime=v.duration||9999;return;}"
-    L"  var ov=document.querySelector('.ytp-ad-overlay-close-button');"
-    L"  if(ov&&ov.offsetParent)ov.click();"
+    L"  if(v&&a&&!v.paused)v.currentTime=v.duration||9999;"
     L"}"
-    L"var obs=new MutationObserver(function(){"
-    L"  skipAds();"
-    L"  var v=document.querySelector('video');"
-    L"  var isAd=document.querySelector('.ad-showing,.ad-interrupting');"
-    L"  if(v&&isAd&&!v.muted){v.muted=true;v.volume=0;if(!v.paused)v.currentTime=v.duration||9999;}"
-    L"  else if(v&&!isAd&&v.muted){v.muted=false;v.volume=1;}"
-    L"});"
-    L"if(document.body)obs.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['class']});"
-    L"setInterval(skipAds,300);"
-    // yt-player-ads custom element register হতে দিও না
-    L"var origDefine=customElements.define.bind(customElements);"
-    L"customElements.define=function(name,cls,opts){"
-    L"  if(name==='yt-player-ads')return;"
-    L"  return origDefine(name,cls,opts);"
-    L"};"
-    // sendBeacon block (ad impression tracking)
-    L"if(navigator.sendBeacon){"
-    L"var oSB=navigator.sendBeacon.bind(navigator);"
-    L"navigator.sendBeacon=function(url,data){"
-    L"  if(url&&(url.includes('/api/stats/ads')||url.includes('pagead')||url.includes('ptracking')))"
-    L"    return true;"
-    L"  return oSB(url,data);"
-    L"};}"
-    L"console.log('[RasBrowser] YT ad pruner v2 installed');"
+    L"var obs=new MutationObserver(function(){skipAds();});"
+    L"if(document.body)obs.observe(document.body,{childList:true,subtree:true});"
+    L"setInterval(skipAds,500);"
+    L"console.log('[RasBrowser] YT ad pruner installed');"
     L"})();";
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// YOUTUBE "REMOVE ADBLOCK THING" SCRIPT  (ported from Youtube-Ad-blocker-
-// Reminder-Remover_user.js — TheRealJoelmatic/RemoveAdblockThing, v5.8)
-//
-// Layer 3a (GetYouTubeAdPrunerScript) prunes the ad JSON fields, but YouTube's
-// "Ad blockers violate YouTube's ToS" pop-up / video-pause nag is a separate
-// system — this script detects that nag, swaps the crippled player for a
-// youtube-nocookie.com iframe embed, and strips the remaining page-level ad
-// containers. Runs only on youtube.com via AddScriptToExecuteOnDocumentCreated.
-//
-// NOTE: the original script's self-update checker (fetches the latest
-// version from GitHub and offers to reload it) has been removed here —
-// it needs GM_info (Tampermonkey-only) and isn't meaningful when the
-// script is baked directly into the browser binary.
-// ─────────────────────────────────────────────────────────────────────────────
-static std::wstring GetRemoveAdblockThingScript() {
-    return LR"YTADBLOCK(
-(function(){
-  if (window.__rasRemoveAdblockThingInstalled) return;
-  window.__rasRemoveAdblockThingInstalled = true;
-  if (!location.hostname.includes('youtube.com')) return;
-
-  // Config
-  const adblocker = true;       // undetected adblocker (video swap)
-  const removePopup = true;     // nag-popup remover (belt & suspenders)
-  const debugMessages = false;  // set true for verbose console logs
-
-  let currentUrl = window.location.href;
-  let isVideoPlayerModified = false;
-
-  function log(msg, level, ...args) {
-    if (!debugMessages) return;
-    const prefix = '[RasBrowser] RemoveAdblockThing:';
-    if (level === 'e') console.error(prefix, msg, ...args);
-    else console.log(prefix, msg, ...args);
-  }
-
-  log('Script started');
-  if (adblocker) removeAds();
-  if (removePopup) popupRemover();
-
-  // Remove the "Ad blockers violate YouTube's Terms of Service" popup
-  function popupRemover() {
-    setInterval(() => {
-      const modalOverlay = document.querySelector('tp-yt-iron-overlay-backdrop');
-      const popup = document.querySelector('.style-scope ytd-enforcement-message-view-model');
-      const popupButton = document.getElementById('dismiss-button');
-      const video = document.querySelector('video');
-
-      document.body.style.setProperty('overflow-y', 'auto', 'important');
-
-      if (modalOverlay) { modalOverlay.removeAttribute('opened'); modalOverlay.remove(); }
-
-      if (popup) {
-        log('Popup detected, removing...');
-        if (popupButton) popupButton.click();
-        popup.remove();
-        if (video) { video.play(); setTimeout(() => video.play(), 500); }
-        log('Popup removed');
-      }
-      if (video && video.paused && popup) video.play();
-    }, 1000);
-  }
-
-  // Undetected adblocker: swap the crippled player for a nocookie embed
-  function removeAds() {
-    log('removeAds()');
-    setInterval(() => {
-      if (window.location.href !== currentUrl) {
-        currentUrl = window.location.href;
-        isVideoPlayerModified = false;
-        clearAllPlayers();
-        removePageAds();
-      }
-
-      if (window.location.href.includes('shorts')) return;
-
-      if (isVideoPlayerModified) {
-        removeAllDuplicateVideos();
-        return;
-      }
-
-      const video = document.querySelector('video');
-      if (video) { video.volume = 0; video.pause(); video.remove(); }
-
-      if (!clearAllPlayers()) return;
-
-      const errorScreen = document.querySelector('#error-screen');
-      if (errorScreen) errorScreen.remove();
-
-      let videoID = '';
-      let playList = '';
-      let timeStamp = '';
-      const url = new URL(window.location.href);
-      const urlParams = new URLSearchParams(url.search);
-
-      if (urlParams.has('v')) {
-        videoID = urlParams.get('v');
-      } else {
-        const pathSegments = url.pathname.split('/');
-        const liveIndex = pathSegments.indexOf('live');
-        if (liveIndex !== -1 && liveIndex + 1 < pathSegments.length) videoID = pathSegments[liveIndex + 1];
-      }
-      if (urlParams.has('list')) playList = '&listType=playlist&list=' + urlParams.get('list');
-      if (urlParams.has('t')) timeStamp = '&start=' + urlParams.get('t').replace('s', '');
-      if (!videoID) { log('YouTube video URL not found.', 'e'); return; }
-
-      log('Video ID: ' + videoID);
-
-      const finalUrl = 'https://www.youtube-nocookie.com/embed/' + videoID +
-        '?autoplay=1&modestbranding=1&rel=0' + playList + timeStamp;
-
-      const iframe = document.createElement('iframe');
-      iframe.setAttribute('src', finalUrl);
-      iframe.setAttribute('frameborder', '0');
-      iframe.setAttribute('allow', 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share');
-      iframe.setAttribute('allowfullscreen', true);
-      iframe.setAttribute('mozallowfullscreen', 'mozallowfullscreen');
-      iframe.setAttribute('msallowfullscreen', 'msallowfullscreen');
-      iframe.setAttribute('oallowfullscreen', 'oallowfullscreen');
-      iframe.setAttribute('webkitallowfullscreen', 'webkitallowfullscreen');
-      iframe.style.width = '100%';
-      iframe.style.height = '100%';
-      iframe.style.position = 'absolute';
-      iframe.style.top = '0';
-      iframe.style.left = '0';
-      iframe.style.zIndex = '9999';
-      iframe.style.pointerEvents = 'all';
-
-      const playerEl = document.querySelector('.html5-video-player');
-      if (playerEl) { playerEl.appendChild(iframe); isVideoPlayerModified = true; log('Finished'); }
-    }, 500);
-    removePageAds();
-  }
-
-  function removeAllDuplicateVideos() {
-    document.querySelectorAll('video').forEach(video => {
-      if (video.src.includes('www.youtube.com')) {
-        video.muted = true;
-        video.pause();
-        video.addEventListener('volumechange', function() {
-          if (!video.muted) { video.muted = true; video.pause(); }
-        });
-        video.addEventListener('play', function() { video.pause(); });
-      }
-    });
-  }
-
-  function clearAllPlayers() {
-    const videoPlayerElements = document.querySelectorAll('.html5-video-player');
-    if (videoPlayerElements.length === 0) return false;
-    videoPlayerElements.forEach(el => {
-      el.querySelectorAll('iframe').forEach(f => f.remove());
-    });
-    return true;
-  }
-
-  function removePageAds() {
-    const sponsor = document.querySelectorAll('div#player-ads.style-scope.ytd-watch-flexy, div#panels.style-scope.ytd-watch-flexy');
-    const style = document.createElement('style');
-    style.textContent = `
-      ytd-action-companion-ad-renderer,
-      ytd-display-ad-renderer,
-      ytd-video-masthead-ad-advertiser-info-renderer,
-      ytd-video-masthead-ad-primary-video-renderer,
-      ytd-in-feed-ad-layout-renderer,
-      ytd-ad-slot-renderer,
-      yt-about-this-ad-renderer,
-      yt-mealbar-promo-renderer,
-      ytd-statement-banner-renderer,
-      ytd-banner-promo-renderer-background,
-      .ytd-video-masthead-ad-v3-renderer,
-      div#root.style-scope.ytd-display-ad-renderer.yt-simple-endpoint,
-      div#sparkles-container.style-scope.ytd-promoted-sparkles-web-renderer,
-      div#main-container.style-scope.ytd-promoted-video-renderer,
-      div#player-ads.style-scope.ytd-watch-flexy,
-      ad-slot-renderer,
-      ytm-promoted-sparkles-web-renderer,
-      masthead-ad,
-      tp-yt-iron-overlay-backdrop,
-      #masthead-ad {
-        display: none !important;
-      }
-    `;
-    document.head.appendChild(style);
-
-    sponsor?.forEach(element => {
-      if (element.getAttribute('id') === 'rendering-content') {
-        element.childNodes?.forEach(childElement => {
-          if (childElement?.data?.targetId && childElement.data.targetId !== 'engagement-panel-macro-markers-description-chapters') {
-            element.style.display = 'none';
-          }
-        });
-      }
-    });
-    log('Removed page ads');
-  }
-
-  function observerCallback(mutations) {
-    const isVideoAdded = mutations.some(m => Array.from(m.addedNodes).some(n => n.tagName === 'VIDEO'));
-    if (isVideoAdded) {
-      if (window.location.href.includes('shorts')) return;
-      removeAllDuplicateVideos();
-    }
-  }
-  if (document.body) new MutationObserver(observerCallback).observe(document.body, { childList: true, subtree: true });
-
-  // Fix timestamp links in comments so they retarget the embedded iframe
-  document.addEventListener('click', function(event) {
-    const target = event.target;
-    if (target.classList && target.classList.contains('yt-core-attributed-string__link') && target.href && target.href.includes('&t=')) {
-      event.preventDefault();
-      const timestamp = target.href.split('&t=')[1].split('s')[0];
-      document.querySelectorAll('.html5-video-player').forEach(playerEl => {
-        playerEl.querySelectorAll('iframe').forEach(iframe => {
-          iframe.src = iframe.src.includes('&start=')
-            ? iframe.src.replace(/&start=\d+/, '&start=' + timestamp)
-            : iframe.src + '&start=' + timestamp;
-        });
-      });
-    }
-  });
-})();
-)YTADBLOCK";
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1316,15 +1058,15 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
     int navH    = NavTotalH(hWnd);
     int winBtnW = WinBtnW(dpi);
 
-    Color cBgFrame   = wd.isDarkMode ? Color(255, 32, 33, 36)    : Color(255, 230, 230, 235);
-    Color cBgTool    = wd.isDarkMode ? Color(255, 32, 33, 36)    : Color(255, 255, 255, 255);
+    Color cBgFrame   = wd.isDarkMode ? Color(255, 30, 30, 30)    : Color(255, 230, 230, 235);
+    Color cBgTool    = wd.isDarkMode ? Color(255, 43, 43, 43)    : Color(255, 255, 255, 255);
     Color cTxtPrim   = wd.isDarkMode ? Color(255, 255, 255, 255) : Color(255, 32, 33, 36);
     Color cTxtDim    = wd.isDarkMode ? Color(255, 154, 156, 160) : Color(255, 95, 99, 104);
-    Color cTabActive = wd.isDarkMode ? Color(255, 53, 54, 58)    : Color(255, 255, 255, 255);
-    Color cTabHover  = wd.isDarkMode ? Color(255, 45, 46, 49)    : Color(255, 235, 236, 240);
-    Color cAddrBg    = wd.isDarkMode ? Color(255, 48, 49, 52)    : Color(255, 241, 243, 244);
-    Color cAddrBord  = wd.isDarkMode ? Color(255, 90, 92, 96)    : Color(255, 160, 180, 210);
-    Color cDivLine   = wd.isDarkMode ? Color(255, 45, 46, 49)    : Color(255, 218, 220, 224);
+    Color cTabActive = wd.isDarkMode ? Color(255, 43, 43, 43)    : Color(255, 255, 255, 255);
+    Color cTabHover  = wd.isDarkMode ? Color(255, 45, 45, 45)    : Color(255, 235, 236, 240);
+    Color cAddrBg    = wd.isDarkMode ? Color(255, 26, 26, 26)    : Color(255, 241, 243, 244);
+    Color cAddrBord  = wd.isDarkMode ? Color(255, 68, 68, 68)    : Color(255, 160, 180, 210);
+    Color cDivLine   = wd.isDarkMode ? Color(255, 45, 45, 45)    : Color(255, 218, 220, 224);
 
     Graphics g(hdc);
     g.SetSmoothingMode(SmoothingModeAntiAlias);
@@ -1397,19 +1139,18 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
     SolidBrush brPrim(cTxtPrim);
     SolidBrush brDim (cTxtDim);
 
-    // Title bar: Branding (compact circular app icon, Chrome-style)
+    // Title bar: Branding
     {
-        float iconSz = Sf(18.f, dpi);
-        float iconX  = (float)(LogoW(dpi) - S(18+14, dpi)) * 0.5f + Sf(4.f, dpi);
-        float iconY  = ((float)titleH - iconSz) * 0.5f;
-
-        LinearGradientBrush brIcon(
-            PointF(iconX, iconY), PointF(iconX + iconSz, iconY + iconSz),
-            Color(255, 12, 168, 176), Color(255, 0, 92, 230));
-        g.FillEllipse(&brIcon, iconX, iconY, iconSz, iconSz);
-
+        int iconX = S(15, dpi);
+        SolidBrush brTeal (Color(255, 12, 168, 176)); 
         SolidBrush brWhite(Color(255, 255, 255, 255));
-        g.DrawString(L"R", -1, &fSmallBd, RectF(iconX, iconY, iconSz, iconSz), &sfC, &brWhite);
+        SolidBrush brDark (Color(255, 32, 33, 36));
+
+        RectF rRas((float)iconX, 0.f, (float)S(40, dpi), (float)titleH); 
+        g.DrawString(L"Ras", -1, &fBrand, rRas, &sfL, &brTeal);
+
+        RectF rBrowser((float)(iconX + S(32, dpi)), 0.f, (float)S(100, dpi), (float)titleH);
+        g.DrawString(L"Browser", -1, &fBrand, rBrowser, &sfL, wd.isDarkMode ? &brWhite : &brDark);
     }
 
     // Window controls
@@ -1583,7 +1324,9 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
                 GraphicsPath aiPill;
                 AddRoundRect(aiPill, aiX, aiY, aiW, aiH, Sf(10.f, dpi));
                 
-                SolidBrush aiBg(Color(255, 61, 133, 245));
+                LinearGradientBrush aiBg(
+                    PointF(aiX, aiY), PointF(aiX + aiW, aiY),
+                    Color(255, 12, 168, 176), Color(255, 0, 92, 230));
                 g.FillPath(&aiBg, &aiPill);
                 
                 SolidBrush aiTxt(Color(255, 255, 255, 255));
@@ -1602,22 +1345,7 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
                 g.DrawString(ico, -1, &fIcon,
                     RectF((float)x, (float)toolY, (float)btnSz, btnHf), &sfC, &brPrim);
             };
-            // Profile avatar: filled circle with initial (Chrome-style)
-            {
-                float avSz = Sf(24.f, dpi);
-                float avX  = (float)rx + ((float)btnSz - avSz) * 0.5f;
-                float avY  = (float)toolY + ((float)toolH - avSz) * 0.5f;
-                if (wd.hProfile) {
-                    SolidBrush hb(wd.isDarkMode ? Color(50,255,255,255) : Color(20,0,0,0));
-                    g.FillEllipse(&hb, (float)(rx+S(2,dpi)), (float)(toolY+S(4,dpi)),
-                                  (float)S(28,dpi), (float)S(28,dpi));
-                }
-                SolidBrush avBg(Color(255, 30, 164, 90));
-                g.FillEllipse(&avBg, avX, avY, avSz, avSz);
-                SolidBrush avTxt(Color(255, 255, 255, 255));
-                g.DrawString(L"R", -1, &fSmallBd, RectF(avX, avY, avSz, avSz), &sfC, &avTxt);
-            }
-            rx += btnStep;
+            DrawRightBtn(wd.hProfile, L"\xE77B", rx); rx += btnStep; 
             DrawRightBtn(wd.hExt,     L"\xE9D2", rx); rx += btnStep; 
             DrawRightBtn(wd.hMenu,    L"\xE712", rx); 
         }
@@ -1947,6 +1675,19 @@ public:
                 if (uri) {
                     std::wstring urlStr(uri);
                     CoTaskMemFree(uri);
+
+                    // 🟢 M.YOUTUBE SYSTEM — youtube.com family-র প্রতিটা
+                    // sub-resource request-এ mobile UA override করো, যাতে
+                    // main-frame redirect (m.youtube.com) + সব asset request
+                    // consistent mobile client হিসেবে দেখা যায়।
+                    std::wstring reqHost = ExtractHost(urlStr);
+                    if (!reqHost.empty() && IsYouTubeFamilyHost(reqHost)) {
+                        ComPtr<ICoreWebView2HttpRequestHeaders> headers;
+                        if (SUCCEEDED(req->get_Headers(&headers)) && headers) {
+                            headers->SetHeader(L"User-Agent", kMobileUA);
+                        }
+                    }
+
                     if (IsAdOrTrackerUrl(urlStr) && g_sharedEnv) {
                         ComPtr<IStream> emptyStream;
                         emptyStream.Attach(SHCreateMemStream(nullptr, 0));
@@ -2055,20 +1796,29 @@ public:
         tab.webview->AddScriptToExecuteOnDocumentCreated(
             GetYouTubeAdPrunerScript().c_str(), nullptr);
 
-        // ── Layer 3a-2 (Youtube-Ad-blocker-Reminder-Remover_user.js port) ──
-        // JSON pruning (উপরের script) সাধারণত ad load হতেই দেয় না, কিন্তু
-        // YouTube মাঝে মাঝে "Ad blockers violate ToS" নাগ স্ক্রিন/popup
-        // দেখিয়ে video pause করে দেয় — এই স্ক্রিপ্ট সেটা ধরে video player
-        // কে youtube-nocookie.com iframe embed দিয়ে replace করে দেয়।
-        tab.webview->AddScriptToExecuteOnDocumentCreated(
-            GetRemoveAdblockThingScript().c_str(), nullptr);
-
         tab.webview->add_NavigationStarting(
             Callback<ICoreWebView2NavigationStartingEventHandler>(
             [this](ICoreWebView2* sender, ICoreWebView2NavigationStartingEventArgs* args) -> HRESULT {
                 LPWSTR uri = nullptr; args->get_Uri(&uri);
                 if (uri) {
                     std::wstring urlStr(uri);
+
+                    // 🟢 M.YOUTUBE SYSTEM — desktop youtube.com/www.youtube.com
+                    // ধরা পড়লে সাথে সাথে cancel করে m.youtube.com এ পাঠাও।
+                    std::wstring navHost = ExtractHost(urlStr);
+                    if (NeedsMobileYouTubeRedirect(navHost)) {
+                        args->put_Cancel(TRUE);
+                        std::wstring mobileUrl = RewriteToMobileYouTube(urlStr);
+                        if (g_windows.count(m_hWnd)) {
+                            auto& w = g_windows[m_hWnd];
+                            if (m_tabIdx >= 0 && m_tabIdx < (int)w.tabs.size() &&
+                                w.tabs[m_tabIdx].webview) {
+                                w.tabs[m_tabIdx].webview->Navigate(mobileUrl.c_str());
+                            }
+                        }
+                        CoTaskMemFree(uri);
+                        return S_OK;
+                    }
 
                     // ── ChatGPT/OpenAI এর জন্য extra headers inject করো ──
                     bool isChatGPT = (urlStr.find(L"chatgpt.com") != std::wstring::npos ||
@@ -2096,29 +1846,6 @@ public:
                                 w.tabs[m_tabIdx].loading = false;
                                 w.tabs[m_tabIdx].webview->NavigateToString(
                                     GetBlocked_HTML(w.isDarkMode).c_str());
-                            }
-                        }
-                    } else if (NeedsMobileYouTubeRedirect(ExtractHost(urlStr))) {
-                        // ── m.youtube.com redirect ──
-                        // Desktop youtube.com এ Google-এর SSAI (server-side ad
-                        // injection) অনেক বেশি aggressive — ad সরাসরি video
-                        // stream এর ভেতরে stitched থাকে, তাই কোনো JSON-prune/
-                        // domain-block কাজ করে না। m.youtube.com (mobile web)
-                        // এ SSAI হালকা এবং client-side ad request আলাদা থাকে,
-                        // তাই GetYouTubeAdPrunerScript() + AD_DOMAINS block
-                        // effective হয়। এই path টা আগে define করা ছিল কিন্তু
-                        // কখনো call হতো না — সেটাই মূল bug।
-                        args->put_Cancel(TRUE);
-                        std::wstring path = urlStr;
-                        size_t schemePos = path.find(L"://");
-                        size_t hostStart = (schemePos != std::wstring::npos) ? schemePos + 3 : 0;
-                        size_t pathStart = path.find(L'/', hostStart);
-                        std::wstring rest = (pathStart != std::wstring::npos) ? path.substr(pathStart) : L"/";
-                        std::wstring mobileUrl = L"https://m.youtube.com" + rest;
-                        if (g_windows.count(m_hWnd)) {
-                            auto& w = g_windows[m_hWnd];
-                            if (m_tabIdx >= 0 && m_tabIdx < (int)w.tabs.size() && w.tabs[m_tabIdx].webview) {
-                                w.tabs[m_tabIdx].webview->Navigate(mobileUrl.c_str());
                             }
                         }
                     } else {
