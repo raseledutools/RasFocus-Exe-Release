@@ -18,6 +18,7 @@
 #include <ws2tcpip.h>
 #include "tab_phone_remote.h"
 #include "globals.h"
+#include "phone_remote_html.h"
 #include <wincrypt.h>
 #include <shellapi.h>
 
@@ -268,173 +269,6 @@ static void WsClient(SOCKET client) {
     g_connectedClients--;
 }
 
-// ── HTML Control Panel ────────────────────────────────────────────
-static string BuildHtml(const string& pin) {
-    // PIN embedded in HTML — phone can verify it
-    return R"HTML(<!DOCTYPE html>
-<html lang="bn">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>RasFocus Remote</title>
-<style>
-*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-body{font-family:'Segoe UI',sans-serif;background:#0d0d0d;color:#e0e0e0;height:100dvh;display:flex;flex-direction:column;overflow:hidden;user-select:none}
-#hdr{background:#005f6b;padding:8px 14px;display:flex;align-items:center;gap:8px;flex-shrink:0}
-#hdr h1{font-size:14px;font-weight:700;color:#fff;flex:1}
-#dot{width:10px;height:10px;border-radius:50%;background:#ff5252}
-#dot.on{background:#69f0ae;box-shadow:0 0 6px #69f0ae}
-#tabs{display:flex;background:#111;flex-shrink:0}
-.tab{flex:1;padding:10px 2px;text-align:center;font-size:11px;cursor:pointer;color:#666;border-bottom:2px solid transparent}
-.tab.active{color:#00bcd4;border-bottom-color:#00bcd4}
-#panels{flex:1;overflow:hidden;position:relative}
-.panel{display:none;position:absolute;inset:0;flex-direction:column}
-.panel.active{display:flex}
-/* CMD */
-#cout{flex:1;overflow-y:auto;background:#080808;font:12px/1.5 monospace;padding:8px;white-space:pre-wrap;word-break:break-all;color:#00e676}
-#cbar{display:flex;gap:6px;padding:7px;background:#181818;flex-shrink:0}
-#cin{flex:1;background:#111;border:1px solid #2a2a2a;color:#fff;padding:7px 9px;border-radius:6px;font-size:13px}
-#cbtn{background:#005f6b;color:#fff;border:none;padding:7px 14px;border-radius:6px;cursor:pointer;font-size:13px}
-/* Files */
-#pbar{padding:7px 12px;background:#111;font-size:11px;color:#888;flex-shrink:0;word-break:break-all}
-#flist{flex:1;overflow-y:auto}
-.fi{display:flex;align-items:center;gap:10px;padding:10px 13px;border-bottom:1px solid #1a1a1a;cursor:pointer}
-.fi:active{background:#1e2e2e}
-.fic{font-size:19px;width:26px;text-align:center}
-.fin{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.fsz{font-size:10px;color:#555;margin-top:1px}
-#fup{width:100%;padding:8px 13px;background:#1a1a1a;color:#00bcd4;border:none;font-size:12px;cursor:pointer;text-align:left;flex-shrink:0}
-/* Screen */
-#swrap{flex:1;display:flex;align-items:center;justify-content:center;background:#000;position:relative;overflow:hidden}
-#simg{max-width:100%;max-height:100%;object-fit:contain;display:block;touch-action:none}
-#sov{position:absolute;inset:0;touch-action:none}
-#sbar{display:flex;gap:5px;padding:7px;background:#181818;flex-shrink:0;align-items:center}
-#sbar label{font-size:11px;color:#666}
-#rbtn{background:#1e3a3a;color:#00bcd4;border:none;padding:5px 10px;border-radius:6px;font-size:11px;cursor:pointer;margin-left:auto}
-#ctbtn{background:#005f6b;color:#fff;border:none;padding:5px 10px;border-radius:6px;font-size:11px;cursor:pointer}
-#tbar{display:none;gap:5px;padding:7px;background:#111;flex-shrink:0}
-#tbar.show{display:flex}
-#tin{flex:1;background:#0d0d0d;border:1px solid #2a2a2a;color:#fff;padding:6px 9px;border-radius:6px;font-size:13px}
-#tsnd{background:#005f6b;color:#fff;border:none;padding:6px 11px;border-radius:6px;cursor:pointer}
-/* Keys overlay (screen) */
-#keys{display:none;flex-wrap:wrap;gap:4px;padding:6px;background:#111;flex-shrink:0}
-#keys.show{display:flex}
-.key{background:#1e1e1e;color:#ccc;border:none;padding:6px 10px;border-radius:5px;font-size:12px;cursor:pointer}
-.key:active{background:#333}
-</style>
-</head>
-<body>
-<div id="hdr">
-  <span id="dot"></span>
-  <h1>📡 RasFocus Remote</h1>
-  <span style="font-size:11px;color:#7dffdd">PIN: )HTML" + pin + R"HTML(</span>
-</div>
-<div id="tabs">
-  <div class="tab active" onclick="swTab('cmd')">🖥️ CMD</div>
-  <div class="tab" onclick="swTab('files')">📁 Files</div>
-  <div class="tab" onclick="swTab('screen')">🖼️ Screen</div>
-</div>
-<div id="panels">
-  <div class="panel active" id="panel-cmd">
-    <div id="cout">Connecting...\n</div>
-    <div id="cbar">
-      <input id="cin" placeholder="command..." onkeydown="if(event.key==='Enter')sc()">
-      <button id="cbtn" onclick="sc()">▶</button>
-    </div>
-  </div>
-  <div class="panel" id="panel-files">
-    <button id="fup" onclick="gup()">⬆ উপরে</button>
-    <div id="pbar">C:\</div>
-    <div id="flist"></div>
-  </div>
-  <div class="panel" id="panel-screen">
-    <div id="sbar">
-      <label>Live Screen</label>
-      <button id="rbtn" onclick="rf()">🔄</button>
-      <button id="ctbtn" onclick="tgCtrl()">Control: OFF</button>
-    </div>
-    <div id="keys">
-      <button class="key" onclick="sk(27)">Esc</button>
-      <button class="key" onclick="sk(9)">Tab</button>
-      <button class="key" onclick="sk(13)">Enter</button>
-      <button class="key" onclick="sk(8)">⌫</button>
-      <button class="key" onclick="sk(46)">Del</button>
-      <button class="key" onclick="sk(37)">◀</button>
-      <button class="key" onclick="sk(38)">▲</button>
-      <button class="key" onclick="sk(40)">▼</button>
-      <button class="key" onclick="sk(39)">▶</button>
-      <button class="key" onclick="sk(91)">Win</button>
-      <button class="key" onclick="sk(18)">Alt</button>
-      <button class="key" onclick="sk(17)">Ctrl</button>
-    </div>
-    <div id="tbar">
-      <input id="tin" placeholder="Type...">
-      <button id="tsnd" onclick="stype()">⌨️</button>
-    </div>
-    <div id="swrap">
-      <img id="simg" src="" alt="">
-      <div id="sov"></div>
-    </div>
-  </div>
-</div>
-<script>
-var ws,cp='C:\\',ctrl=false,live=false,lt=null;
-function conn(){
-  ws=new WebSocket('ws://'+location.host+'/ws');
-  ws.onopen=function(){document.getElementById('dot').className='on';document.getElementById('cout').textContent='✅ Connected!\n';};
-  ws.onclose=function(){document.getElementById('dot').className='';setTimeout(conn,2000);};
-  ws.onmessage=function(e){
-    var d=JSON.parse(e.data);
-    if(d.type==='shell_result'){var o=document.getElementById('cout');o.textContent+=d.output+'\n';o.scrollTop=o.scrollHeight;}
-    else if(d.type==='files_result'){rf2(d.path,d.items);}
-    else if(d.type==='screen_frame'){document.getElementById('simg').src='data:image/jpeg;base64,'+d.jpeg;if(live)lt=setTimeout(rf,400);}
-  };
-}
-function snd(o){if(ws&&ws.readyState===1)ws.send(JSON.stringify(o));}
-function sc(){var i=document.getElementById('cin'),c=i.value.trim();if(!c)return;var o=document.getElementById('cout');o.textContent+='> '+c+'\n';snd({type:'shell',cmd:c});i.value='';}
-function swTab(n){
-  var tabs=['cmd','files','screen'];
-  document.querySelectorAll('.tab').forEach(function(t,i){t.classList.toggle('active',tabs[i]===n);});
-  document.querySelectorAll('.panel').forEach(function(p){p.classList.toggle('active',p.id==='panel-'+n);});
-  if(n==='files')lf(cp);
-  if(n==='screen')rf();
-}
-function lf(p){cp=p;document.getElementById('pbar').textContent=p;document.getElementById('flist').textContent='...';snd({type:'files',path:p});}
-function rf2(p,it){
-  cp=p;document.getElementById('pbar').textContent=p;
-  var el=document.getElementById('flist');el.innerHTML='';
-  it.forEach(function(f){
-    var d=document.createElement('div');d.className='fi';
-    d.innerHTML='<span class="fic">'+(f.dir?'📁':'📄')+'</span><div><div class="fin">'+f.name+'</div><div class="fsz">'+(f.dir?'Folder':fsz(f.size))+'</div></div>';
-    if(f.dir)d.onclick=function(){lf(p+'\\'+f.name);};
-    el.appendChild(d);
-  });
-}
-function gup(){var parts=cp.split('\\').filter(Boolean);if(parts.length<=1){lf('C:\\');return;}parts.pop();lf(parts.join('\\')+(parts.length===1?'\\':''));}
-function fsz(n){if(n<1024)return n+'B';if(n<1048576)return(n/1024).toFixed(1)+'KB';return(n/1048576).toFixed(1)+'MB';}
-function rf(){clearTimeout(lt);snd({type:'screen'});}
-function tgCtrl(){
-  ctrl=!ctrl;
-  document.getElementById('ctbtn').textContent='Control: '+(ctrl?'ON':'OFF');
-  document.getElementById('ctbtn').style.background=ctrl?'#b71c1c':'#005f6b';
-  document.getElementById('tbar').className=ctrl?'show':'';
-  document.getElementById('keys').className=ctrl?'show':'';
-  live=ctrl; if(live)rf(); else clearTimeout(lt);
-}
-function sk(vk){snd({type:'key',vk:vk});}
-function stype(){var i=document.getElementById('tin');if(i.value){snd({type:'type',text:i.value});i.value='';}}
-var ov=document.getElementById('sov'),touching=false;
-function rel(e){var img=document.getElementById('simg'),r=img.getBoundingClientRect(),t=e.changedTouches?e.changedTouches[0]:e;return{x:Math.max(0,Math.min(1,(t.clientX-r.left)/r.width)),y:Math.max(0,Math.min(1,(t.clientY-r.top)/r.height))};}
-ov.addEventListener('touchstart',function(e){if(!ctrl)return;e.preventDefault();var p=rel(e);touching=true;snd({type:'mouse',x:p.x,y:p.y,btn:'left',act:'down'});},{passive:false});
-ov.addEventListener('touchend',function(e){if(!ctrl)return;e.preventDefault();var p=rel(e);touching=false;snd({type:'mouse',x:p.x,y:p.y,btn:'left',act:'up'});},{passive:false});
-ov.addEventListener('touchmove',function(e){if(!ctrl)return;e.preventDefault();var p=rel(e);snd({type:'mouse',x:p.x,y:p.y,btn:'left',act:'move'});},{passive:false});
-ov.addEventListener('dblclick',function(e){if(!ctrl)return;var p=rel(e);snd({type:'mouse',x:p.x,y:p.y,btn:'left',act:'dblclick'});});
-conn();
-</script>
-</body>
-</html>)HTML";
-}
-
 // ── HTTP handler ──────────────────────────────────────────────────
 static void HttpClient(SOCKET client) {
     char buf[4096]={}; int r=recv(client,buf,sizeof(buf)-1,0);
@@ -452,7 +286,7 @@ static void HttpClient(SOCKET client) {
         send(client,resp.c_str(),(int)resp.size(),0);
         thread(WsClient,client).detach();
     } else {
-        string html=BuildHtml(g_phoneRemotePin);
+        string html=BuildRemoteHtml(g_phoneRemotePin);
         string resp="HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: "+to_string(html.size())+"\r\nConnection: close\r\n\r\n"+html;
         send(client,resp.c_str(),(int)resp.size(),0);
         closesocket(client);
