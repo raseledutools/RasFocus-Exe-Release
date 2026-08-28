@@ -1,6 +1,6 @@
 BUILD STATUS: FAILED (exit code 2)
-Time: 2026-08-28 04:15:43 UTC
-Run: https://github.com/raseledutools/RasFocus-Exe-Release/actions/runs/33141188873
+Time: 2026-08-28 04:20:31 UTC
+Run: https://github.com/raseledutools/RasFocus-Exe-Release/actions/runs/33141411519
 
 === Compiler Output ===
 Microsoft (R) C/C++ Optimizing Compiler Version 19.51.36256 for x64
@@ -17,9 +17,6 @@ main.cpp(181): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', p
 main.cpp(1006): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
 main.cpp(1319): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data
 main.cpp(1319): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data
-advanced_feature.cpp
-feature_browser.cpp
-bookmarks.cpp
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): warning C4244: '=': conversion from 'wchar_t' to 'char', possible loss of data (compiling source file tab_family_link.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): note: the template instantiation context (the oldest one first) is (compiling source file tab_family_link.cpp)
 tab_family_link.cpp(1529): note: see reference to function template instantiation 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string<std::_String_iterator<std::_String_val<std::_Simple_types<_Elem>>>,0>(_Iter,_Iter,const _Alloc &)' being compiled
@@ -72,6 +69,9 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
             _InIt=const wchar_t *,
             _SizeTy=std::+::_Size_type
         ] (compiling source file tab_family_link.cpp)
+advanced_feature.cpp
+feature_browser.cpp
+bookmarks.cpp
 context_menu.cpp
 downloads_panel.cpp
 find_in_page.cpp
@@ -145,9 +145,9 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
             _InIt=wchar_t *,
             _SizeTy=std::+::_Size_type
         ] (compiling source file browser/mini_browser.cpp)
+tab_special.cpp
 tab_adult.cpp(331): warning C4244: 'argument': conversion from 'int' to 'Gdiplus::REAL', possible loss of data
 tab_adult.cpp(400): warning C4996: 'localtime': This function or variable may be unsafe. Consider using localtime_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
-tab_special.cpp
 tab_statistics.cpp
 tab_settings.cpp
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): warning C4244: '=': conversion from 'wchar_t' to 'char', possible loss of data (compiling source file tab_deep_study.cpp)
@@ -186,122 +186,6 @@ tab_utilities.cpp(72): warning C4244: '=': conversion from 'LRESULT' to 'int', p
 tab_utilities.cpp(184): warning C4244: 'initializing': conversion from 'LRESULT' to 'int', possible loss of data
 tab_phone_remote.cpp
 tab_diary.cpp(461): warning C4996: '_wgetenv': This function or variable may be unsafe. Consider using _wdupenv_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusImaging.h(84): error C4430: missing type specifier - int assumed. Note: C++ does not support default-int (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusImaging.h(84): error C2440: 'initializing': cannot convert from 'const char [37]' to 'int' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusImaging.h(84): note: There is no context in which this conversion is possible (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusImaging.h(85): error C2146: syntax error: missing ';' before identifier 'IImageBytes' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusImaging.h(85): error C2059: syntax error: 'public' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusImaging.h(86): error C2143: syntax error: missing ';' before '{' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusImaging.h(86): error C2447: '{': missing function header (old-style formal list?) (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusImaging.h(291): error C3646: 'id': unknown override specifier (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusImaging.h(291): error C4430: missing type specifier - int assumed. Note: C++ does not support default-int (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(397): error C2061: syntax error: identifier 'IStream' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(407): error C2061: syntax error: identifier 'IStream' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(417): error C2061: syntax error: identifier 'IStream' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(455): error C2061: syntax error: identifier 'PROPID' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(456): error C2061: syntax error: identifier 'PROPID' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(457): error C2061: syntax error: identifier 'PROPID' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(465): error C2061: syntax error: identifier 'PROPID' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(483): error C2535: 'Gdiplus::Image::Image(void)': member function already defined or declared (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(396): note: see declaration of 'Gdiplus::Image::Image' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(519): error C2061: syntax error: identifier 'IStream' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(529): error C2061: syntax error: identifier 'IStream' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(773): error C2061: syntax error: identifier 'IStream' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(829): error C2061: syntax error: identifier 'IStream' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(828): error C2535: 'Gdiplus::Metafile::Metafile(void)': member function already defined or declared (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(773): note: see declaration of 'Gdiplus::Metafile::Metafile' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(836): error C2061: syntax error: identifier 'IStream' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(835): error C2535: 'Gdiplus::Metafile::Metafile(void)': member function already defined or declared (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(773): note: see declaration of 'Gdiplus::Metafile::Metafile' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(845): error C2061: syntax error: identifier 'IStream' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(844): error C2535: 'Gdiplus::Metafile::Metafile(void)': member function already defined or declared (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(773): note: see declaration of 'Gdiplus::Metafile::Metafile' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(870): error C2061: syntax error: identifier 'IStream' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(938): error C2535: 'Gdiplus::Metafile::Metafile(void)': member function already defined or declared (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(773): note: see declaration of 'Gdiplus::Metafile::Metafile' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1145): error C2065: 'IStream': undeclared identifier (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1145): error C2065: 'stream': undeclared identifier (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1145): error C2065: 'image': undeclared identifier (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1145): error C2275: 'Gdiplus::GpImage': expected an expression instead of a type (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1145): warning C4229: anachronism used: modifiers on data are ignored (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1151): error C2065: 'IStream': undeclared identifier (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1151): error C2065: 'stream': undeclared identifier (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1151): error C2065: 'image': undeclared identifier (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1151): error C2275: 'Gdiplus::GpImage': expected an expression instead of a type (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1151): warning C4229: anachronism used: modifiers on data are ignored (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1168): error C2061: syntax error: identifier 'IStream' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1256): error C2061: syntax error: identifier 'PROPID' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1259): error C2061: syntax error: identifier 'PROPID' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1262): error C2061: syntax error: identifier 'PROPID' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1274): error C2061: syntax error: identifier 'PROPID' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1298): error C2065: 'IStream': undeclared identifier (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1298): error C2065: 'stream': undeclared identifier (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1298): error C2065: 'bitmap': undeclared identifier (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1298): error C2275: 'Gdiplus::GpBitmap': expected an expression instead of a type (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1298): warning C4229: anachronism used: modifiers on data are ignored (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1304): error C2065: 'IStream': undeclared identifier (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1304): error C2065: 'stream': undeclared identifier (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1304): error C2065: 'bitmap': undeclared identifier (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1304): error C2275: 'Gdiplus::GpBitmap': expected an expression instead of a type (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1304): warning C4229: anachronism used: modifiers on data are ignored (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2235): error C2065: 'IStream': undeclared identifier (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2235): error C2065: 'stream': undeclared identifier (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2236): error C2065: 'header': undeclared identifier (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2236): error C2275: 'Gdiplus::MetafileHeader': expected an expression instead of a type (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2234): warning C4229: anachronism used: modifiers on data are ignored (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2255): error C2061: syntax error: identifier 'IStream' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2275): error C2065: 'IStream': undeclared identifier (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2275): error C2065: 'stream': undeclared identifier (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2275): error C2065: 'metafile': undeclared identifier (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2275): error C2275: 'Gdiplus::GpMetafile': expected an expression instead of a type (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2275): warning C4229: anachronism used: modifiers on data are ignored (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2322): error C2065: 'IStream': undeclared identifier (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2322): error C2065: 'stream': undeclared identifier (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2323): error C2275: 'HDC': expected an expression instead of a type (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2323): error C2146: syntax error: missing ')' before identifier 'referenceHdc' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2333): error C2065: 'IStream': undeclared identifier (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2333): error C2065: 'stream': undeclared identifier (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2334): error C2275: 'HDC': expected an expression instead of a type (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2334): error C2146: syntax error: missing ')' before identifier 'referenceHdc' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusPath.h(145): error C2061: syntax error: identifier 'byte' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(80): error C2065: 'IStream': undeclared identifier (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(80): error C2065: 'stream': undeclared identifier (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(80): error C7550: 'Gdiplus::Metafile::{ctor}': the qualified name in this context names a constructor, not a type (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(81): error C2143: syntax error: missing ';' before '{' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(81): error C2447: '{': missing function header (old-style formal list?) (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(199): error C2065: 'IStream': undeclared identifier (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(199): error C2065: 'stream': undeclared identifier (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(200): error C2275: 'HDC': expected an expression instead of a type (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(200): error C2146: syntax error: missing ')' before identifier 'referenceHdc' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(204): error C2143: syntax error: missing ';' before '{' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(204): error C2447: '{': missing function header (old-style formal list?) (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(216): error C2065: 'IStream': undeclared identifier (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(216): error C2065: 'stream': undeclared identifier (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(217): error C2275: 'HDC': expected an expression instead of a type (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(217): error C2146: syntax error: missing ')' before identifier 'referenceHdc' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(223): error C2143: syntax error: missing ';' before '{' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(223): error C2447: '{': missing function header (old-style formal list?) (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(235): error C2065: 'IStream': undeclared identifier (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(235): error C2065: 'stream': undeclared identifier (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(236): error C2275: 'HDC': expected an expression instead of a type (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(236): error C2146: syntax error: missing ')' before identifier 'referenceHdc' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(242): error C2143: syntax error: missing ';' before '{' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(242): error C2447: '{': missing function header (old-style formal list?) (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(284): error C2065: 'IStream': undeclared identifier (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(284): error C2065: 'stream': undeclared identifier (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(285): error C2065: 'header': undeclared identifier (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(285): error C2275: 'Gdiplus::MetafileHeader': expected an expression instead of a type (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(283): error C2761: 'GetMetafileHeader': redeclaration of member is not allowed (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(287): error C2143: syntax error: missing ';' before '{' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(287): error C2447: '{': missing function header (old-style formal list?) (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusBitmap.h(50): error C2065: 'IStream': undeclared identifier (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusBitmap.h(50): error C2065: 'stream': undeclared identifier (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusBitmap.h(51): error C2275: 'BOOL': expected an expression instead of a type (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusBitmap.h(51): error C2146: syntax error: missing ')' before identifier 'useEmbeddedColorManagement' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusBitmap.h(53): error C2143: syntax error: missing ';' before '{' (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusBitmap.h(53): error C2447: '{': missing function header (old-style formal list?) (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusBitmap.h(85): error C2065: 'IStream': undeclared identifier (compiling source file tab_phone_remote.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusBitmap.h(85): fatal error C1003: error count exceeds 100; stopping compilation (compiling source file tab_phone_remote.cpp)
 accounts.cpp(504): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): warning C4244: '=': conversion from 'wchar_t' to 'char', possible loss of data (compiling source file accounts.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): note: the template instantiation context (the oldest one first) is (compiling source file accounts.cpp)
@@ -329,4 +213,113 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
             _InIt=wchar_t *,
             _SizeTy=std::+::_Size_type
         ] (compiling source file accounts.cpp)
+tab_phone_remote.cpp(89): warning C4996: 'sscanf': This function or variable may be unsafe. Consider using sscanf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+tab_phone_remote.cpp(93): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+tab_phone_remote.cpp(343): error C2065: '🖥️': undeclared identifier
+tab_phone_remote.cpp(343): error C2146: syntax error: missing ';' before identifier 'CMD'
+tab_phone_remote.cpp(343): error C2065: 'CMD': undeclared identifier
+tab_phone_remote.cpp(343): error C2059: syntax error: '/'
+tab_phone_remote.cpp(344): error C2332: 'class': missing tag name
+tab_phone_remote.cpp(345): error C2332: 'class': missing tag name
+tab_phone_remote.cpp(348): error C2332: 'class': missing tag name
+tab_phone_remote.cpp(349): error C2017: unknown escape sequence
+tab_phone_remote.cpp(352): error C3873: 'U+25b6': this character is not allowed as a first character of an identifier
+tab_phone_remote.cpp(355): error C2332: 'class': missing tag name
+tab_phone_remote.cpp(356): error C3873: 'U+2b06': this character is not allowed as a first character of an identifier
+tab_phone_remote.cpp(357): error C2017: unknown escape sequence
+tab_phone_remote.cpp(360): error C2332: 'class': missing tag name
+tab_phone_remote.cpp(367): error C2332: 'class': missing tag name
+tab_phone_remote.cpp(368): error C2332: 'class': missing tag name
+tab_phone_remote.cpp(369): error C2332: 'class': missing tag name
+tab_phone_remote.cpp(370): error C2332: 'class': missing tag name
+tab_phone_remote.cpp(370): error C3873: 'U+232b': this character is not allowed as a first character of an identifier
+tab_phone_remote.cpp(371): error C2332: 'class': missing tag name
+tab_phone_remote.cpp(372): error C2332: 'class': missing tag name
+tab_phone_remote.cpp(372): error C3873: 'U+25c0': this character is not allowed as a first character of an identifier
+tab_phone_remote.cpp(373): error C2332: 'class': missing tag name
+tab_phone_remote.cpp(373): error C3873: 'U+25b2': this character is not allowed as a first character of an identifier
+tab_phone_remote.cpp(374): error C2332: 'class': missing tag name
+tab_phone_remote.cpp(374): error C3873: 'U+25bc': this character is not allowed as a first character of an identifier
+tab_phone_remote.cpp(375): error C2332: 'class': missing tag name
+tab_phone_remote.cpp(375): error C3873: 'U+25b6': this character is not allowed as a first character of an identifier
+tab_phone_remote.cpp(376): error C2332: 'class': missing tag name
+tab_phone_remote.cpp(377): error C2332: 'class': missing tag name
+tab_phone_remote.cpp(378): error C2332: 'class': missing tag name
+tab_phone_remote.cpp(382): error C3873: 'U+2328': this character is not allowed as a first character of an identifier
+tab_phone_remote.cpp(392): error C2065: 'function': undeclared identifier
+tab_phone_remote.cpp(392): error C2146: syntax error: missing ';' before identifier 'conn'
+tab_phone_remote.cpp(392): error C3861: 'conn': identifier not found
+tab_phone_remote.cpp(393): error C2061: syntax error: identifier 'WebSocket'
+tab_phone_remote.cpp(393): error C2015: too many characters in constant
+tab_phone_remote.cpp(393): error C3329: syntax error: expected '}' not ')'
+tab_phone_remote.cpp(394): error C3861: 'function': identifier not found
+tab_phone_remote.cpp(394): error C2065: 'document': undeclared identifier
+tab_phone_remote.cpp(394): error C2059: syntax error: ';'
+tab_phone_remote.cpp(394): error C2065: 'document': undeclared identifier
+tab_phone_remote.cpp(394): error C2015: too many characters in constant
+tab_phone_remote.cpp(395): error C3927: '->': trailing return type is not allowed after a non-function declarator
+tab_phone_remote.cpp(395): error C3484: syntax error: expected '->' before the return type
+tab_phone_remote.cpp(395): error C3613: missing return type after '->' ('int' assumed)
+tab_phone_remote.cpp(395): error C4430: missing type specifier - int assumed. Note: C++ does not support default-int
+tab_phone_remote.cpp(395): error C2146: syntax error: missing ';' before identifier 'onclose'
+tab_phone_remote.cpp(395): error C2143: syntax error: missing ';' before '{'
+tab_phone_remote.cpp(395): error C2447: '{': missing function header (old-style formal list?)
+tab_phone_remote.cpp(395): error C2137: empty character constant
+tab_phone_remote.cpp(396): error C3927: '->': trailing return type is not allowed after a non-function declarator
+tab_phone_remote.cpp(396): error C3484: syntax error: expected '->' before the return type
+tab_phone_remote.cpp(396): error C3613: missing return type after '->' ('int' assumed)
+tab_phone_remote.cpp(396): error C4430: missing type specifier - int assumed. Note: C++ does not support default-int
+tab_phone_remote.cpp(396): error C2086: 'int ws': redefinition
+tab_phone_remote.cpp(395): note: see declaration of 'ws'
+tab_phone_remote.cpp(396): error C2146: syntax error: missing ';' before identifier 'onmessage'
+tab_phone_remote.cpp(396): error C2143: syntax error: missing ';' before '{'
+tab_phone_remote.cpp(396): error C2447: '{': missing function header (old-style formal list?)
+tab_phone_remote.cpp(398): error C2015: too many characters in constant
+tab_phone_remote.cpp(399): error C2015: too many characters in constant
+tab_phone_remote.cpp(400): error C2015: too many characters in constant
+tab_phone_remote.cpp(400): error C2015: too many characters in constant
+tab_phone_remote.cpp(402): error C2059: syntax error: '}'
+tab_phone_remote.cpp(402): error C2143: syntax error: missing ';' before '}'
+tab_phone_remote.cpp(403): error C2143: syntax error: missing ';' before '{'
+tab_phone_remote.cpp(403): error C2447: '{': missing function header (old-style formal list?)
+tab_phone_remote.cpp(404): error C4430: missing type specifier - int assumed. Note: C++ does not support default-int
+tab_phone_remote.cpp(404): error C2146: syntax error: missing ';' before identifier 'sc'
+tab_phone_remote.cpp(404): error C2143: syntax error: missing ';' before '{'
+tab_phone_remote.cpp(404): error C2447: '{': missing function header (old-style formal list?)
+tab_phone_remote.cpp(404): error C2015: too many characters in constant
+tab_phone_remote.cpp(404): error C2137: empty character constant
+tab_phone_remote.cpp(405): error C4430: missing type specifier - int assumed. Note: C++ does not support default-int
+tab_phone_remote.cpp(405): error C2086: 'int function': redefinition
+tab_phone_remote.cpp(404): note: see declaration of 'function'
+tab_phone_remote.cpp(405): error C2146: syntax error: missing ';' before identifier 'swTab'
+tab_phone_remote.cpp(405): error C2143: syntax error: missing ';' before '{'
+tab_phone_remote.cpp(405): error C2447: '{': missing function header (old-style formal list?)
+tab_phone_remote.cpp(406): error C2015: too many characters in constant
+tab_phone_remote.cpp(406): error C2015: too many characters in constant
+tab_phone_remote.cpp(407): error C2015: too many characters in constant
+tab_phone_remote.cpp(408): error C2015: too many characters in constant
+tab_phone_remote.cpp(408): error C2015: too many characters in constant
+tab_phone_remote.cpp(408): error C2015: too many characters in constant
+tab_phone_remote.cpp(409): error C2015: too many characters in constant
+tab_phone_remote.cpp(410): error C2015: too many characters in constant
+tab_phone_remote.cpp(412): error C4430: missing type specifier - int assumed. Note: C++ does not support default-int
+tab_phone_remote.cpp(412): error C2086: 'int function': redefinition
+tab_phone_remote.cpp(404): note: see declaration of 'function'
+tab_phone_remote.cpp(412): error C2146: syntax error: missing ';' before identifier 'lf'
+tab_phone_remote.cpp(412): error C2143: syntax error: missing ';' before '{'
+tab_phone_remote.cpp(412): error C2447: '{': missing function header (old-style formal list?)
+tab_phone_remote.cpp(412): error C2015: too many characters in constant
+tab_phone_remote.cpp(412): error C2015: too many characters in constant
+tab_phone_remote.cpp(413): error C4430: missing type specifier - int assumed. Note: C++ does not support default-int
+tab_phone_remote.cpp(413): error C2086: 'int function': redefinition
+tab_phone_remote.cpp(404): note: see declaration of 'function'
+tab_phone_remote.cpp(413): error C2146: syntax error: missing ';' before identifier 'rf2'
+tab_phone_remote.cpp(413): error C2143: syntax error: missing ';' before '{'
+tab_phone_remote.cpp(413): error C2447: '{': missing function header (old-style formal list?)
+tab_phone_remote.cpp(415): error C2015: too many characters in constant
+tab_phone_remote.cpp(415): error C2137: empty character constant
+tab_phone_remote.cpp(418): error C2015: too many characters in constant
+tab_phone_remote.cpp(418): error C2015: too many characters in constant
+tab_phone_remote.cpp(418): error C2015: too many characters in constant
+tab_phone_remote.cpp(418): fatal error C1003: error count exceeds 100; stopping compilation
 
