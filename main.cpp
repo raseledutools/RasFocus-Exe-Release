@@ -557,6 +557,9 @@ void __cdecl SilentUpdateThread(void* p) {
     _endthread();
 }
 
+// Forward declaration
+void ApplySilentUpdate();
+
 // ── Download new exe and install (called when user clicks Download button) ──
 void __cdecl DownloadAndInstallThread(void*) {
     string secretDir  = GetSecretDir();
@@ -634,7 +637,7 @@ void DrawUpdatePopup(Graphics& g, int w, int h) {
 
     // ── Dark overlay ──
     SolidBrush overlay(Color(160, 0, 0, 0));
-    g.FillRectangle(&overlay, 0, 0, (float)w, (float)h);
+    g.FillRectangle(&overlay, (float)0, (float)0, (float)w, (float)h);
 
     auto L = GetUpdLayout(w, h);
     float r = 12.0f, d = r * 2.0f;
@@ -1924,3 +1927,4 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
     if (hMutex) CloseHandle(hMutex);
     return 0;
 }
+
