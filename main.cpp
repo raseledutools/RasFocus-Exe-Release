@@ -60,14 +60,22 @@ using namespace std;
 #define IDR_OBSERVER_EXE 102
 
 // --- AUTO UPDATE ---
-const string CURRENT_VERSION = "v1.0.6";
+const string CURRENT_VERSION = "v1.0.6";   // ← CI overwrites this before compile
 const string GITHUB_USER = "raseledutools";
-const string GITHUB_REPO = "RasFocus-update";
+const string GITHUB_REPO = "RasFocus-Exe-Release";
 
-bool isUpdateReady     = false;
-bool isCheckingUpdate  = false;
-string newVersionStr   = "";
-bool hoverUpdateBtn    = false;
+bool   isUpdateReady    = false;
+bool   isCheckingUpdate = false;
+string newVersionStr    = "";
+bool   hoverUpdateBtn   = false;
+
+// Update popup state
+string g_updateDownloadUrl = "";
+bool   g_showUpdatePopup   = false;
+bool   g_isDownloading     = false;
+int    g_dlAnimFrame       = 0;     // spinner animation counter
+static bool s_hovDlBtn    = false;
+static bool s_hovLaterBtn = false;
 
 ULONG_PTR gdiplusToken;
 float g_scaleFactor = 1.0f;
@@ -510,41 +518,60 @@ void SetupDefaultViewer() {
 void __cdecl SilentUpdateThread(void* p) {
     if (isCheckingUpdate || isUpdateReady) { _endthread(); return; }
     isCheckingUpdate = true;
+
     string secretDir = GetSecretDir();
     string apiFile   = secretDir + "api_response.json";
     string apiUrl    = "https://api.github.com/repos/" + GITHUB_USER + "/" + GITHUB_REPO + "/releases/latest";
     DeleteUrlCacheEntryA(apiUrl.c_str());
+
     HRESULT hrApi = URLDownloadToFileA(NULL, apiUrl.c_str(), apiFile.c_str(), 0, NULL);
     if (hrApi == S_OK) {
         ifstream vf(apiFile);
-        string jsonContent((istreambuf_iterator<char>(vf)), istreambuf_iterator<char>());
-        vf.close();
-        remove(apiFile.c_str());
+        string json((istreambuf_iterator<char>(vf)), istreambuf_iterator<char>());
+        vf.close(); remove(apiFile.c_str());
+
+        // Extract "tag_name"
         string searchKey = "\"tag_name\":";
-        size_t tagPos = jsonContent.find(searchKey);
+        size_t tagPos = json.find(searchKey);
         if (tagPos != string::npos) {
-            size_t startQuote = jsonContent.find("\"", tagPos + searchKey.length());
-            if (startQuote != string::npos) {
-                size_t endQuote = jsonContent.find("\"", startQuote + 1);
-                if (endQuote != string::npos) {
-                    string latestVer = jsonContent.substr(startQuote + 1, endQuote - startQuote - 1);
-                    if (latestVer != CURRENT_VERSION && latestVer.find("v") != string::npos) {
-                        newVersionStr = latestVer;
-                        string exeUrl = "https://github.com/" + GITHUB_USER + "/" + GITHUB_REPO +
-                                        "/releases/download/" + latestVer + "/RasFocus.exe";
-                        string updateExePath = secretDir + "RasFocus_New.exe";
-                        HRESULT hrExe = URLDownloadToFileA(NULL, exeUrl.c_str(), updateExePath.c_str(), 0, NULL);
-                        if (hrExe == S_OK) {
-                            isUpdateReady = true;
-                            HWND hWnd = FindWindowA("RasFocusCore", "RasFocus+");
-                            if (hWnd) InvalidateRect(hWnd, NULL, FALSE);
-                        }
+            size_t q1 = json.find("\"", tagPos + searchKey.size());
+            if (q1 != string::npos) {
+                size_t q2 = json.find("\"", q1 + 1);
+                if (q2 != string::npos) {
+                    string latestVer = json.substr(q1 + 1, q2 - q1 - 1);
+                    // Only treat v1.0.NNN style tags as valid releases
+                    if (latestVer != CURRENT_VERSION && latestVer.rfind("v", 0) == 0) {
+                        newVersionStr        = latestVer;
+                        g_updateDownloadUrl  = "https://github.com/" + GITHUB_USER + "/" + GITHUB_REPO
+                                             + "/releases/download/" + latestVer + "/RasFocus.exe";
+                        isUpdateReady        = true;
+                        g_showUpdatePopup    = true;   // ← show popup immediately
+                        HWND hw = FindWindowA("RasFocusCore", "RasFocus+");
+                        if (hw) InvalidateRect(hw, NULL, FALSE);
                     }
                 }
             }
         }
     }
     isCheckingUpdate = false;
+    _endthread();
+}
+
+// ── Download new exe and install (called when user clicks Download button) ──
+void __cdecl DownloadAndInstallThread(void*) {
+    string secretDir  = GetSecretDir();
+    string newExePath = secretDir + "RasFocus_New.exe";
+    DeleteFileA(newExePath.c_str());
+
+    HRESULT hr = URLDownloadToFileA(NULL, g_updateDownloadUrl.c_str(), newExePath.c_str(), 0, NULL);
+
+    if (hr == S_OK && GetFileAttributesA(newExePath.c_str()) != INVALID_FILE_ATTRIBUTES) {
+        ApplySilentUpdate();   // replaces exe and restarts — never returns
+    }
+    // Download failed — reset so user can retry
+    g_isDownloading = false;
+    HWND hw = FindWindowA("RasFocusCore", "RasFocus+");
+    if (hw) InvalidateRect(hw, NULL, FALSE);
     _endthread();
 }
 
@@ -574,6 +601,150 @@ void ApplySilentUpdate() {
     CreateProcessA(NULL, (LPSTR)cmdExec.c_str(), NULL, NULL, FALSE,
                    CREATE_NO_WINDOW | DETACHED_PROCESS, NULL, NULL, &siBat, &piBat);
     exit(0);
+}
+
+// ==========================================
+// UPDATE POPUP UI
+// ==========================================
+struct UpdateLayout {
+    float popX, popY, popW, popH;
+    float dlBtnX, dlBtnY, dlBtnW, dlBtnH;
+    float laterX, laterY, laterW, laterH;
+};
+static UpdateLayout GetUpdLayout(int w, int h) {
+    UpdateLayout L = {};
+    L.popW = 420.0f; L.popH = 270.0f;
+    L.popX = (w - L.popW) / 2.0f;
+    L.popY = (h - L.popH) / 2.0f;
+    L.dlBtnW = 260.0f; L.dlBtnH = 46.0f;
+    L.dlBtnX = L.popX + (L.popW - L.dlBtnW) / 2.0f;
+    L.dlBtnY = L.popY + L.popH - 100.0f;
+    L.laterW = 140.0f; L.laterH = 28.0f;
+    L.laterX = L.popX + (L.popW - L.laterW) / 2.0f;
+    L.laterY = L.dlBtnY + L.dlBtnH + 12.0f;
+    return L;
+}
+
+void DrawUpdatePopup(Graphics& g, int w, int h) {
+    if (!g_showUpdatePopup) return;
+    using namespace Gdiplus;
+    FontFamily ff(L"Segoe UI");
+    StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
+    StringFormat fmtL; fmtL.SetAlignment(StringAlignmentNear);   fmtL.SetLineAlignment(StringAlignmentCenter);
+
+    // ── Dark overlay ──
+    SolidBrush overlay(Color(160, 0, 0, 0));
+    g.FillRectangle(&overlay, 0, 0, (float)w, (float)h);
+
+    auto L = GetUpdLayout(w, h);
+    float r = 12.0f, d = r * 2.0f;
+
+    // ── Card shadow ──
+    SolidBrush shadow(Color(40, 0, 0, 0));
+    g.FillRectangle(&shadow, L.popX + 4, L.popY + 4, L.popW, L.popH);
+
+    // ── Card background ──
+    GraphicsPath card;
+    card.AddArc(L.popX, L.popY, d, d, 180, 90);
+    card.AddArc(L.popX + L.popW - d, L.popY, d, d, 270, 90);
+    card.AddArc(L.popX + L.popW - d, L.popY + L.popH - d, d, d, 0, 90);
+    card.AddArc(L.popX, L.popY + L.popH - d, d, d, 90, 90);
+    card.CloseFigure();
+    SolidBrush cardBg(Color(255, 255, 255, 255));
+    g.FillPath(&cardBg, &card);
+
+    // ── Teal accent bar at top ──
+    GraphicsPath topBar;
+    topBar.AddArc(L.popX, L.popY, d, d, 180, 90);
+    topBar.AddArc(L.popX + L.popW - d, L.popY, d, d, 270, 90);
+    topBar.AddLine(L.popX + L.popW, L.popY + 40, L.popX, L.popY + 40);
+    topBar.CloseFigure();
+    SolidBrush tealBr(Color(255, 0, 150, 160));
+    g.FillPath(&tealBr, &topBar);
+
+    // ── Icon + Title in top bar ──
+    Font fTitle(&ff, 13, FontStyleBold, UnitPixel);
+    SolidBrush white(Color(255, 255, 255, 255));
+    wstring wver(newVersionStr.begin(), newVersionStr.end());
+    wstring titleTxt = L"🆕  নতুন আপডেট পাওয়া গেছে  —  " + wver;
+    g.DrawString(titleTxt.c_str(), -1, &fTitle, RectF(L.popX, L.popY, L.popW, 40), &fmtC, &white);
+
+    // ── Body text ──
+    Font fBody(&ff, 12, FontStyleRegular, UnitPixel);
+    SolidBrush dark(Color(255, 40, 40, 40));
+    SolidBrush gray(Color(255, 120, 120, 120));
+    wstring bodyLine1 = L"RasFocus " + wver + L" এখন available।";
+    wstring bodyLine2 = L"বাগ ফিক্স ও নতুন ফিচার যুক্ত হয়েছে।";
+    g.DrawString(bodyLine1.c_str(), -1, &fBody, RectF(L.popX, L.popY + 50, L.popW, 28), &fmtC, &dark);
+    g.DrawString(bodyLine2.c_str(), -1, &fBody, RectF(L.popX, L.popY + 76, L.popW, 26), &fmtC, &gray);
+
+    // ── Download & Install button ──
+    float dlr = 8.0f, dld = dlr * 2.0f;
+    GraphicsPath dlPath;
+    dlPath.AddArc(L.dlBtnX, L.dlBtnY, dld, dld, 180, 90);
+    dlPath.AddArc(L.dlBtnX + L.dlBtnW - dld, L.dlBtnY, dld, dld, 270, 90);
+    dlPath.AddArc(L.dlBtnX + L.dlBtnW - dld, L.dlBtnY + L.dlBtnH - dld, dld, dld, 0, 90);
+    dlPath.AddArc(L.dlBtnX, L.dlBtnY + L.dlBtnH - dld, dld, dld, 90, 90);
+    dlPath.CloseFigure();
+
+    if (g_isDownloading) {
+        // Show animated "ডাউনলোড হচ্ছে" with dots
+        SolidBrush dlgBg(Color(255, 180, 210, 215));
+        g.FillPath(&dlgBg, &dlPath);
+        Font fDlBtn(&ff, 12, FontStyleBold, UnitPixel);
+        static const wchar_t* dots[] = { L"ডাউনলোড হচ্ছে  .", L"ডাউনলোড হচ্ছে  ..", L"ডাউনলোড হচ্ছে  ..." };
+        SolidBrush darkGray(Color(255, 80, 80, 80));
+        g.DrawString(dots[g_dlAnimFrame % 3], -1, &fDlBtn,
+                     RectF(L.dlBtnX, L.dlBtnY, L.dlBtnW, L.dlBtnH), &fmtC, &darkGray);
+    } else {
+        Color dlBtnColor = s_hovDlBtn ? Color(255, 0, 120, 130) : Color(255, 0, 150, 160);
+        SolidBrush dlBtnBg(dlBtnColor);
+        g.FillPath(&dlBtnBg, &dlPath);
+        Font fDlBtn(&ff, 12, FontStyleBold, UnitPixel);
+        g.DrawString(L"⬇  Download & Install", -1, &fDlBtn,
+                     RectF(L.dlBtnX, L.dlBtnY, L.dlBtnW, L.dlBtnH), &fmtC, &white);
+    }
+
+    // ── "পরে করব" link (only when not downloading) ──
+    if (!g_isDownloading) {
+        Font fLater(&ff, 11, FontStyleRegular, UnitPixel);
+        SolidBrush laterColor(s_hovLaterBtn ? Color(255, 0, 140, 155) : Color(255, 150, 150, 150));
+        g.DrawString(L"পরে করব", -1, &fLater,
+                     RectF(L.laterX, L.laterY, L.laterW, L.laterH), &fmtC, &laterColor);
+    }
+}
+
+void ProcessUpdateMouseMove(float x, float y, int w, int h) {
+    if (!g_showUpdatePopup || g_isDownloading) return;
+    auto L = GetUpdLayout(w, h);
+    bool newDl    = (x >= L.dlBtnX && x <= L.dlBtnX + L.dlBtnW &&
+                     y >= L.dlBtnY && y <= L.dlBtnY + L.dlBtnH);
+    bool newLater = (x >= L.laterX && x <= L.laterX + L.laterW &&
+                     y >= L.laterY && y <= L.laterY + L.laterH);
+    s_hovDlBtn    = newDl;
+    s_hovLaterBtn = newLater;
+}
+
+void ProcessUpdateMouseClick(float x, float y, int w, int h, HWND hWnd) {
+    if (!g_showUpdatePopup || g_isDownloading) return;
+    auto L = GetUpdLayout(w, h);
+
+    // Download & Install button
+    if (x >= L.dlBtnX && x <= L.dlBtnX + L.dlBtnW &&
+        y >= L.dlBtnY && y <= L.dlBtnY + L.dlBtnH) {
+        g_isDownloading = true;
+        InvalidateRect(hWnd, NULL, FALSE);
+        _beginthread(DownloadAndInstallThread, 0, NULL);
+        return;
+    }
+    // "পরে করব"
+    if (x >= L.laterX && x <= L.laterX + L.laterW &&
+        y >= L.laterY && y <= L.laterY + L.laterH) {
+        g_showUpdatePopup = false;
+        s_hovDlBtn = false; s_hovLaterBtn = false;
+        InvalidateRect(hWnd, NULL, FALSE);
+        return;
+    }
 }
 
 // ==========================================
@@ -1234,6 +1405,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_TIMER: {
         if (wp == 1005) StartSilentUpdateCheck();
 
+        // ── Download spinner animation (250 ms) ──
+        if (wp == 1006 && g_isDownloading) {
+            g_dlAnimFrame++;
+            InvalidateRect(hWnd, NULL, FALSE);
+        }
+
         // ── Family Link: 1-second tick — polling + enforcement ──
         if (wp == 1001) {
             ProcessFamilyLinkTimer(wp, hWnd);           // Firebase poll ticker (every 5s)
@@ -1317,6 +1494,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 
         if (showDailyMessage || onboardingStep > 0) {
             if (HandlePreWindowMouseMove(x, y, scaledW, scaledH)) { InvalidateRect(hWnd, NULL, FALSE); break; }
+        }
+
+        // ← Update Popup Intercept (highest priority after prewindow)
+        if (g_showUpdatePopup) {
+            ProcessUpdateMouseMove(x, y, (int)scaledW, (int)scaledH);
+            InvalidateRect(hWnd, NULL, FALSE);
+            break;
         }
 
         // ← Upgrade Popup Intercept
