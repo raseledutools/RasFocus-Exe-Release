@@ -52,6 +52,7 @@ static SOCKET         s_udpSock  = INVALID_SOCKET;
 static vector<SOCKET> s_wsClients;
 static mutex          s_mtx;
 static bool           s_hovStart = false, s_hovStop = false;
+static float          s_lastDrawX = 0.0f, s_lastDrawY = 0.0f, s_lastDrawW = 0.0f, s_lastDrawH = 0.0f;
 
 // ── Get local IP ─────────────────────────────────────────────────
 static string GetLocalIp() {
@@ -374,6 +375,8 @@ void PhoneRemoteTimerTick() {}
 
 // ── Draw Tab UI ───────────────────────────────────────────────────
 void DrawPhoneRemoteTab(Graphics& g, float x, float y, float w, float h) {
+    s_lastDrawX = x; s_lastDrawY = y; s_lastDrawW = w; s_lastDrawH = h;
+
     FontFamily ff(L"Segoe UI");
     StringFormat fmtC,fmtL;
     fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
@@ -462,9 +465,15 @@ void ProcessPhoneRemoteMouseMove(float mx,float my,float cX,float cY){
 }
 
 void ProcessPhoneRemoteMouseClick(float mx,float my,float cX,float cY,HWND hWnd){
-    float rx=mx-cX, ry=my-cY;
-    // Buttons at approx y=84+100+110=294, height=44
-    float bY=294.0f, bH=44.0f, bx1=24.0f, bW=(g_phoneRemotePort>0?(float)(600-48-12)/2:150.0f);
+    (void)cX; (void)cY;
+    float baseX = (s_lastDrawW > 0.0f) ? s_lastDrawX : cX;
+    float baseY = (s_lastDrawW > 0.0f) ? s_lastDrawY : cY;
+    float baseW = (s_lastDrawW > 0.0f) ? s_lastDrawW : 600.0f;
+
+    float rx = mx - baseX, ry = my - baseY;
+    float cardX = 24.0f, cardY = 20.0f, cardW = baseW - 48.0f;
+    float pinY = cardY + 84.0f;
+    float bY = pinY + 110.0f, bH = 44.0f, bx1 = cardX, bW = (cardW - 12.0f) / 2.0f;
     if(ry>=bY && ry<=bY+bH){
         if(rx>=bx1 && rx<bx1+bW){if(!g_phoneRemoteRunning)PhoneRemoteStartServer();}
         else if(rx>=bx1+bW+12){if(g_phoneRemoteRunning)PhoneRemoteStopServer();}

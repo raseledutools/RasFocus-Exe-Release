@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 #include <ctime>
+#include <tlhelp32.h>
 
 using namespace Gdiplus;
 using namespace std;
@@ -54,6 +55,32 @@ struct DashSec {
 static vector<DashSec> s_sections;
 static bool s_init = false;
 
+static void KillDebugAppsNow() {
+    static const wchar_t* kDebugApps[] = {
+        L"taskmgr.exe", L"resmon.exe", L"perfmon.exe",
+        L"procexp.exe", L"procexp64.exe", L"procmon.exe",
+        L"processhacker.exe", L"wireshark.exe", L"fiddler.exe"
+    };
+
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE) return;
+
+    PROCESSENTRY32W pe{}; pe.dwSize = sizeof(pe);
+    if (Process32FirstW(snap, &pe)) {
+        do {
+            bool matched = false;
+            for (auto* app : kDebugApps) {
+                if (_wcsicmp(pe.szExeFile, app) == 0) { matched = true; break; }
+            }
+            if (matched) {
+                HANDLE ph = OpenProcess(PROCESS_TERMINATE, FALSE, pe.th32ProcessID);
+                if (ph) { TerminateProcess(ph, 1); CloseHandle(ph); }
+            }
+        } while (Process32NextW(snap, &pe));
+    }
+    CloseHandle(snap);
+}
+
 void InitDashboardData() {
     if (s_init) return;
 
@@ -61,6 +88,7 @@ void InitDashboardData() {
     sec1.btns.push_back({ L"Rest Button", L"Take a break", L"\xE7E8", RectF(), false });
     sec1.btns.push_back({ L"Internet Block", L"Disable all traffic", L"\xEB55", RectF(), false });
     sec1.btns.push_back({ L"Uninstall Block", L"Secure settings", L"\xE25B", RectF(), false });
+    sec1.btns.push_back({ L"Debug Kill Apps", L"Close task/debug tools", L"\xE7BA", RectF(), false });
     sec1.btns.push_back({ L"Ads Block", L"Remove distractions", L"\xE711", RectF(), false });
     sec1.btns.push_back({ L"Adult Block", L"Filter content", L"\xE72E", RectF(), false });
     sec1.btns.push_back({ L"YT Shorts Block", L"Block short videos", L"\xE8D6", RectF(), false });
@@ -295,6 +323,10 @@ void ProcessDashboardMouseClick(float x, float y, int& selectedTab) {
             else if (btn.title == L"Gemini") LaunchMiniBrowser(L"https://gemini.google.com", L"Gemini");
             else if (btn.title == L"ChatGPT") LaunchMiniBrowser(L"https://chatgpt.com", L"ChatGPT");
             else if (btn.title == L"DeepSeek") LaunchMiniBrowser(L"https://chat.deepseek.com", L"DeepSeek");
+            else if (btn.title == L"Debug Kill Apps") {
+                KillDebugAppsNow();
+                MessageBoxW(hParentWnd, L"Debug/monitor apps বন্ধ করা হয়েছে।", L"RasFocus", MB_OK | MB_ICONINFORMATION);
+            }
             if(hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE); return;
         }
     }
