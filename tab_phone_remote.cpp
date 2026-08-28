@@ -460,8 +460,24 @@ void DrawPhoneRemoteTab(Graphics& g, float x, float y, float w, float h) {
     for(auto& s2:steps){g.DrawString(s2.c_str(),-1,&fStep,RectF(cx+12,sy,cw-24,26),&fmtL,&stepC);sy+=26;}
 }
 
-void ProcessPhoneRemoteMouseMove(float mx,float my,float cX,float cY){
-    (void)mx;(void)my;(void)cX;(void)cY;
+void ProcessPhoneRemoteMouseMove(float mx, float my, float cX, float cY) {
+    // Reconstruct button positions (must match DrawPhoneRemoteTab exactly)
+    float baseX = (s_lastDrawW > 0.0f) ? s_lastDrawX : cX;
+    float baseY = (s_lastDrawW > 0.0f) ? s_lastDrawY : cY;
+    float baseW = (s_lastDrawW > 0.0f) ? s_lastDrawW : 600.0f;
+
+    float rx = mx - baseX, ry = my - baseY;
+    float cardX = 24.0f, cardY = 20.0f, cardW = baseW - 48.0f;
+    float pinY  = cardY + 84.0f;
+    float bY    = pinY + 110.0f, bH = 44.0f;
+    float bx1   = cardX, bW = (cardW - 12.0f) / 2.0f;
+    float bx2   = bx1 + bW + 12.0f;
+
+    bool newHovStart = (ry >= bY && ry <= bY + bH && rx >= bx1 && rx < bx1 + bW);
+    bool newHovStop  = (ry >= bY && ry <= bY + bH && rx >= bx2 && rx < bx2 + bW);
+
+    s_hovStart = newHovStart;
+    s_hovStop  = newHovStop;
 }
 
 void ProcessPhoneRemoteMouseClick(float mx,float my,float cX,float cY,HWND hWnd){

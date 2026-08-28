@@ -1401,6 +1401,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             ProcessFamilyLinkMouseMove(x, y, cX, cY);
             redraw = true;
         }
+        else if (selectedTab == 11) { // ← Phone Remote Hover (Start/Stop buttons)
+            float cX = (float)SIDEBAR_WIDTH, cY = (float)(TITLEBAR_HEIGHT + SUBHEADER_HEIGHT);
+            ProcessPhoneRemoteMouseMove(x, y, cX, cY);
+            redraw = true;
+        }
 
         if (redraw) InvalidateRect(hWnd, NULL, FALSE);
         break;
