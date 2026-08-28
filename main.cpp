@@ -46,7 +46,8 @@ HWND hParentWnd = NULL;
 #include "tab_dashboard.h"
 #include "tab_special.h"
 #include "tab_statistics.h"
-#include "tab_family_link.h" // ← Family Link Tab Header যুক্ত করা হয়েছে
+#include "tab_family_link.h"
+#include "tab_phone_remote.h" // ← Phone Remote Tab Header
 #include "prewindow.h"
 #include "accounts.h"   // ← My Account tab handler
 #include "upgrade.h"    // ← Upgrade popup handler
