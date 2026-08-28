@@ -52,7 +52,7 @@ static SOCKET         s_udpSock  = INVALID_SOCKET;
 static vector<SOCKET> s_wsClients;
 static mutex          s_mtx;
 static bool           s_hovStart = false, s_hovStop = false;
-static float          s_lastDrawX = 0.0f, s_lastDrawY = 0.0f, s_lastDrawW = 0.0f, s_lastDrawH = 0.0f;
+static float          s_lastDrawX = 0.0f, s_lastDrawY = 0.0f, s_lastDrawW = 0.0f;
 
 // ── Get local IP ─────────────────────────────────────────────────
 static string GetLocalIp() {
@@ -375,7 +375,7 @@ void PhoneRemoteTimerTick() {}
 
 // ── Draw Tab UI ───────────────────────────────────────────────────
 void DrawPhoneRemoteTab(Graphics& g, float x, float y, float w, float h) {
-    s_lastDrawX = x; s_lastDrawY = y; s_lastDrawW = w; s_lastDrawH = h;
+    s_lastDrawX = x; s_lastDrawY = y; s_lastDrawW = w;
 
     FontFamily ff(L"Segoe UI");
     StringFormat fmtC,fmtL;
@@ -465,7 +465,6 @@ void ProcessPhoneRemoteMouseMove(float mx,float my,float cX,float cY){
 }
 
 void ProcessPhoneRemoteMouseClick(float mx,float my,float cX,float cY,HWND hWnd){
-    (void)cX; (void)cY;
     float baseX = (s_lastDrawW > 0.0f) ? s_lastDrawX : cX;
     float baseY = (s_lastDrawW > 0.0f) ? s_lastDrawY : cY;
     float baseW = (s_lastDrawW > 0.0f) ? s_lastDrawW : 600.0f;
