@@ -1,6 +1,6 @@
-BUILD STATUS: FAILED (exit code 2)
-Time: 2026-08-28 04:37:02 UTC
-Run: https://github.com/raseledutools/RasFocus-Exe-Release/actions/runs/33142229900
+BUILD STATUS: SUCCESS
+Time: 2026-08-28 05:14:45 UTC
+Run: https://github.com/raseledutools/RasFocus-Exe-Release/actions/runs/33143920214
 
 === Compiler Output ===
 Microsoft (R) C/C++ Optimizing Compiler Version 19.51.36256 for x64
@@ -74,9 +74,9 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
         ] (compiling source file tab_family_link.cpp)
 context_menu.cpp
 downloads_panel.cpp
+find_in_page.cpp
 browser/advanced_feature.cpp(26): warning C4996: 'localtime': This function or variable may be unsafe. Consider using localtime_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
 browser/advanced_feature.cpp(116): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
-find_in_page.cpp
 history_panel.cpp
 settings.cpp
 keyboard_shortcuts.cpp
@@ -176,9 +176,9 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
             _InIt=wchar_t *,
             _SizeTy=std::+::_Size_type
         ] (compiling source file tab_deep_study.cpp)
-tab_utilities.cpp
 tab_special.cpp(115): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
 tab_special.cpp(118): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
+tab_utilities.cpp
 tab_device_block.cpp
 tab_diary.cpp
 accounts.cpp
@@ -281,6 +281,6 @@ accounts.obj
 tab_phone_remote.obj 
 resources.res 
 libcpmt.lib(xlock.obj) : warning LNK4078: multiple '.voltbl' sections found with different attributes (00101A00)
-tab_phone_remote.obj : error LNK2001: unresolved external symbol "class Gdiplus::Color const ColBgContent" (?ColBgContent@@3VColor@Gdiplus@@B)
-RasFocus.exe : fatal error LNK1120: 1 unresolved externals
+Generating code
+Finished generating code
 
