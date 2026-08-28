@@ -20,13 +20,14 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 
-#include "tab_phone_remote.h"
-#include "globals.h"
-
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
+#include <objbase.h>   // IStream, COM types -- must come before gdiplus.h
 #include <gdiplus.h>
+
+#include "tab_phone_remote.h"
+#include "globals.h"
 #include <wincrypt.h>
 #include <shellapi.h>
 
