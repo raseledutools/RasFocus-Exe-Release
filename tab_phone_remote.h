@@ -1,15 +1,6 @@
 #pragma once
 
-#ifndef _WINSOCKAPI_
-#define _WINSOCKAPI_
-#endif
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <winsock2.h>
-#include <ws2tcpip.h>
 #include <windows.h>
-#include <objbase.h>   // IStream, COM types -- must come before gdiplus.h
 #include <gdiplus.h>
 #pragma comment(lib, "gdiplus.lib")
 #pragma comment(lib, "ws2_32.lib")

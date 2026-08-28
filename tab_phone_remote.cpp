@@ -13,19 +13,9 @@
 //   4. Phone opens http://<discovered-ip>:9222 → full control.
 // ================================================================
 
-#ifndef _WINSOCKAPI_
-#define _WINSOCKAPI_
-#endif
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-
+// winsock2 must come before windows.h
 #include <winsock2.h>
 #include <ws2tcpip.h>
-#include <windows.h>
-#include <objbase.h>   // IStream, COM types -- must come before gdiplus.h
-#include <gdiplus.h>
-
 #include "tab_phone_remote.h"
 #include "globals.h"
 #include <wincrypt.h>
