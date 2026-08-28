@@ -1,6 +1,6 @@
 BUILD STATUS: FAILED (exit code 2)
-Time: 2026-08-28 04:30:36 UTC
-Run: https://github.com/raseledutools/RasFocus-Exe-Release/actions/runs/33141907068
+Time: 2026-08-28 04:37:02 UTC
+Run: https://github.com/raseledutools/RasFocus-Exe-Release/actions/runs/33142229900
 
 === Compiler Output ===
 Microsoft (R) C/C++ Optimizing Compiler Version 19.51.36256 for x64
@@ -145,9 +145,9 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
             _InIt=wchar_t *,
             _SizeTy=std::+::_Size_type
         ] (compiling source file browser/mini_browser.cpp)
-tab_special.cpp
 tab_adult.cpp(331): warning C4244: 'argument': conversion from 'int' to 'Gdiplus::REAL', possible loss of data
 tab_adult.cpp(400): warning C4996: 'localtime': This function or variable may be unsafe. Consider using localtime_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+tab_special.cpp
 tab_statistics.cpp
 tab_settings.cpp
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): warning C4244: '=': conversion from 'wchar_t' to 'char', possible loss of data (compiling source file tab_deep_study.cpp)
@@ -176,9 +176,9 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
             _InIt=wchar_t *,
             _SizeTy=std::+::_Size_type
         ] (compiling source file tab_deep_study.cpp)
+tab_utilities.cpp
 tab_special.cpp(115): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
 tab_special.cpp(118): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
-tab_utilities.cpp
 tab_device_block.cpp
 tab_diary.cpp
 accounts.cpp
@@ -213,8 +213,8 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
             _InIt=wchar_t *,
             _SizeTy=std::+::_Size_type
         ] (compiling source file accounts.cpp)
-tab_phone_remote.cpp(79): warning C4996: 'sscanf': This function or variable may be unsafe. Consider using sscanf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
-tab_phone_remote.cpp(83): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+tab_phone_remote.cpp(80): warning C4996: 'sscanf': This function or variable may be unsafe. Consider using sscanf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+tab_phone_remote.cpp(84): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
 Microsoft (R) Incremental Linker Version 14.51.36256.0
 Copyright (C) Microsoft Corporation.  All rights reserved.
 
