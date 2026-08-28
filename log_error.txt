@@ -1,6 +1,6 @@
 BUILD STATUS: SUCCESS
-Time: 2026-08-28 09:08:29 UTC
-Run: https://github.com/raseledutools/RasFocus-Exe-Release/actions/runs/33157981006
+Time: 2026-08-28 09:16:17 UTC
+Run: https://github.com/raseledutools/RasFocus-Exe-Release/actions/runs/33158475573
 
 === Compiler Output ===
 Microsoft (R) C/C++ Optimizing Compiler Version 19.51.36256 for x64
@@ -20,6 +20,10 @@ main.cpp(1319): warning C4244: 'argument': conversion from 'float' to 'int', pos
 advanced_feature.cpp
 feature_browser.cpp
 bookmarks.cpp
+context_menu.cpp
+downloads_panel.cpp
+find_in_page.cpp
+history_panel.cpp
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): warning C4244: '=': conversion from 'wchar_t' to 'char', possible loss of data (compiling source file tab_family_link.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): note: the template instantiation context (the oldest one first) is (compiling source file tab_family_link.cpp)
 tab_family_link.cpp(1529): note: see reference to function template instantiation 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string<std::_String_iterator<std::_String_val<std::_Simple_types<_Elem>>>,0>(_Iter,_Iter,const _Alloc &)' being compiled
@@ -72,15 +76,11 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
             _InIt=const wchar_t *,
             _SizeTy=std::+::_Size_type
         ] (compiling source file tab_family_link.cpp)
-context_menu.cpp
-downloads_panel.cpp
-find_in_page.cpp
-history_panel.cpp
-browser/advanced_feature.cpp(26): warning C4996: 'localtime': This function or variable may be unsafe. Consider using localtime_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
-browser/advanced_feature.cpp(116): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
 settings.cpp
 keyboard_shortcuts.cpp
 tab_pdf_workspace.cpp
+browser/advanced_feature.cpp(26): warning C4996: 'localtime': This function or variable may be unsafe. Consider using localtime_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+browser/advanced_feature.cpp(116): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
 upgrade.cpp
 mini_browser.cpp
 tab_blocks.cpp
@@ -119,9 +119,6 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
             _SizeTy=std::+::_Size_type
         ] (compiling source file tab_blocks.cpp)
 tab_deep_study.cpp
-tab_adult.cpp(331): warning C4244: 'argument': conversion from 'int' to 'Gdiplus::REAL', possible loss of data
-tab_adult.cpp(400): warning C4996: 'localtime': This function or variable may be unsafe. Consider using localtime_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
-tab_special.cpp
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): warning C4244: '=': conversion from 'wchar_t' to 'char', possible loss of data (compiling source file browser/mini_browser.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): note: the template instantiation context (the oldest one first) is (compiling source file browser/mini_browser.cpp)
 browser/mini_browser.cpp(2010): note: see reference to function template instantiation 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string<std::_String_iterator<std::_String_val<std::_Simple_types<_Elem>>>,0>(_Iter,_Iter,const _Alloc &)' being compiled
@@ -148,6 +145,9 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
             _InIt=wchar_t *,
             _SizeTy=std::+::_Size_type
         ] (compiling source file browser/mini_browser.cpp)
+tab_adult.cpp(331): warning C4244: 'argument': conversion from 'int' to 'Gdiplus::REAL', possible loss of data
+tab_adult.cpp(400): warning C4996: 'localtime': This function or variable may be unsafe. Consider using localtime_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+tab_special.cpp
 tab_statistics.cpp
 tab_settings.cpp
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): warning C4244: '=': conversion from 'wchar_t' to 'char', possible loss of data (compiling source file tab_deep_study.cpp)
