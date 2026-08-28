@@ -1,0 +1,332 @@
+BUILD STATUS: FAILED (exit code 2)
+Time: 2026-08-28 04:15:43 UTC
+Run: https://github.com/raseledutools/RasFocus-Exe-Release/actions/runs/33141188873
+
+=== Compiler Output ===
+Microsoft (R) C/C++ Optimizing Compiler Version 19.51.36256 for x64
+Copyright (C) Microsoft Corporation.  All rights reserved.
+
+main.cpp
+prewindow.cpp
+tab_dashboard.cpp
+tab_family_link.cpp
+prewindow.cpp(46): warning C4996: 'localtime': This function or variable may be unsafe. Consider using localtime_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+main.cpp(163): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+main.cpp(181): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
+main.cpp(181): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
+main.cpp(1006): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+main.cpp(1319): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data
+main.cpp(1319): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data
+advanced_feature.cpp
+feature_browser.cpp
+bookmarks.cpp
+C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): warning C4244: '=': conversion from 'wchar_t' to 'char', possible loss of data (compiling source file tab_family_link.cpp)
+C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): note: the template instantiation context (the oldest one first) is (compiling source file tab_family_link.cpp)
+tab_family_link.cpp(1529): note: see reference to function template instantiation 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string<std::_String_iterator<std::_String_val<std::_Simple_types<_Elem>>>,0>(_Iter,_Iter,const _Alloc &)' being compiled
+        with
+        [
+            _Elem=wchar_t,
+            _Iter=std::_String_iterator<std::_String_val<std::_Simple_types<wchar_t>>>,
+            _Alloc=std::allocator<char>
+        ]
+tab_family_link.cpp(1574): note: see the first reference to 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string' in 'ProcessFamilyLinkMouseClick::<lambda_fa7bf1b6615a665c397b3bef5e8b20cb>::operator ()'
+C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xstring(862): note: see reference to function template instantiation 'void std::basic_string<char,std::char_traits<char>,std::allocator<char>>::_Construct_from_iter<wchar_t*,wchar_t*,_Size_type>(_Iter,const _Sent,_Size)' being compiled
+        with
+        [
+            _Size_type=std::+::_Size_type,
+            _Iter=wchar_t *,
+            _Sent=wchar_t *,
+            _Size=std::+::_Size_type
+        ] (compiling source file tab_family_link.cpp)
+C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xstring(1018): note: see reference to function template instantiation '_OutIt *std::_Copy_n_unchecked4<wchar_t*,_Size,char*>(_InIt,_SizeTy,_OutIt)' being compiled
+        with
+        [
+            _OutIt=char *,
+            _Size=std::+::_Size_type,
+            _InIt=wchar_t *,
+            _SizeTy=std::+::_Size_type
+        ] (compiling source file tab_family_link.cpp)
+C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): warning C4244: '=': conversion from 'const wchar_t' to 'char', possible loss of data (compiling source file tab_family_link.cpp)
+C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): note: the template instantiation context (the oldest one first) is (compiling source file tab_family_link.cpp)
+tab_family_link.cpp(1560): note: see reference to function template instantiation 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string<std::_String_const_iterator<std::_String_val<std::_Simple_types<_Elem>>>,0>(_Iter,_Iter,const _Alloc &)' being compiled
+        with
+        [
+            _Elem=wchar_t,
+            _Iter=std::_String_const_iterator<std::_String_val<std::_Simple_types<wchar_t>>>,
+            _Alloc=std::allocator<char>
+        ]
+tab_family_link.cpp(1560): note: see the first reference to 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string' in 'ProcessFamilyLinkMouseClick::<lambda_fa7bf1b6615a665c397b3bef5e8b20cb>::operator ()'
+C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xstring(862): note: see reference to function template instantiation 'void std::basic_string<char,std::char_traits<char>,std::allocator<char>>::_Construct_from_iter<const wchar_t*,const wchar_t*,_Size_type>(_Iter,const _Sent,_Size)' being compiled
+        with
+        [
+            _Size_type=std::+::_Size_type,
+            _Iter=const wchar_t *,
+            _Sent=const wchar_t *,
+            _Size=std::+::_Size_type
+        ] (compiling source file tab_family_link.cpp)
+C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xstring(1018): note: see reference to function template instantiation '_OutIt *std::_Copy_n_unchecked4<const wchar_t*,_Size,char*>(_InIt,_SizeTy,_OutIt)' being compiled
+        with
+        [
+            _OutIt=char *,
+            _Size=std::+::_Size_type,
+            _InIt=const wchar_t *,
+            _SizeTy=std::+::_Size_type
+        ] (compiling source file tab_family_link.cpp)
+context_menu.cpp
+downloads_panel.cpp
+find_in_page.cpp
+browser/advanced_feature.cpp(26): warning C4996: 'localtime': This function or variable may be unsafe. Consider using localtime_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+browser/advanced_feature.cpp(116): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+history_panel.cpp
+settings.cpp
+keyboard_shortcuts.cpp
+tab_pdf_workspace.cpp
+upgrade.cpp
+mini_browser.cpp
+tab_blocks.cpp
+tab_schedule_blocks.cpp
+tab_adult.cpp
+tab_blocks.cpp(706): warning C4244: 'argument': conversion from 'LONG' to 'Gdiplus::REAL', possible loss of data
+tab_blocks.cpp(706): warning C4244: 'argument': conversion from 'LONG' to 'Gdiplus::REAL', possible loss of data
+tab_blocks.cpp(1533): warning C4244: 'initializing': conversion from 'time_t' to 'int', possible loss of data
+tab_blocks.cpp(2634): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data
+tab_blocks.cpp(2802): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data
+tab_blocks.cpp(2820): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data
+C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): warning C4244: '=': conversion from 'wchar_t' to 'char', possible loss of data (compiling source file tab_blocks.cpp)
+C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): note: the template instantiation context (the oldest one first) is (compiling source file tab_blocks.cpp)
+tab_blocks.cpp(412): note: see reference to function template instantiation 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string<std::_String_iterator<std::_String_val<std::_Simple_types<_Elem>>>,0>(_Iter,_Iter,const _Alloc &)' being compiled
+        with
+        [
+            _Elem=wchar_t,
+            _Iter=std::_String_iterator<std::_String_val<std::_Simple_types<wchar_t>>>,
+            _Alloc=std::allocator<char>
+        ]
+tab_blocks.cpp(412): note: see the first reference to 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string' in 'SaveBlocksData'
+C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xstring(862): note: see reference to function template instantiation 'void std::basic_string<char,std::char_traits<char>,std::allocator<char>>::_Construct_from_iter<wchar_t*,wchar_t*,_Size_type>(_Iter,const _Sent,_Size)' being compiled
+        with
+        [
+            _Size_type=std::+::_Size_type,
+            _Iter=wchar_t *,
+            _Sent=wchar_t *,
+            _Size=std::+::_Size_type
+        ] (compiling source file tab_blocks.cpp)
+C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xstring(1018): note: see reference to function template instantiation '_OutIt *std::_Copy_n_unchecked4<wchar_t*,_Size,char*>(_InIt,_SizeTy,_OutIt)' being compiled
+        with
+        [
+            _OutIt=char *,
+            _Size=std::+::_Size_type,
+            _InIt=wchar_t *,
+            _SizeTy=std::+::_Size_type
+        ] (compiling source file tab_blocks.cpp)
+tab_deep_study.cpp
+C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): warning C4244: '=': conversion from 'wchar_t' to 'char', possible loss of data (compiling source file browser/mini_browser.cpp)
+C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): note: the template instantiation context (the oldest one first) is (compiling source file browser/mini_browser.cpp)
+browser/mini_browser.cpp(2010): note: see reference to function template instantiation 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string<std::_String_iterator<std::_String_val<std::_Simple_types<_Elem>>>,0>(_Iter,_Iter,const _Alloc &)' being compiled
+        with
+        [
+            _Elem=wchar_t,
+            _Iter=std::_String_iterator<std::_String_val<std::_Simple_types<wchar_t>>>,
+            _Alloc=std::allocator<char>
+        ]
+browser/mini_browser.cpp(2010): note: see the first reference to 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string' in 'TabControllerHandler::Invoke::<lambda_73edf3dffe15d3a969c1a74867e77878>::()::<lambda_e79adc25f6471789fc222e38bae3625b>::operator ()'
+C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xstring(862): note: see reference to function template instantiation 'void std::basic_string<char,std::char_traits<char>,std::allocator<char>>::_Construct_from_iter<wchar_t*,wchar_t*,_Size_type>(_Iter,const _Sent,_Size)' being compiled
+        with
+        [
+            _Size_type=std::+::_Size_type,
+            _Iter=wchar_t *,
+            _Sent=wchar_t *,
+            _Size=std::+::_Size_type
+        ] (compiling source file browser/mini_browser.cpp)
+C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xstring(1018): note: see reference to function template instantiation '_OutIt *std::_Copy_n_unchecked4<wchar_t*,_Size,char*>(_InIt,_SizeTy,_OutIt)' being compiled
+        with
+        [
+            _OutIt=char *,
+            _Size=std::+::_Size_type,
+            _InIt=wchar_t *,
+            _SizeTy=std::+::_Size_type
+        ] (compiling source file browser/mini_browser.cpp)
+tab_adult.cpp(331): warning C4244: 'argument': conversion from 'int' to 'Gdiplus::REAL', possible loss of data
+tab_adult.cpp(400): warning C4996: 'localtime': This function or variable may be unsafe. Consider using localtime_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+tab_special.cpp
+tab_statistics.cpp
+tab_settings.cpp
+C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): warning C4244: '=': conversion from 'wchar_t' to 'char', possible loss of data (compiling source file tab_deep_study.cpp)
+C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): note: the template instantiation context (the oldest one first) is (compiling source file tab_deep_study.cpp)
+tab_deep_study.cpp(690): note: see reference to function template instantiation 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string<std::_String_iterator<std::_String_val<std::_Simple_types<_Elem>>>,0>(_Iter,_Iter,const _Alloc &)' being compiled
+        with
+        [
+            _Elem=wchar_t,
+            _Iter=std::_String_iterator<std::_String_val<std::_Simple_types<wchar_t>>>,
+            _Alloc=std::allocator<char>
+        ]
+tab_deep_study.cpp(690): note: see the first reference to 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string' in 'SaveDeepStudySettings'
+C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xstring(862): note: see reference to function template instantiation 'void std::basic_string<char,std::char_traits<char>,std::allocator<char>>::_Construct_from_iter<wchar_t*,wchar_t*,_Size_type>(_Iter,const _Sent,_Size)' being compiled
+        with
+        [
+            _Size_type=std::+::_Size_type,
+            _Iter=wchar_t *,
+            _Sent=wchar_t *,
+            _Size=std::+::_Size_type
+        ] (compiling source file tab_deep_study.cpp)
+C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xstring(1018): note: see reference to function template instantiation '_OutIt *std::_Copy_n_unchecked4<wchar_t*,_Size,char*>(_InIt,_SizeTy,_OutIt)' being compiled
+        with
+        [
+            _OutIt=char *,
+            _Size=std::+::_Size_type,
+            _InIt=wchar_t *,
+            _SizeTy=std::+::_Size_type
+        ] (compiling source file tab_deep_study.cpp)
+tab_utilities.cpp
+tab_special.cpp(115): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
+tab_special.cpp(118): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
+tab_device_block.cpp
+tab_diary.cpp
+accounts.cpp
+tab_utilities.cpp(72): warning C4244: '=': conversion from 'LRESULT' to 'int', possible loss of data
+tab_utilities.cpp(184): warning C4244: 'initializing': conversion from 'LRESULT' to 'int', possible loss of data
+tab_phone_remote.cpp
+tab_diary.cpp(461): warning C4996: '_wgetenv': This function or variable may be unsafe. Consider using _wdupenv_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusImaging.h(84): error C4430: missing type specifier - int assumed. Note: C++ does not support default-int (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusImaging.h(84): error C2440: 'initializing': cannot convert from 'const char [37]' to 'int' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusImaging.h(84): note: There is no context in which this conversion is possible (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusImaging.h(85): error C2146: syntax error: missing ';' before identifier 'IImageBytes' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusImaging.h(85): error C2059: syntax error: 'public' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusImaging.h(86): error C2143: syntax error: missing ';' before '{' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusImaging.h(86): error C2447: '{': missing function header (old-style formal list?) (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusImaging.h(291): error C3646: 'id': unknown override specifier (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusImaging.h(291): error C4430: missing type specifier - int assumed. Note: C++ does not support default-int (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(397): error C2061: syntax error: identifier 'IStream' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(407): error C2061: syntax error: identifier 'IStream' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(417): error C2061: syntax error: identifier 'IStream' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(455): error C2061: syntax error: identifier 'PROPID' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(456): error C2061: syntax error: identifier 'PROPID' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(457): error C2061: syntax error: identifier 'PROPID' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(465): error C2061: syntax error: identifier 'PROPID' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(483): error C2535: 'Gdiplus::Image::Image(void)': member function already defined or declared (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(396): note: see declaration of 'Gdiplus::Image::Image' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(519): error C2061: syntax error: identifier 'IStream' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(529): error C2061: syntax error: identifier 'IStream' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(773): error C2061: syntax error: identifier 'IStream' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(829): error C2061: syntax error: identifier 'IStream' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(828): error C2535: 'Gdiplus::Metafile::Metafile(void)': member function already defined or declared (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(773): note: see declaration of 'Gdiplus::Metafile::Metafile' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(836): error C2061: syntax error: identifier 'IStream' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(835): error C2535: 'Gdiplus::Metafile::Metafile(void)': member function already defined or declared (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(773): note: see declaration of 'Gdiplus::Metafile::Metafile' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(845): error C2061: syntax error: identifier 'IStream' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(844): error C2535: 'Gdiplus::Metafile::Metafile(void)': member function already defined or declared (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(773): note: see declaration of 'Gdiplus::Metafile::Metafile' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(870): error C2061: syntax error: identifier 'IStream' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(938): error C2535: 'Gdiplus::Metafile::Metafile(void)': member function already defined or declared (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(773): note: see declaration of 'Gdiplus::Metafile::Metafile' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1145): error C2065: 'IStream': undeclared identifier (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1145): error C2065: 'stream': undeclared identifier (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1145): error C2065: 'image': undeclared identifier (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1145): error C2275: 'Gdiplus::GpImage': expected an expression instead of a type (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1145): warning C4229: anachronism used: modifiers on data are ignored (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1151): error C2065: 'IStream': undeclared identifier (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1151): error C2065: 'stream': undeclared identifier (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1151): error C2065: 'image': undeclared identifier (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1151): error C2275: 'Gdiplus::GpImage': expected an expression instead of a type (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1151): warning C4229: anachronism used: modifiers on data are ignored (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1168): error C2061: syntax error: identifier 'IStream' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1256): error C2061: syntax error: identifier 'PROPID' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1259): error C2061: syntax error: identifier 'PROPID' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1262): error C2061: syntax error: identifier 'PROPID' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1274): error C2061: syntax error: identifier 'PROPID' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1298): error C2065: 'IStream': undeclared identifier (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1298): error C2065: 'stream': undeclared identifier (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1298): error C2065: 'bitmap': undeclared identifier (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1298): error C2275: 'Gdiplus::GpBitmap': expected an expression instead of a type (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1298): warning C4229: anachronism used: modifiers on data are ignored (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1304): error C2065: 'IStream': undeclared identifier (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1304): error C2065: 'stream': undeclared identifier (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1304): error C2065: 'bitmap': undeclared identifier (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1304): error C2275: 'Gdiplus::GpBitmap': expected an expression instead of a type (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1304): warning C4229: anachronism used: modifiers on data are ignored (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2235): error C2065: 'IStream': undeclared identifier (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2235): error C2065: 'stream': undeclared identifier (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2236): error C2065: 'header': undeclared identifier (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2236): error C2275: 'Gdiplus::MetafileHeader': expected an expression instead of a type (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2234): warning C4229: anachronism used: modifiers on data are ignored (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2255): error C2061: syntax error: identifier 'IStream' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2275): error C2065: 'IStream': undeclared identifier (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2275): error C2065: 'stream': undeclared identifier (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2275): error C2065: 'metafile': undeclared identifier (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2275): error C2275: 'Gdiplus::GpMetafile': expected an expression instead of a type (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2275): warning C4229: anachronism used: modifiers on data are ignored (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2322): error C2065: 'IStream': undeclared identifier (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2322): error C2065: 'stream': undeclared identifier (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2323): error C2275: 'HDC': expected an expression instead of a type (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2323): error C2146: syntax error: missing ')' before identifier 'referenceHdc' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2333): error C2065: 'IStream': undeclared identifier (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2333): error C2065: 'stream': undeclared identifier (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2334): error C2275: 'HDC': expected an expression instead of a type (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2334): error C2146: syntax error: missing ')' before identifier 'referenceHdc' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusPath.h(145): error C2061: syntax error: identifier 'byte' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(80): error C2065: 'IStream': undeclared identifier (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(80): error C2065: 'stream': undeclared identifier (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(80): error C7550: 'Gdiplus::Metafile::{ctor}': the qualified name in this context names a constructor, not a type (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(81): error C2143: syntax error: missing ';' before '{' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(81): error C2447: '{': missing function header (old-style formal list?) (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(199): error C2065: 'IStream': undeclared identifier (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(199): error C2065: 'stream': undeclared identifier (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(200): error C2275: 'HDC': expected an expression instead of a type (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(200): error C2146: syntax error: missing ')' before identifier 'referenceHdc' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(204): error C2143: syntax error: missing ';' before '{' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(204): error C2447: '{': missing function header (old-style formal list?) (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(216): error C2065: 'IStream': undeclared identifier (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(216): error C2065: 'stream': undeclared identifier (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(217): error C2275: 'HDC': expected an expression instead of a type (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(217): error C2146: syntax error: missing ')' before identifier 'referenceHdc' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(223): error C2143: syntax error: missing ';' before '{' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(223): error C2447: '{': missing function header (old-style formal list?) (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(235): error C2065: 'IStream': undeclared identifier (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(235): error C2065: 'stream': undeclared identifier (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(236): error C2275: 'HDC': expected an expression instead of a type (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(236): error C2146: syntax error: missing ')' before identifier 'referenceHdc' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(242): error C2143: syntax error: missing ';' before '{' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(242): error C2447: '{': missing function header (old-style formal list?) (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(284): error C2065: 'IStream': undeclared identifier (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(284): error C2065: 'stream': undeclared identifier (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(285): error C2065: 'header': undeclared identifier (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(285): error C2275: 'Gdiplus::MetafileHeader': expected an expression instead of a type (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(283): error C2761: 'GetMetafileHeader': redeclaration of member is not allowed (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(287): error C2143: syntax error: missing ';' before '{' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(287): error C2447: '{': missing function header (old-style formal list?) (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusBitmap.h(50): error C2065: 'IStream': undeclared identifier (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusBitmap.h(50): error C2065: 'stream': undeclared identifier (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusBitmap.h(51): error C2275: 'BOOL': expected an expression instead of a type (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusBitmap.h(51): error C2146: syntax error: missing ')' before identifier 'useEmbeddedColorManagement' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusBitmap.h(53): error C2143: syntax error: missing ';' before '{' (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusBitmap.h(53): error C2447: '{': missing function header (old-style formal list?) (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusBitmap.h(85): error C2065: 'IStream': undeclared identifier (compiling source file tab_phone_remote.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusBitmap.h(85): fatal error C1003: error count exceeds 100; stopping compilation (compiling source file tab_phone_remote.cpp)
+accounts.cpp(504): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
+C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): warning C4244: '=': conversion from 'wchar_t' to 'char', possible loss of data (compiling source file accounts.cpp)
+C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): note: the template instantiation context (the oldest one first) is (compiling source file accounts.cpp)
+accounts.cpp(591): note: see reference to function template instantiation 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string<std::_String_iterator<std::_String_val<std::_Simple_types<_Elem>>>,0>(_Iter,_Iter,const _Alloc &)' being compiled
+        with
+        [
+            _Elem=wchar_t,
+            _Iter=std::_String_iterator<std::_String_val<std::_Simple_types<wchar_t>>>,
+            _Alloc=std::allocator<char>
+        ]
+accounts.cpp(591): note: see the first reference to 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string' in 'ExtractIdTokenFromUrl'
+C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xstring(862): note: see reference to function template instantiation 'void std::basic_string<char,std::char_traits<char>,std::allocator<char>>::_Construct_from_iter<wchar_t*,wchar_t*,_Size_type>(_Iter,const _Sent,_Size)' being compiled
+        with
+        [
+            _Size_type=std::+::_Size_type,
+            _Iter=wchar_t *,
+            _Sent=wchar_t *,
+            _Size=std::+::_Size_type
+        ] (compiling source file accounts.cpp)
+C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xstring(1018): note: see reference to function template instantiation '_OutIt *std::_Copy_n_unchecked4<wchar_t*,_Size,char*>(_InIt,_SizeTy,_OutIt)' being compiled
+        with
+        [
+            _OutIt=char *,
+            _Size=std::+::_Size_type,
+            _InIt=wchar_t *,
+            _SizeTy=std::+::_Size_type
+        ] (compiling source file accounts.cpp)
+
