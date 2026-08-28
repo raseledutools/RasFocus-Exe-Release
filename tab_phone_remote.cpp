@@ -271,7 +271,7 @@ static void WsClient(SOCKET client) {
 // ── HTML Control Panel ────────────────────────────────────────────
 static string BuildHtml(const string& pin) {
     // PIN embedded in HTML — phone can verify it
-    return R"(<!DOCTYPE html>
+    return R"HTML(<!DOCTYPE html>
 <html lang="bn">
 <head>
 <meta charset="UTF-8">
@@ -327,7 +327,7 @@ body{font-family:'Segoe UI',sans-serif;background:#0d0d0d;color:#e0e0e0;height:1
 <div id="hdr">
   <span id="dot"></span>
   <h1>📡 RasFocus Remote</h1>
-  <span style="font-size:11px;color:#7dffdd">PIN: )" + pin + R"(</span>
+  <span style="font-size:11px;color:#7dffdd">PIN: )HTML" + pin + R"HTML(</span>
 </div>
 <div id="tabs">
   <div class="tab active" onclick="swTab('cmd')">🖥️ CMD</div>
@@ -432,7 +432,7 @@ ov.addEventListener('dblclick',function(e){if(!ctrl)return;var p=rel(e);snd({typ
 conn();
 </script>
 </body>
-</html>)";
+</html>)HTML";
 }
 
 // ── HTTP handler ──────────────────────────────────────────────────
