@@ -139,7 +139,7 @@ const Color ColSidebar(255, 0, 135, 145);
 const Color ColSidebarActive(255, 0, 110, 120);
 const Color ColSidebarHover(255, 0, 160, 170);
 const Color ColWhite(255, 255, 255, 255);
-const Color ColBgContent(255, 245, 248, 250);
+extern const Color ColBgContent(255, 245, 248, 250);
 const Color ColTextDark(255, 50, 50, 50);
 const Color ColTextGray(255, 120, 120, 120);
 const Color ColUpgradeBtn(255, 243, 156, 18);
