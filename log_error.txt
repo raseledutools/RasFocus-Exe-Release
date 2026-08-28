@@ -1,6 +1,6 @@
 BUILD STATUS: FAILED (exit code 2)
-Time: 2026-08-28 04:25:42 UTC
-Run: https://github.com/raseledutools/RasFocus-Exe-Release/actions/runs/33141686126
+Time: 2026-08-28 04:30:36 UTC
+Run: https://github.com/raseledutools/RasFocus-Exe-Release/actions/runs/33141907068
 
 === Compiler Output ===
 Microsoft (R) C/C++ Optimizing Compiler Version 19.51.36256 for x64
@@ -75,8 +75,8 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
 context_menu.cpp
 downloads_panel.cpp
 browser/advanced_feature.cpp(26): warning C4996: 'localtime': This function or variable may be unsafe. Consider using localtime_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
-find_in_page.cpp
 browser/advanced_feature.cpp(116): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+find_in_page.cpp
 history_panel.cpp
 settings.cpp
 keyboard_shortcuts.cpp
@@ -215,111 +215,72 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
         ] (compiling source file accounts.cpp)
 tab_phone_remote.cpp(79): warning C4996: 'sscanf': This function or variable may be unsafe. Consider using sscanf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
 tab_phone_remote.cpp(83): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
-tab_phone_remote.cpp(333): error C2065: '🖥️': undeclared identifier
-tab_phone_remote.cpp(333): error C2146: syntax error: missing ';' before identifier 'CMD'
-tab_phone_remote.cpp(333): error C2065: 'CMD': undeclared identifier
-tab_phone_remote.cpp(333): error C2059: syntax error: '/'
-tab_phone_remote.cpp(334): error C2332: 'class': missing tag name
-tab_phone_remote.cpp(335): error C2332: 'class': missing tag name
-tab_phone_remote.cpp(338): error C2332: 'class': missing tag name
-tab_phone_remote.cpp(339): error C2017: unknown escape sequence
-tab_phone_remote.cpp(342): error C3873: 'U+25b6': this character is not allowed as a first character of an identifier
-tab_phone_remote.cpp(345): error C2332: 'class': missing tag name
-tab_phone_remote.cpp(346): error C3873: 'U+2b06': this character is not allowed as a first character of an identifier
-tab_phone_remote.cpp(347): error C2017: unknown escape sequence
-tab_phone_remote.cpp(350): error C2332: 'class': missing tag name
-tab_phone_remote.cpp(357): error C2332: 'class': missing tag name
-tab_phone_remote.cpp(358): error C2332: 'class': missing tag name
-tab_phone_remote.cpp(359): error C2332: 'class': missing tag name
-tab_phone_remote.cpp(360): error C2332: 'class': missing tag name
-tab_phone_remote.cpp(360): error C3873: 'U+232b': this character is not allowed as a first character of an identifier
-tab_phone_remote.cpp(361): error C2332: 'class': missing tag name
-tab_phone_remote.cpp(362): error C2332: 'class': missing tag name
-tab_phone_remote.cpp(362): error C3873: 'U+25c0': this character is not allowed as a first character of an identifier
-tab_phone_remote.cpp(363): error C2332: 'class': missing tag name
-tab_phone_remote.cpp(363): error C3873: 'U+25b2': this character is not allowed as a first character of an identifier
-tab_phone_remote.cpp(364): error C2332: 'class': missing tag name
-tab_phone_remote.cpp(364): error C3873: 'U+25bc': this character is not allowed as a first character of an identifier
-tab_phone_remote.cpp(365): error C2332: 'class': missing tag name
-tab_phone_remote.cpp(365): error C3873: 'U+25b6': this character is not allowed as a first character of an identifier
-tab_phone_remote.cpp(366): error C2332: 'class': missing tag name
-tab_phone_remote.cpp(367): error C2332: 'class': missing tag name
-tab_phone_remote.cpp(368): error C2332: 'class': missing tag name
-tab_phone_remote.cpp(372): error C3873: 'U+2328': this character is not allowed as a first character of an identifier
-tab_phone_remote.cpp(382): error C2065: 'function': undeclared identifier
-tab_phone_remote.cpp(382): error C2146: syntax error: missing ';' before identifier 'conn'
-tab_phone_remote.cpp(382): error C3861: 'conn': identifier not found
-tab_phone_remote.cpp(383): error C2061: syntax error: identifier 'WebSocket'
-tab_phone_remote.cpp(383): error C2015: too many characters in constant
-tab_phone_remote.cpp(383): error C3329: syntax error: expected '}' not ')'
-tab_phone_remote.cpp(384): error C3861: 'function': identifier not found
-tab_phone_remote.cpp(384): error C2065: 'document': undeclared identifier
-tab_phone_remote.cpp(384): error C2059: syntax error: ';'
-tab_phone_remote.cpp(384): error C2065: 'document': undeclared identifier
-tab_phone_remote.cpp(384): error C2015: too many characters in constant
-tab_phone_remote.cpp(385): error C3927: '->': trailing return type is not allowed after a non-function declarator
-tab_phone_remote.cpp(385): error C3484: syntax error: expected '->' before the return type
-tab_phone_remote.cpp(385): error C3613: missing return type after '->' ('int' assumed)
-tab_phone_remote.cpp(385): error C4430: missing type specifier - int assumed. Note: C++ does not support default-int
-tab_phone_remote.cpp(385): error C2146: syntax error: missing ';' before identifier 'onclose'
-tab_phone_remote.cpp(385): error C2143: syntax error: missing ';' before '{'
-tab_phone_remote.cpp(385): error C2447: '{': missing function header (old-style formal list?)
-tab_phone_remote.cpp(385): error C2137: empty character constant
-tab_phone_remote.cpp(386): error C3927: '->': trailing return type is not allowed after a non-function declarator
-tab_phone_remote.cpp(386): error C3484: syntax error: expected '->' before the return type
-tab_phone_remote.cpp(386): error C3613: missing return type after '->' ('int' assumed)
-tab_phone_remote.cpp(386): error C4430: missing type specifier - int assumed. Note: C++ does not support default-int
-tab_phone_remote.cpp(386): error C2086: 'int ws': redefinition
-tab_phone_remote.cpp(385): note: see declaration of 'ws'
-tab_phone_remote.cpp(386): error C2146: syntax error: missing ';' before identifier 'onmessage'
-tab_phone_remote.cpp(386): error C2143: syntax error: missing ';' before '{'
-tab_phone_remote.cpp(386): error C2447: '{': missing function header (old-style formal list?)
-tab_phone_remote.cpp(388): error C2015: too many characters in constant
-tab_phone_remote.cpp(389): error C2015: too many characters in constant
-tab_phone_remote.cpp(390): error C2015: too many characters in constant
-tab_phone_remote.cpp(390): error C2015: too many characters in constant
-tab_phone_remote.cpp(392): error C2059: syntax error: '}'
-tab_phone_remote.cpp(392): error C2143: syntax error: missing ';' before '}'
-tab_phone_remote.cpp(393): error C2143: syntax error: missing ';' before '{'
-tab_phone_remote.cpp(393): error C2447: '{': missing function header (old-style formal list?)
-tab_phone_remote.cpp(394): error C4430: missing type specifier - int assumed. Note: C++ does not support default-int
-tab_phone_remote.cpp(394): error C2146: syntax error: missing ';' before identifier 'sc'
-tab_phone_remote.cpp(394): error C2143: syntax error: missing ';' before '{'
-tab_phone_remote.cpp(394): error C2447: '{': missing function header (old-style formal list?)
-tab_phone_remote.cpp(394): error C2015: too many characters in constant
-tab_phone_remote.cpp(394): error C2137: empty character constant
-tab_phone_remote.cpp(395): error C4430: missing type specifier - int assumed. Note: C++ does not support default-int
-tab_phone_remote.cpp(395): error C2086: 'int function': redefinition
-tab_phone_remote.cpp(394): note: see declaration of 'function'
-tab_phone_remote.cpp(395): error C2146: syntax error: missing ';' before identifier 'swTab'
-tab_phone_remote.cpp(395): error C2143: syntax error: missing ';' before '{'
-tab_phone_remote.cpp(395): error C2447: '{': missing function header (old-style formal list?)
-tab_phone_remote.cpp(396): error C2015: too many characters in constant
-tab_phone_remote.cpp(396): error C2015: too many characters in constant
-tab_phone_remote.cpp(397): error C2015: too many characters in constant
-tab_phone_remote.cpp(398): error C2015: too many characters in constant
-tab_phone_remote.cpp(398): error C2015: too many characters in constant
-tab_phone_remote.cpp(398): error C2015: too many characters in constant
-tab_phone_remote.cpp(399): error C2015: too many characters in constant
-tab_phone_remote.cpp(400): error C2015: too many characters in constant
-tab_phone_remote.cpp(402): error C4430: missing type specifier - int assumed. Note: C++ does not support default-int
-tab_phone_remote.cpp(402): error C2086: 'int function': redefinition
-tab_phone_remote.cpp(394): note: see declaration of 'function'
-tab_phone_remote.cpp(402): error C2146: syntax error: missing ';' before identifier 'lf'
-tab_phone_remote.cpp(402): error C2143: syntax error: missing ';' before '{'
-tab_phone_remote.cpp(402): error C2447: '{': missing function header (old-style formal list?)
-tab_phone_remote.cpp(402): error C2015: too many characters in constant
-tab_phone_remote.cpp(402): error C2015: too many characters in constant
-tab_phone_remote.cpp(403): error C4430: missing type specifier - int assumed. Note: C++ does not support default-int
-tab_phone_remote.cpp(403): error C2086: 'int function': redefinition
-tab_phone_remote.cpp(394): note: see declaration of 'function'
-tab_phone_remote.cpp(403): error C2146: syntax error: missing ';' before identifier 'rf2'
-tab_phone_remote.cpp(403): error C2143: syntax error: missing ';' before '{'
-tab_phone_remote.cpp(403): error C2447: '{': missing function header (old-style formal list?)
-tab_phone_remote.cpp(405): error C2015: too many characters in constant
-tab_phone_remote.cpp(405): error C2137: empty character constant
-tab_phone_remote.cpp(408): error C2015: too many characters in constant
-tab_phone_remote.cpp(408): error C2015: too many characters in constant
-tab_phone_remote.cpp(408): error C2015: too many characters in constant
-tab_phone_remote.cpp(408): fatal error C1003: error count exceeds 100; stopping compilation
+Microsoft (R) Incremental Linker Version 14.51.36256.0
+Copyright (C) Microsoft Corporation.  All rights reserved.
+
+/out:main.exe 
+/ltcg 
+/LTCG 
+/OPT:REF 
+/OPT:ICF 
+/SUBSYSTEM:WINDOWS 
+/OUT:RasFocus.exe 
+user32.lib 
+gdi32.lib 
+gdiplus.lib 
+comctl32.lib 
+ole32.lib 
+oleaut32.lib 
+uiautomationcore.lib 
+uuid.lib 
+psapi.lib 
+shlwapi.lib 
+winmm.lib 
+shell32.lib 
+urlmon.lib 
+wininet.lib 
+comdlg32.lib 
+advapi32.lib 
+crypt32.lib 
+ws2_32.lib 
+rpcrt4.lib 
+secur32.lib 
+bcrypt.lib 
+dbghelp.lib 
+./packages/Microsoft.Web.WebView2.1.0.2420.47/build/native/x64/WebView2LoaderStatic.lib 
+D:\a\RasFocus-Exe-Release\RasFocus-Exe-Release\firebase_cpp_sdk\libs\windows\VS2019\MT\x64\Release\firebase_app.lib 
+D:\a\RasFocus-Exe-Release\RasFocus-Exe-Release\firebase_cpp_sdk\libs\windows\VS2019\MT\x64\Release\firebase_firestore.lib 
+D:\a\RasFocus-Exe-Release\RasFocus-Exe-Release\firebase_cpp_sdk\libs\windows\VS2019\MT\x64\Release\firebase_auth.lib 
+main.obj 
+prewindow.obj 
+tab_dashboard.obj 
+tab_family_link.obj 
+advanced_feature.obj 
+feature_browser.obj 
+bookmarks.obj 
+context_menu.obj 
+downloads_panel.obj 
+find_in_page.obj 
+history_panel.obj 
+settings.obj 
+keyboard_shortcuts.obj 
+tab_pdf_workspace.obj 
+upgrade.obj 
+mini_browser.obj 
+tab_blocks.obj 
+tab_schedule_blocks.obj 
+tab_adult.obj 
+tab_deep_study.obj 
+tab_special.obj 
+tab_statistics.obj 
+tab_settings.obj 
+tab_utilities.obj 
+tab_device_block.obj 
+tab_diary.obj 
+accounts.obj 
+tab_phone_remote.obj 
+resources.res 
+libcpmt.lib(xlock.obj) : warning LNK4078: multiple '.voltbl' sections found with different attributes (00101A00)
+tab_phone_remote.obj : error LNK2001: unresolved external symbol "class Gdiplus::Color const ColBgContent" (?ColBgContent@@3VColor@Gdiplus@@B)
+RasFocus.exe : fatal error LNK1120: 1 unresolved externals
 
