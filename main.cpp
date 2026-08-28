@@ -121,11 +121,11 @@ bool hoverFeedbackClose  = false;
 // Sidebar tabs (Family Link যোগ করা হয়েছে)
 vector<wstring> sidebarTabs = {
     L"Dashboard", L"Blocks", L"Deep Study", L"Special", L"Statistics", L"Settings", L"Family Link",
-    L"RasBrowser", L"PDF Tools"
+    L"RasBrowser", L"PDF Tools", L"Phone Remote"
 };
 vector<wstring> sidebarIcons = {
     L"\xE80F", L"\xEA18", L"\xE7B3", L"\xE734", L"\xE9D2", L"\xE713", L"\xE8A5",
-    L"\xE774", L"\xEA38"
+    L"\xE774", L"\xEA38", L"\xE704"
 };
 
 // ==========================================
@@ -1131,6 +1131,7 @@ void DrawMainArea(Graphics& g, int w, int h) {
     else if (selectedTab == 6) { DrawPdfWorkspaceTab (g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 7) { DrawAccountsTab     (g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 8) { DrawFamilyLinkTab   (g, contentX, contentY, contentW, contentH); } // ← Family Link Tab Draw Call
+    else if (selectedTab == 11){ DrawPhoneRemoteTab  (g, contentX, contentY, contentW, contentH); } // ← Phone Remote Tab
     else if (selectedTab == 9) {
         // RasBrowser একটি আলাদা window-এ চলে; এখানে শুধু একটি নিউট্রাল ব্যাকগ্রাউন্ড দেখানো হচ্ছে
         SolidBrush bgBrush(ColBgContent);
@@ -1479,7 +1480,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (x >= 0.0f && x <= SIDEBAR_WIDTH && y >= tabsStartY) {
             int idx = (int)((y - tabsStartY) / tabH);
             if (idx >= 0 && idx < (int)sidebarTabs.size()) {
-                int logicalTab = (idx == 6) ? 8 : (idx == 7) ? 9 : (idx == 8) ? 10 : idx; // ← 7=RasBrowser→9, 8=PDFTools→10
+                int logicalTab = (idx == 6) ? 8 : (idx == 7) ? 9 : (idx == 8) ? 10 : (idx == 9) ? 11 : idx; // ← 7=RasBrowser→9, 8=PDFTools→10, 9=PhoneRemote→11
                 if (selectedTab != logicalTab) {
                     selectedTab = logicalTab;
                     HideAllWebViews();
@@ -1517,6 +1518,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         else if (selectedTab == 8) { // ← Family Link Mouse Click Handled
             float cX = (float)SIDEBAR_WIDTH, cY = (float)(TITLEBAR_HEIGHT + SUBHEADER_HEIGHT);
             ProcessFamilyLinkMouseClick(x, y, cX, cY, hWnd);
+        }
+        else if (selectedTab == 11) { // ← Phone Remote Mouse Click
+            float cX = (float)SIDEBAR_WIDTH, cY = (float)(TITLEBAR_HEIGHT + SUBHEADER_HEIGHT);
+            ProcessPhoneRemoteMouseClick(x, y, cX, cY, hWnd);
         }
         InvalidateRect(hWnd, NULL, FALSE);
         break;
