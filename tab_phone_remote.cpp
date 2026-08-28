@@ -1,23 +1,16 @@
 // ================================================================
-// tab_phone_remote.cpp
-// Phone থেকে PC Control — WiFi/Hotspot দিয়ে
+// tab_phone_remote.cpp  —  RustDesk-style PIN Connect
 //
-// Architecture:
-//   PC runs a raw HTTP+WebSocket server on port 9222.
-//   Phone browser (বা RasFocus Android app) opens:
-//       http://<PC-IP>:9222/
-//   Server serves an HTML control panel → phone screen এ
-//   দেখা যায়।  Phone থেকে command/click পাঠালে PC তে execute
-//   হয় এবং result WebSocket দিয়ে phone এ ফেরত আসে।
-//
-//   Supported commands (JSON over WebSocket):
-//     {"type":"shell","cmd":"dir"}        → CMD output
-//     {"type":"files","path":"C:\\"}      → file list JSON
-//     {"type":"screen"}                   → JPEG base64 frame
-//     {"type":"mouse","x":0.5,"y":0.3,   → PC mouse move/click
-//              "btn":"left","act":"click"}
-//     {"type":"key","vk":13}             → PC keypress
-//     {"type":"type","text":"hello"}     → PC keyboard type
+// How it works:
+//   1. PC generates a stable 6-digit PIN from its local IP.
+//   2. PC runs two servers:
+//        - UDP beacon on port 9223  →  responds to phone discovery
+//        - HTTP+WebSocket on port 9222  →  control panel
+//   3. Phone (RasFocus app) enters PIN once.
+//      App broadcasts UDP discovery packet containing the PIN.
+//      PC beacon responds with its IP.
+//      Phone saves IP → next time auto-connects (no PIN needed).
+//   4. Phone opens http://<discovered-ip>:9222 → full control.
 // ================================================================
 
 #ifndef _WINSOCKAPI_
@@ -34,787 +27,622 @@
 #include <ws2tcpip.h>
 #include <windows.h>
 #include <gdiplus.h>
+#include <wincrypt.h>
 #include <shellapi.h>
-#include <shlobj.h>
 
 #include <string>
 #include <vector>
 #include <thread>
 #include <atomic>
 #include <mutex>
-#include <sstream>
 #include <algorithm>
-#include <functional>
-#include <map>
+#include <sstream>
+#include <cstdio>
+#include <cstring>
 
-// SHA-1 for WebSocket handshake
-#include <wincrypt.h>
 #pragma comment(lib, "Crypt32.lib")
+#pragma comment(lib, "ws2_32.lib")
+#pragma comment(lib, "gdiplus.lib")
 
 using namespace Gdiplus;
 using namespace std;
 
-// ── State ────────────────────────────────────────────────────────
-bool  g_phoneRemoteRunning = false;
-int   g_phoneRemotePort    = 9222;
-int   g_connectedClients   = 0;
+// ── Globals ──────────────────────────────────────────────────────
+bool        g_phoneRemoteRunning = false;
+int         g_phoneRemotePort    = 9222;
+int         g_phoneRemoteUdpPort = 9223;
+int         g_connectedClients   = 0;
+std::string g_phoneRemotePin     = "";
 
-static atomic<bool>  s_serverActive  { false };
-static SOCKET        s_listenSock    = INVALID_SOCKET;
-static thread        s_serverThread;
-static mutex         s_clientsMtx;
-static vector<SOCKET> s_wsClients;   // active WebSocket clients
+static atomic<bool>   s_active { false };
+static SOCKET         s_httpSock = INVALID_SOCKET;
+static SOCKET         s_udpSock  = INVALID_SOCKET;
+static vector<SOCKET> s_wsClients;
+static mutex          s_mtx;
+static bool           s_hovStart = false, s_hovStop = false;
 
-// UI hover state
-static bool s_hovStart = false, s_hovStop = false, s_hovCopy = false;
-
-// ── Base64 encode ─────────────────────────────────────────────────
-static string Base64Encode(const vector<BYTE>& data) {
-    static const char* tbl = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    string out; out.reserve(((data.size() + 2) / 3) * 4);
-    for (size_t i = 0; i < data.size(); i += 3) {
-        BYTE b0 = data[i], b1 = (i+1<data.size())?data[i+1]:0, b2 = (i+2<data.size())?data[i+2]:0;
-        out += tbl[b0 >> 2];
-        out += tbl[((b0&3)<<4)|(b1>>4)];
-        out += (i+1<data.size()) ? tbl[((b1&0xF)<<2)|(b2>>6)] : '=';
-        out += (i+2<data.size()) ? tbl[b2&0x3F]               : '=';
+// ── Get local IP ─────────────────────────────────────────────────
+static string GetLocalIp() {
+    WSADATA wd; WSAStartup(MAKEWORD(2,2), &wd);
+    char host[256] = {}; gethostname(host, sizeof(host));
+    struct addrinfo hints = {}, *res = nullptr;
+    hints.ai_family = AF_INET;
+    getaddrinfo(host, nullptr, &hints, &res);
+    string ip;
+    for (auto* p = res; p; p = p->ai_next) {
+        char buf[64];
+        inet_ntop(AF_INET, &((sockaddr_in*)p->ai_addr)->sin_addr, buf, sizeof(buf));
+        if (strncmp(buf, "127.", 4) != 0) { ip = buf; break; }
     }
-    return out;
+    if (res) freeaddrinfo(res);
+    return ip.empty() ? "127.0.0.1" : ip;
 }
 
-// ── SHA-1 via WinCrypt (for WebSocket handshake) ──────────────────
-static string SHA1Base64(const string& input) {
-    HCRYPTPROV hProv = 0; HCRYPTHASH hHash = 0;
-    if (!CryptAcquireContextA(&hProv, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT)) return "";
-    if (!CryptCreateHash(hProv, CALG_SHA1, 0, 0, &hHash)) { CryptReleaseContext(hProv,0); return ""; }
-    CryptHashData(hHash, (const BYTE*)input.c_str(), (DWORD)input.size(), 0);
-    BYTE hash[20]; DWORD hashLen = 20;
-    CryptGetHashParam(hHash, HP_HASHVAL, hash, &hashLen, 0);
-    CryptDestroyHash(hHash); CryptReleaseContext(hProv, 0);
-    vector<BYTE> v(hash, hash+20);
-    return Base64Encode(v);
+// ── Generate 6-digit PIN from IP ─────────────────────────────────
+// PIN is stable for a given IP — same IP always gives same PIN.
+// Format: 6 decimal digits, e.g. "483920"
+static string GeneratePin(const string& ip) {
+    // Simple but stable: use last two octets + fixed offset
+    // e.g. 192.168.43.159 → "43159" padded/truncated to 6
+    unsigned int a=0,b=0,c=0,d=0;
+    sscanf(ip.c_str(), "%u.%u.%u.%u", &a, &b, &c, &d);
+    // Combine to make exactly 6 digits deterministically
+    unsigned long val = ((a ^ 0xAB) * 7919UL + (b ^ 0x5C) * 6271UL
+                       + (c ^ 0xD3) * 4973UL + (d ^ 0x9E) * 3877UL) % 900000UL + 100000UL;
+    char buf[8]; sprintf(buf, "%06lu", val % 900000UL + 100000UL);
+    return string(buf, 6);
+}
+
+// ── Base64 ───────────────────────────────────────────────────────
+static string B64Enc(const vector<BYTE>& d) {
+    static const char* t = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    string o; o.reserve(((d.size()+2)/3)*4);
+    for (size_t i=0; i<d.size(); i+=3) {
+        BYTE b0=d[i], b1=(i+1<d.size())?d[i+1]:0, b2=(i+2<d.size())?d[i+2]:0;
+        o+=t[b0>>2]; o+=t[((b0&3)<<4)|(b1>>4)];
+        o+=(i+1<d.size())?t[((b1&0xF)<<2)|(b2>>6)]:'=';
+        o+=(i+2<d.size())?t[b2&0x3F]:'=';
+    }
+    return o;
+}
+
+// ── SHA-1 (WinCrypt) for WebSocket handshake ──────────────────────
+static string Sha1B64(const string& s) {
+    HCRYPTPROV hp=0; HCRYPTHASH hh=0;
+    if (!CryptAcquireContextA(&hp,NULL,NULL,PROV_RSA_FULL,CRYPT_VERIFYCONTEXT)) return "";
+    CryptCreateHash(hp,CALG_SHA1,0,0,&hh);
+    CryptHashData(hh,(const BYTE*)s.c_str(),(DWORD)s.size(),0);
+    BYTE hash[20]; DWORD hl=20;
+    CryptGetHashParam(hh,HP_HASHVAL,hash,&hl,0);
+    CryptDestroyHash(hh); CryptReleaseContext(hp,0);
+    return B64Enc(vector<BYTE>(hash,hash+20));
 }
 
 // ── Screen capture → JPEG base64 ─────────────────────────────────
-static string CaptureScreenJpegBase64(int quality = 30) {
-    int sw = GetSystemMetrics(SM_CXSCREEN);
-    int sh = GetSystemMetrics(SM_CYSCREEN);
-    // Scale down for bandwidth
-    int dw = sw / 2, dh = sh / 2;
-
-    HDC hdcScreen = GetDC(NULL);
-    HDC hdcMem    = CreateCompatibleDC(hdcScreen);
-    HBITMAP hBmp  = CreateCompatibleBitmap(hdcScreen, dw, dh);
-    HBITMAP hOld  = (HBITMAP)SelectObject(hdcMem, hBmp);
-    SetStretchBltMode(hdcMem, HALFTONE);
-    StretchBlt(hdcMem, 0, 0, dw, dh, hdcScreen, 0, 0, sw, sh, SRCCOPY);
-    SelectObject(hdcMem, hOld);
-    DeleteDC(hdcMem);
-    ReleaseDC(NULL, hdcScreen);
-
-    // GDI+ encode to JPEG in memory
-    Bitmap bmp(hBmp, NULL);
-    DeleteObject(hBmp);
-
-    CLSID jpegClsid;
-    {
-        UINT num=0,size=0;
-        GetImageEncodersSize(&num,&size);
-        vector<BYTE> buf(size);
-        GetImageEncoders(num,size,(ImageCodecInfo*)buf.data());
-        for(UINT i=0;i<num;i++){
-            if(wcscmp(((ImageCodecInfo*)buf.data())[i].MimeType,L"image/jpeg")==0){
-                jpegClsid=((ImageCodecInfo*)buf.data())[i].Clsid; break;
-            }
-        }
-    }
+static string ScreenJpeg(int q=25) {
+    int sw=GetSystemMetrics(SM_CXSCREEN), sh=GetSystemMetrics(SM_CYSCREEN);
+    int dw=sw/2, dh=sh/2;
+    HDC hScr=GetDC(NULL), hMem=CreateCompatibleDC(hScr);
+    HBITMAP hBmp=CreateCompatibleBitmap(hScr,dw,dh);
+    HBITMAP hOld=(HBITMAP)SelectObject(hMem,hBmp);
+    SetStretchBltMode(hMem,HALFTONE);
+    StretchBlt(hMem,0,0,dw,dh,hScr,0,0,sw,sh,SRCCOPY);
+    SelectObject(hMem,hOld); DeleteDC(hMem); ReleaseDC(NULL,hScr);
+    Bitmap bmp(hBmp,NULL); DeleteObject(hBmp);
+    CLSID jc; UINT n=0,sz=0;
+    GetImageEncodersSize(&n,&sz);
+    vector<BYTE> eb(sz);
+    GetImageEncoders(n,sz,(ImageCodecInfo*)eb.data());
+    for(UINT i=0;i<n;i++) if(!wcscmp(((ImageCodecInfo*)eb.data())[i].MimeType,L"image/jpeg")){jc=((ImageCodecInfo*)eb.data())[i].Clsid;break;}
     EncoderParameters ep; ep.Count=1;
-    ep.Parameter[0].Guid=EncoderQuality;
-    ep.Parameter[0].Type=EncoderParameterValueTypeLong;
-    ep.Parameter[0].NumberOfValues=1;
-    ULONG q=(ULONG)quality;
-    ep.Parameter[0].Value=&q;
-
-    IStream* pStream=NULL; CreateStreamOnHGlobal(NULL,TRUE,&pStream);
-    bmp.Save(pStream, &jpegClsid, &ep);
-
-    STATSTG st; pStream->Stat(&st,STATFLAG_NONAME);
+    ep.Parameter[0].Guid=EncoderQuality; ep.Parameter[0].Type=EncoderParameterValueTypeLong;
+    ep.Parameter[0].NumberOfValues=1; ULONG qv=(ULONG)q; ep.Parameter[0].Value=&qv;
+    IStream* ps=NULL; CreateStreamOnHGlobal(NULL,TRUE,&ps);
+    bmp.Save(ps,&jc,&ep);
+    STATSTG st; ps->Stat(&st,STATFLAG_NONAME);
     ULONG len=(ULONG)st.cbSize.QuadPart;
-    LARGE_INTEGER li; li.QuadPart=0; pStream->Seek(li,STREAM_SEEK_SET,NULL);
-    vector<BYTE> imgData(len);
-    pStream->Read(imgData.data(),len,NULL);
-    pStream->Release();
-
-    return Base64Encode(imgData);
+    LARGE_INTEGER li; li.QuadPart=0; ps->Seek(li,STREAM_SEEK_SET,NULL);
+    vector<BYTE> img(len); ps->Read(img.data(),len,NULL); ps->Release();
+    return B64Enc(img);
 }
 
-// ── File list as JSON ─────────────────────────────────────────────
-static string GetFileListJson(const string& path) {
-    string json = "[";
-    bool first = true;
-    WIN32_FIND_DATAA fd;
-    string pattern = path + "\\*";
-    HANDLE h = FindFirstFileA(pattern.c_str(), &fd);
-    if (h == INVALID_HANDLE_VALUE) return "[]";
+// ── File list JSON ────────────────────────────────────────────────
+static string FilesJson(const string& path) {
+    string j="["; bool first=true;
+    WIN32_FIND_DATAA fd; string pat=path+"\\*";
+    HANDLE h=FindFirstFileA(pat.c_str(),&fd);
+    if(h==INVALID_HANDLE_VALUE) return "[]";
     do {
-        string name = fd.cFileName;
-        if (name=="."||name=="..") continue;
-        bool isDir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
-        ULONGLONG sz = ((ULONGLONG)fd.nFileSizeHigh << 32) | fd.nFileSizeLow;
-        if (!first) json += ",";
-        json += "{\"name\":\""; 
-        // escape backslashes and quotes
-        for (char c : name) { if(c=='"') json+="\\\""; else json+=c; }
-        json += "\",\"dir\":"; json += isDir?"true":"false";
-        json += ",\"size\":"; json += to_string(sz);
-        json += "}";
-        first = false;
-    } while (FindNextFileA(h, &fd));
-    FindClose(h);
-    return json + "]";
+        string nm=fd.cFileName; if(nm=="."||nm=="..") continue;
+        bool dir=(fd.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY)!=0;
+        ULONGLONG sz=((ULONGLONG)fd.nFileSizeHigh<<32)|fd.nFileSizeLow;
+        if(!first) j+=","; first=false;
+        j+="{\"name\":\"";
+        for(char c:nm){if(c=='"')j+="\\\""; else j+=c;} j+="\",";
+        j+="\"dir\":"; j+=dir?"true":"false"; j+=",\"size\":"; j+=to_string(sz); j+="}";
+    } while(FindNextFileA(h,&fd));
+    FindClose(h); return j+"]";
 }
 
-// ── Run CMD command, capture output ──────────────────────────────
-static string RunShellCommand(const string& cmd) {
-    string result;
-    string fullCmd = "cmd.exe /c \"" + cmd + "\" 2>&1";
+// ── CMD execute ───────────────────────────────────────────────────
+static string RunCmd(const string& cmd) {
+    string out, fc="cmd.exe /c \""+cmd+"\" 2>&1";
     SECURITY_ATTRIBUTES sa{sizeof(sa),NULL,TRUE};
-    HANDLE hR,hW;
-    if (!CreatePipe(&hR,&hW,&sa,0)) return "pipe error";
+    HANDLE hR,hW; if(!CreatePipe(&hR,&hW,&sa,0)) return "pipe error";
     STARTUPINFOA si{}; si.cb=sizeof(si);
     si.hStdOutput=hW; si.hStdError=hW;
-    si.dwFlags=STARTF_USESTDHANDLES|STARTF_USESHOWWINDOW;
-    si.wShowWindow=SW_HIDE;
+    si.dwFlags=STARTF_USESTDHANDLES|STARTF_USESHOWWINDOW; si.wShowWindow=SW_HIDE;
     PROCESS_INFORMATION pi{};
-    vector<char> buf(fullCmd.begin(),fullCmd.end()); buf.push_back(0);
-    if (CreateProcessA(NULL,buf.data(),NULL,NULL,TRUE,CREATE_NO_WINDOW,NULL,NULL,&si,&pi)) {
-        CloseHandle(hW);
-        char tmp[1024]; DWORD rd;
-        while (ReadFile(hR,tmp,sizeof(tmp)-1,&rd,NULL)&&rd>0) { tmp[rd]=0; result+=tmp; }
+    vector<char> buf(fc.begin(),fc.end()); buf.push_back(0);
+    if(CreateProcessA(NULL,buf.data(),NULL,NULL,TRUE,CREATE_NO_WINDOW,NULL,NULL,&si,&pi)){
+        CloseHandle(hW); char tmp[1024]; DWORD rd;
+        while(ReadFile(hR,tmp,sizeof(tmp)-1,&rd,NULL)&&rd>0){tmp[rd]=0;out+=tmp;}
         WaitForSingleObject(pi.hProcess,5000);
         CloseHandle(pi.hProcess); CloseHandle(pi.hThread);
-    } else { CloseHandle(hW); result="exec failed"; }
+    } else { CloseHandle(hW); out="exec failed"; }
     CloseHandle(hR);
-    // Trim to 8KB
-    if (result.size()>8192) result=result.substr(0,8192)+"...(truncated)";
-    return result;
+    if(out.size()>8192) out=out.substr(0,8192)+"...(truncated)";
+    return out;
 }
 
-// ── Simple JSON field extractor ───────────────────────────────────
-static string JsonGet(const string& json, const string& key) {
-    string search = "\"" + key + "\"";
-    size_t p = json.find(search);
-    if (p==string::npos) return "";
-    p = json.find(':',p+search.size());
-    if (p==string::npos) return "";
-    p++;
-    while (p<json.size()&&(json[p]==' '||json[p]=='\t')) p++;
-    if (p>=json.size()) return "";
-    if (json[p]=='"') {
-        size_t e=json.find('"',p+1);
-        if (e==string::npos) return "";
-        return json.substr(p+1,e-p-1);
-    }
-    size_t e=p;
-    while(e<json.size()&&json[e]!=','&&json[e]!='}'&&json[e]!=']') e++;
-    string v=json.substr(p,e-p);
+// ── JSON field extract ────────────────────────────────────────────
+static string Jget(const string& j, const string& k) {
+    string sk="\""+k+"\""; size_t p=j.find(sk);
+    if(p==string::npos) return "";
+    p=j.find(':',p+sk.size()); if(p==string::npos) return "";
+    p++; while(p<j.size()&&(j[p]==' '||j[p]=='\t')) p++;
+    if(p>=j.size()) return "";
+    if(j[p]=='"'){size_t e=j.find('"',p+1);if(e==string::npos)return "";return j.substr(p+1,e-p-1);}
+    size_t e=p; while(e<j.size()&&j[e]!=','&&j[e]!='}'&&j[e]!=']') e++;
+    string v=j.substr(p,e-p);
     while(!v.empty()&&(v.back()==' '||v.back()=='\r'||v.back()=='\n')) v.pop_back();
     return v;
 }
 
-// ── WebSocket frame send ──────────────────────────────────────────
-static void WsSend(SOCKET s, const string& text) {
-    size_t len = text.size();
-    vector<BYTE> frame;
-    frame.push_back(0x81); // FIN + text opcode
-    if (len < 126) {
-        frame.push_back((BYTE)len);
-    } else if (len < 65536) {
-        frame.push_back(126);
-        frame.push_back((BYTE)((len>>8)&0xFF));
-        frame.push_back((BYTE)(len&0xFF));
-    } else {
-        frame.push_back(127);
-        for(int i=7;i>=0;i--) frame.push_back((BYTE)((len>>(8*i))&0xFF));
-    }
-    frame.insert(frame.end(), text.begin(), text.end());
-    send(s, (char*)frame.data(), (int)frame.size(), 0);
+// ── JSON string escape ────────────────────────────────────────────
+static string Jescape(const string& s) {
+    string o; for(char c:s){
+        if(c=='"') o+="\\\""; else if(c=='\\') o+="\\\\";
+        else if(c=='\n') o+="\\n"; else if(c=='\r') o+="\\r";
+        else if(c=='\t') o+="\\t"; else o+=c;
+    } return o;
 }
 
-// ── WebSocket frame receive ───────────────────────────────────────
+// ── WebSocket frame ───────────────────────────────────────────────
+static void WsSend(SOCKET s, const string& txt) {
+    size_t len=txt.size(); vector<BYTE> f;
+    f.push_back(0x81);
+    if(len<126) f.push_back((BYTE)len);
+    else if(len<65536){f.push_back(126);f.push_back((BYTE)(len>>8));f.push_back((BYTE)(len&0xFF));}
+    else{f.push_back(127);for(int i=7;i>=0;i--)f.push_back((BYTE)((len>>(8*i))&0xFF));}
+    f.insert(f.end(),txt.begin(),txt.end());
+    send(s,(char*)f.data(),(int)f.size(),0);
+}
 static string WsRecv(SOCKET s) {
-    BYTE hdr[2]; if (recv(s,(char*)hdr,2,MSG_WAITALL)!=2) return "";
-    bool masked = (hdr[1]&0x80)!=0;
-    size_t len = hdr[1]&0x7F;
-    if (len==126) {
-        BYTE ext[2]; recv(s,(char*)ext,2,MSG_WAITALL);
-        len = ((size_t)ext[0]<<8)|ext[1];
-    } else if (len==127) {
-        BYTE ext[8]; recv(s,(char*)ext,8,MSG_WAITALL);
-        len=0; for(int i=0;i<8;i++) len=(len<<8)|ext[i];
-    }
-    BYTE mask[4]={0};
-    if (masked) recv(s,(char*)mask,4,MSG_WAITALL);
-    if (len>65536) return ""; // safety
-    vector<BYTE> data(len);
-    size_t got=0;
-    while(got<len) { int r=recv(s,(char*)data.data()+got,(int)(len-got),0); if(r<=0) break; got+=r; }
-    if (masked) for(size_t i=0;i<len;i++) data[i]^=mask[i%4];
+    BYTE h[2]; if(recv(s,(char*)h,2,MSG_WAITALL)!=2) return "";
+    bool masked=(h[1]&0x80)!=0; size_t len=h[1]&0x7F;
+    if(len==126){BYTE e[2];recv(s,(char*)e,2,MSG_WAITALL);len=((size_t)e[0]<<8)|e[1];}
+    else if(len==127){BYTE e[8];recv(s,(char*)e,8,MSG_WAITALL);len=0;for(int i=0;i<8;i++)len=(len<<8)|e[i];}
+    BYTE mask[4]={0}; if(masked) recv(s,(char*)mask,4,MSG_WAITALL);
+    if(len>65536) return "";
+    vector<BYTE> data(len); size_t got=0;
+    while(got<len){int r=recv(s,(char*)data.data()+got,(int)(len-got),0);if(r<=0)break;got+=r;}
+    if(masked) for(size_t i=0;i<len;i++) data[i]^=mask[i%4];
     return string(data.begin(),data.end());
 }
 
-// ── Handle one WebSocket client ───────────────────────────────────
-static void HandleWsClient(SOCKET client) {
-    {lock_guard<mutex> lk(s_clientsMtx); s_connectedClients++; g_connectedClients++;}
-    while (s_serverActive) {
-        string msg = WsRecv(client);
-        if (msg.empty()) break;
-
-        string type = JsonGet(msg, "type");
-        string resp;
-
-        if (type == "shell") {
-            string cmd = JsonGet(msg, "cmd");
-            string out = RunShellCommand(cmd);
-            // JSON escape output
-            string escaped;
-            for (char c : out) {
-                if (c=='"') escaped+="\\\"";
-                else if (c=='\\') escaped+="\\\\";
-                else if (c=='\n') escaped+="\\n";
-                else if (c=='\r') escaped+="\\r";
-                else if (c=='\t') escaped+="\\t";
-                else escaped+=c;
-            }
-            resp = "{\"type\":\"shell_result\",\"output\":\"" + escaped + "\"}";
-
-        } else if (type == "files") {
-            string path = JsonGet(msg, "path");
-            if (path.empty()) path = "C:\\";
-            resp = "{\"type\":\"files_result\",\"path\":\"";
-            for(char c:path){if(c=='\\')resp+="\\\\";else resp+=c;}
-            resp += "\",\"items\":" + GetFileListJson(path) + "}";
-
-        } else if (type == "screen") {
-            string b64 = CaptureScreenJpegBase64(25);
-            resp = "{\"type\":\"screen_frame\",\"jpeg\":\"" + b64 + "\"}";
-
-        } else if (type == "mouse") {
-            string xS = JsonGet(msg,"x"), yS = JsonGet(msg,"y");
-            string btn = JsonGet(msg,"btn"), act = JsonGet(msg,"act");
-            int sw = GetSystemMetrics(SM_CXSCREEN);
-            int sh = GetSystemMetrics(SM_CYSCREEN);
-            double fx = atof(xS.c_str()), fy = atof(yS.c_str());
-            int px = (int)(fx * sw), py = (int)(fy * sh);
-            SetCursorPos(px, py);
-            if (act == "click" || act == "down") {
-                bool right = (btn == "right");
-                mouse_event(right ? MOUSEEVENTF_RIGHTDOWN : MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0);
-                if (act == "click")
-                    mouse_event(right ? MOUSEEVENTF_RIGHTUP : MOUSEEVENTF_LEFTUP, 0, 0, 0, 0);
-            } else if (act == "up") {
-                bool right = (btn == "right");
-                mouse_event(right ? MOUSEEVENTF_RIGHTUP : MOUSEEVENTF_LEFTUP, 0, 0, 0, 0);
-            } else if (act == "scroll") {
-                string dir = JsonGet(msg,"dir");
-                int amount = (dir=="down") ? -120 : 120;
-                mouse_event(MOUSEEVENTF_WHEEL, 0, 0, (DWORD)amount, 0);
-            }
-            resp = "{\"type\":\"ok\"}";
-
-        } else if (type == "key") {
-            string vkS = JsonGet(msg,"vk");
-            int vk = atoi(vkS.c_str());
-            if (vk > 0) {
-                keybd_event((BYTE)vk, 0, 0, 0);
-                keybd_event((BYTE)vk, 0, KEYEVENTF_KEYUP, 0);
-            }
-            resp = "{\"type\":\"ok\"}";
-
-        } else if (type == "type") {
-            string text = JsonGet(msg,"text");
-            for (char c : text) {
-                SHORT vk = VkKeyScanA(c);
-                bool needShift = (HIBYTE(vk) & 1) != 0;
-                BYTE key = LOBYTE(vk);
-                if (needShift) keybd_event(VK_SHIFT,0,0,0);
-                keybd_event(key,0,0,0);
-                keybd_event(key,0,KEYEVENTF_KEYUP,0);
-                if (needShift) keybd_event(VK_SHIFT,0,KEYEVENTF_KEYUP,0);
-                Sleep(10);
-            }
-            resp = "{\"type\":\"ok\"}";
-
-        } else if (type == "ping") {
-            resp = "{\"type\":\"pong\"}";
+// ── WebSocket client handler ──────────────────────────────────────
+static void WsClient(SOCKET client) {
+    {lock_guard<mutex> lk(s_mtx); s_wsClients.push_back(client); g_connectedClients++;}
+    while(s_active) {
+        string msg=WsRecv(client); if(msg.empty()) break;
+        string type=Jget(msg,"type"), resp;
+        if(type=="shell"){
+            resp="{\"type\":\"shell_result\",\"output\":\""+Jescape(RunCmd(Jget(msg,"cmd")))+"\"}";
+        } else if(type=="files"){
+            string path=Jget(msg,"path"); if(path.empty()) path="C:\\";
+            string ep; for(char c:path){if(c=='\\')ep+="\\\\";else ep+=c;}
+            resp="{\"type\":\"files_result\",\"path\":\""+ep+"\",\"items\":"+FilesJson(path)+"}";
+        } else if(type=="screen"){
+            resp="{\"type\":\"screen_frame\",\"jpeg\":\""+ScreenJpeg()+"\"}";
+        } else if(type=="mouse"){
+            int sw=GetSystemMetrics(SM_CXSCREEN), sh=GetSystemMetrics(SM_CYSCREEN);
+            int px=(int)(atof(Jget(msg,"x").c_str())*sw);
+            int py=(int)(atof(Jget(msg,"y").c_str())*sh);
+            SetCursorPos(px,py);
+            string btn=Jget(msg,"btn"), act=Jget(msg,"act");
+            bool right=(btn=="right");
+            if(act=="click"||act=="down") mouse_event(right?MOUSEEVENTF_RIGHTDOWN:MOUSEEVENTF_LEFTDOWN,0,0,0,0);
+            if(act=="click"||act=="up")   mouse_event(right?MOUSEEVENTF_RIGHTUP:MOUSEEVENTF_LEFTUP,0,0,0,0);
+            if(act=="scroll"){string dir=Jget(msg,"dir");mouse_event(MOUSEEVENTF_WHEEL,0,0,(DWORD)(dir=="down"?-120:120),0);}
+            if(act=="dblclick"){mouse_event(MOUSEEVENTF_LEFTDOWN,0,0,0,0);mouse_event(MOUSEEVENTF_LEFTUP,0,0,0,0);Sleep(50);mouse_event(MOUSEEVENTF_LEFTDOWN,0,0,0,0);mouse_event(MOUSEEVENTF_LEFTUP,0,0,0,0);}
+            resp="{\"type\":\"ok\"}";
+        } else if(type=="key"){
+            int vk=atoi(Jget(msg,"vk").c_str());
+            if(vk>0){keybd_event((BYTE)vk,0,0,0);keybd_event((BYTE)vk,0,KEYEVENTF_KEYUP,0);}
+            resp="{\"type\":\"ok\"}";
+        } else if(type=="type"){
+            string txt=Jget(msg,"text");
+            for(char c:txt){SHORT vk=VkKeyScanA(c);bool sh=(HIBYTE(vk)&1)!=0;BYTE k=LOBYTE(vk);
+                if(sh)keybd_event(VK_SHIFT,0,0,0);keybd_event(k,0,0,0);keybd_event(k,0,KEYEVENTF_KEYUP,0);if(sh)keybd_event(VK_SHIFT,0,KEYEVENTF_KEYUP,0);Sleep(8);}
+            resp="{\"type\":\"ok\"}";
+        } else if(type=="ping"){
+            resp="{\"type\":\"pong\",\"pin\":\""+g_phoneRemotePin+"\"}";
         }
-
-        if (!resp.empty()) WsSend(client, resp);
+        if(!resp.empty()) WsSend(client,resp);
     }
     closesocket(client);
-    lock_guard<mutex> lk(s_clientsMtx); g_connectedClients--;
+    lock_guard<mutex> lk(s_mtx);
+    s_wsClients.erase(remove(s_wsClients.begin(),s_wsClients.end(),client),s_wsClients.end());
+    g_connectedClients--;
 }
 
-// ── HTML control panel served to phone browser ───────────────────
-static string BuildControlPanelHtml() {
-    return R"rawhtml(<!DOCTYPE html>
+// ── HTML Control Panel ────────────────────────────────────────────
+static string BuildHtml(const string& pin) {
+    // PIN embedded in HTML — phone can verify it
+    return R"(<!DOCTYPE html>
 <html lang="bn">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>RasFocus PC Remote</title>
+<title>RasFocus Remote</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-body{font-family:'Segoe UI',sans-serif;background:#0d0d0d;color:#e0e0e0;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
-#header{background:#005f6b;padding:10px 14px;display:flex;align-items:center;gap:10px;flex-shrink:0}
-#header h1{font-size:15px;font-weight:700;color:#fff}
-#status{font-size:11px;padding:2px 8px;border-radius:10px;background:#004a55;color:#7dffdd}
-#tabs{display:flex;background:#111;border-bottom:1px solid #222;flex-shrink:0}
-.tab{flex:1;padding:10px 4px;text-align:center;font-size:12px;cursor:pointer;color:#888;border-bottom:2px solid transparent;transition:.2s}
+body{font-family:'Segoe UI',sans-serif;background:#0d0d0d;color:#e0e0e0;height:100dvh;display:flex;flex-direction:column;overflow:hidden;user-select:none}
+#hdr{background:#005f6b;padding:8px 14px;display:flex;align-items:center;gap:8px;flex-shrink:0}
+#hdr h1{font-size:14px;font-weight:700;color:#fff;flex:1}
+#dot{width:10px;height:10px;border-radius:50%;background:#ff5252}
+#dot.on{background:#69f0ae;box-shadow:0 0 6px #69f0ae}
+#tabs{display:flex;background:#111;flex-shrink:0}
+.tab{flex:1;padding:10px 2px;text-align:center;font-size:11px;cursor:pointer;color:#666;border-bottom:2px solid transparent}
 .tab.active{color:#00bcd4;border-bottom-color:#00bcd4}
 #panels{flex:1;overflow:hidden;position:relative}
-.panel{display:none;position:absolute;inset:0;flex-direction:column;overflow:hidden}
+.panel{display:none;position:absolute;inset:0;flex-direction:column}
 .panel.active{display:flex}
-
-/* CMD Panel */
-#cmd-out{flex:1;overflow-y:auto;background:#0a0a0a;font-family:monospace;font-size:12px;padding:10px;white-space:pre-wrap;word-break:break-all;color:#00ff88}
-#cmd-bar{display:flex;gap:6px;padding:8px;background:#1a1a1a;flex-shrink:0}
-#cmd-input{flex:1;background:#111;border:1px solid #333;color:#fff;padding:8px 10px;border-radius:6px;font-size:13px}
-#cmd-btn{background:#005f6b;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:13px;cursor:pointer}
-
-/* Files Panel */
-#path-bar{padding:8px 10px;background:#111;font-size:12px;color:#aaa;flex-shrink:0;word-break:break-all}
-#file-list{flex:1;overflow-y:auto}
-.file-item{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid #1a1a1a;cursor:pointer;active:background:#1e1e1e}
-.file-item:active{background:#1e2e2e}
-.file-icon{font-size:20px;width:28px;text-align:center}
-.file-info{flex:1;min-width:0}
-.file-name{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.file-size{font-size:11px;color:#666;margin-top:2px}
-#file-up{padding:8px 14px;background:#1a1a1a;font-size:12px;color:#00bcd4;cursor:pointer;flex-shrink:0;border:none;width:100%;text-align:left}
-
-/* Screen Panel */
-#screen-wrap{flex:1;display:flex;align-items:center;justify-content:center;background:#000;overflow:hidden;position:relative}
-#screen-img{max-width:100%;max-height:100%;object-fit:contain;display:block}
-#screen-overlay{position:absolute;inset:0;touch-action:none}
-#screen-bar{display:flex;gap:6px;padding:8px;background:#1a1a1a;flex-shrink:0;align-items:center}
-#screen-bar label{font-size:12px;color:#888}
-#ctrl-toggle{margin-left:auto;background:#005f6b;color:#fff;border:none;padding:6px 12px;border-radius:6px;font-size:12px;cursor:pointer}
-#refresh-btn{background:#1e3a3a;color:#00bcd4;border:none;padding:6px 12px;border-radius:6px;font-size:12px;cursor:pointer}
-
-/* Keyboard/type bar */
-#type-bar{display:none;gap:6px;padding:8px;background:#111;flex-shrink:0}
-#type-bar.show{display:flex}
-#type-input{flex:1;background:#0d0d0d;border:1px solid #333;color:#fff;padding:7px 10px;border-radius:6px;font-size:13px}
-#type-send{background:#005f6b;color:#fff;border:none;padding:7px 12px;border-radius:6px;cursor:pointer;font-size:13px}
+/* CMD */
+#cout{flex:1;overflow-y:auto;background:#080808;font:12px/1.5 monospace;padding:8px;white-space:pre-wrap;word-break:break-all;color:#00e676}
+#cbar{display:flex;gap:6px;padding:7px;background:#181818;flex-shrink:0}
+#cin{flex:1;background:#111;border:1px solid #2a2a2a;color:#fff;padding:7px 9px;border-radius:6px;font-size:13px}
+#cbtn{background:#005f6b;color:#fff;border:none;padding:7px 14px;border-radius:6px;cursor:pointer;font-size:13px}
+/* Files */
+#pbar{padding:7px 12px;background:#111;font-size:11px;color:#888;flex-shrink:0;word-break:break-all}
+#flist{flex:1;overflow-y:auto}
+.fi{display:flex;align-items:center;gap:10px;padding:10px 13px;border-bottom:1px solid #1a1a1a;cursor:pointer}
+.fi:active{background:#1e2e2e}
+.fic{font-size:19px;width:26px;text-align:center}
+.fin{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fsz{font-size:10px;color:#555;margin-top:1px}
+#fup{width:100%;padding:8px 13px;background:#1a1a1a;color:#00bcd4;border:none;font-size:12px;cursor:pointer;text-align:left;flex-shrink:0}
+/* Screen */
+#swrap{flex:1;display:flex;align-items:center;justify-content:center;background:#000;position:relative;overflow:hidden}
+#simg{max-width:100%;max-height:100%;object-fit:contain;display:block;touch-action:none}
+#sov{position:absolute;inset:0;touch-action:none}
+#sbar{display:flex;gap:5px;padding:7px;background:#181818;flex-shrink:0;align-items:center}
+#sbar label{font-size:11px;color:#666}
+#rbtn{background:#1e3a3a;color:#00bcd4;border:none;padding:5px 10px;border-radius:6px;font-size:11px;cursor:pointer;margin-left:auto}
+#ctbtn{background:#005f6b;color:#fff;border:none;padding:5px 10px;border-radius:6px;font-size:11px;cursor:pointer}
+#tbar{display:none;gap:5px;padding:7px;background:#111;flex-shrink:0}
+#tbar.show{display:flex}
+#tin{flex:1;background:#0d0d0d;border:1px solid #2a2a2a;color:#fff;padding:6px 9px;border-radius:6px;font-size:13px}
+#tsnd{background:#005f6b;color:#fff;border:none;padding:6px 11px;border-radius:6px;cursor:pointer}
+/* Keys overlay (screen) */
+#keys{display:none;flex-wrap:wrap;gap:4px;padding:6px;background:#111;flex-shrink:0}
+#keys.show{display:flex}
+.key{background:#1e1e1e;color:#ccc;border:none;padding:6px 10px;border-radius:5px;font-size:12px;cursor:pointer}
+.key:active{background:#333}
 </style>
 </head>
 <body>
-<div id="header">
-  <h1>📡 RasFocus PC Remote</h1>
-  <span id="status">Connecting...</span>
+<div id="hdr">
+  <span id="dot"></span>
+  <h1>📡 RasFocus Remote</h1>
+  <span style="font-size:11px;color:#7dffdd">PIN: )" + pin + R"(</span>
 </div>
 <div id="tabs">
-  <div class="tab active" onclick="switchTab('cmd')">🖥️ CMD</div>
-  <div class="tab" onclick="switchTab('files')">📁 Files</div>
-  <div class="tab" onclick="switchTab('screen')">🖼️ Screen</div>
+  <div class="tab active" onclick="swTab('cmd')">🖥️ CMD</div>
+  <div class="tab" onclick="swTab('files')">📁 Files</div>
+  <div class="tab" onclick="swTab('screen')">🖼️ Screen</div>
 </div>
 <div id="panels">
-  <!-- CMD -->
   <div class="panel active" id="panel-cmd">
-    <div id="cmd-out">PC এর সাথে connect হচ্ছে...\n</div>
-    <div id="cmd-bar">
-      <input id="cmd-input" placeholder="command লেখো..." onkeydown="if(event.key==='Enter')sendCmd()">
-      <button id="cmd-btn" onclick="sendCmd()">▶</button>
+    <div id="cout">Connecting...\n</div>
+    <div id="cbar">
+      <input id="cin" placeholder="command..." onkeydown="if(event.key==='Enter')sc()">
+      <button id="cbtn" onclick="sc()">▶</button>
     </div>
   </div>
-  <!-- Files -->
   <div class="panel" id="panel-files">
-    <button id="file-up" onclick="goUp()">⬆ উপরে যাও</button>
-    <div id="path-bar">C:\</div>
-    <div id="file-list">Loading...</div>
+    <button id="fup" onclick="gup()">⬆ উপরে</button>
+    <div id="pbar">C:\</div>
+    <div id="flist"></div>
   </div>
-  <!-- Screen -->
   <div class="panel" id="panel-screen">
-    <div id="screen-bar">
-      <label>Live PC Screen</label>
-      <button id="refresh-btn" onclick="refreshScreen()">🔄 Refresh</button>
-      <button id="ctrl-toggle" onclick="toggleCtrl()">Control: OFF</button>
+    <div id="sbar">
+      <label>Live Screen</label>
+      <button id="rbtn" onclick="rf()">🔄</button>
+      <button id="ctbtn" onclick="tgCtrl()">Control: OFF</button>
     </div>
-    <div id="type-bar">
-      <input id="type-input" placeholder="Type করো...">
-      <button id="type-send" onclick="sendType()">Send</button>
+    <div id="keys">
+      <button class="key" onclick="sk(27)">Esc</button>
+      <button class="key" onclick="sk(9)">Tab</button>
+      <button class="key" onclick="sk(13)">Enter</button>
+      <button class="key" onclick="sk(8)">⌫</button>
+      <button class="key" onclick="sk(46)">Del</button>
+      <button class="key" onclick="sk(37)">◀</button>
+      <button class="key" onclick="sk(38)">▲</button>
+      <button class="key" onclick="sk(40)">▼</button>
+      <button class="key" onclick="sk(39)">▶</button>
+      <button class="key" onclick="sk(91)">Win</button>
+      <button class="key" onclick="sk(18)">Alt</button>
+      <button class="key" onclick="sk(17)">Ctrl</button>
     </div>
-    <div id="screen-wrap">
-      <img id="screen-img" src="" alt="Loading...">
-      <div id="screen-overlay"></div>
+    <div id="tbar">
+      <input id="tin" placeholder="Type...">
+      <button id="tsnd" onclick="stype()">⌨️</button>
+    </div>
+    <div id="swrap">
+      <img id="simg" src="" alt="">
+      <div id="sov"></div>
     </div>
   </div>
 </div>
-
 <script>
-let ws, curPath = 'C:\\', ctrlMode = false, liveScreen = false, liveTimer = null;
-
-function connect() {
-  ws = new WebSocket('ws://' + location.host + '/ws');
-  ws.onopen = () => {
-    document.getElementById('status').textContent = '✅ Connected';
-    document.getElementById('cmd-out').textContent = '✅ PC connected! Command দাও:\n\n';
-  };
-  ws.onclose = () => {
-    document.getElementById('status').textContent = '❌ Disconnected';
-    setTimeout(connect, 2000);
-  };
-  ws.onmessage = (e) => {
-    const d = JSON.parse(e.data);
-    if (d.type === 'shell_result') {
-      const out = document.getElementById('cmd-out');
-      out.textContent += d.output + '\n';
-      out.scrollTop = out.scrollHeight;
-    } else if (d.type === 'files_result') {
-      renderFiles(d.path, d.items);
-    } else if (d.type === 'screen_frame') {
-      document.getElementById('screen-img').src = 'data:image/jpeg;base64,' + d.jpeg;
-      if (liveScreen) liveTimer = setTimeout(refreshScreen, 300);
-    }
+var ws,cp='C:\\',ctrl=false,live=false,lt=null;
+function conn(){
+  ws=new WebSocket('ws://'+location.host+'/ws');
+  ws.onopen=function(){document.getElementById('dot').className='on';document.getElementById('cout').textContent='✅ Connected!\n';};
+  ws.onclose=function(){document.getElementById('dot').className='';setTimeout(conn,2000);};
+  ws.onmessage=function(e){
+    var d=JSON.parse(e.data);
+    if(d.type==='shell_result'){var o=document.getElementById('cout');o.textContent+=d.output+'\n';o.scrollTop=o.scrollHeight;}
+    else if(d.type==='files_result'){rf2(d.path,d.items);}
+    else if(d.type==='screen_frame'){document.getElementById('simg').src='data:image/jpeg;base64,'+d.jpeg;if(live)lt=setTimeout(rf,400);}
   };
 }
-
-function send(obj) { if(ws&&ws.readyState===1) ws.send(JSON.stringify(obj)); }
-function sendCmd() {
-  const inp = document.getElementById('cmd-input');
-  const cmd = inp.value.trim(); if(!cmd) return;
-  const out = document.getElementById('cmd-out');
-  out.textContent += '> ' + cmd + '\n';
-  out.scrollTop = out.scrollHeight;
-  send({type:'shell', cmd});
-  inp.value = '';
+function snd(o){if(ws&&ws.readyState===1)ws.send(JSON.stringify(o));}
+function sc(){var i=document.getElementById('cin'),c=i.value.trim();if(!c)return;var o=document.getElementById('cout');o.textContent+='> '+c+'\n';snd({type:'shell',cmd:c});i.value='';}
+function swTab(n){
+  var tabs=['cmd','files','screen'];
+  document.querySelectorAll('.tab').forEach(function(t,i){t.classList.toggle('active',tabs[i]===n);});
+  document.querySelectorAll('.panel').forEach(function(p){p.classList.toggle('active',p.id==='panel-'+n);});
+  if(n==='files')lf(cp);
+  if(n==='screen')rf();
 }
-function switchTab(name) {
-  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',['cmd','files','screen'][i]===name));
-  document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id==='panel-'+name));
-  if(name==='files') loadFiles(curPath);
-  if(name==='screen') refreshScreen();
-}
-function loadFiles(path) {
-  curPath = path;
-  document.getElementById('path-bar').textContent = path;
-  document.getElementById('file-list').textContent = 'Loading...';
-  send({type:'files', path});
-}
-function renderFiles(path, items) {
-  curPath = path;
-  document.getElementById('path-bar').textContent = path;
-  const el = document.getElementById('file-list');
-  el.innerHTML = '';
-  items.forEach(f => {
-    const div = document.createElement('div');
-    div.className = 'file-item';
-    div.innerHTML = `<span class="file-icon">${f.dir?'📁':'📄'}</span>
-      <div class="file-info"><div class="file-name">${f.name}</div>
-      <div class="file-size">${f.dir?'Folder':fmtSize(f.size)}</div></div>`;
-    if(f.dir) div.onclick = ()=>loadFiles(path+'\\'+f.name);
-    el.appendChild(div);
+function lf(p){cp=p;document.getElementById('pbar').textContent=p;document.getElementById('flist').textContent='...';snd({type:'files',path:p});}
+function rf2(p,it){
+  cp=p;document.getElementById('pbar').textContent=p;
+  var el=document.getElementById('flist');el.innerHTML='';
+  it.forEach(function(f){
+    var d=document.createElement('div');d.className='fi';
+    d.innerHTML='<span class="fic">'+(f.dir?'📁':'📄')+'</span><div><div class="fin">'+f.name+'</div><div class="fsz">'+(f.dir?'Folder':fsz(f.size))+'</div></div>';
+    if(f.dir)d.onclick=function(){lf(p+'\\'+f.name);};
+    el.appendChild(d);
   });
 }
-function goUp() {
-  const parts = curPath.split('\\').filter(Boolean);
-  if(parts.length<=1){loadFiles('C:\\');return;}
-  parts.pop(); loadFiles(parts.join('\\')+(parts.length===1?'\\':''));
+function gup(){var parts=cp.split('\\').filter(Boolean);if(parts.length<=1){lf('C:\\');return;}parts.pop();lf(parts.join('\\')+(parts.length===1?'\\':''));}
+function fsz(n){if(n<1024)return n+'B';if(n<1048576)return(n/1024).toFixed(1)+'KB';return(n/1048576).toFixed(1)+'MB';}
+function rf(){clearTimeout(lt);snd({type:'screen'});}
+function tgCtrl(){
+  ctrl=!ctrl;
+  document.getElementById('ctbtn').textContent='Control: '+(ctrl?'ON':'OFF');
+  document.getElementById('ctbtn').style.background=ctrl?'#b71c1c':'#005f6b';
+  document.getElementById('tbar').className=ctrl?'show':'';
+  document.getElementById('keys').className=ctrl?'show':'';
+  live=ctrl; if(live)rf(); else clearTimeout(lt);
 }
-function fmtSize(n){if(n<1024)return n+'B';if(n<1048576)return(n/1024).toFixed(1)+'KB';return(n/1048576).toFixed(1)+'MB';}
-
-function refreshScreen() {
-  clearTimeout(liveTimer);
-  send({type:'screen'});
-}
-function toggleCtrl() {
-  ctrlMode = !ctrlMode;
-  document.getElementById('ctrl-toggle').textContent = 'Control: '+(ctrlMode?'ON':'OFF');
-  document.getElementById('ctrl-toggle').style.background = ctrlMode?'#b71c1c':'#005f6b';
-  document.getElementById('type-bar').className = ctrlMode?'show':'';
-  liveScreen = ctrlMode;
-  if(liveScreen) refreshScreen();
-  else clearTimeout(liveTimer);
-}
-function sendType() {
-  const inp = document.getElementById('type-input');
-  if(inp.value) { send({type:'type',text:inp.value}); inp.value=''; }
-}
-
-// Screen touch → mouse
-const ov = document.getElementById('screen-overlay');
-function toRel(e) {
-  const img = document.getElementById('screen-img');
-  const r = img.getBoundingClientRect();
-  const t = e.changedTouches?e.changedTouches[0]:e;
-  return { x: Math.max(0,Math.min(1,(t.clientX-r.left)/r.width)),
-           y: Math.max(0,Math.min(1,(t.clientY-r.top)/r.height)) };
-}
-ov.addEventListener('touchstart', e=>{
-  if(!ctrlMode)return; e.preventDefault();
-  const p=toRel(e); send({type:'mouse',x:p.x,y:p.y,btn:'left',act:'down'});
-},{passive:false});
-ov.addEventListener('touchend', e=>{
-  if(!ctrlMode)return; e.preventDefault();
-  const p=toRel(e); send({type:'mouse',x:p.x,y:p.y,btn:'left',act:'up'});
-},{passive:false});
-ov.addEventListener('touchmove', e=>{
-  if(!ctrlMode)return; e.preventDefault();
-  const p=toRel(e); send({type:'mouse',x:p.x,y:p.y,btn:'left',act:'move'});
-},{passive:false});
-
-// Special keys
-document.addEventListener('keydown', e=>{
-  if(!ctrlMode)return;
-  const map={Enter:13,Backspace:8,Escape:27,ArrowLeft:37,ArrowRight:39,ArrowUp:38,ArrowDown:40,Delete:46,Tab:9};
-  if(map[e.key]) send({type:'key',vk:map[e.key]});
-});
-
-connect();
+function sk(vk){snd({type:'key',vk:vk});}
+function stype(){var i=document.getElementById('tin');if(i.value){snd({type:'type',text:i.value});i.value='';}}
+var ov=document.getElementById('sov'),touching=false;
+function rel(e){var img=document.getElementById('simg'),r=img.getBoundingClientRect(),t=e.changedTouches?e.changedTouches[0]:e;return{x:Math.max(0,Math.min(1,(t.clientX-r.left)/r.width)),y:Math.max(0,Math.min(1,(t.clientY-r.top)/r.height))};}
+ov.addEventListener('touchstart',function(e){if(!ctrl)return;e.preventDefault();var p=rel(e);touching=true;snd({type:'mouse',x:p.x,y:p.y,btn:'left',act:'down'});},{passive:false});
+ov.addEventListener('touchend',function(e){if(!ctrl)return;e.preventDefault();var p=rel(e);touching=false;snd({type:'mouse',x:p.x,y:p.y,btn:'left',act:'up'});},{passive:false});
+ov.addEventListener('touchmove',function(e){if(!ctrl)return;e.preventDefault();var p=rel(e);snd({type:'mouse',x:p.x,y:p.y,btn:'left',act:'move'});},{passive:false});
+ov.addEventListener('dblclick',function(e){if(!ctrl)return;var p=rel(e);snd({type:'mouse',x:p.x,y:p.y,btn:'left',act:'dblclick'});});
+conn();
 </script>
 </body>
-</html>)rawhtml";
+</html>)";
 }
 
-// ── HTTP/WebSocket server ────────────────────────────────────────
-static void HandleHttpClient(SOCKET client) {
-    char buf[4096]={};
-    int r = recv(client, buf, sizeof(buf)-1, 0);
-    if (r <= 0) { closesocket(client); return; }
-    string req(buf, r);
-
-    // Check if WebSocket upgrade
-    bool isWs = req.find("Upgrade: websocket") != string::npos ||
-                req.find("Upgrade: WebSocket") != string::npos;
-
-    if (isWs) {
-        // WebSocket handshake
-        size_t kp = req.find("Sec-WebSocket-Key:");
-        if (kp == string::npos) { closesocket(client); return; }
-        kp += 18;
-        while(kp<req.size()&&req[kp]==' ') kp++;
-        size_t ke = req.find("\r\n",kp);
-        string key = req.substr(kp, ke-kp);
-        string accept = SHA1Base64(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
-        string resp = "HTTP/1.1 101 Switching Protocols\r\n"
-                      "Upgrade: websocket\r\nConnection: Upgrade\r\n"
-                      "Sec-WebSocket-Accept: " + accept + "\r\n\r\n";
-        send(client, resp.c_str(), (int)resp.size(), 0);
-        // Register and handle
-        { lock_guard<mutex> lk(s_clientsMtx); s_wsClients.push_back(client); }
-        HandleWsClient(client);
-        { lock_guard<mutex> lk(s_clientsMtx);
-          s_wsClients.erase(remove(s_wsClients.begin(),s_wsClients.end(),client),s_wsClients.end()); }
+// ── HTTP handler ──────────────────────────────────────────────────
+static void HttpClient(SOCKET client) {
+    char buf[4096]={}; int r=recv(client,buf,sizeof(buf)-1,0);
+    if(r<=0){closesocket(client);return;}
+    string req(buf,r);
+    bool isWs=req.find("Upgrade: websocket")!=string::npos||req.find("Upgrade: WebSocket")!=string::npos;
+    if(isWs){
+        size_t kp=req.find("Sec-WebSocket-Key:");
+        if(kp==string::npos){closesocket(client);return;}
+        kp+=18; while(kp<req.size()&&req[kp]==' ')kp++;
+        size_t ke=req.find("\r\n",kp);
+        string key=req.substr(kp,ke-kp);
+        string acc=Sha1B64(key+"258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
+        string resp="HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: "+acc+"\r\n\r\n";
+        send(client,resp.c_str(),(int)resp.size(),0);
+        thread(WsClient,client).detach();
     } else {
-        // Serve HTML
-        string html = BuildControlPanelHtml();
-        string resp = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\n"
-                      "Content-Length: " + to_string(html.size()) + "\r\nConnection: close\r\n\r\n" + html;
-        send(client, resp.c_str(), (int)resp.size(), 0);
+        string html=BuildHtml(g_phoneRemotePin);
+        string resp="HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: "+to_string(html.size())+"\r\nConnection: close\r\n\r\n"+html;
+        send(client,resp.c_str(),(int)resp.size(),0);
         closesocket(client);
     }
 }
 
-static void ServerLoop() {
-    WSADATA wd; WSAStartup(MAKEWORD(2,2),&wd);
-    s_listenSock = socket(AF_INET, SOCK_STREAM, 0);
-    int opt=1; setsockopt(s_listenSock, SOL_SOCKET, SO_REUSEADDR, (char*)&opt, sizeof(opt));
-    DWORD tv=2000; setsockopt(s_listenSock, SOL_SOCKET, SO_RCVTIMEO, (char*)&tv, sizeof(tv));
-
-    sockaddr_in addr{};
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = INADDR_ANY;
-    addr.sin_port = htons((u_short)g_phoneRemotePort);
-    bind(s_listenSock, (sockaddr*)&addr, sizeof(addr));
-    listen(s_listenSock, 5);
-
-    while (s_serverActive) {
-        SOCKET client = accept(s_listenSock, NULL, NULL);
-        if (client == INVALID_SOCKET) continue;
-        thread(HandleHttpClient, client).detach();
+// ── UDP Beacon — phone sends PIN, PC replies with IP:port ─────────
+// Packet from phone: "RASPIN:XXXXXX"
+// Reply from PC:     "RASACK:XXXXXX:<ip>:<port>"
+static void UdpBeacon() {
+    SOCKET s=socket(AF_INET,SOCK_DGRAM,0);
+    int opt=1; setsockopt(s,SOL_SOCKET,SO_REUSEADDR,(char*)&opt,sizeof(opt));
+    DWORD tv=500; setsockopt(s,SOL_SOCKET,SO_RCVTIMEO,(char*)&tv,sizeof(tv));
+    sockaddr_in addr{}; addr.sin_family=AF_INET; addr.sin_addr.s_addr=INADDR_ANY;
+    addr.sin_port=htons((u_short)g_phoneRemoteUdpPort);
+    bind(s,(sockaddr*)&addr,sizeof(addr));
+    s_udpSock=s;
+    string myIp=GetLocalIp();
+    char buf[128]={};
+    while(s_active) {
+        sockaddr_in from{}; int fl=sizeof(from);
+        int r=recvfrom(s,buf,sizeof(buf)-1,0,(sockaddr*)&from,(int*)&fl);
+        if(r<=0){memset(buf,0,sizeof(buf));continue;}
+        buf[r]=0;
+        string msg(buf);
+        // Expected: "RASPIN:XXXXXX"
+        if(msg.rfind("RASPIN:",0)==0) {
+            string pin=msg.substr(7,6);
+            if(pin==g_phoneRemotePin) {
+                // Reply with our IP and port
+                string ack="RASACK:"+g_phoneRemotePin+":"+myIp+":"+to_string(g_phoneRemotePort);
+                sendto(s,ack.c_str(),(int)ack.size(),0,(sockaddr*)&from,fl);
+            }
+        }
+        memset(buf,0,sizeof(buf));
     }
-    closesocket(s_listenSock);
+    closesocket(s); s_udpSock=INVALID_SOCKET;
+}
+
+// ── HTTP server loop ──────────────────────────────────────────────
+static void HttpLoop() {
+    WSADATA wd; WSAStartup(MAKEWORD(2,2),&wd);
+    s_httpSock=socket(AF_INET,SOCK_STREAM,0);
+    int opt=1; setsockopt(s_httpSock,SOL_SOCKET,SO_REUSEADDR,(char*)&opt,sizeof(opt));
+    DWORD tv=500; setsockopt(s_httpSock,SOL_SOCKET,SO_RCVTIMEO,(char*)&tv,sizeof(tv));
+    sockaddr_in addr{}; addr.sin_family=AF_INET;
+    addr.sin_addr.s_addr=INADDR_ANY;
+    addr.sin_port=htons((u_short)g_phoneRemotePort);
+    bind(s_httpSock,(sockaddr*)&addr,sizeof(addr));
+    listen(s_httpSock,8);
+    while(s_active){
+        SOCKET cl=accept(s_httpSock,NULL,NULL);
+        if(cl==INVALID_SOCKET) continue;
+        thread(HttpClient,cl).detach();
+    }
+    closesocket(s_httpSock); s_httpSock=INVALID_SOCKET;
     WSACleanup();
 }
 
-// ── Public server control ─────────────────────────────────────────
+// ── Public API ────────────────────────────────────────────────────
 void PhoneRemoteStartServer() {
-    if (s_serverActive) return;
-    s_serverActive = true;
-    g_phoneRemoteRunning = true;
-    g_connectedClients = 0;
-    s_serverThread = thread(ServerLoop);
-    s_serverThread.detach();
+    if(s_active) return;
+    string ip=GetLocalIp();
+    g_phoneRemotePin=GeneratePin(ip);
+    s_active=true;
+    g_phoneRemoteRunning=true;
+    g_connectedClients=0;
+    thread(HttpLoop).detach();
+    thread(UdpBeacon).detach();
 }
 
 void PhoneRemoteStopServer() {
-    if (!s_serverActive) return;
-    s_serverActive = false;
-    g_phoneRemoteRunning = false;
-    // Close listen socket to unblock accept()
-    if (s_listenSock != INVALID_SOCKET) {
-        closesocket(s_listenSock);
-        s_listenSock = INVALID_SOCKET;
-    }
-    // Close all WS clients
-    lock_guard<mutex> lk(s_clientsMtx);
-    for (SOCKET c : s_wsClients) closesocket(c);
-    s_wsClients.clear();
-    g_connectedClients = 0;
+    if(!s_active) return;
+    s_active=false;
+    g_phoneRemoteRunning=false;
+    g_phoneRemotePin="";
+    if(s_httpSock!=INVALID_SOCKET){closesocket(s_httpSock);s_httpSock=INVALID_SOCKET;}
+    if(s_udpSock!=INVALID_SOCKET){closesocket(s_udpSock);s_udpSock=INVALID_SOCKET;}
+    lock_guard<mutex> lk(s_mtx);
+    for(SOCKET c:s_wsClients) closesocket(c);
+    s_wsClients.clear(); g_connectedClients=0;
 }
 
-void PhoneRemoteTimerTick() {
-    // Could be used for periodic screen push in future
-}
+void PhoneRemoteTimerTick() {}
 
-// ── Get local IP ──────────────────────────────────────────────────
-static string GetLocalIpStr() {
-    char hostname[256]; gethostname(hostname, sizeof(hostname));
-    struct addrinfo hints{}, *res=nullptr;
-    hints.ai_family = AF_INET;
-    if (getaddrinfo(hostname, nullptr, &hints, &res) != 0) return "unknown";
-    string ip;
-    for (auto* p=res; p; p=p->ai_next) {
-        char buf[64]; inet_ntop(AF_INET, &((sockaddr_in*)p->ai_addr)->sin_addr, buf, sizeof(buf));
-        string s(buf);
-        if (s.rfind("127.",0)!=0) { ip=s; break; }
-    }
-    freeaddrinfo(res);
-    return ip.empty()?"unknown":ip;
-}
-
-// ── Draw tab UI ───────────────────────────────────────────────────
+// ── Draw Tab UI ───────────────────────────────────────────────────
 void DrawPhoneRemoteTab(Graphics& g, float x, float y, float w, float h) {
     FontFamily ff(L"Segoe UI");
-    FontFamily ffIcon(L"Segoe MDL2 Assets");
-    StringFormat fmtC, fmtL, fmtR;
+    StringFormat fmtC,fmtL;
     fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
     fmtL.SetAlignment(StringAlignmentNear);   fmtL.SetLineAlignment(StringAlignmentCenter);
-    fmtR.SetAlignment(StringAlignmentFar);    fmtR.SetLineAlignment(StringAlignmentCenter);
 
-    SolidBrush bgBrush(ColBgContent);
-    g.FillRectangle(&bgBrush, x, y, w, h);
+    // Background
+    SolidBrush bg(ColBgContent); g.FillRectangle(&bg,x,y,w,h);
 
-    // ── Header card ──
-    float cx = x + 24, cy = y + 20, cw = w - 48;
-    SolidBrush cardBg(Color(255,255,255,255));
-    Pen cardBorder(Color(255,220,230,235), 1.0f);
-    GraphicsPath card;
-    float r=10,d=r*2;
-    card.AddArc(cx,cy,d,d,180,90); card.AddArc(cx+cw-d,cy,d,d,270,90);
-    card.AddArc(cx+cw-d,cy+80-d,d,d,0,90); card.AddArc(cx,cy+80-d,d,d,90,90);
-    card.CloseFigure();
-    g.FillPath(&cardBg, &card); g.DrawPath(&cardBorder, &card);
+    float cx=x+24, cy=y+20, cw=w-48, r=10, d=r*2;
+    auto roundRect=[&](GraphicsPath& p2,float rx,float ry,float rw,float rh){
+        p2.AddArc(rx,ry,d,d,180,90);p2.AddArc(rx+rw-d,ry,d,d,270,90);
+        p2.AddArc(rx+rw-d,ry+rh-d,d,d,0,90);p2.AddArc(rx,ry+rh-d,d,d,90,90);p2.CloseFigure();
+    };
 
-    Font fTitle(&ff,14,FontStyleBold,UnitPixel);
-    Font fSub(&ff,11,FontStyleRegular,UnitPixel);
-    SolidBrush teal(Color(255,0,140,150)), dark(Color(255,40,40,40)), gray(Color(255,130,130,130));
-    g.DrawString(L"📡  Phone Remote Control", -1, &fTitle, RectF(cx+16,cy,cw-32,40), &fmtL, &teal);
-    g.DrawString(L"Phone browser থেকে PC control করো — CMD, Files, Screen, Mouse & Keyboard", -1, &fSub,
-                 RectF(cx+16,cy+38,cw-32,30), &fmtL, &gray);
+    // ── Header ──
+    SolidBrush white(Color(255,255,255,255)); Pen border(Color(255,220,230,235),1.0f);
+    GraphicsPath hdr; roundRect(hdr,cx,cy,cw,72);
+    g.FillPath(&white,&hdr); g.DrawPath(&border,&hdr);
+    Font ft(&ff,14,FontStyleBold,UnitPixel);
+    Font fs(&ff,11,FontStyleRegular,UnitPixel);
+    SolidBrush teal(Color(255,0,140,150)),gray(Color(255,130,130,130));
+    g.DrawString(L"📡  Phone Remote  —  RustDesk style",-1,&ft,RectF(cx+16,cy,cw-32,36),&fmtL,&teal);
+    g.DrawString(L"PIN একবার দিলেই হবে, পরের বার auto-connect",-1,&fs,RectF(cx+16,cy+36,cw-32,28),&fmtL,&gray);
 
-    // ── Status card ──
-    float sy = cy + 96;
-    bool running = g_phoneRemoteRunning;
-    string ip = GetLocalIpStr();
-    wstring url = L"http://" + wstring(ip.begin(),ip.end()) + L":" + to_wstring(g_phoneRemotePort);
+    bool running=g_phoneRemoteRunning;
 
-    SolidBrush statusBg(running ? Color(255,232,255,240) : Color(255,255,248,232));
-    Pen statusBorder(running ? Color(255,150,220,180) : Color(255,220,190,140), 1.0f);
-    GraphicsPath sc;
-    sc.AddArc(cx,sy,d,d,180,90); sc.AddArc(cx+cw-d,sy,d,d,270,90);
-    sc.AddArc(cx+cw-d,sy+70-d,d,d,0,90); sc.AddArc(cx,sy+70-d,d,d,90,90);
-    sc.CloseFigure();
-    g.FillPath(&statusBg,&sc); g.DrawPath(&statusBorder,&sc);
+    // ── PIN Display (big, center) ──
+    float py=cy+84;
+    SolidBrush pinBg(running?Color(255,225,245,235):Color(255,245,245,245));
+    Pen pinBorder(running?Color(255,150,210,180):Color(255,210,210,210),1.5f);
+    GraphicsPath pinCard; roundRect(pinCard,cx,py,cw,100);
+    g.FillPath(&pinBg,&pinCard); g.DrawPath(&pinBorder,&pinCard);
 
-    Font fStatus(&ff,12,FontStyleBold,UnitPixel);
-    Font fUrl(&ff,13,FontStyleBold,UnitPixel);
-    SolidBrush green(Color(255,30,150,90)), orange(Color(255,180,100,20)), urlColor(Color(255,0,100,180));
-    wstring stTxt = running
-        ? (L"🟢  Server চলছে  |  " + to_wstring(g_connectedClients) + L" device connected")
-        : L"⚪  Server বন্ধ";
-    g.DrawString(stTxt.c_str(),-1,&fStatus, RectF(cx+16,sy,cw-32,32),&fmtL, running?&green:&orange);
-    if (running) {
-        g.DrawString(url.c_str(),-1,&fUrl, RectF(cx+16,sy+34,cw-32,28),&fmtL,&urlColor);
+    Font fPinLabel(&ff,11,FontStyleRegular,UnitPixel);
+    Font fPin(&ff,42,FontStyleBold,UnitPixel);
+    SolidBrush dark(Color(255,30,30,30)),green(Color(255,30,150,90)),orange(Color(255,180,100,20));
+
+    if(running && !g_phoneRemotePin.empty()) {
+        g.DrawString(L"Phone এ এই PIN দাও:",-1,&fPinLabel,RectF(cx,py+8,cw,20),&fmtC,&gray);
+        wstring wpin(g_phoneRemotePin.begin(),g_phoneRemotePin.end());
+        // Space between digits: "4 8 3 9 2 0"
+        wstring spaced;
+        for(size_t i=0;i<wpin.size();i++){spaced+=wpin[i];if(i+1<wpin.size())spaced+=L' ';}
+        g.DrawString(spaced.c_str(),-1,&fPin,RectF(cx,py+24,cw,60),&fmtC,&green);
+        // Connected count
+        wstring conn2=to_wstring(g_connectedClients)+L" device connected";
+        g.DrawString(conn2.c_str(),-1,&fPinLabel,RectF(cx,py+80,cw,16),&fmtC,&gray);
     } else {
-        g.DrawString(L"Server start করলে phone-এ এই link খোলো", -1, &fSub, RectF(cx+16,sy+34,cw-32,28),&fmtL,&gray);
+        g.DrawString(L"Server বন্ধ",-1,&fPinLabel,RectF(cx,py+36,cw,28),&fmtC,&gray);
+        g.DrawString(L"START করলে PIN দেখাবে",-1,&fPinLabel,RectF(cx,py+60,cw,24),&fmtC,&gray);
     }
 
     // ── Buttons ──
-    float bY = sy + 82;
-    float bW = (cw - 12) / 2;
-
-    // Start button
-    SolidBrush startBg(s_hovStart ? Color(255,0,110,120) : Color(255,0,140,150));
-    if (running) startBg = SolidBrush(Color(255,200,210,215));
-    GraphicsPath sb;
-    sb.AddArc(cx,bY,d,d,180,90); sb.AddArc(cx+bW-d,bY,d,d,270,90);
-    sb.AddArc(cx+bW-d,bY+40-d,d,d,0,90); sb.AddArc(cx,bY+40-d,d,d,90,90);
-    sb.CloseFigure();
-    g.FillPath(&startBg,&sb);
+    float bY=py+110, bW=(cw-12)/2;
+    // Start
+    SolidBrush startBg(running?Color(255,200,210,215):(s_hovStart?Color(255,0,110,120):Color(255,0,140,150)));
+    GraphicsPath sb; roundRect(sb,cx,bY,bW,44); g.FillPath(&startBg,&sb);
     Font fBtn(&ff,12,FontStyleBold,UnitPixel);
-    g.DrawString(running?L"▶ Running":L"▶ Start Server",-1,&fBtn,RectF(cx,bY,bW,40),&fmtC,&cardBg);
+    SolidBrush whiteBr(Color(255,255,255,255));
+    g.DrawString(running?L"▶ Running":L"▶ Start",-1,&fBtn,RectF(cx,bY,bW,44),&fmtC,&whiteBr);
+    // Stop
+    float bx2=cx+bW+12;
+    SolidBrush stopBg(!running?Color(255,200,210,215):(s_hovStop?Color(255,160,30,30):Color(255,200,40,40)));
+    GraphicsPath stb; roundRect(stb,bx2,bY,bW,44); g.FillPath(&stopBg,&stb);
+    g.DrawString(L"■ Stop",-1,&fBtn,RectF(bx2,bY,bW,44),&fmtC,&whiteBr);
 
-    // Stop button
-    float bx2 = cx + bW + 12;
-    SolidBrush stopBg(!running ? Color(255,200,210,215) : (s_hovStop?Color(255,180,30,30):Color(255,210,40,40)));
-    GraphicsPath stb;
-    stb.AddArc(bx2,bY,d,d,180,90); stb.AddArc(bx2+bW-d,bY,d,d,270,90);
-    stb.AddArc(bx2+bW-d,bY+40-d,d,d,0,90); stb.AddArc(bx2,bY+40-d,d,d,90,90);
-    stb.CloseFigure();
-    g.FillPath(&stopBg,&stb);
-    g.DrawString(L"■ Stop Server",-1,&fBtn,RectF(bx2,bY,bW,40),&fmtC,&cardBg);
-
-    // ── How-to card ──
-    float hy = bY + 54;
-    SolidBrush infoBg(Color(255,240,248,255));
-    Pen infoBorder(Color(255,190,220,245),1.0f);
-    float infoH = 180;
-    GraphicsPath ic;
-    ic.AddArc(cx,hy,d,d,180,90); ic.AddArc(cx+cw-d,hy,d,d,270,90);
-    ic.AddArc(cx+cw-d,hy+infoH-d,d,d,0,90); ic.AddArc(cx,hy+infoH-d,d,d,90,90);
-    ic.CloseFigure();
-    g.FillPath(&infoBg,&ic); g.DrawPath(&infoBorder,&ic);
-
+    // ── How to use ──
+    float hy=bY+56;
+    SolidBrush infoBg(Color(255,240,248,255)); Pen infoBorder(Color(255,190,215,245),1.0f);
+    GraphicsPath ic; roundRect(ic,cx,hy,cw,140); g.FillPath(&infoBg,&ic); g.DrawPath(&infoBorder,&ic);
     Font fStep(&ff,11,FontStyleRegular,UnitPixel);
-    Font fStepB(&ff,11,FontStyleBold,UnitPixel);
     SolidBrush stepC(Color(255,50,80,120));
-    wstring steps[] = {
-        L"① PC তে Server Start করো",
-        L"② Phone কে PC Hotspot বা Same WiFi তে connect করো",
-        L"③ Phone browser এ link খোলো:  " + url,
-        L"④ CMD, Files, Screen, Control — সব browser এ",
-        L"⑤ Screen tab → Control ON করলে mouse/keyboard চলবে",
+    wstring steps[]={
+        L"① PC তে Start চাপো — 6-digit PIN দেখাবে",
+        L"② Phone এ RasFocus → FileManager → PC Remote",
+        L"③ PIN লেখো → Connect চাপো",
+        L"④ পরের বার auto-connect হবে (PIN লাগবে না)",
+        L"⑤ Browser এ CMD, Files, Screen, Control সব পাবে",
     };
-    float sy2 = hy + 10;
-    for (auto& s2 : steps) {
-        g.DrawString(s2.c_str(),-1,&fStep,RectF(cx+14,sy2,cw-28,26),&fmtL,&stepC);
-        sy2 += 30;
-    }
+    float sy=hy+10;
+    for(auto& s2:steps){g.DrawString(s2.c_str(),-1,&fStep,RectF(cx+12,sy,cw-24,26),&fmtL,&stepC);sy+=26;}
 }
 
-void ProcessPhoneRemoteMouseMove(float mx, float my, float cX, float cY) {
-    float x = mx - cX, y = my - cY;
-    // approximate button regions (matches Draw layout)
-    float cx=24, bY=y, cw=0; // placeholder — hover not critical
-    (void)x;(void)y;(void)cx;(void)bY;(void)cw;
-    s_hovStart = false; s_hovStop = false;
+void ProcessPhoneRemoteMouseMove(float mx,float my,float cX,float cY){
+    (void)mx;(void)my;(void)cX;(void)cY;
 }
 
-void ProcessPhoneRemoteMouseClick(float mx, float my, float cX, float cY, HWND hWnd) {
-    float rx = mx - cX, ry = my - cY;
-    // Button Y ~ cY+96+82 = cY+178, H=40
-    float bY = 178.0f, bH = 40.0f;
-    float bx1 = 24.0f;
-    // Estimate button width
-    // We don't have w here so use rough check
-    if (ry >= bY && ry <= bY+bH) {
-        if (rx >= bx1 && rx < bx1 + 200) {
-            if (!g_phoneRemoteRunning) PhoneRemoteStartServer();
-        } else if (rx >= bx1 + 212) {
-            if (g_phoneRemoteRunning) PhoneRemoteStopServer();
-        }
-        InvalidateRect(hWnd, NULL, FALSE);
+void ProcessPhoneRemoteMouseClick(float mx,float my,float cX,float cY,HWND hWnd){
+    float rx=mx-cX, ry=my-cY;
+    // Buttons at approx y=84+100+110=294, height=44
+    float bY=294.0f, bH=44.0f, bx1=24.0f, bW=(g_phoneRemotePort>0?(float)(600-48-12)/2:150.0f);
+    if(ry>=bY && ry<=bY+bH){
+        if(rx>=bx1 && rx<bx1+bW){if(!g_phoneRemoteRunning)PhoneRemoteStartServer();}
+        else if(rx>=bx1+bW+12){if(g_phoneRemoteRunning)PhoneRemoteStopServer();}
+        InvalidateRect(hWnd,NULL,FALSE);
     }
 }
