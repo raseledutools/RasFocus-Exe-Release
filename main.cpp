@@ -123,6 +123,7 @@ bool hoverMinimize = false, hoverMaximize = false, hoverClose = false;
 bool hoverUpgrade   = false;
 bool hoverFeedback  = false;
 bool hoverMyAccount = false;
+bool hoverDebugKill = false;
 
 // Feedback popup state
 bool showFeedbackBox   = false;
@@ -1057,6 +1058,29 @@ void DrawTitleBar(Graphics& g, int w) {
         SolidBrush white(ColWhite);
         g.DrawString(btnTxt.c_str(), -1, &fUpg, RectF(upgX, upgY, upgW, upgH), &fmtC, &white);
     }
+
+    // ── Debug Kill Button ──
+    {
+        float dbW = 90.0f;
+        float dbH = (float)TITLEBAR_HEIGHT - 6.0f;
+        float dbX = startX - dbW - (isUpdateAvailable ? 170.0f : 10.0f);
+        float dbY = 3.0f;
+        GraphicsPath dbPath;
+        float r = 4.0f, d = r * 2.0f;
+        dbPath.AddArc(dbX, dbY, d, d, 180.0f, 90.0f);
+        dbPath.AddArc(dbX + dbW - d, dbY, d, d, 270.0f, 90.0f);
+        dbPath.AddArc(dbX + dbW - d, dbY + dbH - d, d, d, 0.0f, 90.0f);
+        dbPath.AddArc(dbX, dbY + dbH - d, d, d, 90.0f, 90.0f);
+        dbPath.CloseFigure();
+        SolidBrush dbBg(hoverDebugKill ? Color(255, 180, 0, 0) : Color(255, 140, 0, 0));
+        g.FillPath(&dbBg, &dbPath);
+        // Bug icon + text
+        Font fDb(&ff, 8, FontStyleBold, UnitPixel);
+        Font fDbIcon(&ffIcons, 9, FontStyleRegular, UnitPixel);
+        SolidBrush white(ColWhite);
+        // \xEBE8 = Bug icon in Segoe MDL2
+        g.DrawString(L"\xEBE8 Kill Debug", -1, &fDb, RectF(dbX, dbY, dbW, dbH), &fmtC, &white);
+    }
 }
 
 // ------------------------------------------
@@ -1558,6 +1582,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
         if (oldUpgBtn != hoverUpdateBtn) redraw = true;
 
+        bool oldDbKill = hoverDebugKill; hoverDebugKill = false;
+        {
+            float dbW = 90.0f;
+            float dbX = scaledW - (btnW*3) - dbW - (isUpdateAvailable ? 170.0f : 10.0f);
+            if (x >= dbX && x <= dbX + dbW && y >= 0.0f && y <= (float)TITLEBAR_HEIGHT) hoverDebugKill = true;
+        }
+        if (oldDbKill != hoverDebugKill) redraw = true;
+
         bool oldFb = hoverFeedback,  oldAc = hoverMyAccount;
         hoverFeedback  = HitFeedbackIcon(x, y, scaledW);
         hoverMyAccount = HitMyAccount   (x, y, scaledW);
@@ -1666,6 +1698,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             if (x >= upgX && x <= upgX + upgW && y >= 0.0f && y <= (float)TITLEBAR_HEIGHT) {
                 // Popup reopen করো — user এখান থেকে download করবে
                 g_showUpdatePopup = true;
+                InvalidateRect(hWnd, NULL, FALSE);
+                return 0;
+            }
+        }
+
+        // ── Debug Kill Button click ──
+        {
+            float btnW = 42.0f, dbW = 90.0f;
+            float dbX = scaledW - (btnW*3) - dbW - (isUpdateAvailable ? 170.0f : 10.0f);
+            if (x >= dbX && x <= dbX + dbW && y >= 0.0f && y <= (float)TITLEBAR_HEIGHT) {
+                // RasObserve.exe এবং নিজের child process kill করো
+                WinExec("taskkill /F /IM RasObserve.exe", SW_HIDE);
+                MessageBoxA(hWnd, "Debug observer process killed.", "RasFocus+ Debug", MB_OK | MB_ICONINFORMATION);
                 InvalidateRect(hWnd, NULL, FALSE);
                 return 0;
             }
