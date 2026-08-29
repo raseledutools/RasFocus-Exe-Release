@@ -38,6 +38,9 @@ static bool s_actionCardsInit = false;
 static int selectedDashTab = 0;
 static int hoveredDashTab = -1;
 static RectF s_tabRects[5];
+static float s_gridScrollY = 0.0f;   // right panel scroll offset
+static float s_gridMaxScroll = 0.0f; // maximum scroll (set during draw)
+static RectF  s_gridClipRect;         // right panel clip area (set during draw)
 
 struct DashBtn {
     wstring title;
@@ -275,13 +278,20 @@ void DrawDashboardTab(Graphics& g, float cx, float cy, float cw, float ch) {
     g.FillPath(&SolidBrush(Color(255, 250, 204, 21)), &pillPath);
     g.DrawString(L"Manage Pro", -1, &Font(&ff, 10, FontStyleBold, UnitPixel), pillRect, &fmtC, &SolidBrush(Color(255, 15, 23, 42)));
 
-    // ─── RIGHT PANEL GRID ────────────────────────────────────────────────
+    // ─── RIGHT PANEL GRID (clipped + scrollable) ──────────────
     float gridX = rightColX + 22.0f; float gridY = cy + 20.0f; float gridW = rightColWidth - 44.0f;
+    // Title outside clip — always visible
     g.DrawString(s_sections[selectedDashTab].title.c_str(), -1, &fH1, RectF(gridX, gridY, gridW, 28.0f), &fmtL, &SolidBrush(clrTextPrimary));
-    gridY += 50.0f;
+    float gridContentY = gridY + 50.0f;
+
+    // Set clip region for scrollable area
+    s_gridClipRect = RectF(rightColX, gridContentY, rightColWidth, ch - (gridContentY - cy));
+    Region oldClip;
+    g.GetClip(&oldClip);
+    g.SetClip(s_gridClipRect);
 
     int cols = 3; float gap = 10.0f; float bW = (gridW - (gap * (cols - 1))) / cols; float bH = 68.0f;
-    float curX = gridX; float curY = gridY; int cCount = 0;
+    float curX = gridX; float curY = gridContentY - s_gridScrollY; int cCount = 0;
     for (auto& btn : s_sections[selectedDashTab].btns) {
         if (cCount >= cols) { cCount = 0; curX = gridX; curY += bH + gap; }
         btn.bounds = RectF(curX, curY, bW, bH);
@@ -293,6 +303,25 @@ void DrawDashboardTab(Graphics& g, float cx, float cy, float cw, float ch) {
         g.DrawString(btn.subtext.c_str(), -1, &fBtnSub, RectF(curX + 56.0f, curY + 36.0f, bW - 64.0f, 16.0f), &fmtTL, &SolidBrush(btn.isHovered ? clrTeal : clrTextMuted));
         curX += bW + gap; cCount++;
     }
+
+    // Compute max scroll
+    { int totalRows = ((int)s_sections[selectedDashTab].btns.size() + cols - 1) / cols;
+      float totalGridH = totalRows * (bH + gap);
+      float visH = s_gridClipRect.Height - 10.0f;
+      s_gridMaxScroll = (totalGridH > visH) ? totalGridH - visH : 0.0f;
+      if (s_gridScrollY > s_gridMaxScroll) s_gridScrollY = s_gridMaxScroll;
+      // Scroll indicator
+      if (s_gridMaxScroll > 0.0f) {
+          float trackH = s_gridClipRect.Height - 8.0f;
+          float thumbH = max(30.0f, trackH * (visH / totalGridH));
+          float thumbY = s_gridClipRect.Y + 4.0f + (s_gridScrollY / s_gridMaxScroll) * (trackH - thumbH);
+          float trackX = rightColX + rightColWidth - 6.0f;
+          g.FillRectangle(&SolidBrush(Color(30, 0, 0, 0)), trackX, s_gridClipRect.Y + 4.0f, 3.0f, trackH);
+          g.FillRectangle(&SolidBrush(Color(140, 8, 145, 130)), trackX, thumbY, 3.0f, thumbH);
+      }
+    }
+
+    g.SetClip(&oldClip); // restore
 }
 
 void ProcessDashboardMouseMove(float x, float y) {
@@ -315,7 +344,7 @@ void ProcessDashboardMouseClick(float x, float y, int& selectedTab) {
             if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE); return;
         }
     }
-    for (int i = 0; i < 5; i++) { if (s_tabRects[i].Contains(x, y)) { selectedDashTab = i; if(hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE); return; } }
+    for (int i = 0; i < 5; i++) { if (s_tabRects[i].Contains(x, y)) { if (selectedDashTab != i) s_gridScrollY = 0.0f; selectedDashTab = i; if(hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE); return; } }
     for (auto& btn : s_sections[selectedDashTab].btns) {
         if (btn.bounds.Contains(x, y)) {
             if (btn.title == L"PDF Reader") LaunchFoxitStylePdfReader(L"");
@@ -341,4 +370,13 @@ void ProcessDashboardMouseClick(float x, float y, int& selectedTab) {
             if(hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE); return;
         }
     }
+}
+
+void ProcessDashboardMouseWheel(int delta) {
+    float step = 60.0f;
+    if (delta > 0) s_gridScrollY -= step;
+    else           s_gridScrollY += step;
+    if (s_gridScrollY < 0.0f)             s_gridScrollY = 0.0f;
+    if (s_gridScrollY > s_gridMaxScroll)  s_gridScrollY = s_gridMaxScroll;
+    if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
 }

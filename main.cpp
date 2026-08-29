@@ -1743,6 +1743,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         float y = pt.y / g_scaleFactor;
         int delta = GET_WHEEL_DELTA_WPARAM(wp);
         if (selectedTab == 1) { extern void ProcessBlocksMouseWheel(float,float,int); ProcessBlocksMouseWheel(x,y,delta); InvalidateRect(hWnd,NULL,FALSE); }
+        if (selectedTab == 0) { ProcessDashboardMouseWheel(delta); }
         break;
     }
 
