@@ -1550,8 +1550,12 @@ static void SwitchToTab(HWND hWnd, int idx) {
     if (idx < 0 || idx >= (int)wd.tabs.size()) return;
 
     if (wd.activeTab != idx && wd.activeTab < (int)wd.tabs.size())
-        if (wd.tabs[wd.activeTab].controller)
-            wd.tabs[wd.activeTab].controller->put_IsVisible(FALSE);
+        if (wd.tabs[wd.activeTab].controller) {
+            // Move off-screen instead of put_IsVisible(FALSE) — hiding triggers
+            // document.visibilityState='hidden' which causes YouTube to pause playback.
+            RECT offscreen = {-10000, -10000, -9000, -9000};
+            wd.tabs[wd.activeTab].controller->put_Bounds(offscreen);
+        }
 
     wd.activeTab = idx;
     auto& tab = wd.tabs[idx];
@@ -2122,8 +2126,8 @@ public:
         }
 
         bool isActive = (m_tabIdx == wd.activeTab);
-        ctl->put_IsVisible(isActive ? TRUE : FALSE);
-        RECT wvr = GetWebViewRect(m_hWnd);
+        ctl->put_IsVisible(TRUE);  // Always visible — hiding causes visibilitychange -> YouTube pauses
+        RECT wvr = isActive ? GetWebViewRect(m_hWnd) : RECT{-10000, -10000, -9000, -9000};
         ctl->put_Bounds(wvr);
 
         std::wstring nav = m_startUrl;
