@@ -1,6 +1,6 @@
-BUILD STATUS: SUCCESS
-Time: 2026-08-29 16:54:18 UTC
-Run: https://github.com/raseledutools/RasFocus-Exe-Release/actions/runs/33264145220
+BUILD STATUS: FAILED (exit code 2)
+Time: 2026-08-29 17:18:46 UTC
+Run: https://github.com/raseledutools/RasFocus-Exe-Release/actions/runs/33265230947
 
 === Compiler Output ===
 Microsoft (R) C/C++ Optimizing Compiler Version 19.51.36256 for x64
@@ -141,7 +141,6 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
             _InIt=wchar_t *,
             _SizeTy=std::+::_Size_type
         ] (compiling source file tab_blocks.cpp)
-tab_deep_study.cpp
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): warning C4244: '=': conversion from 'wchar_t' to 'char', possible loss of data (compiling source file browser/mini_browser.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): note: the template instantiation context (the oldest one first) is (compiling source file browser/mini_browser.cpp)
 browser/mini_browser.cpp(2014): note: see reference to function template instantiation 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string<std::_String_iterator<std::_String_val<std::_Simple_types<_Elem>>>,0>(_Iter,_Iter,const _Alloc &)' being compiled
@@ -168,7 +167,7 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
             _InIt=wchar_t *,
             _SizeTy=std::+::_Size_type
         ] (compiling source file browser/mini_browser.cpp)
-tab_special.cpp
+tab_deep_study.cpp
 tab_adult.cpp(219): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\codecvt(34): note: see declaration of 'std::codecvt_utf8' (compiling source file tab_adult.cpp)
 tab_adult.cpp(219): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>::codecvt_utf8': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
@@ -180,6 +179,7 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
 tab_adult.cpp(267): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>::codecvt_utf8': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
 tab_adult.cpp(289): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\codecvt(34): note: see declaration of 'std::codecvt_utf8' (compiling source file tab_adult.cpp)
+tab_special.cpp
 tab_adult.cpp(289): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>::codecvt_utf8': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
 tab_adult.cpp(331): warning C4244: 'argument': conversion from 'int' to 'Gdiplus::REAL', possible loss of data
 tab_adult.cpp(406): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
@@ -189,6 +189,7 @@ tab_adult.cpp(406): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::code
 tab_adult.cpp(518): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\codecvt(34): note: see declaration of 'std::codecvt_utf8' (compiling source file tab_adult.cpp)
 tab_adult.cpp(518): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>::codecvt_utf8': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
+tab_statistics.cpp
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xlocale(251): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning. (compiling source file tab_adult.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\codecvt(34): note: see declaration of 'std::codecvt_utf8' (compiling source file tab_adult.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xlocale(251): note: the template instantiation context (the oldest one first) is (compiling source file tab_adult.cpp)
@@ -197,7 +198,6 @@ tab_adult.cpp(219): note: see reference to function template instantiation 'std:
         [
             _Facet=std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>
         ]
-tab_statistics.cpp
 tab_settings.cpp
 tab_special.cpp(115): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
 tab_special.cpp(118): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
@@ -232,110 +232,216 @@ tab_device_block.cpp
 tab_diary.cpp
 accounts.cpp
 tab_utilities.cpp(72): warning C4244: '=': conversion from 'LRESULT' to 'int', possible loss of data
-tab_phone_remote.cpp
 tab_utilities.cpp(184): warning C4244: 'initializing': conversion from 'LRESULT' to 'int', possible loss of data
+tab_phone_remote.cpp
 tab_diary.cpp(461): warning C4996: '_wgetenv': This function or variable may be unsafe. Consider using _wdupenv_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
 pc_screen_streamer.cpp
-accounts.cpp(504): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
-C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): warning C4244: '=': conversion from 'wchar_t' to 'char', possible loss of data (compiling source file accounts.cpp)
-C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): note: the template instantiation context (the oldest one first) is (compiling source file accounts.cpp)
-accounts.cpp(591): note: see reference to function template instantiation 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string<std::_String_iterator<std::_String_val<std::_Simple_types<_Elem>>>,0>(_Iter,_Iter,const _Alloc &)' being compiled
-        with
-        [
-            _Elem=wchar_t,
-            _Iter=std::_String_iterator<std::_String_val<std::_Simple_types<wchar_t>>>,
-            _Alloc=std::allocator<char>
-        ]
-accounts.cpp(591): note: see the first reference to 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string' in 'ExtractIdTokenFromUrl'
-C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xstring(862): note: see reference to function template instantiation 'void std::basic_string<char,std::char_traits<char>,std::allocator<char>>::_Construct_from_iter<wchar_t*,wchar_t*,_Size_type>(_Iter,const _Sent,_Size)' being compiled
-        with
-        [
-            _Size_type=std::+::_Size_type,
-            _Iter=wchar_t *,
-            _Sent=wchar_t *,
-            _Size=std::+::_Size_type
-        ] (compiling source file accounts.cpp)
-C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xstring(1018): note: see reference to function template instantiation '_OutIt *std::_Copy_n_unchecked4<wchar_t*,_Size,char*>(_InIt,_SizeTy,_OutIt)' being compiled
-        with
-        [
-            _OutIt=char *,
-            _Size=std::+::_Size_type,
-            _InIt=wchar_t *,
-            _SizeTy=std::+::_Size_type
-        ] (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\shared\ws2def.h(103): warning C4005: 'AF_IPX': macro redefinition (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(457): note: see previous definition of 'AF_IPX' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\shared\ws2def.h(147): warning C4005: 'AF_MAX': macro redefinition (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(476): note: see previous definition of 'AF_MAX' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\shared\ws2def.h(187): warning C4005: 'SO_DONTLINGER': macro redefinition (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(399): note: see previous definition of 'SO_DONTLINGER' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\shared\ws2def.h(246): error C2011: 'sockaddr': 'struct' type redefinition (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(482): note: see declaration of 'sockaddr' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\shared\ws2def.h(448): error C2143: syntax error: missing '}' before 'constant' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\shared\ws2def.h(448): error C2059: syntax error: 'constant' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\shared\ws2def.h(502): error C2143: syntax error: missing ';' before '}' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\shared\ws2def.h(502): error C4430: missing type specifier - int assumed. Note: C++ does not support default-int (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\shared\ws2def.h(502): error C4430: missing type specifier - int assumed. Note: C++ does not support default-int (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\shared\ws2def.h(583): warning C4005: 'IN_CLASSA': macro redefinition (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(284): note: see previous definition of 'IN_CLASSA' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\shared\ws2def.h(589): warning C4005: 'IN_CLASSB': macro redefinition (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(290): note: see previous definition of 'IN_CLASSB' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\shared\ws2def.h(595): warning C4005: 'IN_CLASSC': macro redefinition (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(296): note: see previous definition of 'IN_CLASSC' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\shared\ws2def.h(606): warning C4005: 'INADDR_ANY': macro redefinition (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(301): note: see previous definition of 'INADDR_ANY' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\shared\ws2def.h(608): warning C4005: 'INADDR_BROADCAST': macro redefinition (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(303): note: see previous definition of 'INADDR_BROADCAST' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\shared\ws2def.h(644): error C2011: 'sockaddr_in': 'struct' type redefinition (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(309): note: see declaration of 'sockaddr_in' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(136): error C2011: 'fd_set': 'struct' type redefinition (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(65): note: see declaration of 'fd_set' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(158): warning C4005: 'FD_SET': macro redefinition (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(96): note: see previous definition of 'FD_SET' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(180): error C2011: 'timeval': 'struct' type redefinition (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(108): note: see declaration of 'timeval' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(236): error C2011: 'hostent': 'struct' type redefinition (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(164): note: see declaration of 'hostent' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(249): error C2011: 'netent': 'struct' type redefinition (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(177): note: see declaration of 'netent' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(256): error C2011: 'servent': 'struct' type redefinition (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(184): note: see declaration of 'servent' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(268): error C2011: 'protoent': 'struct' type redefinition (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(196): note: see declaration of 'protoent' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(364): error C2011: 'WSAData': 'struct' type redefinition (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(319): note: see declaration of 'WSAData' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(462): error C2011: 'sockproto': 'struct' type redefinition (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(491): note: see declaration of 'sockproto' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(504): error C2011: 'linger': 'struct' type redefinition (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(528): note: see declaration of 'linger' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(517): warning C4005: 'SOMAXCONN': macro redefinition (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(541): note: see previous definition of 'SOMAXCONN' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(551): warning C4005: 'FD_READ': macro redefinition (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(559): note: see previous definition of 'FD_READ' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(554): warning C4005: 'FD_WRITE': macro redefinition (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(560): note: see previous definition of 'FD_WRITE' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(557): warning C4005: 'FD_OOB': macro redefinition (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(561): note: see previous definition of 'FD_OOB' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(560): warning C4005: 'FD_ACCEPT': macro redefinition (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(562): note: see previous definition of 'FD_ACCEPT' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(563): warning C4005: 'FD_CONNECT': macro redefinition (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(563): note: see previous definition of 'FD_CONNECT' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(566): warning C4005: 'FD_CLOSE': macro redefinition (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(564): note: see previous definition of 'FD_CLOSE' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(1633): error C2375: 'accept': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(739): note: see declaration of 'accept' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(1655): error C2375: 'bind': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(744): note: see declaration of 'bind' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(1676): error C2375: 'closesocket': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(749): note: see declaration of 'closesocket' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(1693): error C2375: 'connect': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(751): note: see declaration of 'connect' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(1714): error C2375: 'ioctlsocket': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(756): note: see declaration of 'ioctlsocket' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(1737): error C2375: 'getpeername': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(761): note: see declaration of 'getpeername' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(1758): error C2375: 'getsockname': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(766): note: see declaration of 'getsockname' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(1779): error C2375: 'getsockopt': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(771): note: see declaration of 'getsockopt' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(1804): error C2375: 'htonl': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(778): note: see declaration of 'htonl' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(1821): error C2375: 'htons': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(780): note: see declaration of 'htons' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(1839): error C2375: 'inet_addr': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(782): note: see declaration of 'inet_addr' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(1857): error C2375: 'inet_ntoa': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(784): note: see declaration of 'inet_ntoa' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(1957): error C2375: 'listen': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(786): note: see declaration of 'listen' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(1976): error C2375: 'ntohl': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(790): note: see declaration of 'ntohl' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(1993): error C2375: 'ntohs': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(792): note: see declaration of 'ntohs' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(2010): error C2375: 'recv': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(794): note: see declaration of 'recv' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(2033): error C2375: 'recvfrom': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(800): note: see declaration of 'recvfrom' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(2060): error C2375: 'select': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(808): note: see declaration of 'select' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(2085): error C2375: 'send': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(815): note: see declaration of 'send' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(2108): error C2375: 'sendto': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(821): note: see declaration of 'sendto' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(2135): error C2375: 'setsockopt': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(829): note: see declaration of 'setsockopt' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(2160): error C2375: 'shutdown': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(836): note: see declaration of 'shutdown' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(2180): error C2375: 'socket': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(840): note: see declaration of 'socket' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(2205): error C2375: 'gethostbyaddr': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(847): note: see declaration of 'gethostbyaddr' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(2227): error C2375: 'gethostbyname': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(852): note: see declaration of 'gethostbyname' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(2244): error C2375: 'gethostname': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(854): note: see declaration of 'gethostname' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(2284): error C2375: 'getservbyport': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(858): note: see declaration of 'getservbyport' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(2303): error C2375: 'getservbyname': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(862): note: see declaration of 'getservbyname' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(2322): error C2375: 'getprotobynumber': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(866): note: see declaration of 'getprotobynumber' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(2339): error C2375: 'getprotobyname': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(868): note: see declaration of 'getprotobyname' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(2359): error C2375: 'WSAStartup': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(872): note: see declaration of 'WSAStartup' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(2379): error C2375: 'WSACleanup': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(876): note: see declaration of 'WSACleanup' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(2396): error C2375: 'WSASetLastError': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(878): note: see declaration of 'WSASetLastError' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(2413): error C2375: 'WSAGetLastError': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(880): note: see declaration of 'WSAGetLastError' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(2434): error C2375: 'WSAIsBlocking': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(882): note: see declaration of 'WSAIsBlocking' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(2452): error C2375: 'WSAUnhookBlockingHook': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(884): note: see declaration of 'WSAUnhookBlockingHook' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(2470): error C2375: 'WSASetBlockingHook': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(886): note: see declaration of 'WSASetBlockingHook' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(2488): error C2375: 'WSACancelBlockingCall': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(888): note: see declaration of 'WSACancelBlockingCall' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(2506): error C2375: 'WSAAsyncGetServByName': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(890): note: see declaration of 'WSAAsyncGetServByName' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(2534): error C2375: 'WSAAsyncGetServByPort': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(898): note: see declaration of 'WSAAsyncGetServByPort' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(2562): error C2375: 'WSAAsyncGetProtoByName': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(906): note: see declaration of 'WSAAsyncGetProtoByName' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(2588): error C2375: 'WSAAsyncGetProtoByNumber': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(913): note: see declaration of 'WSAAsyncGetProtoByNumber' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(2614): error C2375: 'WSAAsyncGetHostByName': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(920): note: see declaration of 'WSAAsyncGetHostByName' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(2640): error C2375: 'WSAAsyncGetHostByAddr': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(927): note: see declaration of 'WSAAsyncGetHostByAddr' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(2670): error C2375: 'WSACancelAsyncRequest': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(936): note: see declaration of 'WSACancelAsyncRequest' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(2688): error C2375: 'WSAAsyncSelect': redefinition; different linkage (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(938): note: see declaration of 'WSAAsyncSelect' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(4320): error C2059: syntax error: '}' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock2.h(4320): error C2143: syntax error: missing ';' before '}' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\shared\ws2ipdef.h(42): error C2143: syntax error: missing ';' before '{' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\shared\ws2ipdef.h(42): error C2447: '{': missing function header (old-style formal list?) (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\shared\ws2ipdef.h(135): warning C4005: 'IP_TOS': macro redefinition (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(349): note: see previous definition of 'IP_TOS' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\shared\ws2ipdef.h(136): warning C4005: 'IP_TTL': macro redefinition (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(348): note: see previous definition of 'IP_TTL' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\shared\ws2ipdef.h(137): warning C4005: 'IP_MULTICAST_IF': macro redefinition (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(343): note: see previous definition of 'IP_MULTICAST_IF' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\shared\ws2ipdef.h(138): warning C4005: 'IP_MULTICAST_TTL': macro redefinition (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(344): note: see previous definition of 'IP_MULTICAST_TTL' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\shared\ws2ipdef.h(139): warning C4005: 'IP_MULTICAST_LOOP': macro redefinition (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(345): note: see previous definition of 'IP_MULTICAST_LOOP' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\shared\ws2ipdef.h(140): warning C4005: 'IP_ADD_MEMBERSHIP': macro redefinition (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(346): note: see previous definition of 'IP_ADD_MEMBERSHIP' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\shared\ws2ipdef.h(141): warning C4005: 'IP_DROP_MEMBERSHIP': macro redefinition (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(347): note: see previous definition of 'IP_DROP_MEMBERSHIP' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\shared\ws2ipdef.h(142): warning C4005: 'IP_DONTFRAGMENT': macro redefinition (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\winsock.h(350): note: see previous definition of 'IP_DONTFRAGMENT' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\ws2tcpip.h(733): error C2061: syntax error: identifier 'MULTICAST_MODE_TYPE' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\ws2tcpip.h(740): error C2065: 'PIP_MSFILTER': undeclared identifier (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\ws2tcpip.h(740): error C2146: syntax error: missing ';' before identifier 'Filter' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\ws2tcpip.h(740): error C2065: 'Filter': undeclared identifier (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\ws2tcpip.h(742): error C2065: 'SourceCount': undeclared identifier (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\ws2tcpip.h(743): error C2065: 'Filter': undeclared identifier (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\ws2tcpip.h(743): error C2065: 'SourceList': undeclared identifier (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\ws2tcpip.h(748): error C2065: 'IP_MSFILTER': undeclared identifier (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\ws2tcpip.h(748): error C2065: 'SourceCount': undeclared identifier (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\ws2tcpip.h(749): error C2065: 'Filter': undeclared identifier (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\ws2tcpip.h(749): error C2065: 'PIP_MSFILTER': undeclared identifier (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\ws2tcpip.h(749): error C2146: syntax error: missing ';' before identifier 'HeapAlloc' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\ws2tcpip.h(750): error C2065: 'Filter': undeclared identifier (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\ws2tcpip.h(755): error C2065: 'Filter': undeclared identifier (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\ws2tcpip.h(756): error C2065: 'Filter': undeclared identifier (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\ws2tcpip.h(757): error C2065: 'Filter': undeclared identifier (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\ws2tcpip.h(757): error C2065: 'FilterMode': undeclared identifier (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\ws2tcpip.h(758): error C2065: 'Filter': undeclared identifier (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\ws2tcpip.h(758): error C2065: 'SourceCount': undeclared identifier (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\ws2tcpip.h(759): error C2065: 'SourceCount': undeclared identifier (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\ws2tcpip.h(760): error C2065: 'Filter': undeclared identifier (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\ws2tcpip.h(760): error C2065: 'SourceList': undeclared identifier (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\ws2tcpip.h(760): error C2065: 'SourceCount': undeclared identifier (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\ws2tcpip.h(764): error C2065: 'Filter': undeclared identifier (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\ws2tcpip.h(767): error C2065: 'Filter': undeclared identifier (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\ws2tcpip.h(779): error C2061: syntax error: identifier 'MULTICAST_MODE_TYPE' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\ws2tcpip.h(786): error C2065: 'PIP_MSFILTER': undeclared identifier (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\ws2tcpip.h(786): error C2146: syntax error: missing ';' before identifier 'Filter' (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\ws2tcpip.h(786): error C2065: 'Filter': undeclared identifier (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\ws2tcpip.h(788): error C2065: 'SourceCount': undeclared identifier (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\ws2tcpip.h(789): error C2065: 'Filter': undeclared identifier (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\ws2tcpip.h(789): error C2065: 'SourceList': undeclared identifier (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\ws2tcpip.h(794): error C2065: 'IP_MSFILTER': undeclared identifier (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\ws2tcpip.h(794): error C2065: 'SourceCount': undeclared identifier (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\ws2tcpip.h(795): error C2065: 'Filter': undeclared identifier (compiling source file accounts.cpp)
+C:\Program Files (x86)\Windows Kits\10\\include\10.0.26100.0\\um\ws2tcpip.h(795): fatal error C1003: error count exceeds 100; stopping compilation (compiling source file accounts.cpp)
 pc_screen_streamer.cpp(385): warning C4834: discarding return value of function with [[nodiscard]] attribute
-Microsoft (R) Incremental Linker Version 14.51.36256.0
-Copyright (C) Microsoft Corporation.  All rights reserved.
-
-/out:main.exe 
-/ltcg 
-/LTCG 
-/OPT:REF 
-/OPT:ICF 
-/SUBSYSTEM:WINDOWS 
-/OUT:RasFocus.exe 
-user32.lib 
-gdi32.lib 
-gdiplus.lib 
-comctl32.lib 
-ole32.lib 
-oleaut32.lib 
-uiautomationcore.lib 
-uuid.lib 
-psapi.lib 
-shlwapi.lib 
-winmm.lib 
-shell32.lib 
-urlmon.lib 
-wininet.lib 
-comdlg32.lib 
-advapi32.lib 
-crypt32.lib 
-ws2_32.lib 
-mfplat.lib 
-mfuuid.lib 
-mf.lib 
-mfreadwrite.lib 
-wmcodecdspuuid.lib 
-rpcrt4.lib 
-secur32.lib 
-bcrypt.lib 
-dbghelp.lib 
-./packages/Microsoft.Web.WebView2.1.0.2420.47/build/native/x64/WebView2LoaderStatic.lib 
-D:\a\RasFocus-Exe-Release\RasFocus-Exe-Release\firebase_cpp_sdk\libs\windows\VS2019\MT\x64\Release\firebase_app.lib 
-D:\a\RasFocus-Exe-Release\RasFocus-Exe-Release\firebase_cpp_sdk\libs\windows\VS2019\MT\x64\Release\firebase_firestore.lib 
-D:\a\RasFocus-Exe-Release\RasFocus-Exe-Release\firebase_cpp_sdk\libs\windows\VS2019\MT\x64\Release\firebase_auth.lib 
-main.obj 
-prewindow.obj 
-tab_dashboard.obj 
-tab_family_link.obj 
-advanced_feature.obj 
-feature_browser.obj 
-bookmarks.obj 
-context_menu.obj 
-downloads_panel.obj 
-find_in_page.obj 
-history_panel.obj 
-settings.obj 
-keyboard_shortcuts.obj 
-tab_pdf_workspace.obj 
-upgrade.obj 
-mini_browser.obj 
-tab_blocks.obj 
-tab_schedule_blocks.obj 
-tab_adult.obj 
-tab_deep_study.obj 
-tab_special.obj 
-tab_statistics.obj 
-tab_settings.obj 
-tab_utilities.obj 
-tab_device_block.obj 
-tab_diary.obj 
-accounts.obj 
-tab_phone_remote.obj 
-pc_screen_streamer.obj 
-resources.res 
-libcpmt.lib(xlock.obj) : warning LNK4078: multiple '.voltbl' sections found with different attributes (00101A00)
-Generating code
-Finished generating code
 
