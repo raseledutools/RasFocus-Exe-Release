@@ -1160,13 +1160,19 @@ public:
                 return S_OK;
             }).Get(),nullptr);
 
-        // NavigationCompleted — inject AI filter CSS
+        // NavigationCompleted — inject AI filter CSS + update bounds for bookmark bar show/hide
         tab.webview->add_NavigationCompleted(
             Callback<ICoreWebView2NavigationCompletedEventHandler>(
             [this](ICoreWebView2* sender,ICoreWebView2NavigationCompletedEventArgs*)->HRESULT{
                 if (!g_windows.count(m_hWnd)) return S_OK;
                 auto& w=g_windows[m_hWnd];
                 if (m_tabIdx>=(int)w.tabs.size()) return S_OK;
+                // bookmark bar show/hide এর জন্য bounds আপডেট করা
+                if (m_tabIdx==w.activeTab && w.tabs[m_tabIdx].controller) {
+                    RECT wvr=GetWebViewRect(m_hWnd);
+                    w.tabs[m_tabIdx].controller->put_Bounds(wvr);
+                    InvalidateRect(m_hWnd,NULL,FALSE);
+                }
                 std::wstring script=GetAiInjectScript(w.tabs[m_tabIdx].url);
                 if (!script.empty()) sender->ExecuteScript(script.c_str(),nullptr);
                 return S_OK;
