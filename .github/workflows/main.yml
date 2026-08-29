@@ -28,7 +28,18 @@ jobs:
     - name: Setup MSVC Compiler Environment
       uses: ilammy/msvc-dev-cmd@v1
 
-    # 🟢 1. WebView2 Caching (বারবার ডাউনলোড ঠেকানোর জন্য)
+    # ── Version: v1.0.<run_number> → main.cpp এ CURRENT_VERSION replace ──
+    - name: Bump version in main.cpp
+      shell: pwsh
+      run: |
+        $ver = "v1.0.${{ github.run_number }}"
+        Write-Host "Setting version: $ver"
+        $content = Get-Content main.cpp -Raw
+        $content = $content -replace 'const string CURRENT_VERSION = "v[^"]*"', "const string CURRENT_VERSION = `"$ver`""
+        Set-Content main.cpp $content -Encoding UTF8
+        Write-Host "Version set to $ver in main.cpp"
+
+    # 🟢 1. WebView2 Caching
     - name: Cache WebView2 SDK
       id: cache-webview2
       uses: actions/cache@v4
@@ -40,7 +51,7 @@ jobs:
       if: steps.cache-webview2.outputs.cache-hit != 'true'
       run: nuget install Microsoft.Web.WebView2 -Version 1.0.2420.47 -OutputDirectory packages
 
-    # 🟢 2. Firebase SDK Caching (সবচেয়ে বেশি সময় বাঁচাবে)
+    # 🟢 2. Firebase SDK Caching
     - name: Cache Firebase SDK
       id: cache-firebase
       uses: actions/cache@v4
@@ -48,7 +59,6 @@ jobs:
         path: firebase_cpp_sdk
         key: firebase-cpp-sdk-12.4.0
 
-    # 🟢 3. আপনার ভেরিফাইড কোড: শুধুমাত্র ক্যাশ না থাকলে ডাউনলোড ও আনজিপ করবে
     - name: Download and Setup Firebase C++ SDK
       if: steps.cache-firebase.outputs.cache-hit != 'true'
       run: |
@@ -59,34 +69,27 @@ jobs:
     - name: Compile Resources
       run: rc.exe resources.rc
 
-    - name: Compile RasFocus.exe (Super Fast Optimized & Auto Lib Finder)
+    - name: Compile RasFocus.exe
       id: compile
       shell: pwsh
       run: |
-        # -notmatch "Debug" যুক্ত করা হয়েছে যাতে শুধু মেইন/রিলিজ ফাইলটাই সিলেক্ট হয়
-        # firebase_app.lib খোঁজা
         $libPath = (Get-ChildItem -Path .\firebase_cpp_sdk\libs -Filter firebase_app.lib -Recurse | Where-Object { $_.FullName -match "x64" -and $_.FullName -match "MT" -and $_.FullName -notmatch "Debug" }).FullName | Select-Object -First 1
         if (!$libPath) {
             $libPath = (Get-ChildItem -Path .\firebase_cpp_sdk\libs -Filter firebase_app.lib -Recurse | Where-Object { $_.FullName -match "x64" -and $_.FullName -notmatch "Debug" }).FullName | Select-Object -First 1
         }
-
-        # firebase_firestore.lib খোঁজা
         $firestorePath = (Get-ChildItem -Path .\firebase_cpp_sdk\libs -Filter firebase_firestore.lib -Recurse | Where-Object { $_.FullName -match "x64" -and $_.FullName -match "MT" -and $_.FullName -notmatch "Debug" }).FullName | Select-Object -First 1
         if (!$firestorePath) {
             $firestorePath = (Get-ChildItem -Path .\firebase_cpp_sdk\libs -Filter firebase_firestore.lib -Recurse | Where-Object { $_.FullName -match "x64" -and $_.FullName -notmatch "Debug" }).FullName | Select-Object -First 1
         }
-
-        # firebase_auth.lib খোঁজা (firestore এর g_auth_initializer dependency)
         $authPath = (Get-ChildItem -Path .\firebase_cpp_sdk\libs -Filter firebase_auth.lib -Recurse | Where-Object { $_.FullName -match "x64" -and $_.FullName -match "MT" -and $_.FullName -notmatch "Debug" }).FullName | Select-Object -First 1
         if (!$authPath) {
             $authPath = (Get-ChildItem -Path .\firebase_cpp_sdk\libs -Filter firebase_auth.lib -Recurse | Where-Object { $_.FullName -match "x64" -and $_.FullName -notmatch "Debug" }).FullName | Select-Object -First 1
         }
 
-        Write-Host "🎯 firebase_app.lib       -> $libPath"
-        Write-Host "🔥 firebase_firestore.lib -> $firestorePath"
-        Write-Host "🔑 firebase_auth.lib      -> $authPath"
+        Write-Host "firebase_app.lib       -> $libPath"
+        Write-Host "firebase_firestore.lib -> $firestorePath"
+        Write-Host "firebase_auth.lib      -> $authPath"
 
-        # 🟢 /MP ফ্ল্যাগ: মাল্টি-কোর দিয়ে দ্রুত বিল্ড। dbghelp.lib: absl symbolize dependency।
         cl.exe /MP /EHsc /MT /O2 /GL /utf-8 /W3 main.cpp prewindow.cpp tab_dashboard.cpp tab_family_link.cpp browser/advanced_feature.cpp browser/feature_browser.cpp browser/bookmarks.cpp browser/context_menu.cpp browser/downloads_panel.cpp browser/find_in_page.cpp browser/history_panel.cpp browser/settings.cpp browser/keyboard_shortcuts.cpp pdf_reader/tab_pdf_workspace.cpp upgrade.cpp browser/mini_browser.cpp tab_blocks.cpp tab_schedule_blocks.cpp tab_adult.cpp tab_deep_study.cpp tab_special.cpp tab_statistics.cpp tab_settings.cpp tab_utilities.cpp tab_device_block.cpp tab_diary.cpp accounts.cpp tab_phone_remote.cpp resources.res /I"./packages/Microsoft.Web.WebView2.1.0.2420.47/build/native/include" /I"./firebase_cpp_sdk/include" /link /LTCG /OPT:REF /OPT:ICF /SUBSYSTEM:WINDOWS /OUT:RasFocus.exe user32.lib gdi32.lib gdiplus.lib comctl32.lib ole32.lib oleaut32.lib uiautomationcore.lib uuid.lib psapi.lib shlwapi.lib winmm.lib shell32.lib urlmon.lib wininet.lib comdlg32.lib advapi32.lib crypt32.lib ws2_32.lib rpcrt4.lib secur32.lib bcrypt.lib dbghelp.lib "./packages/Microsoft.Web.WebView2.1.0.2420.47/build/native/x64/WebView2LoaderStatic.lib" "$libPath" "$firestorePath" "$authPath" 2>&1 | Tee-Object -FilePath build_log.txt
 
         $exitCode = $LASTEXITCODE
@@ -100,19 +103,15 @@ jobs:
       run: |
         $exitCode = "${{ steps.compile.outputs.BUILD_EXIT_CODE }}"
         $logContent = Get-Content build_log.txt -Raw -ErrorAction SilentlyContinue
-
         $timestamp = (Get-Date -Format "yyyy-MM-dd HH:mm:ss UTC")
         $runUrl = "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-
         if ($exitCode -eq "0") {
             $header = "BUILD STATUS: SUCCESS`nTime: $timestamp`nRun: $runUrl`n`n=== Compiler Output ===`n"
         } else {
             $header = "BUILD STATUS: FAILED (exit code $exitCode)`nTime: $timestamp`nRun: $runUrl`n`n=== Compiler Output ===`n"
         }
-
         $fullLog = $header + $logContent
         Set-Content -Path log_error.txt -Value $fullLog -Encoding UTF8
-
         git config user.email "github-actions[bot]@users.noreply.github.com"
         git config user.name "github-actions[bot]"
         git add log_error.txt
@@ -127,19 +126,24 @@ jobs:
       run: |
         signtool sign /f "RasAppsCert.pfx" /p "1234" /t http://timestamp.digicert.com /fd SHA256 "RasFocus.exe"
 
-    - name: Upload Artifact (Single Downloadable EXE)
+    - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
         name: RasFocus-App-Signed
         path: RasFocus.exe
 
-    # 🟢 Build হওয়া exe কে GitHub এর Release section এ আপলোড করা হচ্ছে
-    - name: Create Release with EXE
+    # ── Release: tag = v1.0.<run_number>, name readable ──
+    - name: Create GitHub Release with EXE
       if: github.event_name == 'push'
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: build-${{ github.run_number }}
-        name: RasFocus Build ${{ github.run_number }}
+        tag_name: v1.0.${{ github.run_number }}
+        name: "RasFocus v1.0.${{ github.run_number }}"
+        body: |
+          ## RasFocus v1.0.${{ github.run_number }}
+          Auto-release from build #${{ github.run_number }}
+          
+          **Install:** Download `RasFocus.exe` and run it. The app will replace itself automatically.
         files: RasFocus.exe
         make_latest: true
       env:

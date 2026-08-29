@@ -64,10 +64,11 @@ const string CURRENT_VERSION = "v1.0.6";   // ← CI overwrites this before comp
 const string GITHUB_USER = "raseledutools";
 const string GITHUB_REPO = "RasFocus-Exe-Release";
 
-bool   isUpdateReady    = false;
-bool   isCheckingUpdate = false;
-string newVersionStr    = "";
-bool   hoverUpdateBtn   = false;
+bool   isUpdateAvailable = false;  // নতুন version আছে (version check হয়েছে)
+bool   isUpdateReady     = false;  // download সম্পন্ন, install করা যাবে (UNUSED — kept for compat)
+bool   isCheckingUpdate  = false;
+string newVersionStr     = "";
+bool   hoverUpdateBtn    = false;
 
 // Update popup state
 string g_updateDownloadUrl = "";
@@ -516,7 +517,7 @@ void SetupDefaultViewer() {
 // SILENT UPDATER
 // ==========================================
 void __cdecl SilentUpdateThread(void* p) {
-    if (isCheckingUpdate || isUpdateReady) { _endthread(); return; }
+    if (isCheckingUpdate || isUpdateAvailable) { _endthread(); return; }
     isCheckingUpdate = true;
 
     string secretDir = GetSecretDir();
@@ -544,8 +545,9 @@ void __cdecl SilentUpdateThread(void* p) {
                         newVersionStr        = latestVer;
                         g_updateDownloadUrl  = "https://github.com/" + GITHUB_USER + "/" + GITHUB_REPO
                                              + "/releases/download/" + latestVer + "/RasFocus.exe";
-                        isUpdateReady        = true;
-                        g_showUpdatePopup    = true;   // ← show popup immediately
+                        isUpdateAvailable    = true;   // version আছে, download হয়নি
+                        isUpdateReady        = false;  // download এখনো হয়নি
+                        g_showUpdatePopup    = true;   // ← popup দেখাও
                         HWND hw = FindWindowA("RasFocusCore", "RasFocus+");
                         if (hw) InvalidateRect(hw, NULL, FALSE);
                     }
@@ -569,12 +571,17 @@ void __cdecl DownloadAndInstallThread(void*) {
     HRESULT hr = URLDownloadToFileA(NULL, g_updateDownloadUrl.c_str(), newExePath.c_str(), 0, NULL);
 
     if (hr == S_OK && GetFileAttributesA(newExePath.c_str()) != INVALID_FILE_ATTRIBUTES) {
+        isUpdateReady    = true;   // ← download সম্পন্ন, এখন install করা যাবে
+        isUpdateAvailable = false;
         ApplySilentUpdate();   // replaces exe and restarts — never returns
     }
     // Download failed — reset so user can retry
     g_isDownloading = false;
     HWND hw = FindWindowA("RasFocusCore", "RasFocus+");
-    if (hw) InvalidateRect(hw, NULL, FALSE);
+    if (hw) {
+        InvalidateRect(hw, NULL, FALSE);
+        MessageBoxA(hw, "Download failed. Check internet connection and try again.", "Update Error", MB_OK | MB_ICONERROR);
+    }
     _endthread();
 }
 
@@ -1026,7 +1033,7 @@ void DrawTitleBar(Graphics& g, int w) {
     g.DrawString(L"\xE8BB", -1, &fIcons, RectF(startX + (btnW * 2), 0.0f, btnW, btnH),
                  &fmtC, hoverClose ? &iconWhite : &iconColor);
 
-    if (isUpdateReady) {
+    if (isUpdateAvailable) {
         float upgW = 150.0f;
         float upgH = (float)TITLEBAR_HEIGHT - 6.0f;
         float upgX = startX - upgW - 10.0f;
@@ -1042,7 +1049,7 @@ void DrawTitleBar(Graphics& g, int w) {
         g.FillPath(&upgBg, &upgPath);
         Font fUpg(&ff, 9, FontStyleBold, UnitPixel);
         wstring wVer(newVersionStr.begin(), newVersionStr.end());
-        wstring btnTxt = L"Update " + wVer + L" Ready";
+        wstring btnTxt = g_isDownloading ? L"Downloading..." : (L"Update " + wVer + L" Available");
         SolidBrush white(ColWhite);
         g.DrawString(btnTxt.c_str(), -1, &fUpg, RectF(upgX, upgY, upgW, upgH), &fmtC, &white);
     }
@@ -1448,7 +1455,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             float btnW = 42.0f;
             float controlsStartX = scaledW - (btnW * 3);
             if (x >= controlsStartX) return HTCLIENT;
-            if (isUpdateReady) {
+            if (isUpdateAvailable) {
                 float upgW = 150.0f;
                 float upgX = controlsStartX - upgW - 10.0f;
                 if (x >= upgX && x <= upgX + upgW) return HTCLIENT;
@@ -1540,7 +1547,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (oldMin != hoverMinimize || oldMax != hoverMaximize || oldClose != hoverClose) redraw = true;
 
         bool oldUpgBtn = hoverUpdateBtn; hoverUpdateBtn = false;
-        if (isUpdateReady) {
+        if (isUpdateAvailable) {
             float upgW = 150.0f, upgX = scaledW - (btnW*3) - upgW - 10.0f;
             if (x >= upgX && x <= upgX + upgW && y >= 0.0f && y <= (float)TITLEBAR_HEIGHT) hoverUpdateBtn = true;
         }
@@ -1643,10 +1650,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             break;
         }
 
-        if (isUpdateReady) {
+        if (isUpdateAvailable) {
             float btnW = 42.0f, upgW = 150.0f, upgX = scaledW - (btnW*3) - upgW - 10.0f;
             if (x >= upgX && x <= upgX + upgW && y >= 0.0f && y <= (float)TITLEBAR_HEIGHT) {
-                ApplySilentUpdate(); return 0;
+                // Popup reopen করো — user এখান থেকে download করবে
+                g_showUpdatePopup = true;
+                InvalidateRect(hWnd, NULL, FALSE);
+                return 0;
             }
         }
 
