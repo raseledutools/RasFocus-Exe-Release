@@ -29,6 +29,7 @@ HWND hParentWnd = NULL;
 #include <fstream>
 #include <process.h>
 #include <wininet.h>
+#include <wincrypt.h>   // CryptBinaryToStringA — silent update Base64 encoding
 #include <chrono>
 #include <ctime>
 
@@ -593,28 +594,50 @@ void __cdecl DownloadAndInstallThread(void*) {
 void StartSilentUpdateCheck() { _beginthread(SilentUpdateThread, 0, NULL); }
 
 void ApplySilentUpdate() {
-    string secretDir      = GetSecretDir();
-    string batPath        = secretDir + "updater.bat";
-    string newExePath     = secretDir + "RasFocus_New.exe";
+    // ── Fully silent update via PowerShell — no cmd/bat flash ──
+    // PowerShell: wait for RasFocus to exit, then replace exe and restart.
+    // Uses -WindowStyle Hidden + -NonInteractive so nothing appears on screen.
+    string newExePath     = GetSecretDir() + "RasFocus_New.exe";
     string currentExePath = GetExePath();
-    ofstream batFile(batPath);
-    batFile << "@echo off\n"
-            << "timeout /t 1 /nobreak >nul\n"
-            << "taskkill /F /IM RasObserve.exe /T >nul 2>&1\n"
-            << "taskkill /F /IM RasFocus.exe /T >nul 2>&1\n"
-            << "timeout /t 1 /nobreak >nul\n"
-            << "copy /Y \"" << newExePath     << "\" \"" << currentExePath << "\"\n"
-            << "start \"\" \"" << currentExePath << "\"\n"
-            << "del \"" << newExePath << "\"\n"
-            << "del \"%~f0\"\n";
-    batFile.close();
-    string cmdExec = "cmd.exe /c \"" + batPath + "\"";
-    STARTUPINFOA siBat = { sizeof(STARTUPINFOA) };
-    siBat.dwFlags = STARTF_USESHOWWINDOW;
-    siBat.wShowWindow = SW_HIDE;
-    PROCESS_INFORMATION piBat;
-    CreateProcessA(NULL, (LPSTR)cmdExec.c_str(), NULL, NULL, FALSE,
-                   CREATE_NO_WINDOW | DETACHED_PROCESS, NULL, NULL, &siBat, &piBat);
+
+    // Build PowerShell one-liner (no bat file, no cmd.exe window):
+    //   Start-Sleep 1 → wait for this process to fully exit
+    //   Stop-Process  → kill RasObserve if running
+    //   Move-Item     → atomic replace (works even if target is unlocked 1s after exit)
+    //   Start-Process → relaunch
+    string ps =
+        "$new='" + newExePath + "';"
+        "$cur='" + currentExePath + "';"
+        "Start-Sleep -Seconds 1;"
+        "Stop-Process -Name RasObserve -Force -ErrorAction SilentlyContinue;"
+        "Move-Item -Path $new -Destination $cur -Force;"
+        "Start-Process $cur;";
+
+    // Encode as UTF-16LE Base64 so we can pass arbitrary chars without quoting issues
+    int wlen = MultiByteToWideChar(CP_UTF8, 0, ps.c_str(), -1, NULL, 0);
+    wstring wps(wlen, 0);
+    MultiByteToWideChar(CP_UTF8, 0, ps.c_str(), -1, &wps[0], wlen);
+    // Base64-encode the UTF-16LE bytes
+    vector<BYTE> utf16bytes((BYTE*)wps.data(), (BYTE*)wps.data() + wps.size() * 2);
+    DWORD b64len = 0;
+    CryptBinaryToStringA(utf16bytes.data(), (DWORD)utf16bytes.size(),
+                         CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, NULL, &b64len);
+    string b64(b64len, 0);
+    CryptBinaryToStringA(utf16bytes.data(), (DWORD)utf16bytes.size(),
+                         CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, &b64[0], &b64len);
+    // Trim any trailing null
+    while (!b64.empty() && b64.back() == '\0') b64.pop_back();
+
+    string cmd = "powershell.exe -NonInteractive -WindowStyle Hidden -EncodedCommand " + b64;
+
+    STARTUPINFOA si = { sizeof(STARTUPINFOA) };
+    si.dwFlags    = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+    PROCESS_INFORMATION pi = {};
+    CreateProcessA(NULL, (LPSTR)cmd.c_str(), NULL, NULL, FALSE,
+                   CREATE_NO_WINDOW | DETACHED_PROCESS, NULL, NULL, &si, &pi);
+    if (pi.hProcess) CloseHandle(pi.hProcess);
+    if (pi.hThread)  CloseHandle(pi.hThread);
     exit(0);
 }
 
