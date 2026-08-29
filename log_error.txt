@@ -1,6 +1,6 @@
 BUILD STATUS: FAILED (exit code 2)
-Time: 2026-08-29 06:52:54 UTC
-Run: https://github.com/raseledutools/RasFocus-Exe-Release/actions/runs/33239483924
+Time: 2026-08-29 07:25:01 UTC
+Run: https://github.com/raseledutools/RasFocus-Exe-Release/actions/runs/33240735631
 
 === Compiler Output ===
 Microsoft (R) C/C++ Optimizing Compiler Version 19.51.36256 for x64
@@ -17,10 +17,8 @@ main.cpp(190): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', p
 main.cpp(1187): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
 main.cpp(1506): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data
 main.cpp(1506): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data
-main.cpp(1772): error C2598: linkage specification must be at global scope
+main.cpp(1778): error C2598: linkage specification must be at global scope
 advanced_feature.cpp
-feature_browser.cpp
-bookmarks.cpp
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): warning C4244: '=': conversion from 'wchar_t' to 'char', possible loss of data (compiling source file tab_family_link.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): note: the template instantiation context (the oldest one first) is (compiling source file tab_family_link.cpp)
 tab_family_link.cpp(1529): note: see reference to function template instantiation 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string<std::_String_iterator<std::_String_val<std::_Simple_types<_Elem>>>,0>(_Iter,_Iter,const _Alloc &)' being compiled
@@ -73,6 +71,8 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
             _InIt=const wchar_t *,
             _SizeTy=std::+::_Size_type
         ] (compiling source file tab_family_link.cpp)
+feature_browser.cpp
+bookmarks.cpp
 context_menu.cpp
 browser/advanced_feature.cpp(26): warning C4996: 'localtime': This function or variable may be unsafe. Consider using localtime_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
 browser/advanced_feature.cpp(116): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
@@ -151,6 +151,8 @@ tab_adult.cpp(331): warning C4244: 'argument': conversion from 'int' to 'Gdiplus
 tab_adult.cpp(400): warning C4996: 'localtime': This function or variable may be unsafe. Consider using localtime_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
 tab_statistics.cpp
 tab_settings.cpp
+tab_special.cpp(115): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
+tab_special.cpp(118): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): warning C4244: '=': conversion from 'wchar_t' to 'char', possible loss of data (compiling source file tab_deep_study.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): note: the template instantiation context (the oldest one first) is (compiling source file tab_deep_study.cpp)
 tab_deep_study.cpp(690): note: see reference to function template instantiation 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string<std::_String_iterator<std::_String_val<std::_Simple_types<_Elem>>>,0>(_Iter,_Iter,const _Alloc &)' being compiled
@@ -177,8 +179,6 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
             _InIt=wchar_t *,
             _SizeTy=std::+::_Size_type
         ] (compiling source file tab_deep_study.cpp)
-tab_special.cpp(115): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
-tab_special.cpp(118): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
 tab_utilities.cpp
 tab_device_block.cpp
 tab_diary.cpp
@@ -188,6 +188,7 @@ tab_utilities.cpp(184): warning C4244: 'initializing': conversion from 'LRESULT'
 tab_phone_remote.cpp
 tab_diary.cpp(461): warning C4996: '_wgetenv': This function or variable may be unsafe. Consider using _wdupenv_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
 accounts.cpp(504): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
+tab_phone_remote.cpp(186): error C2429: language feature 'structured bindings' requires compiler flag '/std:c++17'
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): warning C4244: '=': conversion from 'wchar_t' to 'char', possible loss of data (compiling source file accounts.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): note: the template instantiation context (the oldest one first) is (compiling source file accounts.cpp)
 accounts.cpp(591): note: see reference to function template instantiation 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string<std::_String_iterator<std::_String_val<std::_Simple_types<_Elem>>>,0>(_Iter,_Iter,const _Alloc &)' being compiled
@@ -214,5 +215,4 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
             _InIt=wchar_t *,
             _SizeTy=std::+::_Size_type
         ] (compiling source file accounts.cpp)
-tab_phone_remote.cpp(186): error C2429: language feature 'structured bindings' requires compiler flag '/std:c++17'
 
