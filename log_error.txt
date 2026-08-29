@@ -1,6 +1,6 @@
-BUILD STATUS: FAILED (exit code 2)
-Time: 2026-08-29 17:24:50 UTC
-Run: https://github.com/raseledutools/RasFocus-Exe-Release/actions/runs/33265494425
+BUILD STATUS: SUCCESS
+Time: 2026-08-29 17:28:25 UTC
+Run: https://github.com/raseledutools/RasFocus-Exe-Release/actions/runs/33265633840
 
 === Compiler Output ===
 Microsoft (R) C/C++ Optimizing Compiler Version 19.51.36256 for x64
@@ -18,10 +18,6 @@ main.cpp(670): warning C4996: 'fopen': This function or variable may be unsafe. 
 main.cpp(1370): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
 main.cpp(1696): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data
 main.cpp(1696): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data
-advanced_feature.cpp
-feature_browser.cpp
-bookmarks.cpp
-context_menu.cpp
 tab_family_link.cpp(362): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\codecvt(34): note: see declaration of 'std::codecvt_utf8' (compiling source file tab_family_link.cpp)
 tab_family_link.cpp(362): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>::codecvt_utf8': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
@@ -33,7 +29,9 @@ tab_family_link.cpp(362): note: see reference to function template instantiation
         [
             _Facet=std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>
         ]
-downloads_panel.cpp
+advanced_feature.cpp
+feature_browser.cpp
+bookmarks.cpp
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): warning C4244: '=': conversion from 'wchar_t' to 'char', possible loss of data (compiling source file tab_family_link.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): note: the template instantiation context (the oldest one first) is (compiling source file tab_family_link.cpp)
 tab_family_link.cpp(1529): note: see reference to function template instantiation 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string<std::_String_iterator<std::_String_val<std::_Simple_types<_Elem>>>,0>(_Iter,_Iter,const _Alloc &)' being compiled
@@ -86,16 +84,14 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
             _InIt=const wchar_t *,
             _SizeTy=std::+::_Size_type
         ] (compiling source file tab_family_link.cpp)
+context_menu.cpp
+downloads_panel.cpp
 find_in_page.cpp
-history_panel.cpp
-settings.cpp
 browser/advanced_feature.cpp(23): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\codecvt(34): note: see declaration of 'std::codecvt_utf8' (compiling source file browser/advanced_feature.cpp)
 browser/advanced_feature.cpp(23): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>::codecvt_utf8': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
 browser/advanced_feature.cpp(26): warning C4996: 'localtime': This function or variable may be unsafe. Consider using localtime_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
-keyboard_shortcuts.cpp
 browser/advanced_feature.cpp(116): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
-tab_pdf_workspace.cpp
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xlocale(251): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning. (compiling source file browser/advanced_feature.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\codecvt(34): note: see declaration of 'std::codecvt_utf8' (compiling source file browser/advanced_feature.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xlocale(251): note: the template instantiation context (the oldest one first) is (compiling source file browser/advanced_feature.cpp)
@@ -104,6 +100,10 @@ browser/advanced_feature.cpp(23): note: see reference to function template insta
         [
             _Facet=std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>
         ]
+history_panel.cpp
+settings.cpp
+keyboard_shortcuts.cpp
+tab_pdf_workspace.cpp
 upgrade.cpp
 mini_browser.cpp
 tab_blocks.cpp
@@ -115,32 +115,6 @@ tab_blocks.cpp(1533): warning C4244: 'initializing': conversion from 'time_t' to
 tab_blocks.cpp(2634): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data
 tab_blocks.cpp(2802): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data
 tab_blocks.cpp(2820): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data
-C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): warning C4244: '=': conversion from 'wchar_t' to 'char', possible loss of data (compiling source file browser/mini_browser.cpp)
-C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): note: the template instantiation context (the oldest one first) is (compiling source file browser/mini_browser.cpp)
-browser/mini_browser.cpp(2014): note: see reference to function template instantiation 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string<std::_String_iterator<std::_String_val<std::_Simple_types<_Elem>>>,0>(_Iter,_Iter,const _Alloc &)' being compiled
-        with
-        [
-            _Elem=wchar_t,
-            _Iter=std::_String_iterator<std::_String_val<std::_Simple_types<wchar_t>>>,
-            _Alloc=std::allocator<char>
-        ]
-browser/mini_browser.cpp(2014): note: see the first reference to 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string' in 'TabControllerHandler::Invoke::<lambda_73edf3dffe15d3a969c1a74867e77878>::()::<lambda_e79adc25f6471789fc222e38bae3625b>::operator ()'
-C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xstring(862): note: see reference to function template instantiation 'void std::basic_string<char,std::char_traits<char>,std::allocator<char>>::_Construct_from_iter<wchar_t*,wchar_t*,_Size_type>(_Iter,const _Sent,_Size)' being compiled
-        with
-        [
-            _Size_type=std::+::_Size_type,
-            _Iter=wchar_t *,
-            _Sent=wchar_t *,
-            _Size=std::+::_Size_type
-        ] (compiling source file browser/mini_browser.cpp)
-C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xstring(1018): note: see reference to function template instantiation '_OutIt *std::_Copy_n_unchecked4<wchar_t*,_Size,char*>(_InIt,_SizeTy,_OutIt)' being compiled
-        with
-        [
-            _OutIt=char *,
-            _Size=std::+::_Size_type,
-            _InIt=wchar_t *,
-            _SizeTy=std::+::_Size_type
-        ] (compiling source file browser/mini_browser.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): warning C4244: '=': conversion from 'wchar_t' to 'char', possible loss of data (compiling source file tab_blocks.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): note: the template instantiation context (the oldest one first) is (compiling source file tab_blocks.cpp)
 tab_blocks.cpp(412): note: see reference to function template instantiation 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string<std::_String_iterator<std::_String_val<std::_Simple_types<_Elem>>>,0>(_Iter,_Iter,const _Alloc &)' being compiled
@@ -168,6 +142,32 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
             _SizeTy=std::+::_Size_type
         ] (compiling source file tab_blocks.cpp)
 tab_deep_study.cpp
+C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): warning C4244: '=': conversion from 'wchar_t' to 'char', possible loss of data (compiling source file browser/mini_browser.cpp)
+C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): note: the template instantiation context (the oldest one first) is (compiling source file browser/mini_browser.cpp)
+browser/mini_browser.cpp(2014): note: see reference to function template instantiation 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string<std::_String_iterator<std::_String_val<std::_Simple_types<_Elem>>>,0>(_Iter,_Iter,const _Alloc &)' being compiled
+        with
+        [
+            _Elem=wchar_t,
+            _Iter=std::_String_iterator<std::_String_val<std::_Simple_types<wchar_t>>>,
+            _Alloc=std::allocator<char>
+        ]
+browser/mini_browser.cpp(2014): note: see the first reference to 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string' in 'TabControllerHandler::Invoke::<lambda_73edf3dffe15d3a969c1a74867e77878>::()::<lambda_e79adc25f6471789fc222e38bae3625b>::operator ()'
+C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xstring(862): note: see reference to function template instantiation 'void std::basic_string<char,std::char_traits<char>,std::allocator<char>>::_Construct_from_iter<wchar_t*,wchar_t*,_Size_type>(_Iter,const _Sent,_Size)' being compiled
+        with
+        [
+            _Size_type=std::+::_Size_type,
+            _Iter=wchar_t *,
+            _Sent=wchar_t *,
+            _Size=std::+::_Size_type
+        ] (compiling source file browser/mini_browser.cpp)
+C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xstring(1018): note: see reference to function template instantiation '_OutIt *std::_Copy_n_unchecked4<wchar_t*,_Size,char*>(_InIt,_SizeTy,_OutIt)' being compiled
+        with
+        [
+            _OutIt=char *,
+            _Size=std::+::_Size_type,
+            _InIt=wchar_t *,
+            _SizeTy=std::+::_Size_type
+        ] (compiling source file browser/mini_browser.cpp)
 tab_special.cpp
 tab_adult.cpp(219): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\codecvt(34): note: see declaration of 'std::codecvt_utf8' (compiling source file tab_adult.cpp)
@@ -189,6 +189,7 @@ tab_adult.cpp(406): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::code
 tab_adult.cpp(518): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\codecvt(34): note: see declaration of 'std::codecvt_utf8' (compiling source file tab_adult.cpp)
 tab_adult.cpp(518): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>::codecvt_utf8': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
+tab_statistics.cpp
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xlocale(251): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning. (compiling source file tab_adult.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\codecvt(34): note: see declaration of 'std::codecvt_utf8' (compiling source file tab_adult.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xlocale(251): note: the template instantiation context (the oldest one first) is (compiling source file tab_adult.cpp)
@@ -197,11 +198,9 @@ tab_adult.cpp(219): note: see reference to function template instantiation 'std:
         [
             _Facet=std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>
         ]
-tab_statistics.cpp
 tab_settings.cpp
 tab_special.cpp(115): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
 tab_special.cpp(118): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
-tab_utilities.cpp
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): warning C4244: '=': conversion from 'wchar_t' to 'char', possible loss of data (compiling source file tab_deep_study.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): note: the template instantiation context (the oldest one first) is (compiling source file tab_deep_study.cpp)
 tab_deep_study.cpp(690): note: see reference to function template instantiation 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string<std::_String_iterator<std::_String_val<std::_Simple_types<_Elem>>>,0>(_Iter,_Iter,const _Alloc &)' being compiled
@@ -228,129 +227,115 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
             _InIt=wchar_t *,
             _SizeTy=std::+::_Size_type
         ] (compiling source file tab_deep_study.cpp)
+tab_utilities.cpp
 tab_device_block.cpp
 tab_diary.cpp
 accounts.cpp
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusImaging.h(84): error C4430: missing type specifier - int assumed. Note: C++ does not support default-int (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusImaging.h(84): error C2440: 'initializing': cannot convert from 'const char [37]' to 'int' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusImaging.h(84): note: There is no context in which this conversion is possible (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusImaging.h(85): error C2146: syntax error: missing ';' before identifier 'IImageBytes' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusImaging.h(85): error C2059: syntax error: 'public' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusImaging.h(86): error C2143: syntax error: missing ';' before '{' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusImaging.h(86): error C2447: '{': missing function header (old-style formal list?) (compiling source file accounts.cpp)
 tab_utilities.cpp(72): warning C4244: '=': conversion from 'LRESULT' to 'int', possible loss of data
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusImaging.h(291): error C3646: 'id': unknown override specifier (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusImaging.h(291): error C4430: missing type specifier - int assumed. Note: C++ does not support default-int (compiling source file accounts.cpp)
 tab_utilities.cpp(184): warning C4244: 'initializing': conversion from 'LRESULT' to 'int', possible loss of data
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(397): error C2061: syntax error: identifier 'IStream' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(407): error C2061: syntax error: identifier 'IStream' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(417): error C2061: syntax error: identifier 'IStream' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(455): error C2061: syntax error: identifier 'PROPID' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(456): error C2061: syntax error: identifier 'PROPID' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(457): error C2061: syntax error: identifier 'PROPID' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(465): error C2061: syntax error: identifier 'PROPID' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(483): error C2535: 'Gdiplus::Image::Image(void)': member function already defined or declared (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(396): note: see declaration of 'Gdiplus::Image::Image' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(519): error C2061: syntax error: identifier 'IStream' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(529): error C2061: syntax error: identifier 'IStream' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(773): error C2061: syntax error: identifier 'IStream' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(829): error C2061: syntax error: identifier 'IStream' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(828): error C2535: 'Gdiplus::Metafile::Metafile(void)': member function already defined or declared (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(773): note: see declaration of 'Gdiplus::Metafile::Metafile' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(836): error C2061: syntax error: identifier 'IStream' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(835): error C2535: 'Gdiplus::Metafile::Metafile(void)': member function already defined or declared (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(773): note: see declaration of 'Gdiplus::Metafile::Metafile' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(845): error C2061: syntax error: identifier 'IStream' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(844): error C2535: 'Gdiplus::Metafile::Metafile(void)': member function already defined or declared (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(773): note: see declaration of 'Gdiplus::Metafile::Metafile' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(870): error C2061: syntax error: identifier 'IStream' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(938): error C2535: 'Gdiplus::Metafile::Metafile(void)': member function already defined or declared (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusHeaders.h(773): note: see declaration of 'Gdiplus::Metafile::Metafile' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1145): error C2065: 'IStream': undeclared identifier (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1145): error C2065: 'stream': undeclared identifier (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1145): error C2065: 'image': undeclared identifier (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1145): error C2275: 'Gdiplus::GpImage': expected an expression instead of a type (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1145): warning C4229: anachronism used: modifiers on data are ignored (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1151): error C2065: 'IStream': undeclared identifier (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1151): error C2065: 'stream': undeclared identifier (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1151): error C2065: 'image': undeclared identifier (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1151): error C2275: 'Gdiplus::GpImage': expected an expression instead of a type (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1151): warning C4229: anachronism used: modifiers on data are ignored (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1168): error C2061: syntax error: identifier 'IStream' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1256): error C2061: syntax error: identifier 'PROPID' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1259): error C2061: syntax error: identifier 'PROPID' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1262): error C2061: syntax error: identifier 'PROPID' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1274): error C2061: syntax error: identifier 'PROPID' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1298): error C2065: 'IStream': undeclared identifier (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1298): error C2065: 'stream': undeclared identifier (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1298): error C2065: 'bitmap': undeclared identifier (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1298): error C2275: 'Gdiplus::GpBitmap': expected an expression instead of a type (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1298): warning C4229: anachronism used: modifiers on data are ignored (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1304): error C2065: 'IStream': undeclared identifier (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1304): error C2065: 'stream': undeclared identifier (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1304): error C2065: 'bitmap': undeclared identifier (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1304): error C2275: 'Gdiplus::GpBitmap': expected an expression instead of a type (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(1304): warning C4229: anachronism used: modifiers on data are ignored (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2235): error C2065: 'IStream': undeclared identifier (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2235): error C2065: 'stream': undeclared identifier (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2236): error C2065: 'header': undeclared identifier (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2236): error C2275: 'Gdiplus::MetafileHeader': expected an expression instead of a type (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2234): warning C4229: anachronism used: modifiers on data are ignored (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2255): error C2061: syntax error: identifier 'IStream' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2275): error C2065: 'IStream': undeclared identifier (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2275): error C2065: 'stream': undeclared identifier (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2275): error C2065: 'metafile': undeclared identifier (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2275): error C2275: 'Gdiplus::GpMetafile': expected an expression instead of a type (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2275): warning C4229: anachronism used: modifiers on data are ignored (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2322): error C2065: 'IStream': undeclared identifier (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2322): error C2065: 'stream': undeclared identifier (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2323): error C2275: 'HDC': expected an expression instead of a type (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2323): error C2146: syntax error: missing ')' before identifier 'referenceHdc' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2333): error C2065: 'IStream': undeclared identifier (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2333): error C2065: 'stream': undeclared identifier (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2334): error C2275: 'HDC': expected an expression instead of a type (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusFlat.h(2334): error C2146: syntax error: missing ')' before identifier 'referenceHdc' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusPath.h(145): error C2061: syntax error: identifier 'byte' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(80): error C2065: 'IStream': undeclared identifier (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(80): error C2065: 'stream': undeclared identifier (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(80): error C7550: 'Gdiplus::Metafile::{ctor}': the qualified name in this context names a constructor, not a type (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(81): error C2143: syntax error: missing ';' before '{' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(81): error C2447: '{': missing function header (old-style formal list?) (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(199): error C2065: 'IStream': undeclared identifier (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(199): error C2065: 'stream': undeclared identifier (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(200): error C2275: 'HDC': expected an expression instead of a type (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(200): error C2146: syntax error: missing ')' before identifier 'referenceHdc' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(204): error C2143: syntax error: missing ';' before '{' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(204): error C2447: '{': missing function header (old-style formal list?) (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(216): error C2065: 'IStream': undeclared identifier (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(216): error C2065: 'stream': undeclared identifier (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(217): error C2275: 'HDC': expected an expression instead of a type (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(217): error C2146: syntax error: missing ')' before identifier 'referenceHdc' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(223): error C2143: syntax error: missing ';' before '{' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(223): error C2447: '{': missing function header (old-style formal list?) (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(235): error C2065: 'IStream': undeclared identifier (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(235): error C2065: 'stream': undeclared identifier (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(236): error C2275: 'HDC': expected an expression instead of a type (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(236): error C2146: syntax error: missing ')' before identifier 'referenceHdc' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(242): error C2143: syntax error: missing ';' before '{' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(242): error C2447: '{': missing function header (old-style formal list?) (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(284): error C2065: 'IStream': undeclared identifier (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(284): error C2065: 'stream': undeclared identifier (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(285): error C2065: 'header': undeclared identifier (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(285): error C2275: 'Gdiplus::MetafileHeader': expected an expression instead of a type (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(283): error C2761: 'GetMetafileHeader': redeclaration of member is not allowed (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(287): error C2143: syntax error: missing ';' before '{' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusMetafile.h(287): error C2447: '{': missing function header (old-style formal list?) (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusBitmap.h(50): error C2065: 'IStream': undeclared identifier (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusBitmap.h(50): error C2065: 'stream': undeclared identifier (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusBitmap.h(51): error C2275: 'BOOL': expected an expression instead of a type (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusBitmap.h(51): error C2146: syntax error: missing ')' before identifier 'useEmbeddedColorManagement' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusBitmap.h(53): error C2143: syntax error: missing ';' before '{' (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusBitmap.h(53): error C2447: '{': missing function header (old-style formal list?) (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusBitmap.h(85): error C2065: 'IStream': undeclared identifier (compiling source file accounts.cpp)
-C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusBitmap.h(85): fatal error C1003: error count exceeds 100; stopping compilation (compiling source file accounts.cpp)
 tab_phone_remote.cpp
-pc_screen_streamer.cpp
 tab_diary.cpp(461): warning C4996: '_wgetenv': This function or variable may be unsafe. Consider using _wdupenv_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+pc_screen_streamer.cpp
+accounts.cpp(512): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
+C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): warning C4244: '=': conversion from 'wchar_t' to 'char', possible loss of data (compiling source file accounts.cpp)
+C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): note: the template instantiation context (the oldest one first) is (compiling source file accounts.cpp)
+accounts.cpp(694): note: see reference to function template instantiation 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string<std::_String_iterator<std::_String_val<std::_Simple_types<_Elem>>>,0>(_Iter,_Iter,const _Alloc &)' being compiled
+        with
+        [
+            _Elem=wchar_t,
+            _Iter=std::_String_iterator<std::_String_val<std::_Simple_types<wchar_t>>>,
+            _Alloc=std::allocator<char>
+        ]
+accounts.cpp(694): note: see the first reference to 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string' in 'ExtractCodeFromUrl'
+C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xstring(862): note: see reference to function template instantiation 'void std::basic_string<char,std::char_traits<char>,std::allocator<char>>::_Construct_from_iter<wchar_t*,wchar_t*,_Size_type>(_Iter,const _Sent,_Size)' being compiled
+        with
+        [
+            _Size_type=std::+::_Size_type,
+            _Iter=wchar_t *,
+            _Sent=wchar_t *,
+            _Size=std::+::_Size_type
+        ] (compiling source file accounts.cpp)
+C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xstring(1018): note: see reference to function template instantiation '_OutIt *std::_Copy_n_unchecked4<wchar_t*,_Size,char*>(_InIt,_SizeTy,_OutIt)' being compiled
+        with
+        [
+            _OutIt=char *,
+            _Size=std::+::_Size_type,
+            _InIt=wchar_t *,
+            _SizeTy=std::+::_Size_type
+        ] (compiling source file accounts.cpp)
 pc_screen_streamer.cpp(385): warning C4834: discarding return value of function with [[nodiscard]] attribute
+Microsoft (R) Incremental Linker Version 14.51.36256.0
+Copyright (C) Microsoft Corporation.  All rights reserved.
+
+/out:main.exe 
+/ltcg 
+/LTCG 
+/OPT:REF 
+/OPT:ICF 
+/SUBSYSTEM:WINDOWS 
+/OUT:RasFocus.exe 
+user32.lib 
+gdi32.lib 
+gdiplus.lib 
+comctl32.lib 
+ole32.lib 
+oleaut32.lib 
+uiautomationcore.lib 
+uuid.lib 
+psapi.lib 
+shlwapi.lib 
+winmm.lib 
+shell32.lib 
+urlmon.lib 
+wininet.lib 
+comdlg32.lib 
+advapi32.lib 
+crypt32.lib 
+ws2_32.lib 
+mfplat.lib 
+mfuuid.lib 
+mf.lib 
+mfreadwrite.lib 
+wmcodecdspuuid.lib 
+rpcrt4.lib 
+secur32.lib 
+bcrypt.lib 
+dbghelp.lib 
+./packages/Microsoft.Web.WebView2.1.0.2420.47/build/native/x64/WebView2LoaderStatic.lib 
+D:\a\RasFocus-Exe-Release\RasFocus-Exe-Release\firebase_cpp_sdk\libs\windows\VS2019\MT\x64\Release\firebase_app.lib 
+D:\a\RasFocus-Exe-Release\RasFocus-Exe-Release\firebase_cpp_sdk\libs\windows\VS2019\MT\x64\Release\firebase_firestore.lib 
+D:\a\RasFocus-Exe-Release\RasFocus-Exe-Release\firebase_cpp_sdk\libs\windows\VS2019\MT\x64\Release\firebase_auth.lib 
+main.obj 
+prewindow.obj 
+tab_dashboard.obj 
+tab_family_link.obj 
+advanced_feature.obj 
+feature_browser.obj 
+bookmarks.obj 
+context_menu.obj 
+downloads_panel.obj 
+find_in_page.obj 
+history_panel.obj 
+settings.obj 
+keyboard_shortcuts.obj 
+tab_pdf_workspace.obj 
+upgrade.obj 
+mini_browser.obj 
+tab_blocks.obj 
+tab_schedule_blocks.obj 
+tab_adult.obj 
+tab_deep_study.obj 
+tab_special.obj 
+tab_statistics.obj 
+tab_settings.obj 
+tab_utilities.obj 
+tab_device_block.obj 
+tab_diary.obj 
+accounts.obj 
+tab_phone_remote.obj 
+pc_screen_streamer.obj 
+resources.res 
+libcpmt.lib(xlock.obj) : warning LNK4078: multiple '.voltbl' sections found with different attributes (00101A00)
+Generating code
+Finished generating code
 
