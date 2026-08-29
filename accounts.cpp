@@ -27,7 +27,7 @@ static ComPtr<ICoreWebView2>           s_googleWebView;
 static bool   s_googleSignInPending   = false; // sign-in চলছে কিনা
 
 // Google OAuth constants
-static const std::string GOOGLE_CLIENT_ID    = "YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com";
+static const std::string GOOGLE_CLIENT_ID    = "868329616276-jtv50h50toa7e563cdcihmrdv66hgvfd.apps.googleusercontent.com";
 static const std::string GOOGLE_REDIRECT_URI = "http://localhost:7878";
 static const std::string FIREBASE_API_KEY    = "AIzaSyBVl3BuW6gfmp_K2IMYd1rbvLEA2l0yinA";
 
