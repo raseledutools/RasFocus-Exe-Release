@@ -1366,6 +1366,7 @@ void OnPaint(HWND hWnd, HDC hdc) {
 
     DrawFeedbackPopup(g, scaledW, scaledH);
     DrawUpgradePopup(g, scaledW, scaledH); // ← Upgrade Popup Draw Call
+    DrawUpdatePopup(g, scaledW, scaledH);  // ← Update Popup Draw Call (auto-update notification)
 
     if (showDailyMessage || onboardingStep > 0) {
         DrawPreWindowOverlay(g, scaledW, scaledH, g_scaleFactor);
