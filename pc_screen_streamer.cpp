@@ -460,13 +460,13 @@ static void RegisterOnFirebase(const string& deviceId, const string& ip, int por
     SYSTEMTIME st; GetSystemTimeAsFileTime((FILETIME*)&st);
     LONGLONG ts=(LONGLONG)GetTickCount64();
     snprintf(buf,sizeof(buf),
-        "{"fields":{"
-        ""id":{"stringValue":"%s"},"
-        ""ip":{"stringValue":"%s"},"
-        ""port":{"integerValue":"%d"},"
-        ""name":{"stringValue":"RasFocus-PC"},"
-        ""platform":{"stringValue":"windows"},"
-        ""ts":{"integerValue":"%lld"}"
+        "{\"fields\":{"
+        "\"id\":{\"stringValue\":\"%s\"},"
+        "\"ip\":{\"stringValue\":\"%s\"},"
+        "\"port\":{\"integerValue\":\"%d\"},"
+        "\"name\":{\"stringValue\":\"RasFocus-PC\"},"
+        "\"platform\":{\"stringValue\":\"windows\"},"
+        "\"ts\":{\"integerValue\":\"%lld\"}"
         "}}",
         deviceId.c_str(), ip.c_str(), port, ts);
     thread([path,payload=string(buf)](){
