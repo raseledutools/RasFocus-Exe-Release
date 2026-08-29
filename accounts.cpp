@@ -14,7 +14,10 @@
 #include "WebView2.h"
 #include "WebView2EnvironmentOptions.h"
 
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #pragma comment(lib, "wininet.lib")
+#pragma comment(lib, "ws2_32.lib")
 
 using namespace Microsoft::WRL;
 
@@ -27,9 +30,10 @@ static ComPtr<ICoreWebView2>           s_googleWebView;
 static bool   s_googleSignInPending   = false; // sign-in চলছে কিনা
 
 // Google OAuth constants
-static const std::string GOOGLE_CLIENT_ID    = "868329616276-jtv50h50toa7e563cdcihmrdv66hgvfd.apps.googleusercontent.com";
-static const std::string GOOGLE_REDIRECT_URI = "http://localhost:7878";
-static const std::string FIREBASE_API_KEY    = "AIzaSyBVl3BuW6gfmp_K2IMYd1rbvLEA2l0yinA";
+static const std::string GOOGLE_CLIENT_ID     = "868329616276-jtv50h50toa7e563cdcihmrdv66hgvfd.apps.googleusercontent.com";
+static const std::string GOOGLE_CLIENT_SECRET = "GOCSPX-placeholder"; // set in Google Console → OAuth → client secret
+static const std::string GOOGLE_REDIRECT_URI  = "http://localhost:7878";
+static const std::string FIREBASE_API_KEY     = "AIzaSyBVl3BuW6gfmp_K2IMYd1rbvLEA2l0yinA";
 
 #ifndef IDI_APP_ICON
 #define IDI_APP_ICON 101
@@ -559,37 +563,132 @@ void __cdecl PasswordResetThread(void* param) {
 //  GOOGLE SIGN-IN — WebView2 OAuth Popup
 // ============================================================
 
-// Google OAuth এর URL বানানো
-static wstring BuildGoogleOAuthURL() {
-    string url =
+// ── Auth Code Flow helpers ──
+// Google এখন desktop apps এ implicit flow (response_type=token) block করে।
+// তাই Authorization Code Flow ব্যবহার করতে হবে:
+//   1. response_type=code দিয়ে OAuth URL খোলো
+//   2. localhost:7878 এ একটা mini HTTP server চালাও
+//   3. Google সেখানে redirect করবে ?code=XXX দিয়ে
+//   4. code দিয়ে token endpoint থেকে id_token নাও
+//   5. id_token দিয়ে Firebase login করো
+
+static string BuildGoogleOAuthURL_Str() {
+    return
         "https://accounts.google.com/o/oauth2/v2/auth"
         "?client_id=" + GOOGLE_CLIENT_ID +
         "&redirect_uri=" + GOOGLE_REDIRECT_URI +
-        "&response_type=token"          // implicit flow — id_token সরাসরি URL এ আসে
+        "&response_type=code"
         "&scope=openid%20email%20profile"
+        "&access_type=offline"
         "&prompt=select_account";
-    return wstring(url.begin(), url.end());
 }
 
-// OAuth redirect URL থেকে id_token extract করা
-static string ExtractIdTokenFromUrl(const wstring& url) {
-    // URL fragment: #access_token=...&id_token=XXX&...
-    size_t hashPos = url.find(L'#');
-    if (hashPos == wstring::npos) return "";
-    wstring fragment = url.substr(hashPos + 1);
+static wstring BuildGoogleOAuthURL() {
+    string s = BuildGoogleOAuthURL_Str();
+    return wstring(s.begin(), s.end());
+}
 
-    // id_token= খোঁজা
-    size_t pos = fragment.find(L"id_token=");
-    if (pos == wstring::npos) return "";
-    size_t start = pos + 9;
-    size_t end   = fragment.find(L'&', start);
-    wstring tokenW = (end == wstring::npos)
-        ? fragment.substr(start)
-        : fragment.substr(start, end - start);
+// query string から param 값 추출 (e.g. "code=XXX&state=YYY" → "XXX")
+static string ExtractQueryParam(const string& query, const string& key) {
+    string search = key + "=";
+    size_t pos = query.find(search);
+    if (pos == string::npos) return "";
+    size_t start = pos + search.size();
+    size_t end   = query.find('&', start);
+    return (end == string::npos) ? query.substr(start) : query.substr(start, end - start);
+}
 
-    // wstring → string
-    string token(tokenW.begin(), tokenW.end());
-    return token;
+// auth code → id_token exchange (Google token endpoint)
+static string ExchangeCodeForIdToken(const string& code) {
+    const string HOST = "oauth2.googleapis.com";
+    const string PATH = "/token";
+    string body =
+        "code="          + code +
+        "&client_id="    + GOOGLE_CLIENT_ID +
+        "&client_secret="+ GOOGLE_CLIENT_SECRET +
+        "&redirect_uri=" + GOOGLE_REDIRECT_URI +
+        "&grant_type=authorization_code";
+
+    HINTERNET hInet = InternetOpenA("RasFocus/1.0", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
+    if (!hInet) return "";
+    HINTERNET hConn = InternetConnectA(hInet, HOST.c_str(), INTERNET_DEFAULT_HTTPS_PORT,
+                                       NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
+    if (!hConn) { InternetCloseHandle(hInet); return ""; }
+    HINTERNET hReq  = HttpOpenRequestA(hConn, "POST", PATH.c_str(), NULL, NULL, NULL,
+        INTERNET_FLAG_SECURE | INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE, 0);
+    if (!hReq)  { InternetCloseHandle(hConn); InternetCloseHandle(hInet); return ""; }
+
+    string headers = "Content-Type: application/x-www-form-urlencoded\r\n";
+    HttpSendRequestA(hReq, headers.c_str(), (DWORD)headers.size(),
+                     (LPVOID)body.c_str(), (DWORD)body.size());
+
+    string response; char buf[4096]; DWORD br = 0;
+    while (InternetReadFile(hReq, buf, sizeof(buf)-1, &br) && br > 0) {
+        buf[br] = '\0'; response += buf;
+    }
+    InternetCloseHandle(hReq); InternetCloseHandle(hConn); InternetCloseHandle(hInet);
+
+    return JsonExtract(response, "id_token");
+}
+
+// localhost:7878 mini HTTP server — auth code를 한 번 받아서 반환
+// blocking call이므로 반드시 별도 thread에서 호출할 것
+static string WaitForAuthCode() {
+    SOCKET srv = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (srv == INVALID_SOCKET) return "";
+
+    int yes = 1;
+    setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, (char*)&yes, sizeof(yes));
+
+    sockaddr_in addr = {};
+    addr.sin_family      = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port        = htons(7878);
+
+    if (bind(srv, (sockaddr*)&addr, sizeof(addr)) != 0) { closesocket(srv); return ""; }
+    if (listen(srv, 1) != 0)                             { closesocket(srv); return ""; }
+
+    // 120s timeout
+    DWORD to = 120000;
+    setsockopt(srv, SOL_SOCKET, SO_RCVTIMEO, (char*)&to, sizeof(to));
+
+    SOCKET cli = accept(srv, NULL, NULL);
+    closesocket(srv);
+    if (cli == INVALID_SOCKET) return "";
+
+    char req[4096] = {};
+    recv(cli, req, sizeof(req)-1, 0);
+
+    // HTTP response — success page
+    const char* resp =
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Type: text/html\r\n"
+        "Connection: close\r\n\r\n"
+        "<html><body style='font-family:Segoe UI;text-align:center;padding:60px'>"
+        "<h2 style='color:#009BB4'>&#10003; Signed in successfully!</h2>"
+        "<p>You can close this window and return to RasFocus.</p>"
+        "</body></html>";
+    send(cli, resp, (int)strlen(resp), 0);
+    closesocket(cli);
+
+    // GET /? code=XXX&... から code を取り出す
+    string reqStr(req);
+    size_t getPos = reqStr.find("GET /?");
+    if (getPos == string::npos) return "";
+    size_t qStart = getPos + 6;
+    size_t qEnd   = reqStr.find(" HTTP", qStart);
+    if (qEnd == string::npos) return "";
+    string query = reqStr.substr(qStart, qEnd - qStart);
+    return ExtractQueryParam(query, "code");
+}
+
+// wstring URL に含まれる ?code= を取り出す (WebView2 navigation hook 用)
+static string ExtractCodeFromUrl(const wstring& url) {
+    size_t qPos = url.find(L'?');
+    if (qPos == wstring::npos) return "";
+    wstring wQuery = url.substr(qPos + 1);
+    string  query(wQuery.begin(), wQuery.end());
+    return ExtractQueryParam(query, "code");
 }
 
 // Google Sign-In Thread — token পেলে Firebase login করে
@@ -820,22 +919,39 @@ static void OpenGoogleSignInPopup(HWND hMainWnd) {
                     wstring uri(uriW);
                     CoTaskMemFree(uriW);
 
-                    // Redirect URI এ পৌঁছলে token ধরা
+                    // Redirect URI এ পৌঁছলে auth code ধরা
                     if (uri.find(L"http://localhost:7878") == 0) {
                         args->put_Cancel(TRUE); // navigation বন্ধ করা
 
-                        string idToken = ExtractIdTokenFromUrl(uri);
-                        if (!idToken.empty()) {
+                        // auth code extract করা (?code=XXX)
+                        string authCode = ExtractCodeFromUrl(uri);
+                        if (!authCode.empty()) {
                             s_statusMsg = L"Signing in with Google...";
                             s_isError   = false;
                             InvalidateRect(mainHwnd, NULL, FALSE);
 
+                            // auth code → id_token → Firebase login (thread এ)
                             GoogleSignInData* gd = new GoogleSignInData();
                             gd->hMainWnd = mainHwnd;
-                            gd->idToken  = idToken;
-                            _beginthread(GoogleSignInThread, 0, gd);
+                            gd->idToken  = authCode; // idToken field এ code রাখছি
+                            // আলাদা wrapper thread: code → id_token exchange → Firebase
+                            _beginthread([](void* p) {
+                                GoogleSignInData* d = (GoogleSignInData*)p;
+                                // idToken field এ আসলে auth code আছে — exchange করো
+                                string idToken = ExchangeCodeForIdToken(d->idToken);
+                                if (!idToken.empty()) {
+                                    d->idToken = idToken;
+                                    GoogleSignInThread(d); // এটা delete d করে নেয়
+                                } else {
+                                    s_statusMsg = L"Google sign-in failed: token exchange error.";
+                                    s_isError   = true;
+                                    InvalidateRect(d->hMainWnd, NULL, FALSE);
+                                    delete d;
+                                }
+                                _endthread();
+                            }, 0, gd);
                         } else {
-                            s_statusMsg = L"Google sign-in failed: token not received.";
+                            s_statusMsg = L"Google sign-in failed: no auth code received.";
                             s_isError   = true;
                             InvalidateRect(mainHwnd, NULL, FALSE);
                         }
@@ -926,6 +1042,7 @@ void __cdecl CursorBlinkThread(void* p) {
 
 void InitAccountsModule(firebase::App* app) {
     s_firebaseApp = app;
+    WSADATA wsa; WSAStartup(MAKEWORD(2,2), &wsa);
     if (LoadSavedCredentials()) s_statusMsg = L"";
     _beginthread(CursorBlinkThread, 0, NULL);
 }
