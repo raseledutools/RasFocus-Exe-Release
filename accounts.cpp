@@ -678,13 +678,6 @@ static void OpenGoogleSignInPopup(HWND hMainWnd) {
         SetForegroundWindow(s_googlePopupHwnd);
         return;
     }
-    if (!g_sharedEnv) {
-        s_statusMsg = L"Browser engine not ready. Please open the browser tab first.";
-        s_isError   = true;
-        InvalidateRect(hMainWnd, NULL, FALSE);
-        return;
-    }
-
     s_googleMainHwnd = hMainWnd;
 
     // Window class register করা
@@ -746,12 +739,19 @@ static void OpenGoogleSignInPopup(HWND hMainWnd) {
         Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
         [popupHwnd, mainHwnd](HRESULT hr, ICoreWebView2Environment* env) -> HRESULT {
             if (FAILED(hr) || !env) {
-                // Fallback: g_sharedEnv ব্যবহার করা
-                if (g_sharedEnv) {
-                    g_sharedEnv->CreateCoreWebView2Controller(popupHwnd,
+                // নিজস্ব env তৈরি ব্যর্থ হলে — g_sharedEnv দিয়ে চেষ্টা
+                ICoreWebView2Environment* fallbackEnv = g_sharedEnv.Get();
+                if (fallbackEnv) {
+                    fallbackEnv->CreateCoreWebView2Controller(popupHwnd,
                         Callback<ICoreWebView2CreateCoreWebView2ControllerCompletedHandler>(
                         [popupHwnd, mainHwnd](HRESULT h2, ICoreWebView2Controller* ctl) -> HRESULT {
-                            if (FAILED(h2) || !ctl) return S_OK;
+                            if (FAILED(h2) || !ctl) {
+                                s_statusMsg = L"Google sign-in failed: WebView2 not available.";
+                                s_isError   = true;
+                                InvalidateRect(mainHwnd, NULL, FALSE);
+                                PostMessageW(popupHwnd, WM_CLOSE, 0, 0);
+                                return S_OK;
+                            }
                             s_googleController = ctl;
                             ctl->get_CoreWebView2(&s_googleWebView);
                             RECT rc; GetClientRect(popupHwnd, &rc);
@@ -759,6 +759,11 @@ static void OpenGoogleSignInPopup(HWND hMainWnd) {
                             s_googleWebView->Navigate(BuildGoogleOAuthURL().c_str());
                             return S_OK;
                         }).Get());
+                } else {
+                    s_statusMsg = L"Google sign-in failed: WebView2 not available.";
+                    s_isError   = true;
+                    InvalidateRect(mainHwnd, NULL, FALSE);
+                    PostMessageW(popupHwnd, WM_CLOSE, 0, 0);
                 }
                 return S_OK;
             }
