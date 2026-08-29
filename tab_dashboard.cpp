@@ -379,7 +379,7 @@ void ProcessDashboardMouseClick(float x, float y, int& selectedTab) {
         if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
         return;
     }
-
+}
 
 void ProcessDashboardMouseWheel(int delta) {
     float step = 60.0f;
