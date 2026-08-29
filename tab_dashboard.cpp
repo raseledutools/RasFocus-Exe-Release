@@ -332,7 +332,11 @@ void ProcessDashboardMouseMove(float x, float y) {
     int oldH = hoveredDashTab; hoveredDashTab = -1;
     for (int i = 0; i < 5; i++) { if (s_tabRects[i].Contains(x, y)) { hoveredDashTab = i; redraw = true; break; } }
     if(oldH != hoveredDashTab) redraw = true;
-    for (auto& btn : s_sections[selectedDashTab].btns) { bool h = btn.bounds.Contains(x, y); if(h != btn.isHovered) { btn.isHovered = h; redraw = true; } }
+    for (auto& btn : s_sections[selectedDashTab].btns) {
+        bool inClip = s_gridClipRect.Contains(x, y);
+        bool h = inClip && btn.bounds.Contains(x, y);
+        if (h != btn.isHovered) { btn.isHovered = h; redraw = true; }
+    }
     if (redraw && hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
 }
 
@@ -348,6 +352,7 @@ void ProcessDashboardMouseClick(float x, float y, int& selectedTab) {
     }
     for (int i = 0; i < 5; i++) { if (s_tabRects[i].Contains(x, y)) { if (selectedDashTab != i) s_gridScrollY = 0.0f; selectedDashTab = i; if(hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE); return; } }
     for (auto& btn : s_sections[selectedDashTab].btns) {
+        if (!s_gridClipRect.Contains(x, y)) break;
         if (!btn.bounds.Contains(x, y)) continue;
         // Quick Blocks (sec 0)
         if      (btn.title == L"Rest Button")      { SetBlockSubTabWithAction(0, 0); selectedTab = 1; }
