@@ -1645,6 +1645,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
                 float upgX = controlsStartX - upgW - 10.0f;
                 if (x >= upgX && x <= upgX + upgW) return HTCLIENT;
             }
+            // Debug Kill button
+            {
+                float dbW = 90.0f;
+                float dbX = controlsStartX - dbW - (isUpdateAvailable ? 170.0f : 10.0f);
+                if (x >= dbX && x <= dbX + dbW) return HTCLIENT;
+            }
             return HTCAPTION;
         }
         return HTCLIENT;
