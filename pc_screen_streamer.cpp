@@ -440,6 +440,45 @@ static void CaptureLoop(){
     enc.Shutdown();
 }
 
+// ── Firebase signaling: register PC ID + IP ──────────────────────
+static string GetLocalIp(){
+    WSADATA wd; WSAStartup(MAKEWORD(2,2),&wd);
+    char host[256]={}; gethostname(host,sizeof(host));
+    struct addrinfo hints={},*res=nullptr; hints.ai_family=AF_INET;
+    if(getaddrinfo(host,"",&hints,&res)==0&&res){
+        char ip[INET_ADDRSTRLEN]={};
+        inet_ntop(AF_INET,&((sockaddr_in*)res->ai_addr)->sin_addr,ip,sizeof(ip));
+        freeaddrinfo(res); return string(ip);
+    }
+    return "0.0.0.0";
+}
+static void RegisterOnFirebase(const string& deviceId, const string& ip, int port){
+    // Use existing SendFirestoreRequest (defined in main.cpp)
+    extern string SendFirestoreRequest(const string&,const string&,const string&);
+    string path="/v1/projects/rasfocus-c746d/databases/(default)/documents/rd_devices/"+deviceId+"?updateMask.fieldPaths=id&updateMask.fieldPaths=ip&updateMask.fieldPaths=port&updateMask.fieldPaths=name&updateMask.fieldPaths=platform&updateMask.fieldPaths=ts";
+    char buf[512];
+    SYSTEMTIME st; GetSystemTimeAsFileTime((FILETIME*)&st);
+    LONGLONG ts=(LONGLONG)GetTickCount64();
+    snprintf(buf,sizeof(buf),
+        "{"fields":{"
+        ""id":{"stringValue":"%s"},"
+        ""ip":{"stringValue":"%s"},"
+        ""port":{"integerValue":"%d"},"
+        ""name":{"stringValue":"RasFocus-PC"},"
+        ""platform":{"stringValue":"windows"},"
+        ""ts":{"integerValue":"%lld"}"
+        "}}",
+        deviceId.c_str(), ip.c_str(), port, ts);
+    thread([path,payload=string(buf)](){
+        SendFirestoreRequest("PATCH", path, payload);
+    }).detach();
+}
+static void UnregisterFromFirebase(const string& deviceId){
+    extern string SendFirestoreRequest(const string&,const string&,const string&);
+    string path="/v1/projects/rasfocus-c746d/databases/(default)/documents/rd_devices/"+deviceId;
+    thread([path](){SendFirestoreRequest("DELETE",path,"");}).detach();
+}
+
 // ── Public API ────────────────────────────────────────────────────
 void PcStreamerStart(){
     if(s_active) return;
