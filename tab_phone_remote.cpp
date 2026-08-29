@@ -1,26 +1,29 @@
 // ================================================================
-// tab_phone_remote.cpp  —  RustDesk-style PIN Connect
+// tab_phone_remote.cpp  —  RustDesk-style native phone remote
 //
-// How it works:
-//   1. PC generates a stable 6-digit PIN from its local IP.
-//   2. PC runs two servers:
-//        - UDP beacon on port 9223  →  responds to phone discovery
-//        - HTTP+WebSocket on port 9222  →  control panel
-//   3. Phone (RasFocus app) enters PIN once.
-//      App broadcasts UDP discovery packet containing the PIN.
-//      PC beacon responds with its IP.
-//      Phone saves IP → next time auto-connects (no PIN needed).
-//   4. Phone opens http://<discovered-ip>:9222 → full control.
+// OLD: PC = HTTP server → phone browser opens URL → HTML control
+// NEW: PC = WebSocket CLIENT → connects to phone RemoteDesktopService
+//      Phone streams JPEG frames → PC renders via GDI+, no browser.
+//
+// Flow:
+//   1. User types phone IP (or PIN-based UDP discovery)
+//   2. PC connects to ws://phone-ip:9224
+//   3. Phone sends device info JSON first
+//   4. Phone streams binary JPEG frames continuously
+//   5. PC decodes JPEG → GDI+ Bitmap → renders in screen area
+//   6. PC mouse/key → JSON → phone AccessibilityService injects
+//
+// Inspired by RustDesk open source (MIT License):
+//   https://github.com/rustdesk/rustdesk
 // ================================================================
 
-// winsock2 must come before windows.h
+#pragma warning(disable: 4996)
+#pragma warning(disable: 4244)
+
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include "tab_phone_remote.h"
 #include "globals.h"
-#include "phone_remote_html.h"
-#include <wincrypt.h>
-#include <shellapi.h>
 
 #include <string>
 #include <vector>
@@ -28,157 +31,65 @@
 #include <atomic>
 #include <mutex>
 #include <algorithm>
-#include <sstream>
 #include <cstdio>
 #include <cstring>
-
-#pragma comment(lib, "Crypt32.lib")
-#pragma comment(lib, "ws2_32.lib")
-#pragma comment(lib, "gdiplus.lib")
+#include <wincrypt.h>
 
 using namespace Gdiplus;
 using namespace std;
 
-// ── Globals ──────────────────────────────────────────────────────
+// ── Globals (extern in .h) ─────────────────────────────────────────
+RdState     g_rdState        = RdState::Disconnected;
+string      g_rdPhoneId      = "";
+string      g_rdPhoneIp      = "";
+int         g_rdPhonePort    = 9224;
+string      g_rdPhoneName    = "";
+int         g_rdPhoneW       = 1080;
+int         g_rdPhoneH       = 1920;
+string      g_rdStatusMsg    = "Phone IP লিখে Connect চাপো";
+int         g_rdFps          = 0;
+bool        g_rdInputEnabled = true;
+
+// legacy compat globals
 bool        g_phoneRemoteRunning = false;
 int         g_phoneRemotePort    = 9222;
 int         g_phoneRemoteUdpPort = 9223;
 int         g_connectedClients   = 0;
-std::string g_phoneRemotePin     = "";
+string      g_phoneRemotePin     = "";
 
-static atomic<bool>   s_active { false };
-static SOCKET         s_httpSock = INVALID_SOCKET;
-static SOCKET         s_udpSock  = INVALID_SOCKET;
-static vector<SOCKET> s_wsClients;
-static mutex          s_mtx;
-static bool           s_hovStart = false, s_hovStop = false;
-static float          s_lastDrawX = 0.0f, s_lastDrawY = 0.0f, s_lastDrawW = 0.0f;
+// ── Internal ───────────────────────────────────────────────────────
+static SOCKET       s_sock    = INVALID_SOCKET;
+static atomic<bool> s_active  { false };
+static mutex        s_bmpMtx;
+static Bitmap*      s_frameBmp = nullptr;
+static int          s_fpsCount = 0;
+static DWORD        s_fpsTimer = 0;
 
-// ── Get local IP ─────────────────────────────────────────────────
-static string GetLocalIp() {
-    WSADATA wd; WSAStartup(MAKEWORD(2,2), &wd);
-    char host[256] = {}; gethostname(host, sizeof(host));
-    struct addrinfo hints = {}, *res = nullptr;
-    hints.ai_family = AF_INET;
-    getaddrinfo(host, nullptr, &hints, &res);
-    string ip;
-    for (auto* p = res; p; p = p->ai_next) {
-        char buf[64];
-        inet_ntop(AF_INET, &((sockaddr_in*)p->ai_addr)->sin_addr, buf, sizeof(buf));
-        if (strncmp(buf, "127.", 4) != 0) { ip = buf; break; }
-    }
-    if (res) freeaddrinfo(res);
-    return ip.empty() ? "127.0.0.1" : ip;
+// UI state
+static wstring s_inputIp     = L"";
+static bool    s_hovConnect  = false;
+static bool    s_hovDisconn  = false;
+static bool    s_inputFocus  = false;
+static float   s_drawX=0, s_drawY=0, s_drawW=0, s_drawH=0;
+static float   s_viewX=0, s_viewY=0, s_viewW=0, s_viewH=0;
+
+extern HWND hParentWnd;
+
+// ── String helpers ────────────────────────────────────────────────
+static string WStr(const wstring& w) {
+    if (w.empty()) return "";
+    int n = WideCharToMultiByte(CP_UTF8,0,w.data(),(int)w.size(),nullptr,0,nullptr,nullptr);
+    string s(n,' ');
+    WideCharToMultiByte(CP_UTF8,0,w.data(),(int)w.size(),&s[0],n,nullptr,nullptr);
+    return s;
 }
-
-// ── Generate 6-digit PIN from IP ─────────────────────────────────
-// PIN is stable for a given IP — same IP always gives same PIN.
-// Format: 6 decimal digits, e.g. "483920"
-static string GeneratePin(const string& ip) {
-    // Simple but stable: use last two octets + fixed offset
-    // e.g. 192.168.43.159 → "43159" padded/truncated to 6
-    unsigned int a=0,b=0,c=0,d=0;
-    sscanf(ip.c_str(), "%u.%u.%u.%u", &a, &b, &c, &d);
-    // Combine to make exactly 6 digits deterministically
-    unsigned long val = ((a ^ 0xAB) * 7919UL + (b ^ 0x5C) * 6271UL
-                       + (c ^ 0xD3) * 4973UL + (d ^ 0x9E) * 3877UL) % 900000UL + 100000UL;
-    char buf[8]; sprintf(buf, "%06lu", val % 900000UL + 100000UL);
-    return string(buf, 6);
+static wstring ToWStr(const string& s) {
+    if (s.empty()) return L"";
+    int n = MultiByteToWideChar(CP_UTF8,0,s.data(),(int)s.size(),nullptr,0);
+    wstring w(n,L' ');
+    MultiByteToWideChar(CP_UTF8,0,s.data(),(int)s.size(),&w[0],n);
+    return w;
 }
-
-// ── Base64 ───────────────────────────────────────────────────────
-static string B64Enc(const vector<BYTE>& d) {
-    static const char* t = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    string o; o.reserve(((d.size()+2)/3)*4);
-    for (size_t i=0; i<d.size(); i+=3) {
-        BYTE b0=d[i], b1=(i+1<d.size())?d[i+1]:0, b2=(i+2<d.size())?d[i+2]:0;
-        o+=t[b0>>2]; o+=t[((b0&3)<<4)|(b1>>4)];
-        o+=(i+1<d.size())?t[((b1&0xF)<<2)|(b2>>6)]:'=';
-        o+=(i+2<d.size())?t[b2&0x3F]:'=';
-    }
-    return o;
-}
-
-// ── SHA-1 (WinCrypt) for WebSocket handshake ──────────────────────
-static string Sha1B64(const string& s) {
-    HCRYPTPROV hp=0; HCRYPTHASH hh=0;
-    if (!CryptAcquireContextA(&hp,NULL,NULL,PROV_RSA_FULL,CRYPT_VERIFYCONTEXT)) return "";
-    CryptCreateHash(hp,CALG_SHA1,0,0,&hh);
-    CryptHashData(hh,(const BYTE*)s.c_str(),(DWORD)s.size(),0);
-    BYTE hash[20]; DWORD hl=20;
-    CryptGetHashParam(hh,HP_HASHVAL,hash,&hl,0);
-    CryptDestroyHash(hh); CryptReleaseContext(hp,0);
-    return B64Enc(vector<BYTE>(hash,hash+20));
-}
-
-// ── Screen capture → JPEG base64 ─────────────────────────────────
-static string ScreenJpeg(int q=25) {
-    int sw=GetSystemMetrics(SM_CXSCREEN), sh=GetSystemMetrics(SM_CYSCREEN);
-    int dw=sw/2, dh=sh/2;
-    HDC hScr=GetDC(NULL), hMem=CreateCompatibleDC(hScr);
-    HBITMAP hBmp=CreateCompatibleBitmap(hScr,dw,dh);
-    HBITMAP hOld=(HBITMAP)SelectObject(hMem,hBmp);
-    SetStretchBltMode(hMem,HALFTONE);
-    StretchBlt(hMem,0,0,dw,dh,hScr,0,0,sw,sh,SRCCOPY);
-    SelectObject(hMem,hOld); DeleteDC(hMem); ReleaseDC(NULL,hScr);
-    Bitmap bmp(hBmp,NULL); DeleteObject(hBmp);
-    CLSID jc; UINT n=0,sz=0;
-    GetImageEncodersSize(&n,&sz);
-    vector<BYTE> eb(sz);
-    GetImageEncoders(n,sz,(ImageCodecInfo*)eb.data());
-    for(UINT i=0;i<n;i++) if(!wcscmp(((ImageCodecInfo*)eb.data())[i].MimeType,L"image/jpeg")){jc=((ImageCodecInfo*)eb.data())[i].Clsid;break;}
-    EncoderParameters ep; ep.Count=1;
-    ep.Parameter[0].Guid=EncoderQuality; ep.Parameter[0].Type=EncoderParameterValueTypeLong;
-    ep.Parameter[0].NumberOfValues=1; ULONG qv=(ULONG)q; ep.Parameter[0].Value=&qv;
-    IStream* ps=NULL; CreateStreamOnHGlobal(NULL,TRUE,&ps);
-    bmp.Save(ps,&jc,&ep);
-    STATSTG st; ps->Stat(&st,STATFLAG_NONAME);
-    ULONG len=(ULONG)st.cbSize.QuadPart;
-    LARGE_INTEGER li; li.QuadPart=0; ps->Seek(li,STREAM_SEEK_SET,NULL);
-    vector<BYTE> img(len); ps->Read(img.data(),len,NULL); ps->Release();
-    return B64Enc(img);
-}
-
-// ── File list JSON ────────────────────────────────────────────────
-static string FilesJson(const string& path) {
-    string j="["; bool first=true;
-    WIN32_FIND_DATAA fd; string pat=path+"\\*";
-    HANDLE h=FindFirstFileA(pat.c_str(),&fd);
-    if(h==INVALID_HANDLE_VALUE) return "[]";
-    do {
-        string nm=fd.cFileName; if(nm=="."||nm=="..") continue;
-        bool dir=(fd.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY)!=0;
-        ULONGLONG sz=((ULONGLONG)fd.nFileSizeHigh<<32)|fd.nFileSizeLow;
-        if(!first) j+=","; first=false;
-        j+="{\"name\":\"";
-        for(char c:nm){if(c=='"')j+="\\\""; else j+=c;} j+="\",";
-        j+="\"dir\":"; j+=dir?"true":"false"; j+=",\"size\":"; j+=to_string(sz); j+="}";
-    } while(FindNextFileA(h,&fd));
-    FindClose(h); return j+"]";
-}
-
-// ── CMD execute ───────────────────────────────────────────────────
-static string RunCmd(const string& cmd) {
-    string out, fc="cmd.exe /c \""+cmd+"\" 2>&1";
-    SECURITY_ATTRIBUTES sa{sizeof(sa),NULL,TRUE};
-    HANDLE hR,hW; if(!CreatePipe(&hR,&hW,&sa,0)) return "pipe error";
-    STARTUPINFOA si{}; si.cb=sizeof(si);
-    si.hStdOutput=hW; si.hStdError=hW;
-    si.dwFlags=STARTF_USESTDHANDLES|STARTF_USESHOWWINDOW; si.wShowWindow=SW_HIDE;
-    PROCESS_INFORMATION pi{};
-    vector<char> buf(fc.begin(),fc.end()); buf.push_back(0);
-    if(CreateProcessA(NULL,buf.data(),NULL,NULL,TRUE,CREATE_NO_WINDOW,NULL,NULL,&si,&pi)){
-        CloseHandle(hW); char tmp[1024]; DWORD rd;
-        while(ReadFile(hR,tmp,sizeof(tmp)-1,&rd,NULL)&&rd>0){tmp[rd]=0;out+=tmp;}
-        WaitForSingleObject(pi.hProcess,5000);
-        CloseHandle(pi.hProcess); CloseHandle(pi.hThread);
-    } else { CloseHandle(hW); out="exec failed"; }
-    CloseHandle(hR);
-    if(out.size()>8192) out=out.substr(0,8192)+"...(truncated)";
-    return out;
-}
-
-// ── JSON field extract ────────────────────────────────────────────
 static string Jget(const string& j, const string& k) {
     string sk="\""+k+"\""; size_t p=j.find(sk);
     if(p==string::npos) return "";
@@ -192,306 +103,442 @@ static string Jget(const string& j, const string& k) {
     return v;
 }
 
-// ── JSON string escape ────────────────────────────────────────────
-static string Jescape(const string& s) {
-    string o; for(char c:s){
-        if(c=='"') o+="\\\""; else if(c=='\\') o+="\\\\";
-        else if(c=='\n') o+="\\n"; else if(c=='\r') o+="\\r";
-        else if(c=='\t') o+="\\t"; else o+=c;
-    } return o;
+// ── Base64 + SHA1 for WS handshake ───────────────────────────────
+static string B64Enc(const vector<BYTE>& d) {
+    static const char* t="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    string o; o.reserve(((d.size()+2)/3)*4);
+    for(size_t i=0;i<d.size();i+=3){
+        BYTE b0=d[i],b1=(i+1<d.size())?d[i+1]:0,b2=(i+2<d.size())?d[i+2]:0;
+        o+=t[b0>>2]; o+=t[((b0&3)<<4)|(b1>>4)];
+        o+=(i+1<d.size())?t[((b1&0xF)<<2)|(b2>>6)]:'=';
+        o+=(i+2<d.size())?t[b2&0x3F]:'=';
+    }
+    return o;
+}
+static string Sha1B64(const string& s){
+    HCRYPTPROV hp=0; HCRYPTHASH hh=0;
+    if(!CryptAcquireContextA(&hp,NULL,NULL,PROV_RSA_FULL,CRYPT_VERIFYCONTEXT)) return "";
+    CryptCreateHash(hp,CALG_SHA1,0,0,&hh);
+    CryptHashData(hh,(const BYTE*)s.c_str(),(DWORD)s.size(),0);
+    BYTE hash[20]; DWORD hl=20;
+    CryptGetHashParam(hh,HP_HASHVAL,hash,&hl,0);
+    CryptDestroyHash(hh); CryptReleaseContext(hp,0);
+    return B64Enc(vector<BYTE>(hash,hash+20));
 }
 
-// ── WebSocket frame ───────────────────────────────────────────────
-static void WsSend(SOCKET s, const string& txt) {
+// ── WebSocket send (client — must mask) ───────────────────────────
+static bool WsSendText(SOCKET s, const string& txt) {
+    if(s==INVALID_SOCKET) return false;
     size_t len=txt.size(); vector<BYTE> f;
     f.push_back(0x81);
-    if(len<126) f.push_back((BYTE)len);
-    else if(len<65536){f.push_back(126);f.push_back((BYTE)(len>>8));f.push_back((BYTE)(len&0xFF));}
-    else{f.push_back(127);for(int i=7;i>=0;i--)f.push_back((BYTE)((len>>(8*i))&0xFF));}
-    f.insert(f.end(),txt.begin(),txt.end());
-    send(s,(char*)f.data(),(int)f.size(),0);
+    if(len<126)      f.push_back((BYTE)(len|0x80));
+    else if(len<65536){ f.push_back(0xFE); f.push_back((BYTE)(len>>8)); f.push_back((BYTE)(len&0xFF)); }
+    else { f.push_back(0xFF); for(int i=7;i>=0;i--) f.push_back((BYTE)((len>>(8*i))&0xFF)); }
+    BYTE mask[4]={0x37,0xC5,0xA2,0x1B};
+    f.push_back(mask[0]); f.push_back(mask[1]); f.push_back(mask[2]); f.push_back(mask[3]);
+    for(size_t i=0;i<len;i++) f.push_back((BYTE)(txt[i]^mask[i%4]));
+    return send(s,(char*)f.data(),(int)f.size(),0) > 0;
 }
-static string WsRecv(SOCKET s) {
-    BYTE h[2]; if(recv(s,(char*)h,2,MSG_WAITALL)!=2) return "";
-    bool masked=(h[1]&0x80)!=0; size_t len=h[1]&0x7F;
-    if(len==126){BYTE e[2];recv(s,(char*)e,2,MSG_WAITALL);len=((size_t)e[0]<<8)|e[1];}
-    else if(len==127){BYTE e[8];recv(s,(char*)e,8,MSG_WAITALL);len=0;for(int i=0;i<8;i++)len=(len<<8)|e[i];}
-    BYTE mask[4]={0}; if(masked) recv(s,(char*)mask,4,MSG_WAITALL);
-    if(len>65536) return "";
+
+// ── WebSocket recv frame ──────────────────────────────────────────
+static bool RecvExact(SOCKET s, char* buf, int n){
+    int got=0;
+    while(got<n){ int r=recv(s,buf+got,n-got,0); if(r<=0) return false; got+=r; }
+    return true;
+}
+// returns {opcode, payload};  opcode -1 = error/closed
+static pair<int,vector<BYTE>> WsRecvFrame(SOCKET s){
+    BYTE h[2]; if(!RecvExact(s,(char*)h,2)) return {-1,{}};
+    int opcode=h[0]&0x0F;
+    bool masked=(h[1]&0x80)!=0;
+    size_t len=h[1]&0x7F;
+    if(len==126){ BYTE e[2]; if(!RecvExact(s,(char*)e,2)) return {-1,{}}; len=((size_t)e[0]<<8)|e[1]; }
+    else if(len==127){ BYTE e[8]; if(!RecvExact(s,(char*)e,8)) return {-1,{}};
+        len=0; for(int i=0;i<8;i++) len=(len<<8)|e[i]; }
+    if(len>8*1024*1024) return {-1,{}};
+    BYTE mask[4]={0}; if(masked) if(!RecvExact(s,(char*)mask,4)) return {-1,{}};
     vector<BYTE> data(len); size_t got=0;
-    while(got<len){int r=recv(s,(char*)data.data()+got,(int)(len-got),0);if(r<=0)break;got+=r;}
+    while(got<len){
+        int r=recv(s,(char*)data.data()+got,(int)min((size_t)65536,len-got),0);
+        if(r<=0) return {-1,{}}; got+=r;
+    }
     if(masked) for(size_t i=0;i<len;i++) data[i]^=mask[i%4];
-    return string(data.begin(),data.end());
+    return {opcode,data};
 }
 
-// ── WebSocket client handler ──────────────────────────────────────
-static void WsClient(SOCKET client) {
-    {lock_guard<mutex> lk(s_mtx); s_wsClients.push_back(client); g_connectedClients++;}
-    while(s_active) {
-        string msg=WsRecv(client); if(msg.empty()) break;
-        string type=Jget(msg,"type"), resp;
-        if(type=="shell"){
-            resp="{\"type\":\"shell_result\",\"output\":\""+Jescape(RunCmd(Jget(msg,"cmd")))+"\"}";
-        } else if(type=="files"){
-            string path=Jget(msg,"path"); if(path.empty()) path="C:\\";
-            string ep; for(char c:path){if(c=='\\')ep+="\\\\";else ep+=c;}
-            resp="{\"type\":\"files_result\",\"path\":\""+ep+"\",\"items\":"+FilesJson(path)+"}";
-        } else if(type=="screen"){
-            resp="{\"type\":\"screen_frame\",\"jpeg\":\""+ScreenJpeg()+"\"}";
-        } else if(type=="mouse"){
-            int sw=GetSystemMetrics(SM_CXSCREEN), sh=GetSystemMetrics(SM_CYSCREEN);
-            int px=(int)(atof(Jget(msg,"x").c_str())*sw);
-            int py=(int)(atof(Jget(msg,"y").c_str())*sh);
-            SetCursorPos(px,py);
-            string btn=Jget(msg,"btn"), act=Jget(msg,"act");
-            bool right=(btn=="right");
-            if(act=="click"||act=="down") mouse_event(right?MOUSEEVENTF_RIGHTDOWN:MOUSEEVENTF_LEFTDOWN,0,0,0,0);
-            if(act=="click"||act=="up")   mouse_event(right?MOUSEEVENTF_RIGHTUP:MOUSEEVENTF_LEFTUP,0,0,0,0);
-            if(act=="scroll"){string dir=Jget(msg,"dir");mouse_event(MOUSEEVENTF_WHEEL,0,0,(DWORD)(dir=="down"?-120:120),0);}
-            if(act=="dblclick"){mouse_event(MOUSEEVENTF_LEFTDOWN,0,0,0,0);mouse_event(MOUSEEVENTF_LEFTUP,0,0,0,0);Sleep(50);mouse_event(MOUSEEVENTF_LEFTDOWN,0,0,0,0);mouse_event(MOUSEEVENTF_LEFTUP,0,0,0,0);}
-            resp="{\"type\":\"ok\"}";
-        } else if(type=="key"){
-            int vk=atoi(Jget(msg,"vk").c_str());
-            if(vk>0){keybd_event((BYTE)vk,0,0,0);keybd_event((BYTE)vk,0,KEYEVENTF_KEYUP,0);}
-            resp="{\"type\":\"ok\"}";
-        } else if(type=="type"){
-            string txt=Jget(msg,"text");
-            for(char c:txt){SHORT vk=VkKeyScanA(c);bool sh=(HIBYTE(vk)&1)!=0;BYTE k=LOBYTE(vk);
-                if(sh)keybd_event(VK_SHIFT,0,0,0);keybd_event(k,0,0,0);keybd_event(k,0,KEYEVENTF_KEYUP,0);if(sh)keybd_event(VK_SHIFT,0,KEYEVENTF_KEYUP,0);Sleep(8);}
-            resp="{\"type\":\"ok\"}";
-        } else if(type=="ping"){
-            resp="{\"type\":\"pong\",\"pin\":\""+g_phoneRemotePin+"\"}";
+// ── JPEG bytes → GDI+ Bitmap ─────────────────────────────────────
+static Bitmap* JpegToBitmap(const vector<BYTE>& jpg){
+    HGLOBAL hg=GlobalAlloc(GMEM_MOVEABLE,(SIZE_T)jpg.size());
+    if(!hg) return nullptr;
+    void* p=GlobalLock(hg); if(!p){GlobalFree(hg);return nullptr;}
+    memcpy(p,jpg.data(),jpg.size()); GlobalUnlock(hg);
+    IStream* ps=nullptr;
+    if(CreateStreamOnHGlobal(hg,TRUE,&ps)!=S_OK){GlobalFree(hg);return nullptr;}
+    Bitmap* bmp=Bitmap::FromStream(ps); ps->Release();
+    if(!bmp||bmp->GetLastStatus()!=Ok){delete bmp;return nullptr;}
+    return bmp;
+}
+
+// ── Receive loop (background thread) ─────────────────────────────
+static void RecvLoop(){
+    DWORD fpsTimer=GetTickCount(); int fpsCount=0;
+    while(s_active && s_sock!=INVALID_SOCKET){
+        auto [opcode,data]=WsRecvFrame(s_sock);
+        if(opcode<0||opcode==8){
+            g_rdStatusMsg="Disconnected"; g_rdState=RdState::Disconnected;
+            g_phoneRemoteRunning=false; break;
         }
-        if(!resp.empty()) WsSend(client,resp);
-    }
-    closesocket(client);
-    lock_guard<mutex> lk(s_mtx);
-    s_wsClients.erase(remove(s_wsClients.begin(),s_wsClients.end(),client),s_wsClients.end());
-    g_connectedClients--;
-}
-
-// ── HTTP handler ──────────────────────────────────────────────────
-static void HttpClient(SOCKET client) {
-    char buf[4096]={}; int r=recv(client,buf,sizeof(buf)-1,0);
-    if(r<=0){closesocket(client);return;}
-    string req(buf,r);
-    bool isWs=req.find("Upgrade: websocket")!=string::npos||req.find("Upgrade: WebSocket")!=string::npos;
-    if(isWs){
-        size_t kp=req.find("Sec-WebSocket-Key:");
-        if(kp==string::npos){closesocket(client);return;}
-        kp+=18; while(kp<req.size()&&req[kp]==' ')kp++;
-        size_t ke=req.find("\r\n",kp);
-        string key=req.substr(kp,ke-kp);
-        string acc=Sha1B64(key+"258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
-        string resp="HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: "+acc+"\r\n\r\n";
-        send(client,resp.c_str(),(int)resp.size(),0);
-        thread(WsClient,client).detach();
-    } else {
-        string html=BuildRemoteHtml(g_phoneRemotePin);
-        string resp="HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: "+to_string(html.size())+"\r\nConnection: close\r\n\r\n"+html;
-        send(client,resp.c_str(),(int)resp.size(),0);
-        closesocket(client);
-    }
-}
-
-// ── UDP Beacon — phone sends PIN, PC replies with IP:port ─────────
-// Packet from phone: "RASPIN:XXXXXX"
-// Reply from PC:     "RASACK:XXXXXX:<ip>:<port>"
-static void UdpBeacon() {
-    SOCKET s=socket(AF_INET,SOCK_DGRAM,0);
-    int opt=1; setsockopt(s,SOL_SOCKET,SO_REUSEADDR,(char*)&opt,sizeof(opt));
-    DWORD tv=500; setsockopt(s,SOL_SOCKET,SO_RCVTIMEO,(char*)&tv,sizeof(tv));
-    sockaddr_in addr{}; addr.sin_family=AF_INET; addr.sin_addr.s_addr=INADDR_ANY;
-    addr.sin_port=htons((u_short)g_phoneRemoteUdpPort);
-    bind(s,(sockaddr*)&addr,sizeof(addr));
-    s_udpSock=s;
-    string myIp=GetLocalIp();
-    char buf[128]={};
-    while(s_active) {
-        sockaddr_in from{}; int fl=sizeof(from);
-        int r=recvfrom(s,buf,sizeof(buf)-1,0,(sockaddr*)&from,(int*)&fl);
-        if(r<=0){memset(buf,0,sizeof(buf));continue;}
-        buf[r]=0;
-        string msg(buf);
-        // Expected: "RASPIN:XXXXXX"
-        if(msg.rfind("RASPIN:",0)==0) {
-            string pin=msg.substr(7,6);
-            if(pin==g_phoneRemotePin) {
-                // Reply with our IP and port
-                string ack="RASACK:"+g_phoneRemotePin+":"+myIp+":"+to_string(g_phoneRemotePort);
-                sendto(s,ack.c_str(),(int)ack.size(),0,(sockaddr*)&from,fl);
+        if(opcode==1){
+            // JSON text frame
+            string msg(data.begin(),data.end());
+            if(Jget(msg,"type")=="info"){
+                g_rdPhoneId   =Jget(msg,"id");
+                g_rdPhoneName =Jget(msg,"device");
+                int pw=atoi(Jget(msg,"width").c_str());
+                int ph=atoi(Jget(msg,"height").c_str());
+                if(pw>0) g_rdPhoneW=pw;
+                if(ph>0) g_rdPhoneH=ph;
+                g_rdStatusMsg="Connected: "+(g_rdPhoneName.empty()?"Phone":g_rdPhoneName);
+                g_rdState=RdState::Connected;
+                g_phoneRemoteRunning=true;
             }
+        } else if(opcode==2){
+            // Binary frame = JPEG
+            fpsCount++;
+            DWORD now=GetTickCount();
+            if(now-fpsTimer>=1000){ g_rdFps=fpsCount; fpsCount=0; fpsTimer=now; }
+            Bitmap* bmp=JpegToBitmap(data);
+            if(bmp){
+                lock_guard<mutex> lk(s_bmpMtx);
+                delete s_frameBmp; s_frameBmp=bmp;
+            }
+            if(hParentWnd) InvalidateRect(hParentWnd,NULL,FALSE);
         }
-        memset(buf,0,sizeof(buf));
     }
-    closesocket(s); s_udpSock=INVALID_SOCKET;
-}
-
-// ── HTTP server loop ──────────────────────────────────────────────
-static void HttpLoop() {
-    WSADATA wd; WSAStartup(MAKEWORD(2,2),&wd);
-    s_httpSock=socket(AF_INET,SOCK_STREAM,0);
-    int opt=1; setsockopt(s_httpSock,SOL_SOCKET,SO_REUSEADDR,(char*)&opt,sizeof(opt));
-    DWORD tv=500; setsockopt(s_httpSock,SOL_SOCKET,SO_RCVTIMEO,(char*)&tv,sizeof(tv));
-    sockaddr_in addr{}; addr.sin_family=AF_INET;
-    addr.sin_addr.s_addr=INADDR_ANY;
-    addr.sin_port=htons((u_short)g_phoneRemotePort);
-    bind(s_httpSock,(sockaddr*)&addr,sizeof(addr));
-    listen(s_httpSock,8);
-    while(s_active){
-        SOCKET cl=accept(s_httpSock,NULL,NULL);
-        if(cl==INVALID_SOCKET) continue;
-        thread(HttpClient,cl).detach();
-    }
-    closesocket(s_httpSock); s_httpSock=INVALID_SOCKET;
-    WSACleanup();
-}
-
-// ── Public API ────────────────────────────────────────────────────
-void PhoneRemoteStartServer() {
-    if(s_active) return;
-    string ip=GetLocalIp();
-    g_phoneRemotePin=GeneratePin(ip);
-    s_active=true;
-    g_phoneRemoteRunning=true;
-    g_connectedClients=0;
-    thread(HttpLoop).detach();
-    thread(UdpBeacon).detach();
-}
-
-void PhoneRemoteStopServer() {
-    if(!s_active) return;
-    s_active=false;
+    if(s_sock!=INVALID_SOCKET){closesocket(s_sock);s_sock=INVALID_SOCKET;}
+    g_rdState=RdState::Disconnected;
     g_phoneRemoteRunning=false;
-    g_phoneRemotePin="";
-    if(s_httpSock!=INVALID_SOCKET){closesocket(s_httpSock);s_httpSock=INVALID_SOCKET;}
-    if(s_udpSock!=INVALID_SOCKET){closesocket(s_udpSock);s_udpSock=INVALID_SOCKET;}
-    lock_guard<mutex> lk(s_mtx);
-    for(SOCKET c:s_wsClients) closesocket(c);
-    s_wsClients.clear(); g_connectedClients=0;
+    s_active=false;
+    if(hParentWnd) InvalidateRect(hParentWnd,NULL,FALSE);
 }
 
-void PhoneRemoteTimerTick() {}
+// ── WebSocket handshake (client) ──────────────────────────────────
+static bool DoHandshake(SOCKET s, const string& host){
+    string key="dGhlIHNhbXBsZSBub25jZQ=="; // fixed test key — our server accepts any
+    string req=
+        "GET / HTTP/1.1\r\nHost: "+host+"\r\n"
+        "Upgrade: websocket\r\nConnection: Upgrade\r\n"
+        "Sec-WebSocket-Key: "+key+"\r\nSec-WebSocket-Version: 13\r\n\r\n";
+    if(send(s,req.c_str(),(int)req.size(),0)!=(int)req.size()) return false;
+    char buf[2048]={}; int total=0;
+    while(total<(int)sizeof(buf)-1){
+        int r=recv(s,buf+total,1,0); if(r<=0) break;
+        total+=r; if(total>=4&&strstr(buf,"\r\n\r\n")) break;
+    }
+    return strstr(buf,"101")!=nullptr;
+}
 
-// ── Draw Tab UI ───────────────────────────────────────────────────
-void DrawPhoneRemoteTab(Graphics& g, float x, float y, float w, float h) {
-    s_lastDrawX = x; s_lastDrawY = y; s_lastDrawW = w;
+// ── Public: Connect ───────────────────────────────────────────────
+void RdConnect(const string& ip, int port){
+    if(s_active) RdDisconnect();
+    if(ip.empty()){g_rdStatusMsg="IP দাও আগে";return;}
+    g_rdState=RdState::Connecting;
+    g_rdPhoneIp=ip; g_rdPhonePort=port;
+    g_rdStatusMsg="Connecting "+ip+":"+to_string(port)+"...";
+    if(hParentWnd) InvalidateRect(hParentWnd,NULL,FALSE);
+
+    thread([ip,port](){
+        WSADATA wd; WSAStartup(MAKEWORD(2,2),&wd);
+        SOCKET s=socket(AF_INET,SOCK_STREAM,IPPROTO_TCP);
+        if(s==INVALID_SOCKET){g_rdStatusMsg="Socket error";g_rdState=RdState::Error;return;}
+        DWORD tv=5000; setsockopt(s,SOL_SOCKET,SO_RCVTIMEO,(char*)&tv,sizeof(tv));
+        sockaddr_in addr{}; addr.sin_family=AF_INET;
+        addr.sin_port=htons((u_short)port);
+        inet_pton(AF_INET,ip.c_str(),&addr.sin_addr);
+        if(connect(s,(sockaddr*)&addr,sizeof(addr))!=0){
+            closesocket(s);
+            g_rdStatusMsg="Connect failed — phone reachable? Service চালু?";
+            g_rdState=RdState::Error;
+            if(hParentWnd) InvalidateRect(hParentWnd,NULL,FALSE);
+            return;
+        }
+        tv=3000; setsockopt(s,SOL_SOCKET,SO_RCVTIMEO,(char*)&tv,sizeof(tv));
+        if(!DoHandshake(s,ip+":"+to_string(port))){
+            closesocket(s);
+            g_rdStatusMsg="WebSocket handshake failed";
+            g_rdState=RdState::Error;
+            if(hParentWnd) InvalidateRect(hParentWnd,NULL,FALSE);
+            return;
+        }
+        s_sock=s; s_active=true;
+        g_rdStatusMsg="Connected — waiting for stream...";
+        RecvLoop();
+    }).detach();
+}
+
+// ── Public: Disconnect ────────────────────────────────────────────
+void RdDisconnect(){
+    s_active=false;
+    if(s_sock!=INVALID_SOCKET){closesocket(s_sock);s_sock=INVALID_SOCKET;}
+    g_rdState=RdState::Disconnected;
+    g_rdStatusMsg="Disconnected";
+    g_phoneRemoteRunning=false;
+    lock_guard<mutex> lk(s_bmpMtx);
+    delete s_frameBmp; s_frameBmp=nullptr;
+}
+
+void RdTimerTick(){}
+
+// ── Send input to phone ───────────────────────────────────────────
+static void SendJson(const string& j){
+    if(s_sock!=INVALID_SOCKET&&s_active) WsSendText(s_sock,j);
+}
+static void SendTouch(int mask,float wx,float wy){
+    if(!g_rdInputEnabled||s_viewW<=0||s_viewH<=0) return;
+    float rx=(wx-s_viewX)/s_viewW, ry=(wy-s_viewY)/s_viewH;
+    if(rx<0||rx>1||ry<0||ry>1) return;
+    int px=(int)(rx*g_rdPhoneW), py=(int)(ry*g_rdPhoneH);
+    char buf[128]; sprintf(buf,"{\"type\":\"touch\",\"mask\":%d,\"x\":%d,\"y\":%d}",mask,px,py);
+    SendJson(buf);
+}
+
+void ProcessPhoneRemoteKey(WPARAM vk, bool keyDown){
+    if(!g_rdInputEnabled||g_rdState!=RdState::Connected) return;
+    int ak=0;
+    if(vk==VK_BACK) ak=4; else if(vk==VK_HOME) ak=3; else return;
+    char buf[64]; sprintf(buf,"{\"type\":\"key\",\"code\":%d,\"action\":%d}",ak,keyDown?0:1);
+    SendJson(buf);
+}
+
+// ── Draw helpers ──────────────────────────────────────────────────
+static void RoundRect(Graphics& g, Brush& fill, Pen* pen,
+                      float x,float y,float w,float h,float r=10.f){
+    GraphicsPath p; float d=r*2;
+    p.AddArc(x,y,d,d,180,90); p.AddArc(x+w-d,y,d,d,270,90);
+    p.AddArc(x+w-d,y+h-d,d,d,0,90); p.AddArc(x,y+h-d,d,d,90,90);
+    p.CloseFigure(); g.FillPath(&fill,&p); if(pen) g.DrawPath(pen,&p);
+}
+
+// ── DrawPhoneRemoteTab ────────────────────────────────────────────
+void DrawPhoneRemoteTab(Graphics& g, float x, float y, float w, float h){
+    s_drawX=x; s_drawY=y; s_drawW=w; s_drawH=h;
 
     FontFamily ff(L"Segoe UI");
-    StringFormat fmtC,fmtL;
-    fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
-    fmtL.SetAlignment(StringAlignmentNear);   fmtL.SetLineAlignment(StringAlignmentCenter);
+    StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
+    StringFormat fmtL; fmtL.SetAlignment(StringAlignmentNear);   fmtL.SetLineAlignment(StringAlignmentCenter);
 
-    // Background
-    SolidBrush bg(ColBgContent); g.FillRectangle(&bg,x,y,w,h);
+    SolidBrush bgBr(Color(255,18,18,28)); g.FillRectangle(&bgBr,x,y,w,h);
 
-    float cx=x+24, cy=y+20, cw=w-48, r=10, d=r*2;
-    auto roundRect=[&](GraphicsPath& p2,float rx,float ry,float rw,float rh){
-        p2.AddArc(rx,ry,d,d,180,90);p2.AddArc(rx+rw-d,ry,d,d,270,90);
-        p2.AddArc(rx+rw-d,ry+rh-d,d,d,0,90);p2.AddArc(rx,ry+rh-d,d,d,90,90);p2.CloseFigure();
+    bool connected=(g_rdState==RdState::Connected);
+
+    // ══ CONNECTED: live screen ════════════════════════════════════
+    if(connected){
+        float panelW=w*0.65f;
+        float sx=x+8,sy=y+8,sw2=panelW-16,sh2=h-16;
+        float ar=(float)g_rdPhoneW/(float)g_rdPhoneH, boxAr=sw2/sh2;
+        float fw,fh,fx,fy;
+        if(ar<boxAr){fh=sh2;fw=fh*ar;fx=sx+(sw2-fw)/2;fy=sy;}
+        else{fw=sw2;fh=fw/ar;fx=sx;fy=sy+(sh2-fh)/2;}
+        s_viewX=fx;s_viewY=fy;s_viewW=fw;s_viewH=fh;
+
+        {
+            lock_guard<mutex> lk(s_bmpMtx);
+            if(s_frameBmp&&s_frameBmp->GetLastStatus()==Ok)
+                g.DrawImage(s_frameBmp,RectF(fx,fy,fw,fh));
+            else{
+                SolidBrush bk(Color(255,8,8,16)); g.FillRectangle(&bk,fx,fy,fw,fh);
+                Font fw2(&ff,13,FontStyleRegular,UnitPixel);
+                SolidBrush gr(Color(255,80,80,100));
+                g.DrawString(L"Waiting for frames...",-1,&fw2,RectF(fx,fy,fw,fh),&fmtC,&gr);
+            }
+        }
+        Pen phoneBorder(Color(255,0,200,220),2.f);
+        g.DrawRectangle(&phoneBorder,fx,fy,fw,fh);
+
+        // Right panel
+        float px2=x+panelW+4,py2=y+8,pw2=w-panelW-12;
+        SolidBrush cardBg(Color(255,28,28,44));
+        Pen cardBrd(Color(255,0,140,170),1.f);
+        RoundRect(g,cardBg,&cardBrd,px2,py2,pw2,h-16,10);
+
+        SolidBrush cyan(Color(255,0,200,230)),white(Color(255,220,220,238)),gray(Color(255,120,120,145));
+        Font fBold(&ff,12,FontStyleBold,UnitPixel);
+        Font fReg(&ff,11,FontStyleRegular,UnitPixel);
+
+        g.DrawString(L"● Connected",-1,&fBold,RectF(px2+10,py2+10,pw2-20,22),&fmtL,&cyan);
+        g.DrawString(ToWStr(g_rdPhoneName.empty()?"Phone":g_rdPhoneName).c_str(),-1,
+                     &Font(&ff,13,FontStyleBold,UnitPixel),RectF(px2+10,py2+34,pw2-20,22),&fmtL,&white);
+        g.DrawString(ToWStr("ID: "+g_rdPhoneId).c_str(),-1,&fReg,RectF(px2+10,py2+58,pw2-20,18),&fmtL,&gray);
+        g.DrawString(ToWStr(to_string(g_rdPhoneW)+"x"+to_string(g_rdPhoneH)).c_str(),
+                     -1,&fReg,RectF(px2+10,py2+78,pw2-20,18),&fmtL,&gray);
+        g.DrawString(ToWStr(to_string(g_rdFps)+" fps").c_str(),
+                     -1,&fReg,RectF(px2+10,py2+98,pw2-20,18),&fmtL,&cyan);
+
+        // Disconnect btn
+        float dby=py2+126;
+        SolidBrush dBg(s_hovDisconn?Color(255,180,30,30):Color(255,140,20,20));
+        Pen dBrd(Color(255,200,50,50),1.f);
+        RoundRect(g,dBg,&dBrd,px2+8,dby,pw2-16,36,8);
+        g.DrawString(L"Disconnect",-1,&fBold,RectF(px2+8,dby,pw2-16,36),&fmtC,&white);
+
+        // Input toggle
+        float ity=dby+46;
+        SolidBrush itBg(g_rdInputEnabled?Color(255,10,110,55):Color(255,50,50,70));
+        RoundRect(g,itBg,nullptr,px2+8,ity,pw2-16,32,8);
+        g.DrawString(g_rdInputEnabled?L"Input: ON":L"Input: OFF",-1,
+                     &fBold,RectF(px2+8,ity,pw2-16,32),&fmtC,&white);
+
+        // Quick keys: Back, Home, Recents
+        float qky=ity+42; float qkw=(pw2-24)/3.f;
+        const wchar_t* qkL[3]={L"Back",L"Home",L"≡"};
+        for(int i=0;i<3;i++){
+            float qx=px2+8+i*(qkw+4);
+            SolidBrush qb(Color(255,40,40,60)); Pen qp(Color(255,70,70,100),1.f);
+            RoundRect(g,qb,&qp,qx,qky,qkw,30,6);
+            g.DrawString(qkL[i],-1,&fReg,RectF(qx,qky,qkw,30),&fmtC,&gray);
+        }
+        return;
+    }
+
+    // ══ DISCONNECTED: connect UI ══════════════════════════════════
+    float cx=x+20, cw=w-40;
+
+    SolidBrush cyan(Color(255,0,200,230)),white(Color(255,220,220,238)),gray(Color(255,120,120,145));
+    Font fTitle(&ff,16,FontStyleBold,UnitPixel);
+    g.DrawString(L"Phone Remote",-1,&fTitle,RectF(cx,y+14,cw,28),&fmtL,&cyan);
+    Font fSub(&ff,11,FontStyleRegular,UnitPixel);
+    g.DrawString(L"Browser ছাড়া — RustDesk-style native control",-1,&fSub,RectF(cx,y+42,cw,20),&fmtL,&gray);
+
+    // IP input card
+    float iy=y+72;
+    SolidBrush cardBg(Color(255,28,28,44)); Pen cardBrd(Color(255,55,55,85),1.f);
+    RoundRect(g,cardBg,&cardBrd,cx,iy,cw,106,10);
+    Font fLbl(&ff,11,FontStyleRegular,UnitPixel);
+    g.DrawString(L"Phone IP Address",-1,&fLbl,RectF(cx+12,iy+8,cw-24,18),&fmtL,&gray);
+
+    // input box
+    float ibx=cx+12,iby=iy+28,ibw=cw-24,ibh=38;
+    SolidBrush ibBg(s_inputFocus?Color(255,18,18,38):Color(255,12,12,24));
+    Pen ibBrd(s_inputFocus?Color(255,0,200,230):Color(255,65,65,95),1.5f);
+    RoundRect(g,ibBg,&ibBrd,ibx,iby,ibw,ibh,8);
+    Font fInp(&ff,15,FontStyleRegular,UnitPixel);
+    wstring disp=s_inputIp.empty()?L"192.168.x.x":s_inputIp+(s_inputFocus?L"|":L"");
+    SolidBrush inputC(s_inputIp.empty()?Color(255,65,65,95):Color(255,220,220,240));
+    g.DrawString(disp.c_str(),-1,&fInp,RectF(ibx+10,iby,ibw-20,ibh),&fmtL,&inputC);
+    g.DrawString(L"Port: 9224",-1,&fLbl,RectF(cx+12,iy+72,cw-24,18),&fmtL,&gray);
+
+    // Connect button
+    float by=iy+116; bool canConn=!s_inputIp.empty()&&g_rdState!=RdState::Connecting;
+    SolidBrush btnBg(g_rdState==RdState::Connecting?Color(255,40,70,90)
+                    :(s_hovConnect&&canConn?Color(255,0,160,185):Color(255,0,130,155)));
+    Pen btnBrd(Color(255,0,180,205),1.f);
+    RoundRect(g,btnBg,&btnBrd,cx,by,cw,46,10);
+    Font fBtn(&ff,13,FontStyleBold,UnitPixel);
+    g.DrawString(g_rdState==RdState::Connecting?L"Connecting...":L"Connect",
+                 -1,&fBtn,RectF(cx,by,cw,46),&fmtC,&white);
+
+    // Status
+    if(!g_rdStatusMsg.empty()){
+        Color sc=g_rdState==RdState::Error?Color(255,215,75,75)
+               :g_rdState==RdState::Connecting?Color(255,180,155,50)
+               :Color(255,75,185,100);
+        SolidBrush sb(sc); Font fSt(&ff,11,FontStyleRegular,UnitPixel);
+        g.DrawString(ToWStr(g_rdStatusMsg).c_str(),-1,&fSt,RectF(cx,by+54,cw,50),&fmtL,&sb);
+    }
+
+    // How to use
+    float hy=by+108;
+    SolidBrush hBg(Color(255,24,24,40)); Pen hBrd(Color(255,48,48,72),1.f);
+    RoundRect(g,hBg,&hBrd,cx,hy,cw,138,10);
+    g.DrawString(L"ব্যবহার পদ্ধতি:",-1,&fLbl,RectF(cx+12,hy+8,cw-24,20),&fmtL,&cyan);
+    const wchar_t* steps[]={
+        L"① Phone এ RasFocus → FileManager → PC Remote",
+        L"② Share Screen tab → Start Sharing চাপো",
+        L"③ Settings tab এ Local IP টা কপি করো",
+        L"④ এখানে ঐ IP লিখে Connect চাপো",
+        L"⑤ Phone screen সরাসরি এই window তে দেখাবে",
     };
+    float sy=hy+30;
+    Font fStep(&ff,10.5f,FontStyleRegular,UnitPixel);
+    for(auto* st:steps){ g.DrawString(st,-1,&fStep,RectF(cx+12,sy,cw-24,22),&fmtL,&gray); sy+=22; }
+}
 
-    // ── Header ──
-    SolidBrush white(Color(255,255,255,255)); Pen border(Color(255,220,230,235),1.0f);
-    GraphicsPath hdr; roundRect(hdr,cx,cy,cw,72);
-    g.FillPath(&white,&hdr); g.DrawPath(&border,&hdr);
-    Font ft(&ff,14,FontStyleBold,UnitPixel);
-    Font fs(&ff,11,FontStyleRegular,UnitPixel);
-    SolidBrush teal(Color(255,0,140,150)),gray(Color(255,130,130,130));
-    g.DrawString(L"📡  Phone Remote  —  RustDesk style",-1,&ft,RectF(cx+16,cy,cw-32,36),&fmtL,&teal);
-    g.DrawString(L"PIN একবার দিলেই হবে, পরের বার auto-connect",-1,&fs,RectF(cx+16,cy+36,cw-32,28),&fmtL,&gray);
-
-    bool running=g_phoneRemoteRunning;
-
-    // ── PIN Display (big, center) ──
-    float py=cy+84;
-    SolidBrush pinBg(running?Color(255,225,245,235):Color(255,245,245,245));
-    Pen pinBorder(running?Color(255,150,210,180):Color(255,210,210,210),1.5f);
-    GraphicsPath pinCard; roundRect(pinCard,cx,py,cw,100);
-    g.FillPath(&pinBg,&pinCard); g.DrawPath(&pinBorder,&pinCard);
-
-    Font fPinLabel(&ff,11,FontStyleRegular,UnitPixel);
-    Font fPin(&ff,42,FontStyleBold,UnitPixel);
-    SolidBrush dark(Color(255,30,30,30)),green(Color(255,30,150,90)),orange(Color(255,180,100,20));
-
-    if(running && !g_phoneRemotePin.empty()) {
-        g.DrawString(L"Phone এ এই PIN দাও:",-1,&fPinLabel,RectF(cx,py+8,cw,20),&fmtC,&gray);
-        wstring wpin(g_phoneRemotePin.begin(),g_phoneRemotePin.end());
-        // Space between digits: "4 8 3 9 2 0"
-        wstring spaced;
-        for(size_t i=0;i<wpin.size();i++){spaced+=wpin[i];if(i+1<wpin.size())spaced+=L' ';}
-        g.DrawString(spaced.c_str(),-1,&fPin,RectF(cx,py+24,cw,60),&fmtC,&green);
-        // Connected count
-        wstring conn2=to_wstring(g_connectedClients)+L" device connected";
-        g.DrawString(conn2.c_str(),-1,&fPinLabel,RectF(cx,py+80,cw,16),&fmtC,&gray);
+// ── Mouse move (hover) ────────────────────────────────────────────
+void ProcessPhoneRemoteMouseMove(float mx, float my, float, float){
+    if(g_rdState==RdState::Connected){
+        float panelW=s_drawW*0.65f;
+        float px2=s_drawX+panelW+4,py2=s_drawY+8,pw2=s_drawW-panelW-12;
+        float dby=py2+126;
+        s_hovDisconn=(mx>=px2+8&&mx<=px2+pw2-8&&my>=dby&&my<=dby+36);
     } else {
-        g.DrawString(L"Server বন্ধ",-1,&fPinLabel,RectF(cx,py+36,cw,28),&fmtC,&gray);
-        g.DrawString(L"START করলে PIN দেখাবে",-1,&fPinLabel,RectF(cx,py+60,cw,24),&fmtC,&gray);
+        float cx=s_drawX+20,cw=s_drawW-40;
+        float by=s_drawY+72+116;
+        s_hovConnect=(mx>=cx&&mx<=cx+cw&&my>=by&&my<=by+46);
     }
-
-    // ── Buttons ──
-    float bY=py+110, bW=(cw-12)/2;
-    // Start
-    SolidBrush startBg(running?Color(255,200,210,215):(s_hovStart?Color(255,0,110,120):Color(255,0,140,150)));
-    GraphicsPath sb; roundRect(sb,cx,bY,bW,44); g.FillPath(&startBg,&sb);
-    Font fBtn(&ff,12,FontStyleBold,UnitPixel);
-    SolidBrush whiteBr(Color(255,255,255,255));
-    g.DrawString(running?L"▶ Running":L"▶ Start",-1,&fBtn,RectF(cx,bY,bW,44),&fmtC,&whiteBr);
-    // Stop
-    float bx2=cx+bW+12;
-    SolidBrush stopBg(!running?Color(255,200,210,215):(s_hovStop?Color(255,160,30,30):Color(255,200,40,40)));
-    GraphicsPath stb; roundRect(stb,bx2,bY,bW,44); g.FillPath(&stopBg,&stb);
-    g.DrawString(L"■ Stop",-1,&fBtn,RectF(bx2,bY,bW,44),&fmtC,&whiteBr);
-
-    // ── How to use ──
-    float hy=bY+56;
-    SolidBrush infoBg(Color(255,240,248,255)); Pen infoBorder(Color(255,190,215,245),1.0f);
-    GraphicsPath ic; roundRect(ic,cx,hy,cw,140); g.FillPath(&infoBg,&ic); g.DrawPath(&infoBorder,&ic);
-    Font fStep(&ff,11,FontStyleRegular,UnitPixel);
-    SolidBrush stepC(Color(255,50,80,120));
-    wstring steps[]={
-        L"① PC তে Start চাপো — 6-digit PIN দেখাবে",
-        L"② Phone এ RasFocus → FileManager → PC Remote",
-        L"③ PIN লেখো → Connect চাপো",
-        L"④ পরের বার auto-connect হবে (PIN লাগবে না)",
-        L"⑤ Browser এ CMD, Files, Screen, Control সব পাবে",
-    };
-    float sy=hy+10;
-    for(auto& s2:steps){g.DrawString(s2.c_str(),-1,&fStep,RectF(cx+12,sy,cw-24,26),&fmtL,&stepC);sy+=26;}
 }
 
-void ProcessPhoneRemoteMouseMove(float mx, float my, float cX, float cY) {
-    // Reconstruct button positions (must match DrawPhoneRemoteTab exactly)
-    float baseX = (s_lastDrawW > 0.0f) ? s_lastDrawX : cX;
-    float baseY = (s_lastDrawW > 0.0f) ? s_lastDrawY : cY;
-    float baseW = (s_lastDrawW > 0.0f) ? s_lastDrawW : 600.0f;
+// ── Mouse click ───────────────────────────────────────────────────
+void ProcessPhoneRemoteMouseClick(float mx, float my, float, float, HWND hWnd){
+    if(g_rdState==RdState::Connected){
+        float panelW=s_drawW*0.65f;
+        float px2=s_drawX+panelW+4,py2=s_drawY+8,pw2=s_drawW-panelW-12;
 
-    float rx = mx - baseX, ry = my - baseY;
-    float cardX = 24.0f, cardY = 20.0f, cardW = baseW - 48.0f;
-    float pinY  = cardY + 84.0f;
-    float bY    = pinY + 110.0f, bH = 44.0f;
-    float bx1   = cardX, bW = (cardW - 12.0f) / 2.0f;
-    float bx2   = bx1 + bW + 12.0f;
+        // Disconnect
+        float dby=py2+126;
+        if(mx>=px2+8&&mx<=px2+pw2-8&&my>=dby&&my<=dby+36){
+            RdDisconnect(); InvalidateRect(hWnd,NULL,FALSE); return;
+        }
+        // Input toggle
+        float ity=dby+46;
+        if(mx>=px2+8&&mx<=px2+pw2-8&&my>=ity&&my<=ity+32){
+            g_rdInputEnabled=!g_rdInputEnabled; InvalidateRect(hWnd,NULL,FALSE); return;
+        }
+        // Quick keys
+        float qky=ity+42; float qkw=(pw2-24)/3.f;
+        int androidKeys[]={4,3,187};
+        if(my>=qky&&my<=qky+30){
+            for(int i=0;i<3;i++){
+                float qx=px2+8+i*(qkw+4);
+                if(mx>=qx&&mx<=qx+qkw){
+                    char buf[64];
+                    sprintf(buf,"{\"type\":\"key\",\"code\":%d,\"action\":0}",androidKeys[i]); SendJson(buf);
+                    sprintf(buf,"{\"type\":\"key\",\"code\":%d,\"action\":1}",androidKeys[i]); SendJson(buf);
+                    return;
+                }
+            }
+        }
+        // Screen tap
+        if(s_viewW>0&&s_viewH>0&&mx>=s_viewX&&mx<=s_viewX+s_viewW&&my>=s_viewY&&my<=s_viewY+s_viewH){
+            SendTouch(1,mx,my); // MASK_DOWN
+            Sleep(30);
+            SendTouch(2,mx,my); // MASK_UP
+        }
+    } else {
+        float cx=s_drawX+20,cw=s_drawW-40;
+        float iy=s_drawY+72;
+        float ibx=cx+12,iby=iy+28,ibw=cw-24,ibh=38;
+        float by=iy+116;
 
-    bool newHovStart = (ry >= bY && ry <= bY + bH && rx >= bx1 && rx < bx1 + bW);
-    bool newHovStop  = (ry >= bY && ry <= bY + bH && rx >= bx2 && rx < bx2 + bW);
+        if(mx>=ibx&&mx<=ibx+ibw&&my>=iby&&my<=iby+ibh){
+            s_inputFocus=true; InvalidateRect(hWnd,NULL,FALSE); return;
+        }
+        s_inputFocus=false;
 
-    s_hovStart = newHovStart;
-    s_hovStop  = newHovStop;
+        if(mx>=cx&&mx<=cx+cw&&my>=by&&my<=by+46&&!s_inputIp.empty()
+           &&g_rdState!=RdState::Connecting){
+            RdConnect(WStr(s_inputIp),g_rdPhonePort);
+            InvalidateRect(hWnd,NULL,FALSE);
+        }
+    }
 }
 
-void ProcessPhoneRemoteMouseClick(float mx,float my,float cX,float cY,HWND hWnd){
-    float baseX = (s_lastDrawW > 0.0f) ? s_lastDrawX : cX;
-    float baseY = (s_lastDrawW > 0.0f) ? s_lastDrawY : cY;
-    float baseW = (s_lastDrawW > 0.0f) ? s_lastDrawW : 600.0f;
-
-    float rx = mx - baseX, ry = my - baseY;
-    float cardX = 24.0f, cardY = 20.0f, cardW = baseW - 48.0f;
-    float pinY = cardY + 84.0f;
-    float bY = pinY + 110.0f, bH = 44.0f, bx1 = cardX, bW = (cardW - 12.0f) / 2.0f;
-    if(ry>=bY && ry<=bY+bH){
-        if(rx>=bx1 && rx<bx1+bW){if(!g_phoneRemoteRunning)PhoneRemoteStartServer();}
-        else if(rx>=bx1+bW+12){if(g_phoneRemoteRunning)PhoneRemoteStopServer();}
-        InvalidateRect(hWnd,NULL,FALSE);
+// ── WM_CHAR handler for IP input ─────────────────────────────────
+extern "C" void PhoneRemoteChar(wchar_t ch){
+    if(!s_inputFocus) return;
+    if(ch=='\b'){ if(!s_inputIp.empty()) s_inputIp.pop_back(); }
+    else if(ch=='\r'){
+        if(!s_inputIp.empty()&&g_rdState!=RdState::Connecting)
+            RdConnect(WStr(s_inputIp),g_rdPhonePort);
     }
+    else if(ch>=L' '&&s_inputIp.size()<40) s_inputIp+=ch;
 }
