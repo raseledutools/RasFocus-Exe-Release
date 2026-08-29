@@ -24,6 +24,7 @@
 #include <ws2tcpip.h>
 #include "tab_phone_remote.h"
 #include "globals.h"
+#include "pc_screen_streamer.h"
 
 #include <string>
 #include <vector>
@@ -374,6 +375,18 @@ void DrawPhoneRemoteTab(Graphics& g, float x, float y, float w, float h){
         g.DrawString(ToWStr(to_string(g_rdFps)+" fps").c_str(),
                      -1,&fReg,RectF(px2+10,py2+98,pw2-20,18),&fmtL,&cyan);
 
+        // PC → Phone stream button
+        float pcby=py2+120;
+        bool pcOn=g_pcStreamerRunning;
+        SolidBrush pcBg(pcOn?Color(255,10,110,55):Color(255,40,40,70));
+        Pen pcBrd(pcOn?Color(255,0,180,100):Color(255,70,70,100),1.f);
+        RoundRect(g,pcBg,&pcBrd,px2+8,pcby,pw2-16,32,8);
+        wstring pcLabel=pcOn?
+            (L"PC→Phone: ON (" + ToWStr(to_string(g_pcStreamerFps)) + L"fps)"):
+            L"Start PC→Phone stream";
+        g.DrawString(pcLabel.c_str(),-1,&Font(&ff,10,FontStyleBold,UnitPixel),
+                     RectF(px2+8,pcby,pw2-16,32),&fmtC,&white);
+
         // Disconnect btn
         float dby=py2+126;
         SolidBrush dBg(s_hovDisconn?Color(255,180,30,30):Color(255,140,20,20));
@@ -486,7 +499,13 @@ void ProcessPhoneRemoteMouseClick(float mx, float my, float, float, HWND hWnd){
         // Disconnect
         float dby=py2+126;
         if(mx>=px2+8&&mx<=px2+pw2-8&&my>=dby&&my<=dby+36){
-            RdDisconnect(); InvalidateRect(hWnd,NULL,FALSE); return;
+            RdDisconnect(); PcStreamerStop(); InvalidateRect(hWnd,NULL,FALSE); return;
+        }
+        // PC → Phone stream toggle
+        float pcby=py2+120+10;  // below fps line
+        if(mx>=px2+8&&mx<=px2+pw2-8&&my>=pcby&&my<=pcby+32){
+            if(g_pcStreamerRunning) PcStreamerStop(); else PcStreamerStart();
+            InvalidateRect(hWnd,NULL,FALSE); return;
         }
         // Input toggle
         float ity=dby+46;

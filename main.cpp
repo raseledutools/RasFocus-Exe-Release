@@ -47,7 +47,8 @@ HWND hParentWnd = NULL;
 #include "tab_special.h"
 #include "tab_statistics.h"
 #include "tab_family_link.h"
-#include "tab_phone_remote.h" // ← Phone Remote Tab Header
+#include "tab_phone_remote.h"
+#include "pc_screen_streamer.h" // ← Phone Remote Tab Header
 #include "prewindow.h"
 #include "accounts.h"   // ← My Account tab handler
 #include "upgrade.h"    // ← Upgrade popup handler
@@ -1935,6 +1936,8 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
 
     UpdateWindow(hWnd);
     StartSilentUpdateCheck();
+    // Start PC screen stream server (phone can connect to view/control PC)
+    PcStreamerStart();
     SetTimer(hWnd, 1005, 300000, NULL);
     SetTimer(hWnd, 1001,   1000, NULL); // Family Link: 1-second enforcement + poll tick
 
@@ -1944,6 +1947,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
         DispatchMessage(&msg);
     }
 
+    PcStreamerStop();
     GdiplusShutdown(gdiplusToken);
     if (hMutex) CloseHandle(hMutex);
     return 0;
