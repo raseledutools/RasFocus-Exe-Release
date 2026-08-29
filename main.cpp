@@ -1985,7 +1985,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
     StartSilentUpdateCheck();
     // Start PC screen stream server (phone can connect to view/control PC)
     PcStreamerStart();
-    SetTimer(hWnd, 1005, 300000, NULL);
+    SetTimer(hWnd, 1005, 120000, NULL); // 2 minutes: check for new release
     SetTimer(hWnd, 1001,   1000, NULL); // Family Link: 1-second enforcement + poll tick
 
     MSG msg;
