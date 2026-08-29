@@ -66,8 +66,8 @@ const string CURRENT_VERSION = "v1.0.6";   // ← CI overwrites this before comp
 const string GITHUB_USER = "raseledutools";
 const string GITHUB_REPO = "RasFocus-Exe-Release";
 
-bool   isUpdateAvailable = false;  // নতুন version আছে (version check হয়েছে)
-bool   isUpdateReady     = false;  // download সম্পন্ন, install করা যাবে (UNUSED — kept for compat)
+bool   isUpdateAvailable = false;
+bool   isUpdateReady     = false;
 bool   isCheckingUpdate  = false;
 string newVersionStr     = "";
 bool   hoverUpdateBtn    = false;
@@ -76,7 +76,13 @@ bool   hoverUpdateBtn    = false;
 string g_updateDownloadUrl = "";
 bool   g_showUpdatePopup   = false;
 bool   g_isDownloading     = false;
-int    g_dlAnimFrame       = 0;     // spinner animation counter
+int    g_dlAnimFrame       = 0;
+
+// Professional download progress
+volatile LONG  g_dlBytesNow   = 0;
+volatile LONG  g_dlBytesTotal = 0;
+enum class UpdatePhase { None, Downloading, Installing } g_updatePhase = UpdatePhase::None;
+
 static bool s_hovDlBtn    = false;
 static bool s_hovLaterBtn = false;
 
@@ -568,26 +574,76 @@ void __cdecl SilentUpdateThread(void* p) {
 // Forward declaration
 void ApplySilentUpdate();
 
-// ── Download new exe and install (called when user clicks Download button) ──
+// ── IBindStatusCallback — progress tracking for URLDownloadToFile ──
+class DownloadCallback : public IBindStatusCallback {
+    ULONG m_ref = 1;
+public:
+    ULONG   STDMETHODCALLTYPE AddRef()  override { return InterlockedIncrement((LONG*)&m_ref); }
+    ULONG   STDMETHODCALLTYPE Release() override {
+        ULONG r = InterlockedDecrement((LONG*)&m_ref);
+        if (!r) delete this; return r;
+    }
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override {
+        if (riid == IID_IUnknown || riid == IID_IBindStatusCallback) { *ppv = this; AddRef(); return S_OK; }
+        *ppv = nullptr; return E_NOINTERFACE;
+    }
+    HRESULT STDMETHODCALLTYPE OnProgress(ULONG ulProgress, ULONG ulProgressMax, ULONG, LPCWSTR) override {
+        InterlockedExchange(&g_dlBytesNow,   (LONG)ulProgress);
+        InterlockedExchange(&g_dlBytesTotal, (LONG)ulProgressMax);
+        HWND hw = FindWindowA("RasFocusCore", "RasFocus+");
+        if (hw) InvalidateRect(hw, NULL, FALSE);
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE OnStartBinding(DWORD, IBinding*) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE GetPriority(LONG*) override { return E_NOTIMPL; }
+    HRESULT STDMETHODCALLTYPE OnLowResource(DWORD) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE OnStopBinding(HRESULT, LPCWSTR) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE GetBindInfo(DWORD*, BINDINFO*) override { return E_NOTIMPL; }
+    HRESULT STDMETHODCALLTYPE OnDataAvailable(DWORD, DWORD, FORMATETC*, STGMEDIUM*) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE OnObjectAvailable(REFIID, IUnknown*) override { return S_OK; }
+};
+
+// ── Download new exe and install ──
 void __cdecl DownloadAndInstallThread(void*) {
+    HWND hw = FindWindowA("RasFocusCore", "RasFocus+");
     string secretDir  = GetSecretDir();
     string newExePath = secretDir + "RasFocus_New.exe";
     DeleteFileA(newExePath.c_str());
 
-    HRESULT hr = URLDownloadToFileA(NULL, g_updateDownloadUrl.c_str(), newExePath.c_str(), 0, NULL);
+    // Reset progress counters
+    InterlockedExchange(&g_dlBytesNow,   0);
+    InterlockedExchange(&g_dlBytesTotal, 0);
+    g_updatePhase = UpdatePhase::Downloading;
+    if (hw) InvalidateRect(hw, NULL, FALSE);
 
-    if (hr == S_OK && GetFileAttributesA(newExePath.c_str()) != INVALID_FILE_ATTRIBUTES) {
-        isUpdateReady    = true;   // ← download সম্পন্ন, এখন install করা যাবে
-        isUpdateAvailable = false;
-        ApplySilentUpdate();   // replaces exe and restarts — never returns
+    // Download with progress callback
+    DownloadCallback* cb = new DownloadCallback();
+    HRESULT hr = URLDownloadToFileA(NULL, g_updateDownloadUrl.c_str(), newExePath.c_str(), 0, cb);
+    cb->Release();
+
+    if (hr != S_OK || GetFileAttributesA(newExePath.c_str()) == INVALID_FILE_ATTRIBUTES) {
+        // Download failed — reset state
+        g_isDownloading = false;
+        g_updatePhase   = UpdatePhase::None;
+        if (hw) {
+            KillTimer(hw, 1006);
+            InvalidateRect(hw, NULL, FALSE);
+            MessageBoxA(hw, "Download failed. Check internet connection and try again.", "Update Error", MB_OK | MB_ICONERROR);
+        }
+        _endthread(); return;
     }
-    // Download failed — reset so user can retry
-    g_isDownloading = false;
-    HWND hw = FindWindowA("RasFocusCore", "RasFocus+");
+
+    // Download success — show "Installing..." phase
+    g_updatePhase = UpdatePhase::Installing;
     if (hw) {
+        KillTimer(hw, 1006); // stop animation timer
         InvalidateRect(hw, NULL, FALSE);
-        MessageBoxA(hw, "Download failed. Check internet connection and try again.", "Update Error", MB_OK | MB_ICONERROR);
     }
+    Sleep(800); // user sees "Installing..." state briefly
+
+    isUpdateReady     = true;
+    isUpdateAvailable = false;
+    ApplySilentUpdate(); // replaces exe and restarts — never returns
     _endthread();
 }
 
@@ -726,14 +782,88 @@ void DrawUpdatePopup(Graphics& g, int w, int h) {
     dlPath.CloseFigure();
 
     if (g_isDownloading) {
-        // Show animated "ডাউনলোড হচ্ছে" with dots
-        SolidBrush dlgBg(Color(255, 180, 210, 215));
-        g.FillPath(&dlgBg, &dlPath);
-        Font fDlBtn(&ff, 12, FontStyleBold, UnitPixel);
-        static const wchar_t* dots[] = { L"ডাউনলোড হচ্ছে  .", L"ডাউনলোড হচ্ছে  ..", L"ডাউনলোড হচ্ছে  ..." };
-        SolidBrush darkGray(Color(255, 80, 80, 80));
-        g.DrawString(dots[g_dlAnimFrame % 3], -1, &fDlBtn,
-                     RectF(L.dlBtnX, L.dlBtnY, L.dlBtnW, L.dlBtnH), &fmtC, &darkGray);
+        // ── Progress bar area ──
+        float barX = L.dlBtnX;
+        float barY = L.dlBtnY;
+        float barW = L.dlBtnW;
+        float barH = L.dlBtnH;
+
+        if (g_updatePhase == UpdatePhase::Installing) {
+            // ── Installing phase — full teal bar + "Installing..." ──
+            SolidBrush trackBg(Color(255, 220, 235, 237));
+            g.FillPath(&trackBg, &dlPath);
+
+            // Full progress bar
+            GraphicsPath fullBar;
+            float br = 8.0f, bd = br * 2.0f;
+            fullBar.AddArc(barX, barY, bd, bd, 180, 90);
+            fullBar.AddArc(barX + barW - bd, barY, bd, bd, 270, 90);
+            fullBar.AddArc(barX + barW - bd, barY + barH - bd, bd, bd, 0, 90);
+            fullBar.AddArc(barX, barY + barH - bd, bd, bd, 90, 90);
+            fullBar.CloseFigure();
+            SolidBrush fillBr(Color(255, 0, 150, 160));
+            g.FillPath(&fillBr, &fullBar);
+
+            Font fStatus(&ff, 12, FontStyleBold, UnitPixel);
+            SolidBrush wh(Color(255, 255, 255, 255));
+            g.DrawString(L"Installing...", -1, &fStatus,
+                         RectF(barX, barY, barW, barH), &fmtC, &wh);
+        } else {
+            // ── Downloading phase — animated progress bar ──
+            // Track background
+            SolidBrush trackBg(Color(255, 220, 235, 237));
+            g.FillPath(&trackBg, &dlPath);
+
+            // Compute fill width
+            long now   = g_dlBytesNow;
+            long total = g_dlBytesTotal;
+            float pct  = (total > 0) ? min(1.0f, (float)now / (float)total) : 0.0f;
+            float fillW = barW * pct;
+
+            if (fillW > 16.0f) {
+                // Clipped filled region
+                Region clip(RectF(barX, barY, fillW, barH));
+                g.SetClip(&clip);
+                GraphicsPath fillPath;
+                float br = 8.0f, bd = br * 2.0f;
+                fillPath.AddArc(barX, barY, bd, bd, 180, 90);
+                fillPath.AddArc(barX + barW - bd, barY, bd, bd, 270, 90);
+                fillPath.AddArc(barX + barW - bd, barY + barH - bd, bd, bd, 0, 90);
+                fillPath.AddArc(barX, barY + barH - bd, bd, bd, 90, 90);
+                fillPath.CloseFigure();
+                SolidBrush fillBr(Color(255, 0, 150, 160));
+                g.FillPath(&fillBr, &fillPath);
+                g.ResetClip();
+            }
+
+            // Status text
+            Font fStatus(&ff, 11, FontStyleBold, UnitPixel);
+            wchar_t statusBuf[64] = {};
+            if (total > 0) {
+                float nowMB   = now   / (1024.0f * 1024.0f);
+                float totalMB = total / (1024.0f * 1024.0f);
+                int   pctInt  = (int)(pct * 100.0f);
+                swprintf_s(statusBuf, L"Downloading...  %.1f / %.1f MB  (%d%%)",
+                           nowMB, totalMB, pctInt);
+            } else {
+                static const wchar_t* dots[] = { L"Downloading  .", L"Downloading  ..", L"Downloading  ..." };
+                wcscpy_s(statusBuf, dots[g_dlAnimFrame % 3]);
+            }
+            SolidBrush statusClr(pct > 0.55f ? Color(255,255,255,255) : Color(255,40,40,40));
+            g.DrawString(statusBuf, -1, &fStatus,
+                         RectF(barX, barY, barW, barH), &fmtC, &statusClr);
+        }
+
+        // Percentage label below bar (only when downloading with known size)
+        if (g_updatePhase == UpdatePhase::Downloading && g_dlBytesTotal > 0) {
+            long now = g_dlBytesNow, total = g_dlBytesTotal;
+            int pctInt = (int)(min(1.0f, (float)now/(float)total) * 100.0f);
+            wchar_t pctBuf[16]; swprintf_s(pctBuf, L"%d%%", pctInt);
+            Font fPct(&ff, 10, FontStyleRegular, UnitPixel);
+            SolidBrush grayBr(Color(255, 140, 140, 140));
+            g.DrawString(pctBuf, -1, &fPct,
+                         RectF(L.laterX, L.laterY, L.laterW, L.laterH), &fmtC, &grayBr);
+        }
     } else {
         Color dlBtnColor = s_hovDlBtn ? Color(255, 0, 120, 130) : Color(255, 0, 150, 160);
         SolidBrush dlBtnBg(dlBtnColor);
@@ -771,6 +901,8 @@ void ProcessUpdateMouseClick(float x, float y, int w, int h, HWND hWnd) {
     if (x >= L.dlBtnX && x <= L.dlBtnX + L.dlBtnW &&
         y >= L.dlBtnY && y <= L.dlBtnY + L.dlBtnH) {
         g_isDownloading = true;
+        g_dlAnimFrame   = 0;
+        SetTimer(hWnd, 1006, 300, NULL); // animation refresh every 300ms
         InvalidateRect(hWnd, NULL, FALSE);
         _beginthread(DownloadAndInstallThread, 0, NULL);
         return;
