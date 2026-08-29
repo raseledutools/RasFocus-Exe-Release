@@ -1,9 +1,12 @@
 #define _CRT_SECURE_NO_WARNINGS
-#define WIN32_LEAN_AND_MEAN
-#include <winsock2.h>
-#include <ws2tcpip.h>
+// winsock2.h আগে include করতে হবে — নইলে windows.h winsock1 টেনে আনে এবং conflict হয়
+// WIN32_LEAN_AND_MEAN ব্যবহার করা যাচ্ছে না কারণ GDI+ এর IStream/PROPID দরকার।
+// তাই _WINSOCKAPI_ define করে winsock1 block করি।
+#define _WINSOCKAPI_
 #include "accounts.h"
 #include <windows.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #include <windowsx.h>
 #include <gdiplus.h>
 #include <wininet.h>
