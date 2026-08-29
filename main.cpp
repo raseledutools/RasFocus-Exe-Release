@@ -89,6 +89,9 @@ firebase::App* g_firebaseApp = nullptr;
 bool g_isPureViewerMode  = false;
 wstring currentWorkspacePdf = L"";
 
+// Forward declarations (C linkage)
+extern "C" void PhoneRemoteChar(wchar_t);
+
 // Premium status — accounts.h/cpp must expose this
 extern bool g_isPremiumUser;   // set to true after successful premium login
 extern string g_loggedInUserUid; // Firebase auth UID from accounts.h
@@ -1776,7 +1779,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (selectedTab == 1) { extern void ProcessBlocksKeyPress(wchar_t); ProcessBlocksKeyPress((wchar_t)wp); InvalidateRect(hWnd,NULL,FALSE); }
         else if (selectedTab == 2) { ProcessDeepStudyKeyPress((wchar_t)wp); InvalidateRect(hWnd,NULL,FALSE); }
         else if (selectedTab == 8) { ProcessFamilyLinkChar((wchar_t)wp); InvalidateRect(hWnd, NULL, FALSE); } // ← Family Link Char Input Handled
-        else if (selectedTab == 11) { extern "C" void PhoneRemoteChar(wchar_t); PhoneRemoteChar((wchar_t)wp); InvalidateRect(hWnd, NULL, FALSE); } // ← Phone Remote IP input
+        else if (selectedTab == 11) { PhoneRemoteChar((wchar_t)wp); InvalidateRect(hWnd, NULL, FALSE); } // ← Phone Remote IP input
         break;
     }
 
