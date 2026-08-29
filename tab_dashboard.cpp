@@ -325,8 +325,19 @@ void ProcessDashboardMouseClick(float x, float y, int& selectedTab) {
             else if (btn.title == L"DeepSeek") LaunchMiniBrowser(L"https://chat.deepseek.com", L"DeepSeek");
             else if (btn.title == L"Debug Kill Apps") {
                 KillDebugAppsNow();
-                MessageBoxW(hParentWnd, L"Debug/monitor apps বন্ধ করা হয়েছে।", L"RasFocus", MB_OK | MB_ICONINFORMATION);
+                MessageBoxW(NULL, L"Debug/monitor apps বন্ধ করা হয়েছে।", L"RasFocus", MB_OK | MB_ICONINFORMATION | MB_TOPMOST);
             }
+            else if (btn.title == L"Grok") LaunchMiniBrowser(L"https://grok.com", L"Grok");
+            else if (btn.title == L"Perplexity") LaunchMiniBrowser(L"https://www.perplexity.ai", L"Perplexity");
+            else if (btn.title == L"MATLAB") LaunchMiniBrowser(L"https://matlab.mathworks.com", L"MATLAB");
+            else if (btn.title == L"YouTube") LaunchMiniBrowser(L"https://www.youtube.com", L"YouTube");
+            else if (btn.title == L"Facebook") LaunchMiniBrowser(L"https://www.facebook.com", L"Facebook");
+            else if (btn.title == L"Google Colab") LaunchMiniBrowser(L"https://colab.research.google.com", L"Google Colab");
+            else if (btn.title == L"OneDrive") LaunchMiniBrowser(L"https://onedrive.live.com", L"OneDrive");
+            else if (btn.title == L"Gmail") LaunchMiniBrowser(L"https://mail.google.com", L"Gmail");
+            else if (btn.title == L"Google Docs") LaunchMiniBrowser(L"https://docs.google.com", L"Google Docs");
+            else if (btn.title == L"Google Slides") LaunchMiniBrowser(L"https://slides.google.com", L"Google Slides");
+            else if (btn.title == L"Google Sheets") LaunchMiniBrowser(L"https://sheets.google.com", L"Google Sheets");
             if(hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE); return;
         }
     }

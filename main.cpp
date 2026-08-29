@@ -1616,6 +1616,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             break;
         }
 
+        // ← Update Popup Intercept (highest priority)
+        if (g_showUpdatePopup) {
+            ProcessUpdateMouseClick(x, y, (int)(windowWidth / g_scaleFactor), (int)(windowHeight / g_scaleFactor), hWnd);
+            break;
+        }
+
         // ← Upgrade Popup Intercept
         if (g_showUpgradePopup) {
             ProcessUpgradeMouseClick(x, y, hWnd);
