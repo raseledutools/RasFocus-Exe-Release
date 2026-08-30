@@ -571,8 +571,8 @@ static void DrawCode(Graphics& g, const wstring& code,
     // Separator dot between groups
     float midX=startX+3*(boxW+gapX)+groupGap/2-2;
     SolidBrush dotC(Color(255,0,180,220));
-    g.FillEllipse(&dotC,midX,y+boxH/2-6,5,5);
-    g.FillEllipse(&dotC,midX,y+boxH/2+4,5,5);
+    g.FillEllipse(&dotC,midX,y+boxH/2-6.f,5.f,5.f);
+    g.FillEllipse(&dotC,midX,y+boxH/2+4.f,5.f,5.f);
 }
 
 // ── Main draw ─────────────────────────────────────────────────────
