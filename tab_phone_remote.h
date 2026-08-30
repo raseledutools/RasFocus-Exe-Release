@@ -55,6 +55,25 @@ inline void PhoneRemoteStartServer() {}
 inline void PhoneRemoteStopServer () {}
 inline void PhoneRemoteTimerTick  () { RdTimerTick(); }
 
+// ── Mouse drag / wheel stubs (called from main.cpp WM_MOUSEMOVE /
+//    WM_MOUSEWHEEL handlers; forwarded to ProcessPhoneRemoteMouseMove) ──
+inline void PhoneRemoteMouseDrag (float x, float y)
+{
+    // Drag = continuous touch-move; reuse the existing mouse-move handler.
+    // cX/cY (view-centre) are not available here, so pass the raw coords
+    // as both cursor and centre — ProcessPhoneRemoteMouseMove clips to view.
+    ProcessPhoneRemoteMouseMove(x, y, x, y);
+}
+
+inline void PhoneRemoteMouseWheel(float x, float y, int delta)
+{
+    // Android doesn't expose a native scroll wheel over this protocol,
+    // so synthesise two touch events (swipe up/down by ~40px).
+    float offset = (delta > 0) ? -40.f : 40.f;
+    ProcessPhoneRemoteMouseMove(x, y,          x, y);
+    ProcessPhoneRemoteMouseMove(x, y + offset, x, y + offset);
+}
+
 // old globals kept for any code that still references them
 extern bool        g_phoneRemoteRunning;
 extern int         g_phoneRemotePort;
