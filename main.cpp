@@ -1793,9 +1793,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             ProcessFamilyLinkMouseMove(x, y, cX, cY);
             redraw = true;
         }
-        else if (selectedTab == 11) { // ← Phone Remote Hover (Start/Stop buttons)
+        else if (selectedTab == 11) { // ← Phone Remote Hover + drag
             float cX = (float)SIDEBAR_WIDTH, cY = (float)(TITLEBAR_HEIGHT + SUBHEADER_HEIGHT);
             ProcessPhoneRemoteMouseMove(x, y, cX, cY);
+            // Left button held → send drag to phone
+            if (wp & MK_LBUTTON) {
+                extern void PhoneRemoteMouseDrag(float, float);
+                PhoneRemoteMouseDrag(x, y);
+            }
             redraw = true;
         }
 
@@ -1955,6 +1960,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         int delta = GET_WHEEL_DELTA_WPARAM(wp);
         if (selectedTab == 1) { extern void ProcessBlocksMouseWheel(float,float,int); ProcessBlocksMouseWheel(x,y,delta); InvalidateRect(hWnd,NULL,FALSE); }
         if (selectedTab == 0) { ProcessDashboardMouseWheel(delta); }
+        if (selectedTab == 11) {
+            extern void PhoneRemoteMouseWheel(float, float, int);
+            PhoneRemoteMouseWheel(x, y, delta);
+        }
         break;
     }
 
