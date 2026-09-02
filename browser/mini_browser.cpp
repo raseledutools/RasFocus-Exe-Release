@@ -68,43 +68,137 @@ extern float g_scaleFactor;
 // 1. DYNAMIC LOCAL NTP (APP THEMED NEW TAB PAGE)
 // ─────────────────────────────────────────────────────────────────────────────
 std::wstring GetLocalNTP_HTML(bool isDark) {
-    std::wstring bg      = isDark ? L"#1e1e24" : L"#f8fafc";
-    std::wstring text    = isDark ? L"#ffffff" : L"#323232";
-    std::wstring subText = isDark ? L"#a0a0b0" : L"#666666";
-    std::wstring boxBg   = isDark ? L"#2b2b36" : L"#ffffff";
-    std::wstring boxBorder = isDark ? L"#444444" : L"#dcdfe6";
-    std::wstring shadow  = isDark ? L"0 4px 12px rgba(0,0,0,0.3)" : L"0 4px 12px rgba(0,0,0,0.05)";
-    std::wstring teal    = L"#0ca8b0"; 
+    // ── Chrome-style New Tab Page (Material You) ──────────────────────────────
+    std::wstring bg        = isDark ? L"#202124" : L"#ffffff";
+    std::wstring text      = isDark ? L"#e8eaed" : L"#202124";
+    std::wstring subText   = isDark ? L"#9aa0a6" : L"#5f6368";
+    std::wstring cardBg    = isDark ? L"#292a2d" : L"#f8f9fa";
+    std::wstring cardHover = isDark ? L"#3c4043" : L"#f1f3f4";
+    std::wstring border    = isDark ? L"#5f6368" : L"#dadce0";
+    std::wstring inputBg   = isDark ? L"#303134" : L"#f1f3f4";
+    std::wstring inputFocusBg = isDark ? L"#303134" : L"#ffffff";
+    std::wstring shadow    = isDark ? L"0 2px 6px rgba(0,0,0,0.5)" : L"0 2px 6px rgba(60,64,67,0.16)";
+    std::wstring shadowHov = isDark ? L"0 4px 12px rgba(0,0,0,0.6)" : L"0 4px 12px rgba(60,64,67,0.24)";
 
-    return L"<!DOCTYPE html>"
-    L"<html><head><meta charset='utf-8'><title>New Tab</title><style>"
-    L"body { margin:0; display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; background:" + bg + L"; font-family:'Segoe UI',sans-serif; color:" + text + L"; }"
-    L".logo { font-size:64px; font-weight:bold; margin-bottom:5px; letter-spacing:-1.5px; user-select:none; }"
-    L".logo span { color:" + teal + L"; }"
-    L".subtitle { font-size:15px; color:" + subText + L"; margin-bottom:35px; font-weight:500; letter-spacing:1px; text-transform:uppercase; }"
-    L"form { width:100%; max-width:620px; position:relative; margin-bottom:50px; }"
-    L".search-box { width:100%; padding:18px 50px; font-size:16px; border-radius:30px; border:1px solid " + boxBorder + L"; background:" + boxBg + L"; color:" + text + L"; outline:none; box-shadow:" + shadow + L"; box-sizing:border-box; transition:all 0.3s ease; }"
-    L".search-box:focus { border-color:" + teal + L"; box-shadow:0 4px 20px rgba(12,168,176,0.25); }"
-    L".icon-search { position:absolute; left:20px; top:50%; transform:translateY(-50%); width:22px; fill:#9aa0a6; }"
-    L".quick-links { display:flex; gap:30px; }"
-    L".link-item { display:flex; flex-direction:column; align-items:center; text-decoration:none; color:" + text + L"; font-size:14px; font-weight:600; transition:transform 0.2s; }"
-    L".link-item:hover { transform:translateY(-5px); }"
-    L".link-icon { width:56px; height:56px; border-radius:50%; background:" + boxBg + L"; display:flex; align-items:center; justify-content:center; box-shadow:" + shadow + L"; margin-bottom:12px; font-size:22px; color:" + teal + L"; border:1px solid " + boxBorder + L"; transition:all 0.3s ease; }"
-    L".link-item:hover .link-icon { background:" + teal + L"; color:#fff; border-color:" + teal + L"; box-shadow:0 8px 15px rgba(12,168,176,0.3); }"
+    return L"<!DOCTYPE html><html><head><meta charset='utf-8'>"
+    L"<title>New Tab</title>"
+    L"<link rel='preconnect' href='https://fonts.googleapis.com'>"
+    L"<style>"
+    L"*{box-sizing:border-box;margin:0;padding:0}"
+    L"body{min-height:100vh;background:" + bg + L";color:" + text + L";"
+    L"font-family:'Google Sans','Segoe UI',Roboto,Arial,sans-serif;"
+    L"display:flex;flex-direction:column;align-items:center;"
+    L"padding-top:clamp(60px,10vh,120px);}"
+    // ── Google logo (SVG inline, exact Google colors) ──
+    L".g-logo{margin-bottom:28px;line-height:1}"
+    L".g-logo svg{height:92px;width:272px}"
+    // ── Search box (pill, exact Chrome style) ──
+    L".search-wrap{width:100%;max-width:584px;position:relative;margin-bottom:36px}"
+    L".search-box{"
+    L"width:100%;height:44px;padding:0 46px 0 52px;"
+    L"font-size:16px;font-family:inherit;"
+    L"border:1px solid " + border + L";"
+    L"border-radius:24px;"
+    L"background:" + inputBg + L";"
+    L"color:" + text + L";"
+    L"outline:none;"
+    L"box-shadow:" + shadow + L";"
+    L"transition:background .15s,box-shadow .15s,border-color .15s}"
+    L".search-box:focus{"
+    L"background:" + inputFocusBg + L";"
+    L"border-color:transparent;"
+    L"box-shadow:" + shadowHov + L"}"
+    // search icon
+    L".ico-search{position:absolute;left:16px;top:50%;transform:translateY(-50%);"
+    L"width:20px;height:20px;fill:#9aa0a6;pointer-events:none}"
+    // mic + camera icons
+    L".ico-right{position:absolute;right:12px;top:50%;transform:translateY(-50%);"
+    L"display:flex;gap:6px;align-items:center}"
+    L".ico-right svg{width:20px;height:20px;fill:#9aa0a6;cursor:pointer;opacity:.7}"
+    L".ico-right svg:hover{opacity:1}"
+    // ── I'm Feeling Lucky ──
+    L".search-btns{display:flex;gap:12px;justify-content:center;margin-bottom:44px}"
+    L".search-btn{"
+    L"padding:0 16px;height:36px;"
+    L"border:1px solid " + border + L";"
+    L"border-radius:4px;"
+    L"background:" + cardBg + L";"
+    L"color:" + text + L";"
+    L"font-size:14px;cursor:pointer;"
+    L"transition:background .1s,box-shadow .1s}"
+    L".search-btn:hover{background:" + cardHover + L";box-shadow:" + shadow + L";border-color:" + border + L"}"
+    // ── Shortcuts grid ──
+    L".shortcuts{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;"
+    L"width:100%;max-width:640px}"
+    L".shortcut{"
+    L"display:flex;flex-direction:column;align-items:center;"
+    L"width:96px;height:90px;border-radius:16px;"
+    L"text-decoration:none;color:" + text + L";"
+    L"font-size:12.5px;font-weight:500;"
+    L"cursor:pointer;transition:background .1s}"
+    L".shortcut:hover{background:" + cardHover + L"}"
+    L".shortcut-icon{"
+    L"width:52px;height:52px;border-radius:50%;"
+    L"background:" + cardBg + L";"
+    L"display:flex;align-items:center;justify-content:center;"
+    L"margin-bottom:8px;overflow:hidden;"
+    L"box-shadow:" + shadow + L"}"
+    L".shortcut-icon img{width:28px;height:28px;border-radius:4px}"
+    L".shortcut-icon span{font-size:22px}"
+    L".shortcut-label{text-align:center;max-width:88px;"
+    L"overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"
+    // ── Customise button ──
+    L".customise-btn{"
+    L"margin-top:20px;display:flex;align-items:center;gap:8px;"
+    L"padding:8px 16px;border-radius:20px;"
+    L"border:1px solid " + border + L";"
+    L"background:transparent;color:" + subText + L";"
+    L"font-size:13px;cursor:pointer;"
+    L"transition:background .1s}"
+    L".customise-btn:hover{background:" + cardHover + L"}"
     L"</style></head><body>"
-    L"<div class='logo'><span>Ras</span>Browser</div>"
-    L"<div class='subtitle'>A Powerful &amp; Safe Browsing Experience</div>"
-    L"<form action='https://www.google.com/search' method='GET'>"
-    L"<svg class='icon-search' viewBox='0 0 24 24'><path d='M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z'></path></svg>"
-    L"<input type='text' name='q' class='search-box' placeholder='Search securely or type a URL' autocomplete='off' autofocus />"
-    L"</form>"
-    L"<div class='quick-links'>"
-    L"<a href='https://www.youtube.com' class='link-item'><div class='link-icon'>&#9654;</div>YouTube</a>"
-    L"<a href='https://www.facebook.com' class='link-item'><div class='link-icon'>f</div>Facebook</a>"
-    L"<a href='https://chatgpt.com' class='link-item'><div class='link-icon'>AI</div>ChatGPT</a>"
-    L"<a href='https://github.com' class='link-item'><div class='link-icon'>&lt;/&gt;</div>GitHub</a>"
-    L"<a href='https://www.wikipedia.org' class='link-item'><div class='link-icon'>W</div>Wikipedia</a>"
+    // Google logo SVG
+    L"<div class='g-logo'>"
+    L"<svg viewBox='0 0 272 92' xmlns='http://www.w3.org/2000/svg'>"
+    L"<path d='M115.75 47.18c0 12.77-9.99 22.18-22.25 22.18s-22.25-9.41-22.25-22.18C71.25 34.32 81.24 25 93.5 25s22.25 9.32 22.25 22.18zm-9.74 0c0-7.98-5.79-13.44-12.51-13.44S80.99 39.2 80.99 47.18c0 7.9 5.79 13.44 12.51 13.44s12.51-5.55 12.51-13.44z' fill='#EA4335'/>"
+    L"<path d='M163.75 47.18c0 12.77-9.99 22.18-22.25 22.18s-22.25-9.41-22.25-22.18c0-12.85 9.99-22.18 22.25-22.18s22.25 9.32 22.25 22.18zm-9.74 0c0-7.98-5.79-13.44-12.51-13.44s-12.51 5.46-12.51 13.44c0 7.9 5.79 13.44 12.51 13.44s12.51-5.55 12.51-13.44z' fill='#FBBC05'/>"
+    L"<path d='M209.75 26.34v39.82c0 16.38-9.66 23.07-21.08 23.07-10.75 0-17.22-7.19-19.67-13.07l8.48-3.53c1.51 3.61 5.21 7.87 11.17 7.87 7.31 0 11.84-4.51 11.84-13v-3.19h-.34c-2.18 2.69-6.38 5.04-11.68 5.04-11.09 0-21.25-9.66-21.25-22.09 0-12.52 10.16-22.26 21.25-22.26 5.29 0 9.49 2.35 11.68 4.96h.34v-3.61h9.26zm-8.56 20.92c0-7.81-5.21-13.52-11.84-13.52-6.72 0-12.35 5.71-12.35 13.52 0 7.73 5.63 13.36 12.35 13.36 6.63 0 11.84-5.63 11.84-13.36z' fill='#4285F4'/>"
+    L"<path d='M225 3v65h-9.5V3h9.5z' fill='#34A853'/>"
+    L"<path d='M262.02 54.48l7.56 5.04c-2.44 3.61-8.32 9.83-18.48 9.83-12.6 0-22.01-9.74-22.01-22.18 0-13.19 9.49-22.18 20.92-22.18 11.51 0 17.14 9.16 18.98 14.11l1.01 2.52-29.65 12.28c2.27 4.45 5.8 6.72 10.75 6.72 4.96 0 8.4-2.44 10.92-6.14zm-23.27-7.98l19.82-8.23c-1.09-2.77-4.37-4.70-8.23-4.70-4.95 0-11.84 4.37-11.59 12.93z' fill='#EA4335'/>"
+    L"<path d='M35.29 41.41V32H67c.31 1.64.47 3.58.47 5.68 0 7.06-1.93 15.79-8.15 22.01-6.05 6.3-13.78 9.66-24.02 9.66C16.32 69.35.36 53.89.36 34.91.36 15.93 16.32.47 35.3.47c10.5 0 17.98 4.12 23.6 9.49l-6.64 6.64c-4.03-3.78-9.49-6.72-16.97-6.72-13.86 0-24.7 11.17-24.7 25.03 0 13.86 10.84 25.03 24.7 25.03 8.99 0 14.11-3.61 17.39-6.89 2.66-2.66 4.41-6.46 5.1-11.65H35.29z' fill='#4285F4'/>"
+    L"</svg></div>"
+    // Search form
+    L"<div class='search-wrap'>"
+    L"<svg class='ico-search' viewBox='0 0 24 24'><path d='M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z'/></svg>"
+    L"<input type='text' id='q' class='search-box' placeholder='Search Google or type a URL' autocomplete='off' autofocus>"
+    L"<div class='ico-right'>"
+    L"<svg viewBox='0 0 24 24'><path d='M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z'/></svg>"
+    L"<svg viewBox='0 0 24 24'><path d='M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z'/></svg>"
+    L"</div></div>"
+    L"<div class='search-btns'>"
+    L"<button class='search-btn' onclick='doSearch()'>Google Search</button>"
+    L"<button class='search-btn' onclick='location.href="https://www.google.com/doodles"'>I&#x2019;m Feeling Lucky</button>"
     L"</div>"
+    // Shortcuts
+    L"<div class='shortcuts'>"
+    L"<a class='shortcut' href='https://www.youtube.com'><div class='shortcut-icon'><img src='https://www.google.com/s2/favicons?domain=youtube.com&sz=64' onerror='this.style.display="none";this.parentNode.innerHTML="&#127909;"'></div><span class='shortcut-label'>YouTube</span></a>"
+    L"<a class='shortcut' href='https://www.google.com'><div class='shortcut-icon'><img src='https://www.google.com/s2/favicons?domain=google.com&sz=64' onerror='this.style.display="none";this.parentNode.innerHTML="&#127758;"'></div><span class='shortcut-label'>Google</span></a>"
+    L"<a class='shortcut' href='https://www.facebook.com'><div class='shortcut-icon'><img src='https://www.google.com/s2/favicons?domain=facebook.com&sz=64' onerror='this.style.display="none";this.parentNode.innerHTML="f"'></div><span class='shortcut-label'>Facebook</span></a>"
+    L"<a class='shortcut' href='https://chatgpt.com'><div class='shortcut-icon'><img src='https://www.google.com/s2/favicons?domain=chatgpt.com&sz=64' onerror='this.style.display="none";this.parentNode.innerHTML="&#129302;"'></div><span class='shortcut-label'>ChatGPT</span></a>"
+    L"<a class='shortcut' href='https://github.com'><div class='shortcut-icon'><img src='https://www.google.com/s2/favicons?domain=github.com&sz=64' onerror='this.style.display="none";this.parentNode.innerHTML="&lt;/&gt;"'></div><span class='shortcut-label'>GitHub</span></a>"
+    L"<a class='shortcut' href='https://www.wikipedia.org'><div class='shortcut-icon'><img src='https://www.google.com/s2/favicons?domain=wikipedia.org&sz=64' onerror='this.style.display="none";this.parentNode.innerHTML="W"'></div><span class='shortcut-label'>Wikipedia</span></a>"
+    L"<a class='shortcut' href='https://gemini.google.com'><div class='shortcut-icon'><img src='https://www.google.com/s2/favicons?domain=gemini.google.com&sz=64' onerror='this.style.display="none";this.parentNode.innerHTML="&#10024;"'></div><span class='shortcut-label'>Gemini</span></a>"
+    L"<a class='shortcut' href='https://translate.google.com'><div class='shortcut-icon'><img src='https://www.google.com/s2/favicons?domain=translate.google.com&sz=64' onerror='this.style.display="none";this.parentNode.innerHTML="&#127760;"'></div><span class='shortcut-label'>Translate</span></a>"
+    L"</div>"
+    L"<script>"
+    L"function doSearch(){"
+    L"var q=document.getElementById('q').value.trim();"
+    L"if(!q)return;"
+    L"if(q.includes(' ')||!q.includes('.')){location.href='https://www.google.com/search?q='+encodeURIComponent(q);}"
+    L"else{location.href=q.startsWith('http')?q:'https://'+q;}"
+    L"}"
+    L"document.getElementById('q').addEventListener('keydown',function(e){if(e.key==='Enter')doSearch();});"
+    L"</script>"
     L"</body></html>";
 }
 
@@ -112,42 +206,72 @@ std::wstring GetLocalNTP_HTML(bool isDark) {
 // 2. DYNAMIC BLOCKED PAGE (MOTIVATIONAL QUOTES)
 // ─────────────────────────────────────────────────────────────────────────────
 std::wstring GetBlocked_HTML(bool isDark) {
-    std::wstring bg     = isDark ? L"#1a1a1f" : L"#f4f6f8";
-    std::wstring text   = isDark ? L"#ffffff" : L"#323232";
-    std::wstring boxBg  = isDark ? L"#2b2b36" : L"#ffffff";
-    std::wstring red    = L"#e74c3c";
-    std::wstring border = isDark ? L"#444444" : L"#e2e8f0";
+    // ── Chrome-style error page + RasFocus motivation overlay ───────────────
+    std::wstring bg      = isDark ? L"#202124" : L"#ffffff";
+    std::wstring text    = isDark ? L"#e8eaed" : L"#202124";
+    std::wstring subText = isDark ? L"#9aa0a6" : L"#5f6368";
+    std::wstring cardBg  = isDark ? L"#292a2d" : L"#f8f9fa";
+    std::wstring border  = isDark ? L"#5f6368" : L"#dadce0";
+    std::wstring blue    = L"#1a73e8"; // Google Blue
+    std::wstring red     = L"#d93025"; // Google Red
 
-    return L"<!DOCTYPE html>"
-    L"<html><head><meta charset='utf-8'><title>Blocked by RasFocus</title><style>"
-    L"body { margin:0; display:flex; align-items:center; justify-content:center; height:100vh; background:" + bg + L"; font-family:'Segoe UI',sans-serif; color:" + text + L"; }"
-    L".container { max-width:600px; text-align:center; padding:40px; background:" + boxBg + L"; border-radius:16px; box-shadow:0 10px 30px rgba(0,0,0,0.15); border:1px solid " + border + L"; }"
-    L".icon { font-size:70px; margin-bottom:10px; color:" + red + L"; }"
-    L"h1 { margin:0 0 10px 0; color:" + red + L"; font-size:32px; }"
-    L"p { font-size:16px; color:#888; margin-bottom:30px; line-height:1.5; }"
-    L".quote-box { background:rgba(12,168,176,0.1); border-left:4px solid #0ca8b0; padding:20px; border-radius:0 8px 8px 0; text-align:left; }"
-    L".quote-title { font-size:14px; font-weight:bold; color:#0ca8b0; margin-bottom:10px; text-transform:uppercase; letter-spacing:1px; }"
-    L".quote-text { font-size:18px; font-style:italic; line-height:1.6; font-weight:500; }"
-    L"</style></head><body>"
-    L"<div class='container'>"
-    L"<div class='icon'>&#x1F6AB;</div>"
-    L"<h1>Access Denied</h1>"
-    L"<p>This content has been blocked by <b>RasFocus</b> to protect your mind and productivity. Stay strong and keep your focus on what truly matters.</p>"
-    L"<div class='quote-box'>"
-    L"<div class='quote-title'>&#x1F4A1; \u09AE\u09A8\u09C0\u09B7\u09C0\u09A6\u09C7\u09B0 \u09C1\u0995\u09CD\u09A4\u09BF</div>"
-    L"<div class='quote-text' id='quote'>\"\u09AF\u09C7 \u09AC\u09CD\u09AF\u0995\u09CD\u09A4\u09BF \u09A8\u09BF\u099C\u09C7\u09B0 \u09AA\u09CD\u09B0\u09AC\u09C3\u09A4\u09CD\u09A4\u09BF \u0993 \u0987\u099A\u09CD\u099B\u09BE\u0995\u09C7 \u09A8\u09BF\u09AF\u09BC\u09A8\u09CD\u09A4\u09CD\u09B0\u09A3 \u0995\u09B0\u09A4\u09C7 \u09AA\u09BE\u09B0\u09C7, \u09B8\u09C7\u0987 \u09B9\u09B2\u09CB \u09B8\u09A4\u09CD\u09AF\u09BF\u0995\u09BE\u09B0\u09C7\u09B0 \u09AC\u09BF\u099C\u09AF\u09BC\u09C0\u0964\"</div>"
-    L"</div></div>"
+    return L"<!DOCTYPE html><html><head><meta charset='utf-8'>"
+    L"<title>Blocked — RasFocus</title>"
+    L"<style>"
+    L"*{box-sizing:border-box;margin:0;padding:0}"
+    L"body{min-height:100vh;display:flex;align-items:center;justify-content:center;"
+    L"background:" + bg + L";color:" + text + L";"
+    L"font-family:'Google Sans','Segoe UI',Roboto,Arial,sans-serif;padding:24px}"
+    L".card{max-width:440px;width:100%;text-align:center}"
+    // Shield icon (SVG, Google red)
+    L".shield{width:72px;height:72px;margin:0 auto 20px;display:block}"
+    L"h1{font-size:24px;font-weight:400;color:" + text + L";margin-bottom:10px}"
+    L".url{font-size:14px;color:" + subText + L";margin-bottom:24px;word-break:break-all}"
+    // Motivation card (teal accent, like Chrome's info box)
+    L".mot{background:" + cardBg + L";border:1px solid " + border + L";"
+    L"border-radius:8px;padding:20px 22px;margin-bottom:24px;text-align:left}"
+    L".mot-label{font-size:11px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;"
+    L"color:" + blue + L";margin-bottom:10px}"
+    L".mot-quote{font-size:15px;line-height:1.6;color:" + text + L";font-weight:500}"
+    L".mot-attr{font-size:12px;color:" + subText + L";margin-top:8px}"
+    // Buttons row (Chrome-style outlined + filled)
+    L".btns{display:flex;gap:10px;justify-content:center}"
+    L".btn{padding:0 22px;height:36px;border-radius:4px;font-size:14px;cursor:pointer;"
+    L"font-family:inherit;transition:background .1s,box-shadow .1s}"
+    L".btn-back{background:transparent;border:1px solid " + border + L";color:" + blue + L"}"
+    L".btn-back:hover{background:rgba(26,115,232,.06)}"
+    L".btn-report{background:" + blue + L";border:none;color:#fff}"
+    L".btn-report:hover{background:#1557b0;box-shadow:0 1px 3px rgba(0,0,0,.3)}"
+    L"</style></head><body><div class='card'>"
+    // SVG Shield
+    L"<svg class='shield' viewBox='0 0 72 72' fill='none' xmlns='http://www.w3.org/2000/svg'>"
+    L"<path d='M36 6L12 16v18c0 16.6 10.3 32.1 24 36 13.7-3.9 24-19.4 24-36V16L36 6z' fill='#fce8e6'/>"
+    L"<path d='M36 6L12 16v18c0 16.6 10.3 32.1 24 36 13.7-3.9 24-19.4 24-36V16L36 6z' stroke='#d93025' stroke-width='2' fill='none'/>"
+    L"<text x='36' y='44' font-size='26' font-weight='700' fill='#d93025' text-anchor='middle' font-family='Arial'>!</text>"
+    L"</svg>"
+    L"<h1>Access blocked by RasFocus</h1>"
+    L"<p class='url'>This site has been restricted to protect your focus and wellbeing.</p>"
+    L"<div class='mot'>"
+    L"<div class='mot-label'>✨ Motivation</div>"
+    L"<div class='mot-quote' id='quote'></div>"
+    L"<div class='mot-attr' id='attr'></div>"
+    L"</div>"
+    L"<div class='btns'>"
+    L"<button class='btn btn-back' onclick='history.back()'>← Go back</button>"
+    L"<button class='btn btn-report' onclick='window.close()'>Close tab</button>"
+    L"</div>"
+    L"</div>"
     L"<script>"
-    L"const quotes = ["
-    L"  '\"\\u099A\u09B0\u09BF\u09A4\u09CD\u09B0\u09B9\u09C0\u09A8\u09A4\u09BE\u09B0 \u099A\u09C7\u09AF\u09BC\u09C7 \u09AC\u09DC \u0995\u09CB\u09A8\u09CB \u09A6\u09BE\u09B0\u09BF\u09A6\u09CD\u09B0\u09CD\u09AF \u09A8\u09C7\u0987\u0964\" - \u09B9\u09AF\u09B0\u09A4 \u0986\u09B2\u09C0 (\u09B0\u09BE\u0983)',"
-    L"  '\"\\u09AF\u09C7 \u09A8\u09BF\u099C\u09C7\u0995\u09C7 \u09A8\u09BF\u09AF\u09BC\u09A8\u09CD\u09A4\u09CD\u09B0\u09A3 \u0995\u09B0\u09A4\u09C7 \u09AA\u09BE\u09B0\u09C7 \u09A8\u09BE, \u09B8\u09C7 \u0985\u09A8\u09CD\u09AF\u0995\u09C7\u0993 \u09A8\u09BF\u09AF\u09BC\u09A8\u09CD\u09A4\u09CD\u09B0\u09A3 \u0995\u09B0\u09A4\u09C7 \u09AA\u09BE\u09B0\u09C7 \u09A8\u09BE\u0964\" - \u09B8\u09C7\u09A8\u09C7\u0995\u09BE',"
-    L"  '\"\\u0995\u09CD\u09B7\u09A3\u09BF\u0995\u09C7\u09B0 \u0986\u09A8\u09A8\u09CD\u09A6\u09C7\u09B0 \u099C\u09A8\u09CD\u09AF \u09A8\u09BF\u099C\u09C7\u09B0 \u09AD\u09AC\u09BF\u09B7\u09CD\u09AF\u09CE \u09A8\u09B7\u09CD\u099F \u0995\u09B0\u09CB\u09A8\u09BE\u0964\" - \u09B8\u0982\u0997\u09C3\u09B9\u09C0\u09A4',"
-    L"  '\"\\u09AE\u09A8\u0995\u09C7 \u09AF\u09A6\u09BF \u09A4\u09C1\u09AE\u09BF \u09A8\u09BF\u09AF\u09BC\u09A8\u09CD\u09A4\u09CD\u09B0\u09A3 \u09A8\u09BE \u0995\u09B0\u09CB, \u09A4\u09AC\u09C7 \u09AE\u09A8 \u09A4\u09CB\u09AE\u09BE\u0995\u09C7 \u09A8\u09BF\u09AF\u09BC\u09A8\u09CD\u09A4\u09CD\u09B0\u09A3 \u0995\u09B0\u09AC\u09C7\u0964\" - \u09B9\u09CB\u09B0\u09C7\u09B8',"
-    L"  '\"\\u09B6\u09C1\u09A6\u09CD\u09A7 \u09AE\u09A8 \u098F\u09AC\u0982 \u09B8\u09C1\u09A8\u09CD\u09A6\u09B0 \u099A\u09B0\u09BF\u09A4\u09CD\u09B0\u0987 \u09B9\u09B2\u09CB \u09AE\u09BE\u09A8\u09C1\u09B7\u09C7\u09B0 \u0986\u09B8\u09B2 \u09B8\u09CC\u09A8\u09CD\u09A6\u09B0\u09CD\u09AF\u0964\" - \u09B8\u09CD\u09AC\u09BE\u09AE\u09C0 \u09AC\u09BF\u09AC\u09C7\u0995\u09BE\u09A8\u09A8\u09CD\u09A6'"
+    L"const quotes=["
+    L"{q:'\u099A\u09B0\u09BF\u09A4\u09CD\u09B0\u09B9\u09C0\u09A8\u09A4\u09BE\u09B0 \u099A\u09C7\u09AF\u09BC\u09C7 \u09AC\u09A1\u09BC \u09A6\u09BE\u09B0\u09BF\u09A6\u09CD\u09B0 \u09A8\u09C7\u0987\u0964',a:'\u2014 \u09B9\u09AF\u09B0\u09A4 \u0986\u09B2\u09C0 (\u09B0\u09BE\u0983)'},"
+    L"{q:'Discipline is choosing between what you want now and what you want most.',a:'\u2014 Abraham Lincoln'},"
+    L"{q:'Small disciplines repeated with consistency lead to great achievements.',a:'\u2014 John C. Maxwell'},"
+    L"{q:'\u0995\u09CD\u09B7\u09A3\u09BF\u0995\u09C7\u09B0 \u0986\u09A8\u09A8\u09CD\u09A6\u09C7\u09B0 \u099C\u09A8\u09CD\u09AF \u09AD\u09AC\u09BF\u09B7\u09CD\u09AF\u09CE \u09A8\u09B7\u09CD\u099F \u0995\u09B0\u09CB \u09A8\u09BE\u0964',a:'\u2014 \u09B8\u0982\u0997\u09C3\u09B9\u09C0\u09A4'}"
     L"];"
-    L"document.getElementById('quote').innerText = quotes[Math.floor(Math.random() * quotes.length)];"
+    L"var p=quotes[Math.floor(Math.random()*quotes.length)];"
+    L"document.getElementById('quote').textContent=p.q;"
+    L"document.getElementById('attr').textContent=p.a;"
     L"</script></body></html>";
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 🟢 AI IN-APP BLOCKING INJECTION SCRIPT GENERATOR
@@ -220,15 +344,16 @@ static UINT GetWndDpi(HWND hWnd) {
 // ─────────────────────────────────────────────────────────────────────────────
 // LAYOUT CONSTANTS
 // ─────────────────────────────────────────────────────────────────────────────
-static const int D_TITLEBAR_H  = 42; 
-static const int D_TOOLBAR_H   = 40;
-static const int D_BOOKMARK_H  = 32; 
+// ── Chrome-accurate layout constants ─────────────────────────────────────────
+static const int D_TITLEBAR_H  = 38;  // Chrome tab strip height (38px @96dpi)
+static const int D_TOOLBAR_H   = 40;  // Chrome omnibox bar height
+static const int D_BOOKMARK_H  = 32;  // Bookmark bar (shown on NTP only)
 
-static const int D_TAB_W_MAX   = 240;
-static const int D_TAB_W_MIN   = 80;
-static const int D_TAB_PAD     = 10;
+static const int D_TAB_W_MAX   = 240; // Chrome max tab width
+static const int D_TAB_W_MIN   = 60;  // Chrome min tab width (collapsed)
+static const int D_TAB_PAD     = 8;
 static const int D_WIN_BTN_W   = 46;
-static const int D_LOGO_W      = 140; 
+static const int D_LOGO_W      = 128; // tighter branding area
 static const int D_NEW_TAB_BTN = 28;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -841,17 +966,18 @@ static void RepositionAddressBar(HWND hWnd) {
     int W = cr.right;
 
     int navBtnArea    = S(8 + 36*3 + 8, dpi);
-    int rightIconArea = S(36*3 + 8,     dpi); // draw/hit এর সাথে match করা হয়েছে
-    int addrH         = S(30,           dpi); 
+    int rightIconArea = S(36*3 + 8,     dpi);
+    int addrH         = S(32,           dpi); // Chrome omnibox 32px
     int toolY         = TitleBarH(dpi);
     int addrY         = toolY + (ToolbarH(dpi) - addrH) / 2;
     int addrX         = navBtnArea;
     int addrW         = W - navBtnArea - rightIconArea - S(8, dpi);
 
-    int leftDecorW  = S(35, dpi);
-    int rightDecorW = S(95, dpi);
+    // Edit control sits inside the pill, offset for lock icon + Gemini chip
+    int leftDecorW  = S(32, dpi);  // lock icon width
+    int rightDecorW = S(90, dpi);  // Gemini chip + padding
 
-    int editH = S(18, dpi); 
+    int editH = S(20, dpi);
     int editY = addrY + (addrH - editH) / 2;
 
     ShowWindow(wd.hAddressBar, SW_SHOW);
@@ -1058,15 +1184,18 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
     int navH    = NavTotalH(hWnd);
     int winBtnW = WinBtnW(dpi);
 
-    Color cBgFrame   = wd.isDarkMode ? Color(255, 30, 30, 30)    : Color(255, 230, 230, 235);
-    Color cBgTool    = wd.isDarkMode ? Color(255, 43, 43, 43)    : Color(255, 255, 255, 255);
-    Color cTxtPrim   = wd.isDarkMode ? Color(255, 255, 255, 255) : Color(255, 32, 33, 36);
-    Color cTxtDim    = wd.isDarkMode ? Color(255, 154, 156, 160) : Color(255, 95, 99, 104);
-    Color cTabActive = wd.isDarkMode ? Color(255, 43, 43, 43)    : Color(255, 255, 255, 255);
-    Color cTabHover  = wd.isDarkMode ? Color(255, 45, 45, 45)    : Color(255, 235, 236, 240);
-    Color cAddrBg    = wd.isDarkMode ? Color(255, 26, 26, 26)    : Color(255, 241, 243, 244);
-    Color cAddrBord  = wd.isDarkMode ? Color(255, 68, 68, 68)    : Color(255, 160, 180, 210);
-    Color cDivLine   = wd.isDarkMode ? Color(255, 45, 45, 45)    : Color(255, 218, 220, 224);
+    // ── Chrome Material You exact colors ────────────────────────────────────────
+    // Dark:  Chrome dark theme (#202124 frame, #292a2d toolbar, #303134 omnibox)
+    // Light: Chrome default    (#dee1e6 frame, #ffffff toolbar, #f1f3f4 omnibox)
+    Color cBgFrame   = wd.isDarkMode ? Color(255, 32,  33,  36)  : Color(255, 218, 225, 230);
+    Color cBgTool    = wd.isDarkMode ? Color(255, 41,  42,  45)  : Color(255, 255, 255, 255);
+    Color cTxtPrim   = wd.isDarkMode ? Color(255, 232, 234, 237) : Color(255, 32,  33,  36);
+    Color cTxtDim    = wd.isDarkMode ? Color(255, 154, 160, 166) : Color(255, 95,  99,  104);
+    Color cTabActive = wd.isDarkMode ? Color(255, 41,  42,  45)  : Color(255, 255, 255, 255);
+    Color cTabHover  = wd.isDarkMode ? Color(255, 54,  55,  59)  : Color(255, 232, 234, 237);
+    Color cAddrBg    = wd.isDarkMode ? Color(255, 48,  49,  52)  : Color(255, 241, 243, 244);
+    Color cAddrBord  = wd.isDarkMode ? Color(255, 95,  99,  104) : Color(255, 218, 220, 224);
+    Color cDivLine   = wd.isDarkMode ? Color(255, 54,  55,  59)  : Color(255, 218, 220, 224);
 
     Graphics g(hdc);
     g.SetSmoothingMode(SmoothingModeAntiAlias);
@@ -1095,23 +1224,22 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
             float progress = elapsed / 4000.0f;
             if (progress > 0.95f) progress = 0.95f;
 
-            // teal loading bar (2px height, just below nav bar)
-            int barY = navH - 2;
+            // ── Chrome-style 3px loading bar (Google Blue #4285F4) ────────────────
+            int barY = navH - 3;
             int barW = (int)(W * progress);
 
-            // glow effect: dark gradient
-            LinearGradientBrush loadBrush(
-                PointF(0.f, (float)barY),
-                PointF((float)barW, (float)barY),
-                Color(255, 12, 168, 176),
-                Color(255, 0, 92, 230)
-            );
-            g.FillRectangle(&loadBrush, 0, barY, barW, 2);
+            // Chrome blue solid bar
+            SolidBrush loadBrush(Color(255, 66, 133, 244)); // #4285F4
+            g.FillRectangle(&loadBrush, 0, barY, barW, 3);
 
-            // shimmer: bright leading edge
-            if (barW > 8) {
-                SolidBrush shimmer(Color(200, 255, 255, 255));
-                g.FillRectangle(&shimmer, barW - 8, barY, 8, 2);
+            // Bright shimmer at leading edge (Chrome-style)
+            if (barW > 12) {
+                LinearGradientBrush shimmerBrush(
+                    PointF((float)(barW - 40), (float)barY),
+                    PointF((float)barW, (float)barY),
+                    Color(0, 255, 255, 255),
+                    Color(180, 255, 255, 255));
+                g.FillRectangle(&shimmerBrush, barW - 40, barY, 40, 3);
             }
 
             // Repaint চালিয়ে যাও animation এর জন্য
@@ -1139,18 +1267,33 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
     SolidBrush brPrim(cTxtPrim);
     SolidBrush brDim (cTxtDim);
 
-    // Title bar: Branding
+    // ── Chrome-style app icon + name (compact, left of tab strip) ──────────────
     {
-        int iconX = S(15, dpi);
-        SolidBrush brTeal (Color(255, 12, 168, 176)); 
+        int iconX = S(10, dpi);
+        // Icon circle (teal fill, white "R" like Chrome's colored circle)
+        float icSz = Sf(20.f, dpi);
+        float icY  = ((float)titleH - icSz) * 0.5f;
+        GraphicsPath iconCircle;
+        AddRoundRect(iconCircle, (float)iconX, icY, icSz, icSz, icSz * 0.5f);
+        LinearGradientBrush iconGrad(
+            PointF((float)iconX, icY),
+            PointF((float)iconX + icSz, icY + icSz),
+            Color(255, 12, 168, 176), Color(255, 0, 92, 204));
+        g.FillPath(&iconGrad, &iconCircle);
+        Font fIconLetter(&ffSeg, Sf(11.f, dpi), FontStyleBold, UnitPixel);
         SolidBrush brWhite(Color(255, 255, 255, 255));
-        SolidBrush brDark (Color(255, 32, 33, 36));
+        g.DrawString(L"R", -1, &fIconLetter,
+            RectF((float)iconX, icY, icSz, icSz), &sfC, &brWhite);
 
-        RectF rRas((float)iconX, 0.f, (float)S(40, dpi), (float)titleH); 
-        g.DrawString(L"Ras", -1, &fBrand, rRas, &sfL, &brTeal);
-
-        RectF rBrowser((float)(iconX + S(32, dpi)), 0.f, (float)S(100, dpi), (float)titleH);
-        g.DrawString(L"Browser", -1, &fBrand, rBrowser, &sfL, wd.isDarkMode ? &brWhite : &brDark);
+        // App name next to icon
+        SolidBrush brTeal(Color(255, 12, 168, 176));
+        SolidBrush brName(wd.isDarkMode ? Color(255,232,234,237) : Color(255,32,33,36));
+        float nameX = (float)iconX + icSz + Sf(5.f, dpi);
+        Font fBrandSm(&ffSeg, Sf(13.f, dpi), FontStyleBold, UnitPixel);
+        RectF rRas(nameX, 0.f, Sf(28.f, dpi), (float)titleH);
+        g.DrawString(L"Ras", -1, &fBrandSm, rRas, &sfL, &brTeal);
+        RectF rBrow(nameX + Sf(26.f, dpi), 0.f, Sf(60.f, dpi), (float)titleH);
+        g.DrawString(L"Browser", -1, &fBrandSm, rBrow, &sfL, &brName);
     }
 
     // Window controls
@@ -1165,19 +1308,23 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
             g.DrawString(ico, -1, &fIconSm, RectF((float)x, 0.f, (float)winBtnW, (float)titleH), &sfC, &txtClr);
         };
 
-        DrawWinBtn(bx,               wd.hFocus, false, wd.isFocusMode ? L"\xE7B8" : L"\xE7C8"); // Focus/Native App mode
-        DrawWinBtn(bx + winBtnW,     wd.hPin,   false, wd.isPinned ? L"\xE840" : L"\xE718"); 
-        DrawWinBtn(bx + winBtnW * 2, wd.hDark,  false, wd.isDarkMode ? L"\xE708" : L"\xE706"); 
-        DrawWinBtn(bx + winBtnW * 3, wd.hMin,   false, L"\xE921");
-        DrawWinBtn(bx + winBtnW * 4, wd.hMax,   false, IsZoomed(hWnd) ? L"\xE923" : L"\xE922");
-        DrawWinBtn(bx + winBtnW * 5, wd.hClose, true,  L"\xE8BB");
+        // ── Chrome order: [Focus][Pin][Dark][─][□][✕] ────────────────────────────
+        DrawWinBtn(bx,               wd.hFocus, false, wd.isFocusMode ? L"çB8" : L"çC8");
+        DrawWinBtn(bx + winBtnW,     wd.hPin,   false, wd.isPinned ? L"è40" : L"ç18");
+        DrawWinBtn(bx + winBtnW * 2, wd.hDark,  false, wd.isDarkMode ? L"ç08" : L"ç06");
+        DrawWinBtn(bx + winBtnW * 3, wd.hMin,   false, L"é21"); // Minimize (─)
+        DrawWinBtn(bx + winBtnW * 4, wd.hMax,   false, IsZoomed(hWnd) ? L"é23" : L"é22"); // Restore/Max
+        DrawWinBtn(bx + winBtnW * 5, wd.hClose, true,  L"èBB"); // Close (✕)
     }
 
     if (!g_isPureViewerMode) {
-        // Tab strip
+        // ── Chrome-style Tab Strip ───────────────────────────────────────────────
         {
             int tc = (int)wd.tabs.size();
+            // Chrome uses 8px corner radius on tabs
             float cornerR = Sf(8.f, dpi);
+            // Vertical separator between inactive tabs
+            Pen tabSepPen(wd.isDarkMode ? Color(80, 255,255,255) : Color(60, 0,0,0), 1.0f);
 
             for (int i = 0; i < tc; i++) {
                 RECT tr = GetTabRect(W, i, tc, dpi);
@@ -1186,87 +1333,134 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
                 bool isActive = (i == wd.activeTab);
                 bool isHover  = (i == wd.hoverTabIndex);
 
-                GraphicsPath tabPath;
-                BuildChromeTabPath(tabPath, tx, ty, tw, th, cornerR);
-
-                if (isActive || isHover) {
-                    SolidBrush bTab(isActive ? cTabActive : cTabHover);
-                    g.FillPath(&bTab, &tabPath);
+                // ── Tab background ────────────────────────────────────────────
+                if (isActive) {
+                    // Active tab: same color as toolbar (merges visually)
+                    GraphicsPath tabPath;
+                    BuildChromeTabPath(tabPath, tx, ty, tw, th, cornerR);
+                    SolidBrush bActive(cTabActive);
+                    g.FillPath(&bActive, &tabPath);
+                    // Active tab bottom border removal: draw toolbar-colored line
+                    SolidBrush bMerge(cBgTool);
+                    g.FillRectangle(&bMerge, tx + cornerR, (float)(titleH - 1), tw - cornerR*2, 2.f);
+                } else if (isHover) {
+                    GraphicsPath tabPath;
+                    BuildChromeTabPath(tabPath, tx, ty, tw, th, cornerR);
+                    SolidBrush bHov(cTabHover);
+                    g.FillPath(&bHov, &tabPath);
                 }
 
-                float iconSz = Sf(14.f, dpi);
-                float iconX  = tx + Sf((float)D_TAB_PAD + 4, dpi);
+                // Separator line between adjacent inactive tabs
+                bool showSep = !isActive && i + 1 < tc && (i + 1) != wd.activeTab && !isHover;
+                if (showSep) {
+                    float sepX = tx + tw - 1;
+                    float sepY1 = ty + th * 0.2f;
+                    float sepY2 = ty + th * 0.8f;
+                    g.DrawLine(&tabSepPen, sepX, sepY1, sepX, sepY2);
+                }
+
+                // ── Favicon / spinner ─────────────────────────────────────────
+                float iconSz = Sf(16.f, dpi);
+                float iconX  = tx + Sf((float)D_TAB_PAD + 2, dpi);
                 float iconY  = ty + (th - iconSz) * 0.5f;
 
                 const auto& tab = wd.tabs[i];
 
                 if (tab.loading) {
-                    // ── Spinning dots loading animation ──
+                    // Chrome-style circular spinner (8 dots)
                     int frame = tab.loadingFrame % 8;
-                    float cx = iconX + iconSz * 0.5f;
-                    float cy = iconY + iconSz * 0.5f;
-                    float r  = iconSz * 0.42f;
+                    float cx2 = iconX + iconSz * 0.5f;
+                    float cy2 = iconY + iconSz * 0.5f;
+                    float r   = iconSz * 0.40f;
                     for (int d = 0; d < 8; d++) {
-                        float angle = (float)d * 3.14159f / 4.0f;
-                        float dx = cx + r * cosf(angle) - 1.5f;
-                        float dy = cy + r * sinf(angle) - 1.5f;
-                        // dot brightness: leading dot = full, trailing = faded
+                        float angle = (float)d * 3.14159f / 4.0f - 3.14159f * 0.5f;
+                        float dx = cx2 + r * cosf(angle) - 1.5f;
+                        float dy = cy2 + r * sinf(angle) - 1.5f;
                         int dist = (d - frame + 8) % 8;
-                        int alpha = 255 - dist * 28;
-                        if (alpha < 40) alpha = 40;
-                        SolidBrush dotBrush(Color(alpha, 12, 168, 176));
-                        g.FillEllipse(&dotBrush, dx, dy, 2.5f, 2.5f);
+                        int alpha = 220 - dist * 24;
+                        if (alpha < 30) alpha = 30;
+                        // Chrome spinner is blue (#4285F4)
+                        SolidBrush dotBrush(Color(alpha, 66, 133, 244));
+                        g.FillEllipse(&dotBrush, dx, dy, 3.f, 3.f);
                     }
-                } else if (tab.favicon && tab.url != L"LOCAL_NTP" && tab.url != L"about:blank" 
+                } else if (tab.favicon && tab.url != L"LOCAL_NTP" && tab.url != L"about:blank"
                            && tab.url.find(L"blocked by rasfocus") == std::wstring::npos) {
-                    // ── Real favicon image ──
+                    // Real favicon
                     g.DrawImage(tab.favicon.get(),
                         RectF(iconX, iconY, iconSz, iconSz),
                         0.f, 0.f,
                         (float)tab.favicon->GetWidth(),
                         (float)tab.favicon->GetHeight(),
                         UnitPixel);
+                } else if (tab.url == L"LOCAL_NTP" || tab.url == L"about:blank") {
+                    // NTP: RasBrowser logo icon (teal circle with R)
+                    GraphicsPath fvCircle;
+                    AddRoundRect(fvCircle, iconX, iconY, iconSz, iconSz, iconSz * 0.5f);
+                    LinearGradientBrush fvGrad(
+                        PointF(iconX, iconY), PointF(iconX + iconSz, iconY + iconSz),
+                        Color(255, 12, 168, 176), Color(255, 0, 92, 204));
+                    g.FillPath(&fvGrad, &fvCircle);
+                    Font fFavLetter(&ffSeg, Sf(9.f, dpi), FontStyleBold, UnitPixel);
+                    SolidBrush fvTxt(Color(255,255,255,255));
+                    g.DrawString(L"R", -1, &fFavLetter,
+                        RectF(iconX, iconY, iconSz, iconSz), &sfC, &fvTxt);
                 } else {
-                    // ── Fallback: teal dot ──
-                    SolidBrush fvBrush(isActive ? Color(255,12,168,176) : Color(180,12,168,176));
-                    g.FillEllipse(&fvBrush, iconX, iconY, iconSz, iconSz);
-                }
-                SolidBrush tBrush(isActive ? cTxtPrim : cTxtDim);
-                float titleX = iconX + iconSz + Sf(6.f, dpi);
-                float closeW = Sf(24.f, dpi);
-                float titleW = tw - (titleX - tx) - closeW;
-                
-                if (titleW > 0) {
-                    std::wstring displayTitle = tab.title;
-                    if (displayTitle.empty() || tab.url == L"LOCAL_NTP" || tab.url == L"about:blank") 
-                        displayTitle = L"New Tab"; 
-                    if (tab.url.find(L"blocked by rasfocus") != std::wstring::npos) 
-                        displayTitle = L"Blocked by RasFocus";
-                    
-                    g.DrawString(displayTitle.c_str(), -1, &fSmall, RectF(titleX, ty, titleW, th), &sfL, &tBrush);
+                    // Generic fallback: grey globe
+                    SolidBrush fvBrush(wd.isDarkMode ? Color(180,95,99,104) : Color(180,95,99,104));
+                    Font fGlobe(&ffMDL, Sf(13.f, dpi), FontStyleRegular, UnitPixel);
+                    g.DrawString(L"ç74", -1, &fGlobe,
+                        RectF(iconX, iconY, iconSz, iconSz), &sfC, &fvBrush);
                 }
 
+                // ── Tab title ─────────────────────────────────────────────────
+                SolidBrush tBrush(isActive ? cTxtPrim : cTxtDim);
+                float titleX2 = iconX + iconSz + Sf(6.f, dpi);
+                float closeW  = Sf(20.f, dpi);
+                float titleW2 = tw - (titleX2 - tx) - closeW - Sf(4.f, dpi);
+
+                if (titleW2 > 20) {
+                    std::wstring displayTitle = tab.title;
+                    if (displayTitle.empty() || tab.url == L"LOCAL_NTP" || tab.url == L"about:blank")
+                        displayTitle = L"New Tab";
+                    if (tab.url.find(L"blocked by rasfocus") != std::wstring::npos)
+                        displayTitle = L"Page Blocked";
+
+                    StringFormat sfTab;
+                    sfTab.SetAlignment(StringAlignmentNear);
+                    sfTab.SetLineAlignment(StringAlignmentCenter);
+                    sfTab.SetTrimming(StringTrimmingEllipsisCharacter);
+                    sfTab.SetFormatFlags(StringFormatFlagsNoWrap);
+                    g.DrawString(displayTitle.c_str(), -1, &fSmall,
+                        RectF(titleX2, ty, titleW2, th), &sfTab, &tBrush);
+                }
+
+                // ── Close button (shown on active tab always, on hover too) ──
                 if (isActive || isHover) {
                     float cSz = Sf(16.f, dpi);
-                    float cx = tx + tw - cSz - Sf(6.f, dpi);
-                    float cy = ty + (th - cSz) * 0.5f;
-                    if (isHover && !isActive) {
-                        SolidBrush hbx(Color(20,255,255,255));
-                        g.FillEllipse(&hbx, cx, cy, cSz, cSz);
+                    float cBtnX = tx + tw - cSz - Sf(6.f, dpi);
+                    float cBtnY = ty + (th - cSz) * 0.5f;
+                    // Hover circle behind X
+                    if (isHover) {
+                        SolidBrush hClose(wd.isDarkMode ? Color(40,255,255,255) : Color(30,0,0,0));
+                        g.FillEllipse(&hClose, cBtnX - 2, cBtnY - 2, cSz + 4, cSz + 4);
                     }
-                    g.DrawString(L"\xE8BB", -1, &fIconSm, RectF(cx, cy, cSz, cSz), &sfC, &brDim);
+                    Font fClose(&ffMDL, Sf(10.f, dpi), FontStyleRegular, UnitPixel);
+                    g.DrawString(L"ç11", -1, &fClose,
+                        RectF(cBtnX, cBtnY, cSz, cSz), &sfC, &brDim);
                 }
             }
 
+            // ── New Tab button (+ circle, Chrome style) ──────────────────────
             RECT ntr = GetNewTabBtnRect(W, tc, dpi);
+            float ntX = (float)ntr.left, ntY = (float)ntr.top;
+            float ntSz = (float)(ntr.right - ntr.left);
             if (wd.hNewTab) {
-                SolidBrush hb(wd.isDarkMode ? Color(50,255,255,255) : Color(20,0,0,0));
-                g.FillEllipse(&hb, (float)ntr.left, (float)ntr.top,
-                    (float)(ntr.right - ntr.left), (float)(ntr.bottom - ntr.top));
+                SolidBrush hbNT(wd.isDarkMode ? Color(40,255,255,255) : Color(25,0,0,0));
+                g.FillEllipse(&hbNT, ntX, ntY, ntSz, ntSz);
             }
-            g.DrawString(L"\xE710", -1, &fIconSm,
-                RectF((float)ntr.left, (float)ntr.top,
-                      (float)(ntr.right-ntr.left), (float)(ntr.bottom-ntr.top)), &sfC, &brDim);
+            Font fNewTab(&ffMDL, Sf(12.f, dpi), FontStyleRegular, UnitPixel);
+            g.DrawString(L"ç10", -1, &fNewTab,
+                RectF(ntX, ntY, ntSz, ntSz), &sfC, &brDim);
         }
 
         // Toolbar
@@ -1298,56 +1492,94 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
             DrawNavBtn(wd.hRel,  true,    L"\xE72C", curX);
 
             {
+                // ── Chrome-style Omnibox ─────────────────────────────────────────────
                 int addrX  = curX + S(4, dpi);
-                int rightIX = W - S(36*3 + 8, dpi); // rightIconArea এর সাথে match
+                int rightIX = W - S(36*3 + 8, dpi);
                 int addrW  = rightIX - addrX - S(8, dpi);
-                int addrH  = S(30, dpi);
+                int addrH  = S(32, dpi);  // Chrome omnibox is 32px tall
                 int addrY  = toolY + (toolH - addrH) / 2;
 
+                // Omnibox background pill (Chrome: 16px radius = full pill)
                 SolidBrush addrBg(cAddrBg);
-                Pen addrPen(cAddrBord, 1.0f);
                 GraphicsPath pill;
-                AddRoundRect(pill, (float)addrX, (float)addrY, (float)addrW, (float)addrH, Sf(15.f, dpi));
+                AddRoundRect(pill, (float)addrX, (float)addrY, (float)addrW, (float)addrH, Sf(16.f, dpi));
                 g.FillPath(&addrBg, &pill);
+
+                // Hover/focus border (Chrome shows 1px border on hover)
+                // Always draw a subtle border for definition
+                Pen addrPen(cAddrBord, 1.0f);
                 g.DrawPath(&addrPen, &pill);
 
-                SolidBrush gBrush(wd.isDarkMode ? Color(255,200,200,200) : Color(255,80,80,80));
-                g.DrawString(L"G", -1, &fBrand,
-                    RectF((float)addrX + Sf(12.f,dpi), (float)addrY, Sf(20.f,dpi), (float)addrH),
-                    &sfC, &gBrush);
+                // ── Lock icon (HTTPS security badge) ─────────────────────────
+                auto* atab2 = wd.active();
+                bool isSecure = atab2 && (
+                    atab2->url.find(L"https://") == 0 ||
+                    atab2->url == L"LOCAL_NTP" ||
+                    atab2->url == L"about:blank");
+                bool isNTP = atab2 && (atab2->url == L"LOCAL_NTP" || atab2->url == L"about:blank");
 
-                float aiW = Sf(85.f, dpi);
-                float aiH = (float)addrH - Sf(6.f, dpi);
-                float aiX = (float)addrX + (float)addrW - aiW - Sf(3.f, dpi);
-                float aiY = (float)addrY + Sf(3.f, dpi);
-                
-                GraphicsPath aiPill;
-                AddRoundRect(aiPill, aiX, aiY, aiW, aiH, Sf(10.f, dpi));
-                
-                LinearGradientBrush aiBg(
-                    PointF(aiX, aiY), PointF(aiX + aiW, aiY),
-                    Color(255, 12, 168, 176), Color(255, 0, 92, 230));
-                g.FillPath(&aiBg, &aiPill);
-                
-                SolidBrush aiTxt(Color(255, 255, 255, 255));
-                g.DrawString(L"\x2728 AI Mode", -1, &fSmallBd,
-                    RectF(aiX, aiY, aiW, aiH), &sfC, &aiTxt);
+                Font fLock(&ffMDL, Sf(12.f, dpi), FontStyleRegular, UnitPixel);
+                if (isNTP) {
+                    // NTP: show search icon inside omnibox
+                    SolidBrush lockBr(Color(255, 95, 99, 104));
+                    g.DrawString(L"ç21", -1, &fLock,
+                        RectF((float)addrX + Sf(10.f,dpi), (float)addrY, Sf(20.f,dpi), (float)addrH),
+                        &sfC, &lockBr);
+                } else if (isSecure) {
+                    // HTTPS: teal lock
+                    SolidBrush lockBr(Color(255, 26, 115, 232)); // Google blue lock
+                    g.DrawString(L"ç2E", -1, &fLock,
+                        RectF((float)addrX + Sf(10.f,dpi), (float)addrY, Sf(20.f,dpi), (float)addrH),
+                        &sfC, &lockBr);
+                } else {
+                    // HTTP: warning icon
+                    SolidBrush lockBr(Color(255, 234, 67, 53)); // Google red
+                    g.DrawString(L"çBA", -1, &fLock,
+                        RectF((float)addrX + Sf(10.f,dpi), (float)addrY, Sf(20.f,dpi), (float)addrH),
+                        &sfC, &lockBr);
+                }
+
+                // ── Gemini chip (right side of omnibox, Chrome-style AI button) ──
+                float chipW = Sf(76.f, dpi);
+                float chipH = Sf(22.f, dpi);
+                float chipX = (float)addrX + (float)addrW - chipW - Sf(6.f, dpi);
+                float chipY = (float)addrY + ((float)addrH - chipH) * 0.5f;
+
+                GraphicsPath chipPath;
+                AddRoundRect(chipPath, chipX, chipY, chipW, chipH, chipH * 0.5f);
+                // Gemini gradient: Google blue → purple
+                LinearGradientBrush chipBg(
+                    PointF(chipX, chipY), PointF(chipX + chipW, chipY),
+                    Color(255, 26, 115, 232), Color(255, 103, 58, 183));
+                g.FillPath(&chipBg, &chipPath);
+
+                Font fChip(&ffSeg, Sf(10.f, dpi), FontStyleBold, UnitPixel);
+                SolidBrush chipTxt(Color(255, 255, 255, 255));
+                g.DrawString(L"'28 Gemini", -1, &fChip,
+                    RectF(chipX, chipY, chipW, chipH), &sfC, &chipTxt);
             }
 
-            // Right Toolbar Icons
+            // ── Chrome-style right toolbar icons ─────────────────────────────────
+            // Chrome: [Extensions puzzle] [Profile avatar] [⋮ Menu]
             int rx = W - S(36*3 + 8, dpi);
-            auto DrawRightBtn = [&](bool hover, const wchar_t* ico, int x) {
+            auto DrawRightBtn = [&](bool hover, const wchar_t* ico, int x, bool accent=false) {
                 if (hover) {
-                    SolidBrush hb(wd.isDarkMode ? Color(50,255,255,255) : Color(20,0,0,0));
+                    SolidBrush hb(wd.isDarkMode ? Color(40,255,255,255) : Color(20,0,0,0));
                     g.FillEllipse(&hb, (float)(x+S(2,dpi)), (float)(toolY+S(4,dpi)),
                                   (float)S(28,dpi), (float)S(28,dpi));
                 }
-                g.DrawString(ico, -1, &fIcon,
-                    RectF((float)x, (float)toolY, (float)btnSz, btnHf), &sfC, &brPrim);
+                if (accent) {
+                    SolidBrush acBr(Color(255, 66, 133, 244)); // Google blue
+                    g.DrawString(ico, -1, &fIcon,
+                        RectF((float)x, (float)toolY, (float)btnSz, btnHf), &sfC, &acBr);
+                } else {
+                    g.DrawString(ico, -1, &fIcon,
+                        RectF((float)x, (float)toolY, (float)btnSz, btnHf), &sfC, &brPrim);
+                }
             };
-            DrawRightBtn(wd.hProfile, L"\xE77B", rx); rx += btnStep; 
-            DrawRightBtn(wd.hExt,     L"\xE9D2", rx); rx += btnStep; 
-            DrawRightBtn(wd.hMenu,    L"\xE712", rx); 
+            DrawRightBtn(wd.hExt,     L"éD2", rx);      rx += btnStep; // Extensions
+            DrawRightBtn(wd.hProfile, L"ç7B", rx, true); rx += btnStep; // Profile (blue)
+            DrawRightBtn(wd.hMenu,    L"ç12", rx);                       // ⋮ Menu 
         }
 
         // Bookmark Bar
@@ -1364,22 +1596,32 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
             Pen sepPen(cDivLine, 1.0f);
             g.DrawLine(&sepPen, 0, bmkY + bmkH - 1, W, bmkY + bmkH - 1);
 
+            // ── Chrome-style bookmark bar items ──────────────────────────────────
             SolidBrush brTxt(cTxtDim);
-            
-            g.DrawString(L"\xE8A4", -1, &fIconSm,
-                RectF((float)S(15,dpi), (float)bmkY, (float)S(20,dpi), (float)bmkH), &sfC, &brTxt);
-            g.DrawString(L"Web Store", -1, &fSmall,
-                RectF((float)S(35,dpi), (float)bmkY, (float)S(100,dpi), (float)bmkH), &sfL, &brTxt);
-            
-            g.DrawString(L"\xE8A4", -1, &fIconSm,
-                RectF((float)S(120,dpi), (float)bmkY, (float)S(20,dpi), (float)bmkH), &sfC, &brTxt);
-            g.DrawString(L"RasFocus Admin", -1, &fSmall,
-                RectF((float)S(140,dpi), (float)bmkY, (float)S(120,dpi), (float)bmkH), &sfL, &brTxt);
-            
-            g.DrawString(L"\xE838", -1, &fIconSm,
-                RectF((float)(W - S(130,dpi)), (float)bmkY, (float)S(20,dpi), (float)bmkH), &sfC, &brTxt);
-            g.DrawString(L"All Bookmarks", -1, &fSmall,
-                RectF((float)(W - S(110,dpi)), (float)bmkY, (float)S(100,dpi), (float)bmkH), &sfL, &brTxt);
+            Font fBmk(&ffSeg, Sf(12.f, dpi), FontStyleRegular, UnitPixel);
+
+            struct BmkItem { const wchar_t* icon; const wchar_t* label; };
+            BmkItem bmkItems[] = {
+                { L"èA4", L"Web Store" },
+                { L"é09", L"RasFocus" },
+                { L"è1C", L"History" },
+                { L"è96", L"Downloads" },
+            };
+            int bmkX = S(8, dpi);
+            for (auto& bm : bmkItems) {
+                // Icon
+                g.DrawString(bm.icon, -1, &fIconSm,
+                    RectF((float)bmkX, (float)bmkY, (float)S(18,dpi), (float)bmkH), &sfC, &brTxt);
+                // Label
+                RectF labelR((float)(bmkX + S(20,dpi)), (float)bmkY, (float)S(90,dpi), (float)bmkH);
+                g.DrawString(bm.label, -1, &fBmk, labelR, &sfL, &brTxt);
+                bmkX += S(116, dpi);
+            }
+            // Right-aligned "All bookmarks" chevron
+            g.DrawString(L"è38", -1, &fIconSm,
+                RectF((float)(W - S(100,dpi)), (float)bmkY, (float)S(18,dpi), (float)bmkH), &sfC, &brTxt);
+            g.DrawString(L"Bookmarks", -1, &fBmk,
+                RectF((float)(W - S(82,dpi)), (float)bmkY, (float)S(76,dpi), (float)bmkH), &sfL, &brTxt);
         }
     } // End of !g_isPureViewerMode
 
@@ -1415,21 +1657,29 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
         }
         totalH += (float)S(10, dpi);
 
+        // ── Chrome-style menu panel (Material You card) ─────────────────────────
         GraphicsPath mPath;
-        AddRoundRect(mPath, mX, mY, menuW, totalH, Sf(10.f, dpi));
-        
-        SolidBrush shadowBr(Color(60, 0, 0, 0));
-        g.FillRectangle(&shadowBr, mX + 4, mY + 4, menuW, totalH);
+        AddRoundRect(mPath, mX, mY, menuW, totalH, Sf(8.f, dpi));
 
+        // Multi-layer shadow (Chrome-accurate elevation)
+        for (int sh = 6; sh >= 1; sh--) {
+            int alpha = 8 + sh * 4;
+            SolidBrush shadowBr(Color(alpha, 0, 0, 0));
+            g.FillRectangle(&shadowBr, mX + sh, mY + sh*2, menuW + sh, totalH + sh);
+        }
+
+        // Menu background
         SolidBrush mBg(wd.isDarkMode ? Color(255, 41, 42, 45) : Color(255, 255, 255, 255));
         g.FillPath(&mBg, &mPath);
-        Pen mBorder(wd.isDarkMode ? Color(255, 80, 80, 80) : Color(255, 200, 200, 200), 1.0f);
+        // Subtle border (Chrome light mode has very light border)
+        Pen mBorder(wd.isDarkMode ? Color(255, 60, 61, 65) : Color(255, 218, 220, 224), 1.0f);
         g.DrawPath(&mBorder, &mPath);
 
-        SolidBrush hHover(wd.isDarkMode ? Color(255, 65, 66, 70) : Color(255, 240, 240, 240));
-        SolidBrush txtBr (wd.isDarkMode ? Color(255, 230, 230, 230) : Color(255, 40, 40, 40));
-        SolidBrush dimBr (wd.isDarkMode ? Color(255, 150, 150, 150) : Color(255, 120, 120, 120));
-        SolidBrush accentBr(Color(255, 0, 102, 204));
+        // Chrome menu colors
+        SolidBrush hHover(wd.isDarkMode ? Color(255, 60, 61, 65) : Color(255, 232, 240, 254)); // blue tint on hover
+        SolidBrush txtBr (wd.isDarkMode ? Color(255, 232, 234, 237) : Color(255, 32, 33, 36));
+        SolidBrush dimBr (wd.isDarkMode ? Color(255, 154, 160, 166) : Color(255, 95, 99, 104));
+        SolidBrush accentBr(Color(255, 26, 115, 232)); // Google Blue #1a73e8
         
         float currY  = mY + (float)S(10, dpi);
         int itemIndex = 0;
@@ -1509,7 +1759,8 @@ void DrawBrowser(HWND hWnd, HDC hdc) {
 
     DoubleBufferedPaint(hWnd, hdc, [&](HDC memDC, int W, int H) {
         bool dark = g_windows[hWnd].isDarkMode;
-        HBRUSH hbg = CreateSolidBrush(dark ? RGB(30,30,30) : RGB(230,230,235)); 
+        // Chrome frame: dark=#202124, light=#dee1e6
+        HBRUSH hbg = CreateSolidBrush(dark ? RGB(32,33,36) : RGB(218,225,230));
         RECT fr = { 0, 0, W, H };
         FillRect(memDC, &fr, hbg);
         DeleteObject(hbg);
