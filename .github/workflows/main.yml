@@ -123,8 +123,28 @@ jobs:
       run: exit 1
 
     - name: Sign RasFocus.exe
+      continue-on-error: true
+      shell: pwsh
       run: |
-        signtool sign /f "RasAppsCert.pfx" /p "1234" /t http://timestamp.digicert.com /fd SHA256 "RasFocus.exe"
+        # Multiple TSA URLs — DigiCert HTTP endpoint often times out from GH Actions runners.
+        # Try each in order; break on first success.
+        $tsaUrls = @(
+          "http://timestamp.digicert.com",
+          "http://timestamp.sectigo.com",
+          "http://timestamp.globalsign.com/scripts/timstamp.dll"
+        )
+        $signed = $false
+        foreach ($tsa in $tsaUrls) {
+          Write-Host "Trying TSA: $tsa"
+          $result = & signtool sign /f "RasAppsCert.pfx" /p "1234" /t $tsa /fd SHA256 "RasFocus.exe" 2>&1
+          Write-Host $result
+          if ($LASTEXITCODE -eq 0) { $signed = $true; Write-Host "Signed OK with $tsa"; break }
+          Write-Host "TSA $tsa failed, trying next..."
+          Start-Sleep -Seconds 3
+        }
+        if (-not $signed) {
+          Write-Host "WARNING: All TSA servers failed — EXE will be released unsigned."
+        }
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4

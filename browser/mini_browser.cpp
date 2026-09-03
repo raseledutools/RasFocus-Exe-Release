@@ -2774,6 +2774,9 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 
     case WM_SIZE: {
         if (!g_windows.count(hWnd)) break;
+        // Minimized হলে put_Bounds করা যাবে না — WebView2 শূন্য rect পেলে
+        // internally visibilityState='hidden' trigger করে, যা YouTube pause করে দেয়।
+        if (wParam == SIZE_MINIMIZED) break;
         auto& wd = g_windows[hWnd];
         RepositionAddressBar(hWnd);
         RECT wvr = GetWebViewRect(hWnd);
