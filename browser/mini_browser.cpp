@@ -397,7 +397,9 @@ struct BrowserWindowData {
     bool hBack = false, hFwd = false, hRel = false;
     
     // Right Icons
-    bool hProfile = false, hExt = false, hMenu = false; 
+    bool hProfile = false, hExt = false, hMenu = false;
+    bool hAdBlock = false;
+    bool isAdBlockEnabled = true;  // Ad blocker ON by default
     
     // 🟢 Menu State Tracking
     bool isMenuOpen    = false;
@@ -430,13 +432,8 @@ static int NavTotalH(HWND hWnd) {
     if (g_isPureViewerMode) return S(D_TITLEBAR_H, dpi); 
 
     int h = S(D_TITLEBAR_H + D_TOOLBAR_H, dpi);
-    if (g_windows.count(hWnd)) {
-        auto* tab = g_windows[hWnd].active();
-        if (tab && (tab->url == L"LOCAL_NTP" ||
-                    tab->url.find(L"blocked by rasfocus") != std::wstring::npos ||
-                    tab->url == L"about:blank")) 
-            h += S(D_BOOKMARK_H, dpi);
-    }
+    if (!g_isPureViewerMode)
+        h += S(D_BOOKMARK_H, dpi);  // Bookmark bar always visible (Chrome style)
     return h;
 }
 
@@ -1674,8 +1671,8 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
             }
 
             // ── Chrome-style right toolbar icons ─────────────────────────────────
-            // Chrome: [Extensions puzzle] [Profile avatar] [⋮ Menu]
-            int rx = W - S(36*3 + 8, dpi);
+            // Layout: [AdBlock Shield] [Extensions] [Profile] [⋮ Menu]
+            int rx = W - S(36*4 + 8, dpi);
             auto DrawRightBtn = [&](bool hover, const wchar_t* ico, int x, bool accent=false) {
                 if (hover) {
                     SolidBrush hb(wd.isDarkMode ? Color(40,255,255,255) : Color(20,0,0,0));
@@ -1691,15 +1688,37 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
                         RectF((float)x, (float)toolY, (float)btnSz, btnHf), &sfC, &brPrim);
                 }
             };
+
+            // ── AdBlock Shield Toggle ─────────────────────────────────────────────
+            {
+                if (wd.hAdBlock) {
+                    SolidBrush hb(wd.isDarkMode ? Color(40,255,255,255) : Color(20,0,0,0));
+                    g.FillEllipse(&hb, (float)(rx+S(2,dpi)), (float)(toolY+S(4,dpi)),
+                                  (float)S(28,dpi), (float)S(28,dpi));
+                }
+                // Shield glyph: green = ON, grey = OFF
+                Color shieldCol = wd.isAdBlockEnabled
+                    ? Color(255, 52, 168,  83)   // Google Green #34A853
+                    : Color(255,154, 160, 166);   // Dim grey
+                SolidBrush shieldBr(shieldCol);
+                g.DrawString(L"\xE9D5", -1, &fIcon,
+                    RectF((float)rx, (float)toolY, (float)btnSz, btnHf), &sfC, &shieldBr);
+                // Small status dot at bottom-center of button
+                if (wd.isAdBlockEnabled) {
+                    SolidBrush dotBr(Color(255, 52, 168, 83));
+                    float dotX = (float)rx + (float)btnSz * 0.5f - Sf(2.5f, dpi);
+                    float dotY = (float)toolY + btnHf - Sf(7.5f, dpi);
+                    g.FillEllipse(&dotBr, dotX, dotY, Sf(5.f,dpi), Sf(5.f,dpi));
+                }
+                rx += btnStep;
+            }
+
             DrawRightBtn(wd.hExt,     L"\xE9D2", rx);      rx += btnStep; // Extensions
             DrawRightBtn(wd.hProfile, L"\xE77B", rx, true); rx += btnStep; // Profile (blue)
             DrawRightBtn(wd.hMenu,    L"\xE712", rx);                       // ⋮ Menu 
         }
 
-        // Bookmark Bar
-        if (wd.active() && (wd.active()->url == L"LOCAL_NTP" ||
-            wd.active()->url == L"about:blank" ||
-            wd.active()->url.find(L"blocked by rasfocus") != std::wstring::npos))
+        // Bookmark Bar — always visible (Chrome style)
         {
             int bmkY = titleH + toolH;
             int bmkH = S(D_BOOKMARK_H, dpi);
@@ -2081,7 +2100,10 @@ public:
                         }
                     }
 
-                    if (IsAdOrTrackerUrl(urlStr) && g_sharedEnv) {
+                    // Check per-window ad block setting via HWND lookup
+                    bool adBlockOn = true;
+                    for (auto& kv : g_windows) { if (kv.second.isAdBlockEnabled) { adBlockOn = true; break; } else adBlockOn = false; }
+                    if (adBlockOn && IsAdOrTrackerUrl(urlStr) && g_sharedEnv) {
                         ComPtr<IStream> emptyStream;
                         emptyStream.Attach(SHCreateMemStream(nullptr, 0));
                         ComPtr<ICoreWebView2WebResourceResponse> response;
@@ -2823,12 +2845,13 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                 if (wd.hBack!=b||wd.hFwd!=f||wd.hRel!=rl)
                     { wd.hBack=b; wd.hFwd=f; wd.hRel=rl; dirty=true; }
 
-                int rx = W - S(36*3+8, dpi);
+                int rx = W - S(36*4+8, dpi);
+                bool ab = (y>=toolY&&y<toolY+ToolbarH(dpi)&&x>=rx&&x<rx+S(36,dpi)); rx+=btnStep;
                 bool pr = (y>=toolY&&y<toolY+ToolbarH(dpi)&&x>=rx&&x<rx+S(36,dpi)); rx+=btnStep;
                 bool e  = (y>=toolY&&y<toolY+ToolbarH(dpi)&&x>=rx&&x<rx+S(36,dpi)); rx+=btnStep;
                 bool m  = (y>=toolY&&y<toolY+ToolbarH(dpi)&&x>=rx&&x<rx+S(36,dpi));
-                if (wd.hProfile!=pr||wd.hExt!=e||wd.hMenu!=m)
-                    { wd.hProfile=pr; wd.hExt=e; wd.hMenu=m; dirty=true; }
+                if (wd.hAdBlock!=ab||wd.hProfile!=pr||wd.hExt!=e||wd.hMenu!=m)
+                    { wd.hAdBlock=ab; wd.hProfile=pr; wd.hExt=e; wd.hMenu=m; dirty=true; }
             }
             
             // 🟢 Menu Overlay Hover Logic — FIX: mY now computed via GetMenuY()
@@ -2902,7 +2925,7 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
             auto& wd = g_windows[hWnd];
             wd.hMin=wd.hMax=wd.hClose=false;
             wd.hBack=wd.hFwd=wd.hRel=false;
-            wd.hPin=wd.hDark=wd.hFocus=wd.hProfile=wd.hExt=wd.hMenu=false;
+            wd.hPin=wd.hDark=wd.hFocus=wd.hAdBlock=wd.hProfile=wd.hExt=wd.hMenu=false;
             wd.hNewTab=false; wd.hoverTabIndex=-1;
             RECT cr; GetClientRect(hWnd, &cr);
             cr.bottom = NavTotalH(hWnd);
@@ -2913,6 +2936,12 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
     }
 
     case WM_TIMER:
+        if (wParam == 77) {
+            // AdBlock toggle notification: restore title
+            KillTimer(hWnd, 77);
+            SetWindowTextW(hWnd, L"RasBrowser");
+            break;
+        }
         if (wParam == 42) {
             if (!g_windows.count(hWnd)) break;
             auto& wd42 = g_windows[hWnd];
@@ -3156,6 +3185,16 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                 if (wd.hBack && tab->webview && tab->canBack) tab->webview->GoBack();
                 if (wd.hFwd  && tab->webview && tab->canFwd)  tab->webview->GoForward();
                 if (wd.hRel  && tab->webview)                 tab->webview->Reload();
+            }
+
+            // AdBlock shield toggle
+            if (wd.hAdBlock) {
+                wd.isAdBlockEnabled = !wd.isAdBlockEnabled;
+                // Show brief status tooltip via window title flash (non-blocking)
+                const wchar_t* status = wd.isAdBlockEnabled ? L"Ad Blocker: ON" : L"Ad Blocker: OFF";
+                SetWindowTextW(hWnd, status);
+                SetTimer(hWnd, 77, 1500, nullptr); // restore title after 1.5s
+                InvalidateRect(hWnd, NULL, FALSE);
             }
 
             if (wd.hProfile) MessageBoxW(hWnd, L"Profile menu will appear here.", L"Profile", MB_OK|MB_ICONINFORMATION);
