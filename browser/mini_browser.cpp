@@ -2587,12 +2587,24 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
     case WM_SIZE: {
         if (!g_windows.count(hWnd)) break;
         auto& wd = g_windows[hWnd];
-        RepositionAddressBar(hWnd);
-        RECT wvr = GetWebViewRect(hWnd);
-        for (int i = 0; i < (int)wd.tabs.size(); i++)
-            if (wd.tabs[i].controller && i == wd.activeTab)
-                wd.tabs[i].controller->put_Bounds(wvr);
-        InvalidateRect(hWnd, NULL, FALSE);
+        if (wParam == SIZE_MINIMIZED) {
+            // Window minimize হলে WebView2 কে off-screen এ রাখো।
+            // put_IsVisible(FALSE) করলে visibilitychange event fire হয়
+            // যেটা YouTube/media pause করে দেয়। Off-screen এ রাখলে
+            // browser engine মনে করে tab visible আছে — media চলতে থাকে।
+            RECT offscreen = {-10000, -10000, -9000, -9000};
+            for (int i = 0; i < (int)wd.tabs.size(); i++)
+                if (wd.tabs[i].controller)
+                    wd.tabs[i].controller->put_Bounds(offscreen);
+        } else {
+            // Restore বা resize — normal bounds দাও
+            RepositionAddressBar(hWnd);
+            RECT wvr = GetWebViewRect(hWnd);
+            for (int i = 0; i < (int)wd.tabs.size(); i++)
+                if (wd.tabs[i].controller && i == wd.activeTab)
+                    wd.tabs[i].controller->put_Bounds(wvr);
+            InvalidateRect(hWnd, NULL, FALSE);
+        }
         break;
     }
 
