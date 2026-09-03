@@ -1,6 +1,6 @@
 BUILD STATUS: FAILED (exit code 2)
-Time: 2026-09-03 01:21:50 UTC
-Run: https://github.com/raseledutools/RasFocus-Exe-Release/actions/runs/33703246518
+Time: 2026-09-03 01:29:30 UTC
+Run: https://github.com/raseledutools/RasFocus-Exe-Release/actions/runs/33703764216
 
 === Compiler Output ===
 Microsoft (R) C/C++ Optimizing Compiler Version 19.51.36256 for x64
@@ -92,6 +92,7 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
 browser/advanced_feature.cpp(23): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>::codecvt_utf8': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
 browser/advanced_feature.cpp(26): warning C4996: 'localtime': This function or variable may be unsafe. Consider using localtime_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
 browser/advanced_feature.cpp(116): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+history_panel.cpp
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xlocale(251): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning. (compiling source file browser/advanced_feature.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\codecvt(34): note: see declaration of 'std::codecvt_utf8' (compiling source file browser/advanced_feature.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xlocale(251): note: the template instantiation context (the oldest one first) is (compiling source file browser/advanced_feature.cpp)
@@ -100,7 +101,6 @@ browser/advanced_feature.cpp(23): note: see reference to function template insta
         [
             _Facet=std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>
         ]
-history_panel.cpp
 settings.cpp
 keyboard_shortcuts.cpp
 tab_pdf_workspace.cpp
@@ -322,6 +322,7 @@ tab_statistics.cpp
 tab_settings.cpp
 tab_special.cpp(115): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
 tab_special.cpp(118): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
+tab_utilities.cpp
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): warning C4244: '=': conversion from 'wchar_t' to 'char', possible loss of data (compiling source file tab_deep_study.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): note: the template instantiation context (the oldest one first) is (compiling source file tab_deep_study.cpp)
 tab_deep_study.cpp(690): note: see reference to function template instantiation 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string<std::_String_iterator<std::_String_val<std::_Simple_types<_Elem>>>,0>(_Iter,_Iter,const _Alloc &)' being compiled
@@ -348,7 +349,6 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
             _InIt=wchar_t *,
             _SizeTy=std::+::_Size_type
         ] (compiling source file tab_deep_study.cpp)
-tab_utilities.cpp
 tab_device_block.cpp
 tab_diary.cpp
 accounts.cpp
