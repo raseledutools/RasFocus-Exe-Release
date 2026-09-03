@@ -143,7 +143,7 @@ std::wstring GetLocalNTP_HTML(bool isDark) {
     L"display:flex;align-items:center;justify-content:center;"
     L"margin-bottom:8px;overflow:hidden;"
     L"box-shadow:" + shadow + L"}"
-    L".shortcut-icon img{width:28px;height:28px;border-radius:4px}"
+    L".shortcut-icon img{width:100%;height:100%;object-fit:contain;border-radius:0;display:block}"
     L".shortcut-icon span{font-size:22px}"
     L".shortcut-label{text-align:center;max-width:88px;"
     L"overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"
