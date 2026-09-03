@@ -1181,10 +1181,16 @@ static void DoubleBufferedPaint(HWND hWnd, HDC hdcReal, std::function<void(HDC, 
     // Static cache: realloc only when window size changes (rare).
     static HDC     s_dc  = nullptr;
     static HBITMAP s_bmp = nullptr;
+    static HBITMAP s_old = nullptr;
     static int     s_W   = 0, s_H = 0;
 
     if (!s_dc || W != s_W || H != s_H) {
-        if (s_bmp) { SelectObject(s_dc, GetStockObject(NULL_BITMAP)); DeleteObject(s_bmp); }
+        if (s_bmp) {
+            if (s_dc && s_old) SelectObject(s_dc, s_old);
+            DeleteObject(s_bmp);
+            s_bmp = nullptr;
+            s_old = nullptr;
+        }
         if (s_dc)  { DeleteDC(s_dc); }
 
         BITMAPINFO bmi{};
@@ -1198,7 +1204,7 @@ static void DoubleBufferedPaint(HWND hWnd, HDC hdcReal, std::function<void(HDC, 
         void* bits = nullptr;
         s_bmp = CreateDIBSection(hdcReal, &bmi, DIB_RGB_COLORS, &bits, nullptr, 0);
         s_dc  = CreateCompatibleDC(hdcReal);
-        SelectObject(s_dc, s_bmp);
+        s_old = (HBITMAP)SelectObject(s_dc, s_bmp);
         s_W = W; s_H = H;
     }
 
@@ -2047,12 +2053,14 @@ public:
                 s2->put_UserAgent(kDesktopUA);
             }
 
-            // Settings3: password autosave — fewer redirects on login pages
-            ComPtr<ICoreWebView2Settings3> s3;
-            if (SUCCEEDED(settings->QueryInterface(IID_PPV_ARGS(&s3)))) {
-                s3->put_IsPasswordAutosaveEnabled(TRUE);
-                s3->put_IsGeneralAutofillEnabled(TRUE);
+            // Settings4: password/autofill options — fewer redirects on login pages
+#ifdef __ICoreWebView2Settings4_INTERFACE_DEFINED__
+            ComPtr<ICoreWebView2Settings4> s4;
+            if (SUCCEEDED(settings->QueryInterface(IID_PPV_ARGS(&s4)))) {
+                s4->put_IsPasswordAutosaveEnabled(TRUE);
+                s4->put_IsGeneralAutofillEnabled(TRUE);
             }
+#endif
 
             // Settings8: back/forward cache — instant tab switch (Chrome BFCache)
             ComPtr<ICoreWebView2Settings8> s8;
@@ -3547,4 +3555,3 @@ void LaunchMiniBrowser(std::wstring url, std::wstring /*title*/) {
     CreateWebViewForTab(hWnd, 0);
 }
 // COMPLETE FILE END ───────────────────────────────────────────────────────────
-
