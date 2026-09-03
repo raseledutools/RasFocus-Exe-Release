@@ -1344,7 +1344,20 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
         delete s_fIcon;  delete s_fIconSm;
         delete s_ffSeg;  delete s_ffMDL;
         s_ffSeg   = new FontFamily(L"Segoe UI");
-        s_ffMDL   = new FontFamily(L"Segoe MDL2 Assets");
+        // Segoe MDL2 Assets: verify font loaded correctly before using.
+        // If IsAvailable() == false, GDI+ would silently produce □ rectangles
+        // for every icon glyph. Fall back to Segoe UI Symbol (also ships with Windows).
+        {
+            FontFamily* mdlTry = new FontFamily(L"Segoe MDL2 Assets");
+            if (mdlTry->IsAvailable()) {
+                s_ffMDL = mdlTry;
+            } else {
+                delete mdlTry;
+                FontFamily* symTry = new FontFamily(L"Segoe UI Symbol");
+                s_ffMDL = symTry->IsAvailable() ? symTry : new FontFamily(L"Segoe UI");
+                if (!symTry->IsAvailable()) delete symTry;
+            }
+        }
         s_fSmall  = new Font(s_ffSeg, Sf(12.f, dpi), FontStyleRegular, UnitPixel);
         s_fSmallBd= new Font(s_ffSeg, Sf(12.f, dpi), FontStyleBold,    UnitPixel);
         s_fBrand  = new Font(s_ffSeg, Sf(16.f, dpi), FontStyleBold,    UnitPixel);
@@ -3494,3 +3507,4 @@ void LaunchMiniBrowser(std::wstring url, std::wstring /*title*/) {
     CreateWebViewForTab(hWnd, 0);
 }
 // COMPLETE FILE END ───────────────────────────────────────────────────────────
+
