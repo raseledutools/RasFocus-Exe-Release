@@ -1410,12 +1410,12 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
         };
 
         // ── Chrome order: [Focus][Pin][Dark][─][□][✕] ────────────────────────────
-        DrawWinBtn(bx,               wd.hFocus, false, wd.isFocusMode ? L"çB8" : L"çC8");
-        DrawWinBtn(bx + winBtnW,     wd.hPin,   false, wd.isPinned ? L"è40" : L"ç18");
-        DrawWinBtn(bx + winBtnW * 2, wd.hDark,  false, wd.isDarkMode ? L"ç08" : L"ç06");
-        DrawWinBtn(bx + winBtnW * 3, wd.hMin,   false, L"é21"); // Minimize (─)
-        DrawWinBtn(bx + winBtnW * 4, wd.hMax,   false, IsZoomed(hWnd) ? L"é23" : L"é22"); // Restore/Max
-        DrawWinBtn(bx + winBtnW * 5, wd.hClose, true,  L"èBB"); // Close (✕)
+        DrawWinBtn(bx,               wd.hFocus, false, wd.isFocusMode ? L"\xE7B8" : L"\xE7C8");
+        DrawWinBtn(bx + winBtnW,     wd.hPin,   false, wd.isPinned ? L"\xE840" : L"\xE718");
+        DrawWinBtn(bx + winBtnW * 2, wd.hDark,  false, wd.isDarkMode ? L"\xE708" : L"\xE706");
+        DrawWinBtn(bx + winBtnW * 3, wd.hMin,   false, L"\xE921"); // Minimize (─)
+        DrawWinBtn(bx + winBtnW * 4, wd.hMax,   false, IsZoomed(hWnd) ? L"\xE923" : L"\xE922"); // Restore/Max
+        DrawWinBtn(bx + winBtnW * 5, wd.hClose, true,  L"\xE8BB"); // Close (✕)
     }
 
     if (!g_isPureViewerMode) {
@@ -1509,7 +1509,7 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
                     // Generic fallback: grey globe
                     SolidBrush fvBrush(wd.isDarkMode ? Color(180,95,99,104) : Color(180,95,99,104));
                     Font fGlobe(&ffMDL, Sf(13.f, dpi), FontStyleRegular, UnitPixel);
-                    g.DrawString(L"ç74", -1, &fGlobe,
+                    g.DrawString(L"\xE774", -1, &fGlobe,
                         RectF(iconX, iconY, iconSz, iconSz), &sfC, &fvBrush);
                 }
 
@@ -1546,7 +1546,7 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
                         g.FillEllipse(&hClose, cBtnX - 2, cBtnY - 2, cSz + 4, cSz + 4);
                     }
                     Font fClose(&ffMDL, Sf(10.f, dpi), FontStyleRegular, UnitPixel);
-                    g.DrawString(L"ç11", -1, &fClose,
+                    g.DrawString(L"\xE711", -1, &fClose,
                         RectF(cBtnX, cBtnY, cSz, cSz), &sfC, &brDim);
                 }
             }
@@ -1560,7 +1560,7 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
                 g.FillEllipse(&hbNT, ntX, ntY, ntSz, ntSz);
             }
             Font fNewTab(&ffMDL, Sf(12.f, dpi), FontStyleRegular, UnitPixel);
-            g.DrawString(L"ç10", -1, &fNewTab,
+            g.DrawString(L"\xE710", -1, &fNewTab,
                 RectF(ntX, ntY, ntSz, ntSz), &sfC, &brDim);
         }
 
@@ -1623,19 +1623,19 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
                 if (isNTP) {
                     // NTP: show search icon inside omnibox
                     SolidBrush lockBr(Color(255, 95, 99, 104));
-                    g.DrawString(L"ç21", -1, &fLock,
+                    g.DrawString(L"\xE721", -1, &fLock,
                         RectF((float)addrX + Sf(10.f,dpi), (float)addrY, Sf(20.f,dpi), (float)addrH),
                         &sfC, &lockBr);
                 } else if (isSecure) {
                     // HTTPS: teal lock
                     SolidBrush lockBr(Color(255, 26, 115, 232)); // Google blue lock
-                    g.DrawString(L"ç2E", -1, &fLock,
+                    g.DrawString(L"\xE72E", -1, &fLock,
                         RectF((float)addrX + Sf(10.f,dpi), (float)addrY, Sf(20.f,dpi), (float)addrH),
                         &sfC, &lockBr);
                 } else {
                     // HTTP: warning icon
                     SolidBrush lockBr(Color(255, 234, 67, 53)); // Google red
-                    g.DrawString(L"çBA", -1, &fLock,
+                    g.DrawString(L"\xE7BA", -1, &fLock,
                         RectF((float)addrX + Sf(10.f,dpi), (float)addrY, Sf(20.f,dpi), (float)addrH),
                         &sfC, &lockBr);
                 }
@@ -1678,9 +1678,9 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
                         RectF((float)x, (float)toolY, (float)btnSz, btnHf), &sfC, &brPrim);
                 }
             };
-            DrawRightBtn(wd.hExt,     L"éD2", rx);      rx += btnStep; // Extensions
-            DrawRightBtn(wd.hProfile, L"ç7B", rx, true); rx += btnStep; // Profile (blue)
-            DrawRightBtn(wd.hMenu,    L"ç12", rx);                       // ⋮ Menu 
+            DrawRightBtn(wd.hExt,     L"\xE9D2", rx);      rx += btnStep; // Extensions
+            DrawRightBtn(wd.hProfile, L"\xE77B", rx, true); rx += btnStep; // Profile (blue)
+            DrawRightBtn(wd.hMenu,    L"\xE712", rx);                       // ⋮ Menu 
         }
 
         // Bookmark Bar
@@ -1703,10 +1703,10 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
 
             struct BmkItem { const wchar_t* icon; const wchar_t* label; };
             BmkItem bmkItems[] = {
-                { L"èA4", L"Web Store" },
-                { L"é09", L"RasFocus" },
-                { L"è1C", L"History" },
-                { L"è96", L"Downloads" },
+                { L"\xE8A4", L"Web Store" },
+                { L"\xE909", L"RasFocus" },
+                { L"\xE81C", L"History" },
+                { L"\xE896", L"Downloads" },
             };
             int bmkX = S(8, dpi);
             for (auto& bm : bmkItems) {
@@ -1719,7 +1719,7 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
                 bmkX += S(116, dpi);
             }
             // Right-aligned "All bookmarks" chevron
-            g.DrawString(L"è38", -1, &fIconSm,
+            g.DrawString(L"\xE838", -1, &fIconSm,
                 RectF((float)(W - S(100,dpi)), (float)bmkY, (float)S(18,dpi), (float)bmkH), &sfC, &brTxt);
             g.DrawString(L"Bookmarks", -1, &fBmk,
                 RectF((float)(W - S(82,dpi)), (float)bmkY, (float)S(76,dpi), (float)bmkH), &sfL, &brTxt);
