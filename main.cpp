@@ -683,12 +683,16 @@ void ApplySilentUpdate() {
     fclose(f);
 
     // ── 2. Write VBScript invisible launcher ──
-    // Fix: VBScript এ path এ space থাকলে quotes দরকার।
-    // Chr(34) দিয়ে quote করা হচ্ছে — এতে "Expected end of statement" error আসে না।
+    // Fix: batPath কে VBS এ directly embed করলে path এ থাকা \r (যেমন .rasfocus\rf_update)
+    // VBScript এ literal carriage return হিসেবে parse হয়, ফলে line 3 এ
+    // "Expected end of statement" (800A0401) error আসে।
+    // Solution: path hardcode না করে %APPDATA% env var দিয়ে runtime এ build করা।
     FILE* v = fopen(vbsPath.c_str(), "w");
     if (!v) { exit(0); return; }
     fprintf(v, "Set sh = CreateObject(\"WScript.Shell\")\r\n");
-    fprintf(v, "sh.Run \"cmd.exe /c \" & Chr(34) & \"%s\" & Chr(34), 0, False\r\n", batPath.c_str());
+    fprintf(v, "Dim batFile\r\n");
+    fprintf(v, "batFile = sh.ExpandEnvironmentStrings(\"%%APPDATA%%\") & \"\\.rasfocus\\rf_update.bat\"\r\n");
+    fprintf(v, "sh.Run \"cmd.exe /c \" & Chr(34) & batFile & Chr(34), 0, False\r\n");
     fclose(v);
 
     // ── 3. Launch wscript — সম্পূর্ণ invisible ──
