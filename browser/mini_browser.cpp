@@ -1,11 +1,8 @@
-// mini_browser.cpp — RasBrowser | Chrome-style UI + Super-Fast Optimized
+// mini_browser.cpp — RasBrowser | Premium UI, Smart Omnibox, Dynamic Bookmarks
 // REFACTORED: Per-Monitor v2 DPI, Chrome bezier tabs, double-buffering,
 //             Smart Google Search, Dark Mode Toggle, App Branding.
 // ADDED: Google Login Bypass, Pure Popup Mode, AI Filter Integration, Chrome 3-Dot Menu.
-// OPTIMIZED: DIB double-buffer, font cache, O(1) ad/tracker hash-sets, WebView2 GPU flags,
-//            partial-rect invalidation, early URI free, safe-domain fast-paths, 60fps timer.
 // FIXED: mY undeclared identifier, C4267 size_t conversions, C4244 type conversions,
-#pragma optimize("gt", on)   // /O2 max speed for this translation unit
 //        C4996 deprecated functions, wchar_t->char string construction warnings.
 
 #define _CRT_SECURE_NO_WARNINGS
@@ -39,8 +36,6 @@
 
 #include <vector>
 #include <map>
-#include <unordered_map>
-#include <unordered_set>
 #include <string>
 #include <algorithm>
 #include <sstream>
@@ -182,25 +177,25 @@ std::wstring GetLocalNTP_HTML(bool isDark) {
     L"</div></div>"
     L"<div class='search-btns'>"
     L"<button class='search-btn' onclick='doSearch()'>Google Search</button>"
-    L"<button class='search-btn' onclick='location.href=&quot;https://www.google.com/doodles&quot;'>I&#x2019;m Feeling Lucky</button>"
+    L"<button class='search-btn' onclick='location.href=\"https://www.google.com/doodles\"'>I&#x2019;m Feeling Lucky</button>"
     L"</div>"
     // Shortcuts
     L"<div class='shortcuts'>"
-    L"<a class='shortcut' href='https://www.youtube.com'><div class='shortcut-icon'><img src='https://www.google.com/s2/favicons?domain=youtube.com&sz=64' onerror='this.style.display=&quot;none&quot;;this.parentNode.innerHTML=&quot;&#127909;&quot;'></div><span class='shortcut-label'>YouTube</span></a>"
-    L"<a class='shortcut' href='https://www.google.com'><div class='shortcut-icon'><img src='https://www.google.com/s2/favicons?domain=google.com&sz=64' onerror='this.style.display=&quot;none&quot;;this.parentNode.innerHTML=&quot;&#127758;&quot;'></div><span class='shortcut-label'>Google</span></a>"
-    L"<a class='shortcut' href='https://www.facebook.com'><div class='shortcut-icon'><img src='https://www.google.com/s2/favicons?domain=facebook.com&sz=64' onerror='this.style.display=&quot;none&quot;;this.parentNode.innerHTML=&quot;f&quot;'></div><span class='shortcut-label'>Facebook</span></a>"
-    L"<a class='shortcut' href='https://chatgpt.com'><div class='shortcut-icon'><img src='https://www.google.com/s2/favicons?domain=chatgpt.com&sz=64' onerror='this.style.display=&quot;none&quot;;this.parentNode.innerHTML=&quot;&#129302;&quot;'></div><span class='shortcut-label'>ChatGPT</span></a>"
-    L"<a class='shortcut' href='https://github.com'><div class='shortcut-icon'><img src='https://www.google.com/s2/favicons?domain=github.com&sz=64' onerror='this.style.display=&quot;none&quot;;this.parentNode.innerHTML=&quot;&lt;/&gt;&quot;'></div><span class='shortcut-label'>GitHub</span></a>"
-    L"<a class='shortcut' href='https://www.wikipedia.org'><div class='shortcut-icon'><img src='https://www.google.com/s2/favicons?domain=wikipedia.org&sz=64' onerror='this.style.display=&quot;none&quot;;this.parentNode.innerHTML=&quot;W&quot;'></div><span class='shortcut-label'>Wikipedia</span></a>"
-    L"<a class='shortcut' href='https://gemini.google.com'><div class='shortcut-icon'><img src='https://www.google.com/s2/favicons?domain=gemini.google.com&sz=64' onerror='this.style.display=&quot;none&quot;;this.parentNode.innerHTML=&quot;&#10024;&quot;'></div><span class='shortcut-label'>Gemini</span></a>"
-    L"<a class='shortcut' href='https://translate.google.com'><div class='shortcut-icon'><img src='https://www.google.com/s2/favicons?domain=translate.google.com&sz=64' onerror='this.style.display=&quot;none&quot;;this.parentNode.innerHTML=&quot;&#127760;&quot;'></div><span class='shortcut-label'>Translate</span></a>"
+    L"<a class='shortcut' href='https://www.youtube.com'><div class='shortcut-icon'><img src='https://www.google.com/s2/favicons?domain=youtube.com&sz=64' onerror='this.style.display=\"none\";this.parentNode.innerHTML=\"&#127909;\"'></div><span class='shortcut-label'>YouTube</span></a>"
+    L"<a class='shortcut' href='https://www.google.com'><div class='shortcut-icon'><img src='https://www.google.com/s2/favicons?domain=google.com&sz=64' onerror='this.style.display=\"none\";this.parentNode.innerHTML=\"&#127758;\"'></div><span class='shortcut-label'>Google</span></a>"
+    L"<a class='shortcut' href='https://www.facebook.com'><div class='shortcut-icon'><img src='https://www.google.com/s2/favicons?domain=facebook.com&sz=64' onerror='this.style.display=\"none\";this.parentNode.innerHTML=\"f\"'></div><span class='shortcut-label'>Facebook</span></a>"
+    L"<a class='shortcut' href='https://chatgpt.com'><div class='shortcut-icon'><img src='https://www.google.com/s2/favicons?domain=chatgpt.com&sz=64' onerror='this.style.display=\"none\";this.parentNode.innerHTML=\"&#129302;\"'></div><span class='shortcut-label'>ChatGPT</span></a>"
+    L"<a class='shortcut' href='https://github.com'><div class='shortcut-icon'><img src='https://www.google.com/s2/favicons?domain=github.com&sz=64' onerror='this.style.display=\"none\";this.parentNode.innerHTML=\"&lt;/&gt;\"'></div><span class='shortcut-label'>GitHub</span></a>"
+    L"<a class='shortcut' href='https://www.wikipedia.org'><div class='shortcut-icon'><img src='https://www.google.com/s2/favicons?domain=wikipedia.org&sz=64' onerror='this.style.display=\"none\";this.parentNode.innerHTML=\"W\"'></div><span class='shortcut-label'>Wikipedia</span></a>"
+    L"<a class='shortcut' href='https://gemini.google.com'><div class='shortcut-icon'><img src='https://www.google.com/s2/favicons?domain=gemini.google.com&sz=64' onerror='this.style.display=\"none\";this.parentNode.innerHTML=\"&#10024;\"'></div><span class='shortcut-label'>Gemini</span></a>"
+    L"<a class='shortcut' href='https://translate.google.com'><div class='shortcut-icon'><img src='https://www.google.com/s2/favicons?domain=translate.google.com&sz=64' onerror='this.style.display=\"none\";this.parentNode.innerHTML=\"&#127760;\"'></div><span class='shortcut-label'>Translate</span></a>"
     L"</div>"
     L"<script>"
     L"function doSearch(){"
     L"var q=document.getElementById('q').value.trim();"
     L"if(!q)return;"
     L"if(q.includes(' ')||!q.includes('.')){location.href='https://www.google.com/search?q='+encodeURIComponent(q);}"
-    L"else{var u=q.startsWith('http')?q:('https://' + q);location.href=u;}"
+    L"else{location.href=q.startsWith('http')?q:'https://'+q;}"
     L"}"
     L"document.getElementById('q').addEventListener('keydown',function(e){if(e.key==='Enter')doSearch();});"
     L"</script>"
@@ -398,9 +393,7 @@ struct BrowserWindowData {
     bool hBack = false, hFwd = false, hRel = false;
     
     // Right Icons
-    bool hProfile = false, hExt = false, hMenu = false;
-    bool hAdBlock = false;
-    bool isAdBlockEnabled = true;  // Ad blocker ON by default
+    bool hProfile = false, hExt = false, hMenu = false; 
     
     // 🟢 Menu State Tracking
     bool isMenuOpen    = false;
@@ -433,8 +426,13 @@ static int NavTotalH(HWND hWnd) {
     if (g_isPureViewerMode) return S(D_TITLEBAR_H, dpi); 
 
     int h = S(D_TITLEBAR_H + D_TOOLBAR_H, dpi);
-    if (!g_isPureViewerMode)
-        h += S(D_BOOKMARK_H, dpi);  // Bookmark bar always visible (Chrome style)
+    if (g_windows.count(hWnd)) {
+        auto* tab = g_windows[hWnd].active();
+        if (tab && (tab->url == L"LOCAL_NTP" ||
+                    tab->url.find(L"blocked by rasfocus") != std::wstring::npos ||
+                    tab->url == L"about:blank")) 
+            h += S(D_BOOKMARK_H, dpi);
+    }
     return h;
 }
 
@@ -622,23 +620,16 @@ static const std::vector<std::wstring>& TrackerDomains() {
 // URL থেকে normalized lowercase host বের করে (www. ছাড়া)।
 // AdBlocker.kt এর ExtractHost() + isAdultHost() এর host normalization এর মতো।
 static std::wstring ExtractHost(const std::wstring& text) {
-    // ── Single-entry cache: same URL called multiple times per request ────────
-    static std::wstring s_lastUrl;
-    static std::wstring s_lastHost;
-    if (text == s_lastUrl) return s_lastHost;
-
     std::wstring s = text;
     size_t schemePos = s.find(L"://");
     if (schemePos != std::wstring::npos) s = s.substr(schemePos + 3);
     size_t cut = s.find_first_of(L"/?#");
     if (cut != std::wstring::npos) s = s.substr(0, cut);
+    // strip port
     size_t portPos = s.find(L':');
     if (portPos != std::wstring::npos) s = s.substr(0, portPos);
     std::transform(s.begin(), s.end(), s.begin(), ::towlower);
     if (s.rfind(L"www.", 0) == 0) s = s.substr(4);
-
-    s_lastUrl  = text;
-    s_lastHost = s;
     return s;
 }
 
@@ -654,64 +645,28 @@ static bool HostMatchesDomain(const std::wstring& host, const std::wstring& doma
 
 // ─── isAdultHost() port ───────────────────────────────────────────────────────
 static bool IsAdultHost(const std::wstring& host) {
-    // O(1) domain set
-    static std::unordered_set<std::wstring> s_adultSet;
-    static bool s_adultBuilt = false;
-    if (!s_adultBuilt) {
-        for (const auto& d : AdultDomains()) s_adultSet.insert(d);
-        s_adultBuilt = true;
-    }
-    // TLD suffix check
+    // TLD চেক (AdBlocker.kt ADULT_TLDS)
     for (const auto& tld : AdultTlds())
         if (host.size() >= tld.size() &&
             host.compare(host.size() - tld.size(), tld.size(), tld) == 0)
             return true;
-    // Exact + subdomain check
-    if (s_adultSet.count(host)) return true;
-    size_t dot = host.find(L'.');
-    while (dot != std::wstring::npos) {
-        if (s_adultSet.count(host.substr(dot + 1))) return true;
-        dot = host.find(L'.', dot + 1);
-    }
+    // Domain চেক
+    for (const auto& domain : AdultDomains())
+        if (HostMatchesDomain(host, domain)) return true;
     return false;
 }
 
-// ─── O(1) hash-set lookup for ad/tracker domains ────────────────────────────
-// Build once on first call; std::wstring hash is fast on modern MSVC.
+// ─── Ad / Tracker host check (= AdBlocker.kt shouldBlock inner logic) ────────
 static bool IsAdHost(const std::wstring& host) {
-    // Fast exact match via unordered_set
-    static std::unordered_set<std::wstring> s_adSet;
-    static bool s_adBuilt = false;
-    if (!s_adBuilt) {
-        for (const auto& d : AdDomains()) s_adSet.insert(d);
-        s_adBuilt = true;
-    }
-    // Exact hit
-    if (s_adSet.count(host)) return true;
-    // Subdomain: strip one label at a time and check
-    size_t dot = host.find(L'.');
-    while (dot != std::wstring::npos) {
-        std::wstring parent = host.substr(dot + 1);
-        if (s_adSet.count(parent)) return true;
-        dot = host.find(L'.', dot + 1);
-    }
+    for (const auto& d : AdDomains())
+        if (HostMatchesDomain(host, d)) return true;
     return false;
 }
 
 static bool IsTrackerHost(const std::wstring& host) {
-    static std::unordered_set<std::wstring> s_trkSet;
-    static bool s_trkBuilt = false;
-    if (!s_trkBuilt) {
-        for (const auto& d : TrackerDomains()) s_trkSet.insert(d);
-        s_trkBuilt = true;
-    }
-    if (s_trkSet.count(host)) return true;
-    size_t dot = host.find(L'.');
-    while (dot != std::wstring::npos) {
-        std::wstring parent = host.substr(dot + 1);
-        if (s_trkSet.count(parent)) return true;
-        dot = host.find(L'.', dot + 1);
-    }
+    for (const auto& d : TrackerDomains())
+        // exact host বা proper subdomain — substring নয় (AdBlocker.kt FIX comment দ্রষ্টব্য)
+        if (host == d || HostMatchesDomain(host, d)) return true;
     return false;
 }
 
@@ -731,16 +686,6 @@ static bool ContainsBadWord(const std::wstring& lowerText, const std::wstring& k
 // ─── IsBlockedContent — NavigationStarting (main frame adult block) ───────────
 // AdBlocker.kt: shouldBlockNavigation() + shouldBlock() main-frame adult path
 bool IsBlockedContent(const std::wstring& text) {
-    // ── Fast-path: known-safe domains skip keyword scan ──────────────────────
-    // This avoids lowercasing + 13-keyword scan for the majority of traffic.
-    const wchar_t* safe[] = {
-        L"google.", L"youtube.", L"github.", L"microsoft.",
-        L"stackoverflow.", L"wikipedia.", L"bing.", L"linkedin.",
-        L"claude.", L"openai.", L"chatgpt.", L"gemini."
-    };
-    for (auto* s : safe)
-        if (text.find(s) != std::wstring::npos) return false;
-
     std::wstring lower = text;
     std::transform(lower.begin(), lower.end(), lower.begin(), ::towlower);
 
@@ -1176,40 +1121,16 @@ static void DoubleBufferedPaint(HWND hWnd, HDC hdcReal, std::function<void(HDC, 
     int W = cr.right, H = cr.bottom;
     if (W <= 0 || H <= 0) return;
 
-    // ── Cached DIB section: GDI+ writes to 32bpp system-memory directly ──────
-    // CreateDIBSection avoids the CompatibleBitmap readback penalty.
-    // Static cache: realloc only when window size changes (rare).
-    static HDC     s_dc  = nullptr;
-    static HBITMAP s_bmp = nullptr;
-    static HBITMAP s_old = nullptr;
-    static int     s_W   = 0, s_H = 0;
+    HDC     hdcMem  = CreateCompatibleDC(hdcReal);
+    HBITMAP hBmp    = CreateCompatibleBitmap(hdcReal, W, H);
+    HBITMAP hOldBmp = (HBITMAP)SelectObject(hdcMem, hBmp);
 
-    if (!s_dc || W != s_W || H != s_H) {
-        if (s_bmp) {
-            if (s_dc && s_old) SelectObject(s_dc, s_old);
-            DeleteObject(s_bmp);
-            s_bmp = nullptr;
-            s_old = nullptr;
-        }
-        if (s_dc)  { DeleteDC(s_dc); }
+    drawFn(hdcMem, W, H);
+    BitBlt(hdcReal, 0, 0, W, H, hdcMem, 0, 0, SRCCOPY);
 
-        BITMAPINFO bmi{};
-        bmi.bmiHeader.biSize        = sizeof(BITMAPINFOHEADER);
-        bmi.bmiHeader.biWidth       = W;
-        bmi.bmiHeader.biHeight      = -H;  // top-down
-        bmi.bmiHeader.biPlanes      = 1;
-        bmi.bmiHeader.biBitCount    = 32;
-        bmi.bmiHeader.biCompression = BI_RGB;
-
-        void* bits = nullptr;
-        s_bmp = CreateDIBSection(hdcReal, &bmi, DIB_RGB_COLORS, &bits, nullptr, 0);
-        s_dc  = CreateCompatibleDC(hdcReal);
-        s_old = (HBITMAP)SelectObject(s_dc, s_bmp);
-        s_W = W; s_H = H;
-    }
-
-    drawFn(s_dc, W, H);
-    BitBlt(hdcReal, 0, 0, W, H, s_dc, 0, 0, SRCCOPY);  // single DMA copy
+    SelectObject(hdcMem, hOldBmp);
+    DeleteObject(hBmp);
+    DeleteDC(hdcMem);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1278,12 +1199,8 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
     Color cDivLine   = wd.isDarkMode ? Color(255, 54,  55,  59)  : Color(255, 218, 220, 224);
 
     Graphics g(hdc);
-    // Speed-balanced: smooth paths + ClearType text + fast compositing
     g.SetSmoothingMode(SmoothingModeAntiAlias);
     g.SetTextRenderingHint(TextRenderingHintClearTypeGridFit);
-    g.SetInterpolationMode(InterpolationModeHighQualityBilinear); // faster than Bicubic
-    g.SetPixelOffsetMode(PixelOffsetModeHalf);
-    g.SetCompositingQuality(CompositingQualityHighSpeed);
 
     SolidBrush bFrame(cBgFrame);
     g.FillRectangle(&bFrame, 0, 0, W, titleH);
@@ -1326,56 +1243,22 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
                 g.FillRectangle(&shimmerBrush, barW - 40, barY, 40, 3);
             }
 
-            // Use a 16ms timer to drive animation (60fps) instead of
-            // re-scheduling from within WM_PAINT (avoids cascading paint storms).
-            // SetTimer is no-op if already running (same ID).
-            SetTimer(hWnd, 42, 16, nullptr);
-        }
-    }
-
-    // ── Font/brush cache: recreate only when DPI changes (avoids alloc per frame) ──
-    static UINT s_cachedDpi = 0;
-    static FontFamily* s_ffSeg  = nullptr;
-    static FontFamily* s_ffMDL  = nullptr;
-    static Font* s_fSmall   = nullptr;
-    static Font* s_fSmallBd = nullptr;
-    static Font* s_fBrand   = nullptr;
-    static Font* s_fIcon    = nullptr;
-    static Font* s_fIconSm  = nullptr;
-
-    if (dpi != s_cachedDpi) {
-        delete s_fSmall; delete s_fSmallBd; delete s_fBrand;
-        delete s_fIcon;  delete s_fIconSm;
-        delete s_ffSeg;  delete s_ffMDL;
-        s_ffSeg   = new FontFamily(L"Segoe UI");
-        // Segoe MDL2 Assets: verify font loaded correctly before using.
-        // If IsAvailable() == false, GDI+ would silently produce □ rectangles
-        // for every icon glyph. Fall back to Segoe UI Symbol (also ships with Windows).
-        {
-            FontFamily* mdlTry = new FontFamily(L"Segoe MDL2 Assets");
-            if (mdlTry->IsAvailable()) {
-                s_ffMDL = mdlTry;
-            } else {
-                delete mdlTry;
-                FontFamily* symTry = new FontFamily(L"Segoe UI Symbol");
-                s_ffMDL = symTry->IsAvailable() ? symTry : new FontFamily(L"Segoe UI");
-                if (!symTry->IsAvailable()) delete symTry;
+            // Repaint চালিয়ে যাও animation এর জন্য
+            // spinner frame advance করো সব loading tab এর জন্য
+            for (auto& t : wd.tabs) {
+                if (t.loading) t.loadingFrame = (t.loadingFrame + 1) % 8;
             }
+            InvalidateRect(hWnd, NULL, FALSE);
         }
-        s_fSmall  = new Font(s_ffSeg, Sf(12.f, dpi), FontStyleRegular, UnitPixel);
-        s_fSmallBd= new Font(s_ffSeg, Sf(12.f, dpi), FontStyleBold,    UnitPixel);
-        s_fBrand  = new Font(s_ffSeg, Sf(16.f, dpi), FontStyleBold,    UnitPixel);
-        s_fIcon   = new Font(s_ffMDL, Sf(14.f, dpi), FontStyleRegular, UnitPixel);
-        s_fIconSm = new Font(s_ffMDL, Sf(11.f, dpi), FontStyleRegular, UnitPixel);
-        s_cachedDpi = dpi;
     }
-    FontFamily& ffSeg  = *s_ffSeg;
-    FontFamily& ffMDL  = *s_ffMDL;
-    Font& fSmall   = *s_fSmall;
-    Font& fSmallBd = *s_fSmallBd;
-    Font& fBrand   = *s_fBrand;
-    Font& fIcon    = *s_fIcon;
-    Font& fIconSm  = *s_fIconSm;
+
+    FontFamily ffSeg(L"Segoe UI");
+    FontFamily ffMDL(L"Segoe MDL2 Assets");
+    Font fSmall  (&ffSeg, Sf(12.f, dpi), FontStyleRegular, UnitPixel);
+    Font fSmallBd(&ffSeg, Sf(12.f, dpi), FontStyleBold,    UnitPixel);
+    Font fBrand  (&ffSeg, Sf(16.f, dpi), FontStyleBold,    UnitPixel);
+    Font fIcon   (&ffMDL, Sf(14.f, dpi), FontStyleRegular, UnitPixel);
+    Font fIconSm (&ffMDL, Sf(11.f, dpi), FontStyleRegular, UnitPixel);
 
     StringFormat sfC, sfL, sfR;
     sfC.SetAlignment(StringAlignmentCenter); sfC.SetLineAlignment(StringAlignmentCenter);
@@ -1427,12 +1310,12 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
         };
 
         // ── Chrome order: [Focus][Pin][Dark][─][□][✕] ────────────────────────────
-        DrawWinBtn(bx,               wd.hFocus, false, wd.isFocusMode ? L"\xE7B8" : L"\xE7C8");
-        DrawWinBtn(bx + winBtnW,     wd.hPin,   false, wd.isPinned ? L"\xE840" : L"\xE718");
-        DrawWinBtn(bx + winBtnW * 2, wd.hDark,  false, wd.isDarkMode ? L"\xE708" : L"\xE706");
-        DrawWinBtn(bx + winBtnW * 3, wd.hMin,   false, L"\xE921"); // Minimize (─)
-        DrawWinBtn(bx + winBtnW * 4, wd.hMax,   false, IsZoomed(hWnd) ? L"\xE923" : L"\xE922"); // Restore/Max
-        DrawWinBtn(bx + winBtnW * 5, wd.hClose, true,  L"\xE8BB"); // Close (✕)
+        DrawWinBtn(bx,               wd.hFocus, false, wd.isFocusMode ? L"çB8" : L"çC8");
+        DrawWinBtn(bx + winBtnW,     wd.hPin,   false, wd.isPinned ? L"è40" : L"ç18");
+        DrawWinBtn(bx + winBtnW * 2, wd.hDark,  false, wd.isDarkMode ? L"ç08" : L"ç06");
+        DrawWinBtn(bx + winBtnW * 3, wd.hMin,   false, L"é21"); // Minimize (─)
+        DrawWinBtn(bx + winBtnW * 4, wd.hMax,   false, IsZoomed(hWnd) ? L"é23" : L"é22"); // Restore/Max
+        DrawWinBtn(bx + winBtnW * 5, wd.hClose, true,  L"èBB"); // Close (✕)
     }
 
     if (!g_isPureViewerMode) {
@@ -1526,7 +1409,7 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
                     // Generic fallback: grey globe
                     SolidBrush fvBrush(wd.isDarkMode ? Color(180,95,99,104) : Color(180,95,99,104));
                     Font fGlobe(&ffMDL, Sf(13.f, dpi), FontStyleRegular, UnitPixel);
-                    g.DrawString(L"\xE774", -1, &fGlobe,
+                    g.DrawString(L"ç74", -1, &fGlobe,
                         RectF(iconX, iconY, iconSz, iconSz), &sfC, &fvBrush);
                 }
 
@@ -1563,7 +1446,7 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
                         g.FillEllipse(&hClose, cBtnX - 2, cBtnY - 2, cSz + 4, cSz + 4);
                     }
                     Font fClose(&ffMDL, Sf(10.f, dpi), FontStyleRegular, UnitPixel);
-                    g.DrawString(L"\xE711", -1, &fClose,
+                    g.DrawString(L"ç11", -1, &fClose,
                         RectF(cBtnX, cBtnY, cSz, cSz), &sfC, &brDim);
                 }
             }
@@ -1577,7 +1460,7 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
                 g.FillEllipse(&hbNT, ntX, ntY, ntSz, ntSz);
             }
             Font fNewTab(&ffMDL, Sf(12.f, dpi), FontStyleRegular, UnitPixel);
-            g.DrawString(L"\xE710", -1, &fNewTab,
+            g.DrawString(L"ç10", -1, &fNewTab,
                 RectF(ntX, ntY, ntSz, ntSz), &sfC, &brDim);
         }
 
@@ -1640,19 +1523,19 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
                 if (isNTP) {
                     // NTP: show search icon inside omnibox
                     SolidBrush lockBr(Color(255, 95, 99, 104));
-                    g.DrawString(L"\xE721", -1, &fLock,
+                    g.DrawString(L"ç21", -1, &fLock,
                         RectF((float)addrX + Sf(10.f,dpi), (float)addrY, Sf(20.f,dpi), (float)addrH),
                         &sfC, &lockBr);
                 } else if (isSecure) {
                     // HTTPS: teal lock
                     SolidBrush lockBr(Color(255, 26, 115, 232)); // Google blue lock
-                    g.DrawString(L"\xE72E", -1, &fLock,
+                    g.DrawString(L"ç2E", -1, &fLock,
                         RectF((float)addrX + Sf(10.f,dpi), (float)addrY, Sf(20.f,dpi), (float)addrH),
                         &sfC, &lockBr);
                 } else {
                     // HTTP: warning icon
                     SolidBrush lockBr(Color(255, 234, 67, 53)); // Google red
-                    g.DrawString(L"\xE7BA", -1, &fLock,
+                    g.DrawString(L"çBA", -1, &fLock,
                         RectF((float)addrX + Sf(10.f,dpi), (float)addrY, Sf(20.f,dpi), (float)addrH),
                         &sfC, &lockBr);
                 }
@@ -1678,8 +1561,8 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
             }
 
             // ── Chrome-style right toolbar icons ─────────────────────────────────
-            // Layout: [AdBlock Shield] [Extensions] [Profile] [⋮ Menu]
-            int rx = W - S(36*4 + 8, dpi);
+            // Chrome: [Extensions puzzle] [Profile avatar] [⋮ Menu]
+            int rx = W - S(36*3 + 8, dpi);
             auto DrawRightBtn = [&](bool hover, const wchar_t* ico, int x, bool accent=false) {
                 if (hover) {
                     SolidBrush hb(wd.isDarkMode ? Color(40,255,255,255) : Color(20,0,0,0));
@@ -1695,37 +1578,15 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
                         RectF((float)x, (float)toolY, (float)btnSz, btnHf), &sfC, &brPrim);
                 }
             };
-
-            // ── AdBlock Shield Toggle ─────────────────────────────────────────────
-            {
-                if (wd.hAdBlock) {
-                    SolidBrush hb(wd.isDarkMode ? Color(40,255,255,255) : Color(20,0,0,0));
-                    g.FillEllipse(&hb, (float)(rx+S(2,dpi)), (float)(toolY+S(4,dpi)),
-                                  (float)S(28,dpi), (float)S(28,dpi));
-                }
-                // Shield glyph: green = ON, grey = OFF
-                Color shieldCol = wd.isAdBlockEnabled
-                    ? Color(255, 52, 168,  83)   // Google Green #34A853
-                    : Color(255,154, 160, 166);   // Dim grey
-                SolidBrush shieldBr(shieldCol);
-                g.DrawString(L"\xE9D5", -1, &fIcon,
-                    RectF((float)rx, (float)toolY, (float)btnSz, btnHf), &sfC, &shieldBr);
-                // Small status dot at bottom-center of button
-                if (wd.isAdBlockEnabled) {
-                    SolidBrush dotBr(Color(255, 52, 168, 83));
-                    float dotX = (float)rx + (float)btnSz * 0.5f - Sf(2.5f, dpi);
-                    float dotY = (float)toolY + btnHf - Sf(7.5f, dpi);
-                    g.FillEllipse(&dotBr, dotX, dotY, Sf(5.f,dpi), Sf(5.f,dpi));
-                }
-                rx += btnStep;
-            }
-
-            DrawRightBtn(wd.hExt,     L"\xE9D2", rx);      rx += btnStep; // Extensions
-            DrawRightBtn(wd.hProfile, L"\xE77B", rx, true); rx += btnStep; // Profile (blue)
-            DrawRightBtn(wd.hMenu,    L"\xE712", rx);                       // ⋮ Menu 
+            DrawRightBtn(wd.hExt,     L"éD2", rx);      rx += btnStep; // Extensions
+            DrawRightBtn(wd.hProfile, L"ç7B", rx, true); rx += btnStep; // Profile (blue)
+            DrawRightBtn(wd.hMenu,    L"ç12", rx);                       // ⋮ Menu 
         }
 
-        // Bookmark Bar — always visible (Chrome style)
+        // Bookmark Bar
+        if (wd.active() && (wd.active()->url == L"LOCAL_NTP" ||
+            wd.active()->url == L"about:blank" ||
+            wd.active()->url.find(L"blocked by rasfocus") != std::wstring::npos))
         {
             int bmkY = titleH + toolH;
             int bmkH = S(D_BOOKMARK_H, dpi);
@@ -1742,10 +1603,10 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
 
             struct BmkItem { const wchar_t* icon; const wchar_t* label; };
             BmkItem bmkItems[] = {
-                { L"\xE8A4", L"Web Store" },
-                { L"\xE909", L"RasFocus" },
-                { L"\xE81C", L"History" },
-                { L"\xE896", L"Downloads" },
+                { L"èA4", L"Web Store" },
+                { L"é09", L"RasFocus" },
+                { L"è1C", L"History" },
+                { L"è96", L"Downloads" },
             };
             int bmkX = S(8, dpi);
             for (auto& bm : bmkItems) {
@@ -1758,7 +1619,7 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
                 bmkX += S(116, dpi);
             }
             // Right-aligned "All bookmarks" chevron
-            g.DrawString(L"\xE838", -1, &fIconSm,
+            g.DrawString(L"è38", -1, &fIconSm,
                 RectF((float)(W - S(100,dpi)), (float)bmkY, (float)S(18,dpi), (float)bmkH), &sfC, &brTxt);
             g.DrawString(L"Bookmarks", -1, &fBmk,
                 RectF((float)(W - S(82,dpi)), (float)bmkY, (float)S(76,dpi), (float)bmkH), &sfL, &brTxt);
@@ -2038,44 +1899,20 @@ public:
             ctl2->put_DefaultBackgroundColor(bg);
         }
 
-        // ── Performance-optimized WebView2 settings ─────────────────────────────
         ICoreWebView2Settings* settings = nullptr;
         if (SUCCEEDED(tab.webview->get_Settings(&settings)) && settings) {
             settings->put_IsScriptEnabled(TRUE);
             settings->put_AreDefaultScriptDialogsEnabled(TRUE);
             settings->put_IsWebMessageEnabled(TRUE);
             settings->put_AreDefaultContextMenusEnabled(TRUE);
-            settings->put_IsStatusBarEnabled(FALSE); // saves a render per frame
+            settings->put_IsStatusBarEnabled(TRUE);
 
-            // Settings2: UA + autofill (reduces auth round-trips)
             ComPtr<ICoreWebView2Settings2> s2;
             if (SUCCEEDED(settings->QueryInterface(IID_PPV_ARGS(&s2)))) {
+                // Latest Chrome UA — ChatGPT/OpenAI older UA কে suspicious মনে করে।
+                // YouTube family hosts-এর জন্য mobile UA নিচে WebResourceRequested
+                // এ per-request override করা হয় (m.youtube system)।
                 s2->put_UserAgent(kDesktopUA);
-            }
-
-            // Settings4: password/autofill options — fewer redirects on login pages
-#ifdef __ICoreWebView2Settings4_INTERFACE_DEFINED__
-            ComPtr<ICoreWebView2Settings4> s4;
-            if (SUCCEEDED(settings->QueryInterface(IID_PPV_ARGS(&s4)))) {
-                s4->put_IsPasswordAutosaveEnabled(TRUE);
-                s4->put_IsGeneralAutofillEnabled(TRUE);
-            }
-#endif
-
-            // Settings8: back/forward cache — instant tab switch (Chrome BFCache)
-            ComPtr<ICoreWebView2Settings8> s8;
-            if (SUCCEEDED(settings->QueryInterface(IID_PPV_ARGS(&s8)))) {
-                // Disable SmartScreen — avoids per-URL cloud lookup latency
-                s8->put_IsSwipeNavigationEnabled(FALSE);
-            }
-        }
-
-        // ── Pre-warm: hint WebView2 to start rendering immediately ──────────
-        {
-            ComPtr<ICoreWebView2Controller4> ctl4;
-            if (SUCCEEDED(ctl->QueryInterface(IID_PPV_ARGS(&ctl4)))) {
-                // Allow background tabs to keep running (no throttling)
-                ctl4->put_AllowExternalDrop(FALSE); // minor: disable drag-drop overhead
             }
         }
 
@@ -2092,8 +1929,6 @@ public:
                 LPWSTR uri = nullptr;
                 req->get_Uri(&uri);
                 if (uri) {
-                    // ── Fast-path: skip non-http(s) resources (data:, blob:, about:) ──
-                    if (uri[0] != L'h' && uri[0] != L'H') { CoTaskMemFree(uri); return S_OK; }
                     std::wstring urlStr(uri);
                     CoTaskMemFree(uri);
 
@@ -2109,10 +1944,7 @@ public:
                         }
                     }
 
-                    // Check per-window ad block setting via HWND lookup
-                    bool adBlockOn = true;
-                    for (auto& kv : g_windows) { if (kv.second.isAdBlockEnabled) { adBlockOn = true; break; } else adBlockOn = false; }
-                    if (adBlockOn && IsAdOrTrackerUrl(urlStr) && g_sharedEnv) {
+                    if (IsAdOrTrackerUrl(urlStr) && g_sharedEnv) {
                         ComPtr<IStream> emptyStream;
                         emptyStream.Attach(SHCreateMemStream(nullptr, 0));
                         ComPtr<ICoreWebView2WebResourceResponse> response;
@@ -2226,35 +2058,37 @@ public:
                 LPWSTR uri = nullptr; args->get_Uri(&uri);
                 if (uri) {
                     std::wstring urlStr(uri);
-                    CoTaskMemFree(uri);  // free early — no longer need the raw ptr
 
-                    // Extract host once, reuse for all checks below
+                    // 🟢 M.YOUTUBE SYSTEM — desktop youtube.com/www.youtube.com
+                    // ধরা পড়লে সাথে সাথে cancel করে m.youtube.com এ পাঠাও।
                     std::wstring navHost = ExtractHost(urlStr);
-
-                    // ── YouTube mobile redirect ───────────────────────────────
                     if (NeedsMobileYouTubeRedirect(navHost)) {
                         args->put_Cancel(TRUE);
                         std::wstring mobileUrl = RewriteToMobileYouTube(urlStr);
                         if (g_windows.count(m_hWnd)) {
                             auto& w = g_windows[m_hWnd];
                             if (m_tabIdx >= 0 && m_tabIdx < (int)w.tabs.size() &&
-                                w.tabs[m_tabIdx].webview)
+                                w.tabs[m_tabIdx].webview) {
                                 w.tabs[m_tabIdx].webview->Navigate(mobileUrl.c_str());
+                            }
                         }
+                        CoTaskMemFree(uri);
                         return S_OK;
                     }
 
-                    // ── ChatGPT/OpenAI: inject Sec-Fetch headers once ─────────
-                    if (navHost.find(L"chatgpt.com") != std::wstring::npos ||
-                        navHost.find(L"openai.com")  != std::wstring::npos) {
+                    // ── ChatGPT/OpenAI এর জন্য extra headers inject করো ──
+                    bool isChatGPT = (urlStr.find(L"chatgpt.com") != std::wstring::npos ||
+                                      urlStr.find(L"openai.com")  != std::wstring::npos);
+                    if (isChatGPT) {
+                        // Sec-Fetch headers যোগ করো — real browser এর মতো
                         ComPtr<ICoreWebView2HttpRequestHeaders> headers;
                         if (SUCCEEDED(args->get_RequestHeaders(&headers)) && headers) {
-                            headers->SetHeader(L"Sec-Fetch-Mode",             L"navigate");
-                            headers->SetHeader(L"Sec-Fetch-Site",             L"none");
-                            headers->SetHeader(L"Sec-Fetch-User",             L"?1");
-                            headers->SetHeader(L"Sec-Fetch-Dest",             L"document");
-                            headers->SetHeader(L"Accept-Language",            L"en-US,en;q=0.9");
-                            headers->SetHeader(L"Upgrade-Insecure-Requests",  L"1");
+                            headers->SetHeader(L"Sec-Fetch-Mode",    L"navigate");
+                            headers->SetHeader(L"Sec-Fetch-Site",    L"none");
+                            headers->SetHeader(L"Sec-Fetch-User",    L"?1");
+                            headers->SetHeader(L"Sec-Fetch-Dest",    L"document");
+                            headers->SetHeader(L"Accept-Language",   L"en-US,en;q=0.9");
+                            headers->SetHeader(L"Upgrade-Insecure-Requests", L"1");
                         }
                     }
 
@@ -2282,6 +2116,7 @@ public:
                             }
                         }
                     }
+                    CoTaskMemFree(uri);
                 }
                 return S_OK;
             }).Get(), nullptr);
@@ -2599,44 +2434,21 @@ static void CreateWebViewForTab(HWND hWnd, int tabIdx) {
             hWnd, new TabControllerHandler(hWnd, tabIdx, tab.url));
     } else {
         auto options = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
-        // ── Performance + compatibility flags (Chrome-level fast) ──────────────
         options->put_AdditionalBrowserArguments(
-            // ── Bot bypass (most critical) ──
+            // Extension support
+            L"--enable-features=msWebView2EnableExtensions "
+            // GPU
+            L"--enable-gpu-rasterization "
+            L"--enable-zero-copy "
+            // Bot detection bypass — সবচেয়ে গুরুত্বপূর্ণ
             L"--disable-blink-features=AutomationControlled "
-
-            // ── GPU Acceleration ──
-            L"--enable-gpu-rasterization "          // GPU raster for composited layers
-            L"--enable-zero-copy "                  // zero-copy texture upload
-            L"--enable-oop-rasterization "          // out-of-process raster (Chrome default)
-            L"--use-angle=d3d11 "                   // ANGLE D3D11 backend (fastest on Windows)
-            L"--enable-features=msWebView2EnableExtensions,"
-              L"VaapiVideoDecoder,"                 // hardware video decode
-              L"VaapiVideoEncoder,"
-              L"PlatformHEVCDecoderSupport,"        // HEVC/H.265 hardware
-              L"RawDraw,"                           // skips compositor copy on display
-              L"DirectCompositionVideoOverlays "    // overlay for video — no blit
-
-            // ── Network / prefetch ──
-            L"--enable-quic "                       // HTTP/3 QUIC (like Chrome)
-            L"--enable-tcp-fast-open "              // TCP Fast Open
-            L"--dns-prefetch-disable=false "        // keep DNS prefetch on
-            L"--disk-cache-size=104857600 "         // 100MB disk cache
-            L"--aggressive-cache-discard=false "
-            L"--prerender=true "
-
-            // ── Rendering ──
-            L"--disable-renderer-backgrounding "    // background tabs full speed
-            L"--disable-backgrounding-occluded-windows " // no throttle when behind other windows
-            L"--disable-background-timer-throttling "    // JS timers always run
-            L"--disable-ipc-flooding-protection "  // removes IPC rate-limit (better for tabs)
-            L"--renderer-process-limit=8 "          // allow up to 8 renderer processes
-
-            // ── Compatibility ──
-            L"--disable-features=SameSiteByDefaultCookies,CookiesWithoutSameSiteMustBeSecure,"
-              L"BlockInsecurePrivateNetworkRequests,Translate "
-            L"--autoplay-policy=no-user-gesture-required "
+            // Google Sign-in, OAuth popup, general compatibility
+            // NOTE: সব --disable-features একটায় merge করা হয়েছে (একাধিক flag দিলে শেষেরটা override করে)
+            L"--disable-features=SameSiteByDefaultCookies,CookiesWithoutSameSiteMustBeSecure,BlockInsecurePrivateNetworkRequests,Translate "
             L"--no-first-run "
-            L"--no-default-browser-check"
+            L"--no-default-browser-check "
+            // Web Audio API — কিছু site sign-in verify তে ব্যবহার করে
+            L"--autoplay-policy=no-user-gesture-required"
         );
 
         wchar_t appDataPath[MAX_PATH];
@@ -2774,9 +2586,6 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 
     case WM_SIZE: {
         if (!g_windows.count(hWnd)) break;
-        // Minimized হলে put_Bounds করা যাবে না — WebView2 শূন্য rect পেলে
-        // internally visibilityState='hidden' trigger করে, যা YouTube pause করে দেয়।
-        if (wParam == SIZE_MINIMIZED) break;
         auto& wd = g_windows[hWnd];
         RepositionAddressBar(hWnd);
         RECT wvr = GetWebViewRect(hWnd);
@@ -2857,13 +2666,12 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                 if (wd.hBack!=b||wd.hFwd!=f||wd.hRel!=rl)
                     { wd.hBack=b; wd.hFwd=f; wd.hRel=rl; dirty=true; }
 
-                int rx = W - S(36*4+8, dpi);
-                bool ab = (y>=toolY&&y<toolY+ToolbarH(dpi)&&x>=rx&&x<rx+S(36,dpi)); rx+=btnStep;
+                int rx = W - S(36*3+8, dpi);
                 bool pr = (y>=toolY&&y<toolY+ToolbarH(dpi)&&x>=rx&&x<rx+S(36,dpi)); rx+=btnStep;
                 bool e  = (y>=toolY&&y<toolY+ToolbarH(dpi)&&x>=rx&&x<rx+S(36,dpi)); rx+=btnStep;
                 bool m  = (y>=toolY&&y<toolY+ToolbarH(dpi)&&x>=rx&&x<rx+S(36,dpi));
-                if (wd.hAdBlock!=ab||wd.hProfile!=pr||wd.hExt!=e||wd.hMenu!=m)
-                    { wd.hAdBlock=ab; wd.hProfile=pr; wd.hExt=e; wd.hMenu=m; dirty=true; }
+                if (wd.hProfile!=pr||wd.hExt!=e||wd.hMenu!=m)
+                    { wd.hProfile=pr; wd.hExt=e; wd.hMenu=m; dirty=true; }
             }
             
             // 🟢 Menu Overlay Hover Logic — FIX: mY now computed via GetMenuY()
@@ -2937,7 +2745,7 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
             auto& wd = g_windows[hWnd];
             wd.hMin=wd.hMax=wd.hClose=false;
             wd.hBack=wd.hFwd=wd.hRel=false;
-            wd.hPin=wd.hDark=wd.hFocus=wd.hAdBlock=wd.hProfile=wd.hExt=wd.hMenu=false;
+            wd.hPin=wd.hDark=wd.hFocus=wd.hProfile=wd.hExt=wd.hMenu=false;
             wd.hNewTab=false; wd.hoverTabIndex=-1;
             RECT cr; GetClientRect(hWnd, &cr);
             cr.bottom = NavTotalH(hWnd);
@@ -2947,31 +2755,7 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
         break;
     }
 
-    case WM_TIMER:
-        if (wParam == 77) {
-            // AdBlock toggle notification: restore title
-            KillTimer(hWnd, 77);
-            SetWindowTextW(hWnd, L"RasBrowser");
-            break;
-        }
-        if (wParam == 42) {
-            if (!g_windows.count(hWnd)) break;
-            auto& wd42 = g_windows[hWnd];
-            bool anyLoading = false;
-            for (auto& t : wd42.tabs) {
-                if (t.loading) { anyLoading = true; t.loadingFrame = (t.loadingFrame + 1) % 8; }
-            }
-            if (!anyLoading) {
-                KillTimer(hWnd, 42);
-            } else {
-                RECT cr42; GetClientRect(hWnd, &cr42);
-                RECT hdr42 = {0, 0, cr42.right, NavTotalH(hWnd) + 3};
-                InvalidateRect(hWnd, &hdr42, FALSE);
-            }
-        }
-        break;
-
-        case WM_LBUTTONDOWN: {
+    case WM_LBUTTONDOWN: {
         if (!g_windows.count(hWnd) || g_windows[hWnd].isFullScreen) break;
         auto& wd = g_windows[hWnd];
         UINT dpi = GetWndDpi(hWnd);
@@ -3197,16 +2981,6 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                 if (wd.hBack && tab->webview && tab->canBack) tab->webview->GoBack();
                 if (wd.hFwd  && tab->webview && tab->canFwd)  tab->webview->GoForward();
                 if (wd.hRel  && tab->webview)                 tab->webview->Reload();
-            }
-
-            // AdBlock shield toggle
-            if (wd.hAdBlock) {
-                wd.isAdBlockEnabled = !wd.isAdBlockEnabled;
-                // Show brief status tooltip via window title flash (non-blocking)
-                const wchar_t* status = wd.isAdBlockEnabled ? L"Ad Blocker: ON" : L"Ad Blocker: OFF";
-                SetWindowTextW(hWnd, status);
-                SetTimer(hWnd, 77, 1500, nullptr); // restore title after 1.5s
-                InvalidateRect(hWnd, NULL, FALSE);
             }
 
             if (wd.hProfile) MessageBoxW(hWnd, L"Profile menu will appear here.", L"Profile", MB_OK|MB_ICONINFORMATION);
