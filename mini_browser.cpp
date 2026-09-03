@@ -762,7 +762,7 @@ static void ShowMainMenu(HWND hWnd) {
                     s2->put_UserAgent(
                         L"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                         L"AppleWebKit/537.36 (KHTML, like Gecko) "
-                        L"Chrome/124.0.0.0 Safari/537.36");
+                        L"Chrome/136.0.0.0 Safari/537.36");
                 }
             }
             tab->webview->Navigate(L"https://gemini.google.com/app");
@@ -1061,11 +1061,11 @@ public:
             // FIX: DOM Storage via Settings2 (fixes Gemini & Facebook storage)
             ComPtr<ICoreWebView2Settings2> s2;
             if (SUCCEEDED(settings->QueryInterface(IID_PPV_ARGS(&s2)))) {
-                // UserAgent: Chrome-compatible for Gemini login
+                // UserAgent: Latest Chrome — YouTube, Google, Gemini সব সাইটে Chrome-এর মতো দেখাবে
                 s2->put_UserAgent(
                     L"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                     L"AppleWebKit/537.36 (KHTML, like Gecko) "
-                    L"Chrome/124.0.0.0 Safari/537.36");
+                    L"Chrome/136.0.0.0 Safari/537.36");
             }
 
             // FIX BUILD ERROR: IsDomStorageEnabled is on Settings3, not Settings
@@ -1076,11 +1076,52 @@ public:
         }
 
         // Anti-bot script (Gemini / Google login fix)
+        // YouTube + Google সাইটে Chrome-এর মতো দেখানোর জন্য সম্পূর্ণ Chrome fingerprint
         tab.webview->AddScriptToExecuteOnDocumentCreated(
-            L"Object.defineProperty(navigator,'webdriver',{get:()=>false});"
-            L"window.chrome={runtime:{},loadTimes:function(){},csi:function(){},app:{}};"
-            L"Object.defineProperty(navigator,'plugins',{get:()=>[1,2,3,4,5]});"
-            L"Object.defineProperty(navigator,'languages',{get:()=>['en-US','en']});",
+            // webdriver flag লুকানো
+            L"Object.defineProperty(navigator,'webdriver',{get:()=>false,configurable:true});"
+            // Chrome-এর সম্পূর্ণ window.chrome object
+            L"window.chrome={"
+            L"  runtime:{"
+            L"    id:undefined,"
+            L"    connect:function(){},"
+            L"    sendMessage:function(){},"
+            L"    onMessage:{addListener:function(){}}"
+            L"  },"
+            L"  loadTimes:function(){return{firstPaintTime:0,firstPaintAfterLoadTime:0,requestTime:Date.now()/1000};},"
+            L"  csi:function(){return{startE:Date.now(),onloadT:Date.now(),pageT:1,tran:15};},"
+            L"  app:{isInstalled:false,InstallState:{DISABLED:'disabled',INSTALLED:'installed',NOT_INSTALLED:'not_installed'},RunningState:{CANNOT_RUN:'cannot_run',READY_TO_RUN:'ready_to_run',RUNNING:'running'}},"
+            L"  webstore:{}"
+            L"};"
+            // plugins — Chrome-এর মতো
+            L"Object.defineProperty(navigator,'plugins',{get:()=>["
+            L"  {name:'Chrome PDF Plugin',filename:'internal-pdf-viewer',description:'Portable Document Format'},"
+            L"  {name:'Chrome PDF Viewer',filename:'mhjfbmdgcfjbbpaeojofohoefgiehjai',description:''},"
+            L"  {name:'Native Client',filename:'internal-nacl-plugin',description:''}"
+            L"],configurable:true});"
+            // language
+            L"Object.defineProperty(navigator,'languages',{get:()=>['en-US','en'],configurable:true});"
+            // userAgentData — YouTube এটা দিয়ে Chrome চেনে
+            L"if(!navigator.userAgentData){"
+            L"  Object.defineProperty(navigator,'userAgentData',{get:()=>({"
+            L"    brands:[{brand:'Chromium',version:'136'},{brand:'Google Chrome',version:'136'},{brand:'Not/A)Brand',version:'99'}],"
+            L"    mobile:false,"
+            L"    platform:'Windows',"
+            L"    getHighEntropyValues:function(hints){"
+            L"      return Promise.resolve({"
+            L"        architecture:'x86',"
+            L"        bitness:'64',"
+            L"        brands:[{brand:'Chromium',version:'136'},{brand:'Google Chrome',version:'136'},{brand:'Not/A)Brand',version:'99'}],"
+            L"        fullVersionList:[{brand:'Chromium',version:'136.0.0.0'},{brand:'Google Chrome',version:'136.0.0.0'},{brand:'Not/A)Brand',version:'99.0.0.0'}],"
+            L"        mobile:false,"
+            L"        model:'',"
+            L"        platform:'Windows',"
+            L"        platformVersion:'10.0.0',"
+            L"        uaFullVersion:'136.0.0.0'"
+            L"      });"
+            L"    }"
+            L"  }),configurable:true});"
+            L"}",
             nullptr);
 
         // NavigationStarting — block bad content
@@ -1319,6 +1360,12 @@ static void CreateWebViewForTab(HWND hWnd, int tabIdx) {
             L"--enable-features=CookiesWithoutSameSiteMustBeSecure "
             L"--disable-web-security=false "
             L"--no-proxy-server "
+            // YouTube Fix: Chrome-এর মতো দেখানোর জন্য
+            L"--lang=en-US "
+            L"--no-first-run "
+            L"--no-default-browser-check "
+            L"--disable-extensions-except= "
+            L"--force-color-profile=srgb "
         );
 
         // User data dir in LocalAppData (required for Gemini login persistence)
