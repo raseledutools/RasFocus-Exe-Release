@@ -762,7 +762,7 @@ static void ShowMainMenu(HWND hWnd) {
                     s2->put_UserAgent(
                         L"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                         L"AppleWebKit/537.36 (KHTML, like Gecko) "
-                        L"Chrome/136.0.0.0 Safari/537.36");
+                        L"Chrome/137.0.0.0 Safari/537.36");
                 }
             }
             tab->webview->Navigate(L"https://gemini.google.com/app");
@@ -1065,7 +1065,7 @@ public:
                 s2->put_UserAgent(
                     L"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                     L"AppleWebKit/537.36 (KHTML, like Gecko) "
-                    L"Chrome/136.0.0.0 Safari/537.36");
+                    L"Chrome/137.0.0.0 Safari/537.36");
             }
 
             // FIX BUILD ERROR: IsDomStorageEnabled is on Settings3, not Settings
@@ -1104,33 +1104,36 @@ public:
             // userAgentData — YouTube এটা দিয়ে Chrome চেনে
             L"if(!navigator.userAgentData){"
             L"  Object.defineProperty(navigator,'userAgentData',{get:()=>({"
-            L"    brands:[{brand:'Chromium',version:'136'},{brand:'Google Chrome',version:'136'},{brand:'Not/A)Brand',version:'99'}],"
+            L"    brands:[{brand:'Chromium',version:'137'},{brand:'Google Chrome',version:'137'},{brand:'Not/A)Brand',version:'99'}],"
             L"    mobile:false,"
             L"    platform:'Windows',"
             L"    getHighEntropyValues:function(hints){"
             L"      return Promise.resolve({"
             L"        architecture:'x86',"
             L"        bitness:'64',"
-            L"        brands:[{brand:'Chromium',version:'136'},{brand:'Google Chrome',version:'136'},{brand:'Not/A)Brand',version:'99'}],"
-            L"        fullVersionList:[{brand:'Chromium',version:'136.0.0.0'},{brand:'Google Chrome',version:'136.0.0.0'},{brand:'Not/A)Brand',version:'99.0.0.0'}],"
+            L"        brands:[{brand:'Chromium',version:'137'},{brand:'Google Chrome',version:'137'},{brand:'Not/A)Brand',version:'99'}],"
+            L"        fullVersionList:[{brand:'Chromium',version:'137.0.0.0'},{brand:'Google Chrome',version:'137.0.0.0'},{brand:'Not/A)Brand',version:'99.0.0.0'}],"
             L"        mobile:false,"
             L"        model:'',"
             L"        platform:'Windows',"
             L"        platformVersion:'10.0.0',"
-            L"        uaFullVersion:'136.0.0.0'"
+            L"        uaFullVersion:'137.0.0.0'"
             L"      });"
             L"    }"
             L"  }),configurable:true});"
             L"}",
             nullptr);
 
-        // NavigationStarting — block bad content
+        // NavigationStarting — block bad content + enforce desktop URLs
         tab.webview->add_NavigationStarting(
             Callback<ICoreWebView2NavigationStartingEventHandler>(
             [this](ICoreWebView2*,ICoreWebView2NavigationStartingEventArgs* args)->HRESULT{
                 LPWSTR uri=nullptr; args->get_Uri(&uri);
                 if (uri) {
                     std::wstring urlStr(uri);
+                    CoTaskMemFree(uri);
+
+                    // ── 1. Adult/blocked content check ──────────────────────
                     if (IsBlockedContent(urlStr)) {
                         args->put_Cancel(TRUE);
                         if (g_windows.count(m_hWnd)) {
@@ -1141,8 +1144,67 @@ public:
                                 w.tabs[m_tabIdx].webview->NavigateToString(GetBlocked_HTML(w.isDarkMode).c_str());
                             }
                         }
+                        return S_OK;
                     }
-                    CoTaskMemFree(uri);
+
+                    // ── 2. Force desktop version for mobile URLs ─────────────
+                    // YouTube: m.youtube.com → www.youtube.com
+                    {
+                        std::wstring lower = urlStr;
+                        std::transform(lower.begin(),lower.end(),lower.begin(),::towlower);
+
+                        std::wstring desktopUrl;
+
+                        // m.youtube.com → www.youtube.com
+                        if (lower.find(L"://m.youtube.com") != std::wstring::npos) {
+                            desktopUrl = urlStr;
+                            size_t pos = desktopUrl.find(L"://m.youtube.com");
+                            desktopUrl.replace(pos, 16, L"://www.youtube.com");
+                        }
+                        // youtu.be short links → full desktop
+                        else if (lower.find(L"youtu.be/") != std::wstring::npos) {
+                            size_t pos = lower.find(L"youtu.be/");
+                            std::wstring vid = urlStr.substr(pos + 9);
+                            // remove query params from vid if any
+                            size_t q = vid.find(L'?');
+                            std::wstring query = (q != std::wstring::npos) ? vid.substr(q) : L"";
+                            if (q != std::wstring::npos) vid = vid.substr(0, q);
+                            desktopUrl = L"https://www.youtube.com/watch?v=" + vid + query;
+                        }
+                        // m.facebook.com → www.facebook.com
+                        else if (lower.find(L"://m.facebook.com") != std::wstring::npos) {
+                            desktopUrl = urlStr;
+                            size_t pos = desktopUrl.find(L"://m.facebook.com");
+                            desktopUrl.replace(pos, 17, L"://www.facebook.com");
+                        }
+                        // mobile.twitter.com or m.twitter.com → twitter.com
+                        else if (lower.find(L"://m.twitter.com") != std::wstring::npos) {
+                            desktopUrl = urlStr;
+                            size_t pos = desktopUrl.find(L"://m.twitter.com");
+                            desktopUrl.replace(pos, 16, L"://twitter.com");
+                        }
+                        else if (lower.find(L"://mobile.twitter.com") != std::wstring::npos) {
+                            desktopUrl = urlStr;
+                            size_t pos = desktopUrl.find(L"://mobile.twitter.com");
+                            desktopUrl.replace(pos, 21, L"://twitter.com");
+                        }
+                        // m.twitch.tv → www.twitch.tv
+                        else if (lower.find(L"://m.twitch.tv") != std::wstring::npos) {
+                            desktopUrl = urlStr;
+                            size_t pos = desktopUrl.find(L"://m.twitch.tv");
+                            desktopUrl.replace(pos, 14, L"://www.twitch.tv");
+                        }
+
+                        if (!desktopUrl.empty()) {
+                            args->put_Cancel(TRUE);
+                            if (g_windows.count(m_hWnd)) {
+                                auto& w = g_windows[m_hWnd];
+                                if (m_tabIdx>=0 && m_tabIdx<(int)w.tabs.size() && w.tabs[m_tabIdx].webview)
+                                    w.tabs[m_tabIdx].webview->Navigate(desktopUrl.c_str());
+                            }
+                            return S_OK;
+                        }
+                    }
                 }
                 return S_OK;
             }).Get(),nullptr);
