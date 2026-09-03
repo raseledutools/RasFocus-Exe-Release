@@ -277,6 +277,7 @@ std::wstring GetBlocked_HTML(bool isDark) {
     L"document.getElementById('quote').textContent=p.q;"
     L"document.getElementById('attr').textContent=p.a;"
     L"</script></body></html>";
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 🟢 AI IN-APP BLOCKING INJECTION SCRIPT GENERATOR
