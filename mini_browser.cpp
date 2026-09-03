@@ -796,7 +796,10 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
 
     Graphics g(hdc);
     g.SetSmoothingMode(SmoothingModeAntiAlias);
-    g.SetTextRenderingHint(TextRenderingHintClearTypeGridFit);
+    // AntiAlias (not ClearTypeGridFit) — symbol/icon fonts like Segoe MDL2 Assets
+    // render as blank boxes under ClearType because ClearType uses sub-pixel LCD
+    // rendering which requires RGB stripe geometry; icon glyphs don't have that.
+    g.SetTextRenderingHint(TextRenderingHintAntiAlias);
 
     SolidBrush bFrame(cBgFrame);
     g.FillRectangle(&bFrame,0,0,W,titleH);
@@ -809,12 +812,19 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
             g.DrawLine(&sepPen,0,navH-1,W,navH-1);
     }
 
-    FontFamily ffSeg(L"Segoe UI"), ffMDL(L"Segoe MDL2 Assets");
+    FontFamily ffSeg(L"Segoe UI");
+    // Segoe MDL2 Assets — present on all Windows 10+ machines.
+    // Guard: if IsAvailable() fails (e.g. broken font cache), fall back to
+    // Segoe UI Symbol which ships with Windows 7+ and covers the same PUA range.
+    FontFamily ffMDLa(L"Segoe MDL2 Assets");
+    FontFamily ffMDLb(L"Segoe UI Symbol");
+    FontFamily& ffMDL = (ffMDLa.IsAvailable() ? ffMDLa : ffMDLb);
+
     Font fSmall  (&ffSeg,Sf(12.f,dpi),FontStyleRegular,UnitPixel);
     Font fSmallBd(&ffSeg,Sf(12.f,dpi),FontStyleBold,UnitPixel);
     Font fBrand  (&ffSeg,Sf(16.f,dpi),FontStyleBold,UnitPixel);
-    Font fIcon   (&ffMDL,Sf(14.f,dpi),FontStyleRegular,UnitPixel);
-    Font fIconSm (&ffMDL,Sf(11.f,dpi),FontStyleRegular,UnitPixel);
+    Font fIcon   (&ffMDL,Sf(16.f,dpi),FontStyleRegular,UnitPixel);  // was 14 — larger for toolbar
+    Font fIconSm (&ffMDL,Sf(13.f,dpi),FontStyleRegular,UnitPixel);  // was 11 — larger for title/tab
 
     StringFormat sfC,sfL;
     sfC.SetAlignment(StringAlignmentCenter); sfC.SetLineAlignment(StringAlignmentCenter);
