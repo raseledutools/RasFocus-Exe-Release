@@ -1,6 +1,6 @@
 BUILD STATUS: FAILED (exit code 2)
-Time: 2026-09-03 02:14:45 UTC
-Run: https://github.com/raseledutools/RasFocus-Exe-Release/actions/runs/33706801762
+Time: 2026-09-03 02:21:08 UTC
+Run: https://github.com/raseledutools/RasFocus-Exe-Release/actions/runs/33707228543
 
 === Compiler Output ===
 Microsoft (R) C/C++ Optimizing Compiler Version 19.51.36256 for x64
@@ -29,9 +29,6 @@ tab_family_link.cpp(362): note: see reference to function template instantiation
         [
             _Facet=std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>
         ]
-advanced_feature.cpp
-feature_browser.cpp
-bookmarks.cpp
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): warning C4244: '=': conversion from 'wchar_t' to 'char', possible loss of data (compiling source file tab_family_link.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): note: the template instantiation context (the oldest one first) is (compiling source file tab_family_link.cpp)
 tab_family_link.cpp(1529): note: see reference to function template instantiation 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string<std::_String_iterator<std::_String_val<std::_Simple_types<_Elem>>>,0>(_Iter,_Iter,const _Alloc &)' being compiled
@@ -84,6 +81,9 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
             _InIt=const wchar_t *,
             _SizeTy=std::+::_Size_type
         ] (compiling source file tab_family_link.cpp)
+advanced_feature.cpp
+bookmarks.cpp
+feature_browser.cpp
 context_menu.cpp
 downloads_panel.cpp
 find_in_page.cpp
@@ -92,6 +92,7 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
 browser/advanced_feature.cpp(23): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>::codecvt_utf8': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
 browser/advanced_feature.cpp(26): warning C4996: 'localtime': This function or variable may be unsafe. Consider using localtime_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
 browser/advanced_feature.cpp(116): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+history_panel.cpp
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xlocale(251): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning. (compiling source file browser/advanced_feature.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\codecvt(34): note: see declaration of 'std::codecvt_utf8' (compiling source file browser/advanced_feature.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xlocale(251): note: the template instantiation context (the oldest one first) is (compiling source file browser/advanced_feature.cpp)
@@ -100,7 +101,6 @@ browser/advanced_feature.cpp(23): note: see reference to function template insta
         [
             _Facet=std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>
         ]
-history_panel.cpp
 settings.cpp
 keyboard_shortcuts.cpp
 tab_pdf_workspace.cpp
@@ -112,161 +112,10 @@ tab_adult.cpp
 tab_blocks.cpp(706): warning C4244: 'argument': conversion from 'LONG' to 'Gdiplus::REAL', possible loss of data
 tab_blocks.cpp(706): warning C4244: 'argument': conversion from 'LONG' to 'Gdiplus::REAL', possible loss of data
 tab_blocks.cpp(1533): warning C4244: 'initializing': conversion from 'time_t' to 'int', possible loss of data
-browser/mini_browser.cpp(284): error C2601: 'GetAiInjectScript': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(341): error C2267: 'S': static functions with block scope are illegal
-browser/mini_browser.cpp(341): error C2601: 'S': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(342): error C2267: 'Sf': static functions with block scope are illegal
-browser/mini_browser.cpp(342): error C2601: 'Sf': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(344): error C2267: 'GetWndDpi': static functions with block scope are illegal
-browser/mini_browser.cpp(344): error C2601: 'GetWndDpi': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
 tab_blocks.cpp(2634): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data
 tab_blocks.cpp(2802): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data
 tab_blocks.cpp(2820): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data
-browser/mini_browser.cpp(425): error C2267: 'GetMenuY': static functions with block scope are illegal
-browser/mini_browser.cpp(425): error C2601: 'GetMenuY': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(430): error C2267: 'NavTotalH': static functions with block scope are illegal
-browser/mini_browser.cpp(430): error C2601: 'NavTotalH': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(440): error C2267: 'TitleBarH': static functions with block scope are illegal
-browser/mini_browser.cpp(440): error C2601: 'TitleBarH': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(441): error C2267: 'ToolbarH': static functions with block scope are illegal
-browser/mini_browser.cpp(441): error C2601: 'ToolbarH': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(442): error C2267: 'WinBtnW': static functions with block scope are illegal
-browser/mini_browser.cpp(442): error C2601: 'WinBtnW': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(443): error C2267: 'LogoW': static functions with block scope are illegal
-browser/mini_browser.cpp(443): error C2601: 'LogoW': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(448): error C2267: 'utf8_encode': static functions with block scope are illegal
-browser/mini_browser.cpp(448): error C2601: 'utf8_encode': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(456): error C2267: 'UrlEncode': static functions with block scope are illegal
-browser/mini_browser.cpp(456): error C2601: 'UrlEncode': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(484): error C2267: 'CreateDesktopShortcut': static functions with block scope are illegal
-browser/mini_browser.cpp(484): error C2601: 'CreateDesktopShortcut': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(510): error C2267: 'RegisterAppForDefaultBrowser': static functions with block scope are illegal
-browser/mini_browser.cpp(510): error C2601: 'RegisterAppForDefaultBrowser': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(528): error C2267: 'AdultKeywords': static functions with block scope are illegal
-browser/mini_browser.cpp(528): error C2601: 'AdultKeywords': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(541): error C2267: 'AdultDomains': static functions with block scope are illegal
-browser/mini_browser.cpp(541): error C2601: 'AdultDomains': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(556): error C2267: 'AdultTlds': static functions with block scope are illegal
-browser/mini_browser.cpp(556): error C2601: 'AdultTlds': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(564): error C2267: 'AdDomains': static functions with block scope are illegal
-browser/mini_browser.cpp(564): error C2601: 'AdDomains': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(597): error C2267: 'TrackerDomains': static functions with block scope are illegal
-browser/mini_browser.cpp(597): error C2601: 'TrackerDomains': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(623): error C2267: 'ExtractHost': static functions with block scope are illegal
-browser/mini_browser.cpp(623): error C2601: 'ExtractHost': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(645): error C2267: 'HostMatchesDomain': static functions with block scope are illegal
-browser/mini_browser.cpp(645): error C2601: 'HostMatchesDomain': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(655): error C2267: 'IsAdultHost': static functions with block scope are illegal
-browser/mini_browser.cpp(655): error C2601: 'IsAdultHost': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(680): error C2267: 'IsAdHost': static functions with block scope are illegal
-browser/mini_browser.cpp(680): error C2601: 'IsAdHost': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(700): error C2267: 'IsTrackerHost': static functions with block scope are illegal
-browser/mini_browser.cpp(700): error C2601: 'IsTrackerHost': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(718): error C2267: 'ContainsBadWord': static functions with block scope are illegal
-browser/mini_browser.cpp(718): error C2601: 'ContainsBadWord': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(732): error C2601: 'IsBlockedContent': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(758): error C2267: 'IsAdOrTrackerUrl': static functions with block scope are illegal
-browser/mini_browser.cpp(758): error C2601: 'IsAdOrTrackerUrl': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(782): error C2267: 'IsYouTubeFamilyHost': static functions with block scope are illegal
-browser/mini_browser.cpp(782): error C2601: 'IsYouTubeFamilyHost': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(793): error C2267: 'NeedsMobileYouTubeRedirect': static functions with block scope are illegal
-browser/mini_browser.cpp(793): error C2601: 'NeedsMobileYouTubeRedirect': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(799): error C2267: 'RewriteToMobileYouTube': static functions with block scope are illegal
-browser/mini_browser.cpp(799): error C2601: 'RewriteToMobileYouTube': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(817): error C2267: 'GetYouTubeAdPrunerScript': static functions with block scope are illegal
-browser/mini_browser.cpp(817): error C2601: 'GetYouTubeAdPrunerScript': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(892): error C2267: 'GetContentScannerScript': static functions with block scope are illegal
-browser/mini_browser.cpp(892): error C2601: 'GetContentScannerScript': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(965): error C2267: 'CalcTabWidth': static functions with block scope are illegal
-browser/mini_browser.cpp(965): error C2601: 'CalcTabWidth': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(972): error C2267: 'GetTabRect': static functions with block scope are illegal
-browser/mini_browser.cpp(972): error C2601: 'GetTabRect': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(979): error C2267: 'GetNewTabBtnRect': static functions with block scope are illegal
-browser/mini_browser.cpp(979): error C2601: 'GetNewTabBtnRect': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(988): error C2267: 'GetWebViewRect': static functions with block scope are illegal
-browser/mini_browser.cpp(988): error C2601: 'GetWebViewRect': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(1009): error C2267: 'RepositionAddressBar': static functions with block scope are illegal
-browser/mini_browser.cpp(1009): error C2601: 'RepositionAddressBar': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(1052): error C2267: 'ToggleFocusMode': static functions with block scope are illegal
-browser/mini_browser.cpp(1057): error C2601: 'ToggleFullScreen': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(1129): error C2601: 'AddrBarProc': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(1173): error C2267: 'DoubleBufferedPaint': static functions with block scope are illegal
-browser/mini_browser.cpp(1173): error C2601: 'DoubleBufferedPaint': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(1211): error C2267: 'AddRoundRect': static functions with block scope are illegal
-browser/mini_browser.cpp(1211): error C2601: 'AddRoundRect': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(1220): error C2267: 'BuildChromeTabPath': static functions with block scope are illegal
-browser/mini_browser.cpp(1220): error C2601: 'BuildChromeTabPath': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(1244): error C2267: 'DrawBrowserContent': static functions with block scope are illegal
-browser/mini_browser.cpp(1244): error C2601: 'DrawBrowserContent': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(1889): error C2601: 'DrawBrowser': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(1907): error C2267: 'SwitchToTab': static functions with block scope are illegal
-browser/mini_browser.cpp(1908): error C2267: 'AddTab': static functions with block scope are illegal
-browser/mini_browser.cpp(1909): error C2267: 'CloseTab': static functions with block scope are illegal
-browser/mini_browser.cpp(1910): error C2267: 'CreateWebViewForTab': static functions with block scope are illegal
-browser/mini_browser.cpp(1915): error C2267: 'ToggleFocusMode': static functions with block scope are illegal
-browser/mini_browser.cpp(1915): error C2601: 'ToggleFocusMode': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(1932): error C2267: 'SwitchToTab': static functions with block scope are illegal
-browser/mini_browser.cpp(1932): error C2601: 'SwitchToTab': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(1967): error C2267: 'CloseTab': static functions with block scope are illegal
-browser/mini_browser.cpp(1967): error C2601: 'CloseTab': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(1984): error C2267: 'AddTab': static functions with block scope are illegal
-browser/mini_browser.cpp(1984): error C2601: 'AddTab': local function definitions are illegal
-browser/mini_browser.cpp(213): note: this line contains a '{' which has not yet been matched
-browser/mini_browser.cpp(2052): error C2039: 'put_IsPasswordAutosaveEnabled': is not a member of 'ICoreWebView2Settings3'
-./packages/Microsoft.Web.WebView2.1.0.2420.47/build/native/include\WebView2.h(45123): note: see declaration of 'ICoreWebView2Settings3' (compiling source file browser/mini_browser.cpp)
-browser/mini_browser.cpp(2053): error C2039: 'put_IsGeneralAutofillEnabled': is not a member of 'ICoreWebView2Settings3'
-./packages/Microsoft.Web.WebView2.1.0.2420.47/build/native/include\WebView2.h(45123): note: see declaration of 'ICoreWebView2Settings3' (compiling source file browser/mini_browser.cpp)
-browser/mini_browser.cpp(2106): error C3493: 'g_sharedEnv' cannot be implicitly captured because no default capture mode has been specified
-browser/mini_browser.cpp(2573): error C2326: 'HRESULT GetBlocked_HTML::EnvCompletedHandler::Invoke(HRESULT,ICoreWebView2Environment *)': function cannot access 'g_sharedEnv'
-browser/mini_browser.cpp(2577): error C2326: 'HRESULT GetBlocked_HTML::EnvCompletedHandler::Invoke(HRESULT,ICoreWebView2Environment *)': function cannot access 'g_sharedEnv'
-browser/mini_browser.cpp(2577): fatal error C1003: error count exceeds 100; stopping compilation
+browser/mini_browser.cpp(1187): error C2065: 'NULL_BITMAP': undeclared identifier
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): warning C4244: '=': conversion from 'wchar_t' to 'char', possible loss of data (compiling source file tab_blocks.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): note: the template instantiation context (the oldest one first) is (compiling source file tab_blocks.cpp)
 tab_blocks.cpp(412): note: see reference to function template instantiation 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string<std::_String_iterator<std::_String_val<std::_Simple_types<_Elem>>>,0>(_Iter,_Iter,const _Alloc &)' being compiled
@@ -293,6 +142,10 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
             _InIt=wchar_t *,
             _SizeTy=std::+::_Size_type
         ] (compiling source file tab_blocks.cpp)
+browser/mini_browser.cpp(2053): error C2039: 'put_IsPasswordAutosaveEnabled': is not a member of 'ICoreWebView2Settings3'
+./packages/Microsoft.Web.WebView2.1.0.2420.47/build/native/include\WebView2.h(45123): note: see declaration of 'ICoreWebView2Settings3' (compiling source file browser/mini_browser.cpp)
+browser/mini_browser.cpp(2054): error C2039: 'put_IsGeneralAutofillEnabled': is not a member of 'ICoreWebView2Settings3'
+./packages/Microsoft.Web.WebView2.1.0.2420.47/build/native/include\WebView2.h(45123): note: see declaration of 'ICoreWebView2Settings3' (compiling source file browser/mini_browser.cpp)
 tab_deep_study.cpp
 tab_special.cpp
 tab_adult.cpp(219): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
@@ -315,6 +168,7 @@ tab_adult.cpp(406): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::code
 tab_adult.cpp(518): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\codecvt(34): note: see declaration of 'std::codecvt_utf8' (compiling source file tab_adult.cpp)
 tab_adult.cpp(518): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>::codecvt_utf8': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
+tab_statistics.cpp
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xlocale(251): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning. (compiling source file tab_adult.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\codecvt(34): note: see declaration of 'std::codecvt_utf8' (compiling source file tab_adult.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xlocale(251): note: the template instantiation context (the oldest one first) is (compiling source file tab_adult.cpp)
@@ -323,10 +177,10 @@ tab_adult.cpp(219): note: see reference to function template instantiation 'std:
         [
             _Facet=std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>
         ]
-tab_statistics.cpp
 tab_settings.cpp
 tab_special.cpp(115): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
 tab_special.cpp(118): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
+tab_utilities.cpp
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): warning C4244: '=': conversion from 'wchar_t' to 'char', possible loss of data (compiling source file tab_deep_study.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): note: the template instantiation context (the oldest one first) is (compiling source file tab_deep_study.cpp)
 tab_deep_study.cpp(690): note: see reference to function template instantiation 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string<std::_String_iterator<std::_String_val<std::_Simple_types<_Elem>>>,0>(_Iter,_Iter,const _Alloc &)' being compiled
@@ -353,15 +207,14 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
             _InIt=wchar_t *,
             _SizeTy=std::+::_Size_type
         ] (compiling source file tab_deep_study.cpp)
-tab_utilities.cpp
 tab_device_block.cpp
 tab_diary.cpp
 accounts.cpp
 tab_utilities.cpp(72): warning C4244: '=': conversion from 'LRESULT' to 'int', possible loss of data
 tab_utilities.cpp(184): warning C4244: 'initializing': conversion from 'LRESULT' to 'int', possible loss of data
 tab_phone_remote.cpp
-pc_screen_streamer.cpp
 tab_diary.cpp(461): warning C4996: '_wgetenv': This function or variable may be unsafe. Consider using _wdupenv_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+pc_screen_streamer.cpp
 accounts.cpp(512): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): warning C4244: '=': conversion from 'wchar_t' to 'char', possible loss of data (compiling source file accounts.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): note: the template instantiation context (the oldest one first) is (compiling source file accounts.cpp)
