@@ -650,46 +650,58 @@ void __cdecl DownloadAndInstallThread(void*) {
 void StartSilentUpdateCheck() { _beginthread(SilentUpdateThread, 0, NULL); }
 
 void ApplySilentUpdate() {
-    // ── Silent update via a hidden batch file ──
-    // We write a .bat to the secret dir, then launch it via cmd.exe /c with
-    // CREATE_NO_WINDOW so nothing flashes on screen.  Batch quoting with ""
-    // handles any path (spaces, dots, underscores) without the single-quote
-    // fragility of PowerShell inline strings.
+    // ── Silent update via PowerShell -WindowStyle Hidden ──
+    // cmd.exe /c batch.bat approach এ কিছু Windows version এ CMD window brief
+    // flicker করে। PowerShell -WindowStyle Hidden সত্যিকারের invisible থাকে —
+    // কোনো console window দেখা যায় না।
+    //
+    // PowerShell script এ single-quote fragility এড়াতে পুরো command টা
+    // একটা .ps1 ফাইলে লেখা হচ্ছে, তারপর সেটা -File দিয়ে execute।
+    // এতে path এ space বা বিশেষ character থাকলেও সমস্যা নেই।
+
     string newExePath     = GetSecretDir() + "RasFocus_New.exe";
     string currentExePath = GetExePath();
-    string batPath        = GetSecretDir() + "rf_update.bat";
-    string logPath        = GetSecretDir() + "rf_update_log.txt";
+    string ps1Path        = GetSecretDir() + "rf_update.ps1";
 
-    // Write the batch file
+    // wstring conversion helper
+    auto toW = [](const string& s) -> wstring {
+        return wstring(s.begin(), s.end());
+    };
+
+    // Write PowerShell script
     // Steps:
-    //   ping loopback 2x to wait ~1 s for this process to fully exit
-    //   taskkill RasObserve (ignore error)
-    //   move /Y new -> current (retries once after 1 s if first attempt fails)
-    //   start the updated exe
-    //   delete the batch file itself
-    FILE* f = fopen(batPath.c_str(), "w");
+    //   Start-Sleep 1 — process exit পর্যন্ত অপেক্ষা
+    //   Stop-Process RasObserve (ignore error)
+    //   Move-Item (retry once on failure)
+    //   Start-Process নতুন exe
+    //   Remove ps1 file itself
+    FILE* f = fopen(ps1Path.c_str(), "w");
     if (!f) { exit(0); return; }
-    fprintf(f, "@echo off\r\n");
-    fprintf(f, "ping -n 2 127.0.0.1 >nul\r\n");
-    fprintf(f, "taskkill /F /IM RasObserve.exe >nul 2>&1\r\n");
-    fprintf(f, "move /Y \"%s\" \"%s\" >>\"%s\" 2>&1\r\n",
-            newExePath.c_str(), currentExePath.c_str(), logPath.c_str());
-    fprintf(f, "if errorlevel 1 (\r\n");
-    fprintf(f, "  ping -n 2 127.0.0.1 >nul\r\n");
-    fprintf(f, "  move /Y \"%s\" \"%s\" >>\"%s\" 2>&1\r\n",
-            newExePath.c_str(), currentExePath.c_str(), logPath.c_str());
-    fprintf(f, ")\r\n");
-    fprintf(f, "start \"\" \"%s\"\r\n", currentExePath.c_str());
-    fprintf(f, "del /F /Q \"%s\"\r\n", batPath.c_str());
+    fprintf(f, "Start-Sleep -Milliseconds 1200\n");
+    fprintf(f, "Stop-Process -Name 'RasObserve' -Force -ErrorAction SilentlyContinue\n");
+    // Retry loop: 3 attempts, 600ms gap
+    fprintf(f, "$src = '%s'\n", newExePath.c_str());
+    fprintf(f, "$dst = '%s'\n", currentExePath.c_str());
+    fprintf(f, "$ok = $false\n");
+    fprintf(f, "for ($i = 0; $i -lt 3; $i++) {\n");
+    fprintf(f, "  try { Move-Item -Path $src -Destination $dst -Force -ErrorAction Stop; $ok = $true; break }\n");
+    fprintf(f, "  catch { Start-Sleep -Milliseconds 600 }\n");
+    fprintf(f, "}\n");
+    // Launch updated exe only if replace succeeded
+    fprintf(f, "if ($ok) { Start-Process -FilePath $dst }\n");
+    // Self-delete
+    fprintf(f, "Remove-Item -Path '%s' -Force -ErrorAction SilentlyContinue\n", ps1Path.c_str());
     fclose(f);
 
-    // Launch: cmd.exe /c <batPath>  — fully hidden, detached
-    string cmd = "cmd.exe /c \"\"" + batPath + "\"\"";
-    STARTUPINFOA si = { sizeof(STARTUPINFOA) };
+    // Launch PowerShell fully hidden — no window, no taskbar flash
+    wstring wPs1 = toW(ps1Path);
+    wstring wCmd = L"powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File \"" + wPs1 + L"\"";
+
+    STARTUPINFOW si = { sizeof(STARTUPINFOW) };
     si.dwFlags     = STARTF_USESHOWWINDOW;
     si.wShowWindow = SW_HIDE;
     PROCESS_INFORMATION pi = {};
-    CreateProcessA(NULL, (LPSTR)cmd.c_str(), NULL, NULL, FALSE,
+    CreateProcessW(NULL, (LPWSTR)wCmd.c_str(), NULL, NULL, FALSE,
                    CREATE_NO_WINDOW | DETACHED_PROCESS, NULL, NULL, &si, &pi);
     if (pi.hProcess) CloseHandle(pi.hProcess);
     if (pi.hThread)  CloseHandle(pi.hThread);
