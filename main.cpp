@@ -652,58 +652,50 @@ void __cdecl DownloadAndInstallThread(void*) {
 void StartSilentUpdateCheck() { _beginthread(SilentUpdateThread, 0, NULL); }
 
 void ApplySilentUpdate() {
-    // ── Silent update via PowerShell -WindowStyle Hidden ──
-    // cmd.exe /c batch.bat approach এ কিছু Windows version এ CMD window brief
-    // flicker করে। PowerShell -WindowStyle Hidden সত্যিকারের invisible থাকে —
-    // কোনো console window দেখা যায় না।
-    //
-    // PowerShell script এ single-quote fragility এড়াতে পুরো command টা
-    // একটা .ps1 ফাইলে লেখা হচ্ছে, তারপর সেটা -File দিয়ে execute।
-    // এতে path এ space বা বিশেষ character থাকলেও সমস্যা নেই।
+    // ── Silent update: .bat + wscript.exe invisible launcher ──
+    // PowerShell -ExecutionPolicy Bypass অনেক Windows এ block হয়, তাই
+    // .bat approach এ ফিরে এসেছি। CMD flicker এড়াতে একটি tiny .vbs
+    // script ব্যবহার করা হচ্ছে — WScript.Shell দিয়ে .bat কে
+    // intWindowStyle=0 (সম্পূর্ণ invisible) তে চালায়।
+    // wscript.exe সব Windows এ built-in, কোনো policy issue নেই।
 
     string newExePath     = GetSecretDir() + "RasFocus_New.exe";
     string currentExePath = GetExePath();
-    string ps1Path        = GetSecretDir() + "rf_update.ps1";
+    string batPath        = GetSecretDir() + "rf_update.bat";
+    string vbsPath        = GetSecretDir() + "rf_update.vbs";
 
-    // wstring conversion helper
-    auto toW = [](const string& s) -> wstring {
-        return wstring(s.begin(), s.end());
-    };
-
-    // Write PowerShell script
-    // Steps:
-    //   Start-Sleep 1 — process exit পর্যন্ত অপেক্ষা
-    //   Stop-Process RasObserve (ignore error)
-    //   Move-Item (retry once on failure)
-    //   Start-Process নতুন exe
-    //   Remove ps1 file itself
-    FILE* f = fopen(ps1Path.c_str(), "w");
+    // ── 1. Write the batch file ──
+    FILE* f = fopen(batPath.c_str(), "w");
     if (!f) { exit(0); return; }
-    fprintf(f, "Start-Sleep -Milliseconds 1200\n");
-    fprintf(f, "Stop-Process -Name 'RasObserve' -Force -ErrorAction SilentlyContinue\n");
-    // Retry loop: 3 attempts, 600ms gap
-    fprintf(f, "$src = '%s'\n", newExePath.c_str());
-    fprintf(f, "$dst = '%s'\n", currentExePath.c_str());
-    fprintf(f, "$ok = $false\n");
-    fprintf(f, "for ($i = 0; $i -lt 3; $i++) {\n");
-    fprintf(f, "  try { Move-Item -Path $src -Destination $dst -Force -ErrorAction Stop; $ok = $true; break }\n");
-    fprintf(f, "  catch { Start-Sleep -Milliseconds 600 }\n");
-    fprintf(f, "}\n");
-    // Launch updated exe only if replace succeeded
-    fprintf(f, "if ($ok) { Start-Process -FilePath $dst }\n");
-    // Self-delete
-    fprintf(f, "Remove-Item -Path '%s' -Force -ErrorAction SilentlyContinue\n", ps1Path.c_str());
+    fprintf(f, "@echo off\r\n");
+    fprintf(f, "ping -n 2 127.0.0.1 >nul\r\n");
+    fprintf(f, "taskkill /F /IM RasObserve.exe >nul 2>&1\r\n");
+    fprintf(f, "move /Y \"%s\" \"%s\" >nul 2>&1\r\n",
+            newExePath.c_str(), currentExePath.c_str());
+    fprintf(f, "if errorlevel 1 (\r\n");
+    fprintf(f, "  ping -n 2 127.0.0.1 >nul\r\n");
+    fprintf(f, "  move /Y \"%s\" \"%s\" >nul 2>&1\r\n",
+            newExePath.c_str(), currentExePath.c_str());
+    fprintf(f, ")\r\n");
+    fprintf(f, "start \"\" \"%s\"\r\n", currentExePath.c_str());
+    fprintf(f, "del /F /Q \"%s\" >nul 2>&1\r\n", vbsPath.c_str());
+    fprintf(f, "del /F /Q \"%%~f0\" >nul 2>&1\r\n");
     fclose(f);
 
-    // Launch PowerShell fully hidden — no window, no taskbar flash
-    wstring wPs1 = toW(ps1Path);
-    wstring wCmd = L"powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File \"" + wPs1 + L"\"";
+    // ── 2. Write VBScript invisible launcher ──
+    FILE* v = fopen(vbsPath.c_str(), "w");
+    if (!v) { exit(0); return; }
+    fprintf(v, "Set sh = CreateObject(\"WScript.Shell\")\r\n");
+    fprintf(v, "sh.Run \"cmd.exe /c \"\"\"%s\"\"\"\" , 0, False\r\n", batPath.c_str());
+    fclose(v);
 
-    STARTUPINFOW si = { sizeof(STARTUPINFOW) };
+    // ── 3. Launch wscript — সম্পূর্ণ invisible ──
+    string cmd = "wscript.exe \"" + vbsPath + "\"";
+    STARTUPINFOA si = { sizeof(STARTUPINFOA) };
     si.dwFlags     = STARTF_USESHOWWINDOW;
     si.wShowWindow = SW_HIDE;
     PROCESS_INFORMATION pi = {};
-    CreateProcessW(NULL, (LPWSTR)wCmd.c_str(), NULL, NULL, FALSE,
+    CreateProcessA(NULL, (LPSTR)cmd.c_str(), NULL, NULL, FALSE,
                    CREATE_NO_WINDOW | DETACHED_PROCESS, NULL, NULL, &si, &pi);
     if (pi.hProcess) CloseHandle(pi.hProcess);
     if (pi.hThread)  CloseHandle(pi.hThread);
