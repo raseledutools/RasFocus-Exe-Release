@@ -459,8 +459,10 @@ void HideAllWebViews() {
         char className[256];
         GetClassNameA(hwnd, className, sizeof(className));
         if (strstr(className, "Chrome_WidgetWin_") != nullptr) {
+            // SW_HIDE যথেষ্ট — SetWindowPos দিয়ে -10000 এ move করলে
+            // পরে put_Bounds দিলেও Chrome_WidgetWin_ child সেখানেই stuck থাকে,
+            // যার ফলে RasBrowser এ content blank দেখায়।
             ShowWindow(hwnd, SW_HIDE);
-            SetWindowPos(hwnd, NULL, -10000, -10000, 0, 0, SWP_NOZORDER | SWP_NOSIZE);
         }
         return TRUE;
     }, 0);
