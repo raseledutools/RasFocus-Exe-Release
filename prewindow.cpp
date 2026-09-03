@@ -3,6 +3,7 @@
 #include <ctime>
 #include <windows.h>
 #include <string>
+#include <direct.h>   // _mkdir
 
 using namespace std;
 
@@ -13,10 +14,18 @@ bool showDailyMessage = false;
 // Local Hover States
 static bool hNext = false, hBack = false, hSkip = false, hCloseDaily = false;
 
+// --- .rasfocus directory তৈরি করার helper ---
+static void EnsureRasFocusDir(const string& appData) {
+    string dir = appData + "\\.rasfocus";
+    _mkdir(dir.c_str());   // already exists হলে silently ignore করে
+}
+
 // --- প্রথমবার রান হচ্ছে কি না চেক করার জন্য ---
 void CheckFirstRun() {
     char appData[MAX_PATH];
     GetEnvironmentVariableA("APPDATA", appData, MAX_PATH);
+    EnsureRasFocusDir(appData);
+
     string path = string(appData) + "\\.rasfocus\\first_run_done.txt";
 
     ifstream inFile(path.c_str());
@@ -30,6 +39,8 @@ void CheckFirstRun() {
 void SaveFirstRunDone() {
     char appData[MAX_PATH];
     GetEnvironmentVariableA("APPDATA", appData, MAX_PATH);
+    EnsureRasFocusDir(appData);   // ← directory নিশ্চিত করে তারপর file লেখো
+
     string path = string(appData) + "\\.rasfocus\\first_run_done.txt";
 
     ofstream outFile(path.c_str());
@@ -40,6 +51,8 @@ void SaveFirstRunDone() {
 void CheckDailyMessage() {
     char appData[MAX_PATH];
     GetEnvironmentVariableA("APPDATA", appData, MAX_PATH);
+    EnsureRasFocusDir(appData);   // ← এখানেও directory নিশ্চিত করো
+
     string path = string(appData) + "\\.rasfocus\\last_run.txt";
 
     time_t t = time(0);
@@ -152,7 +165,7 @@ void DrawPreWindowOverlay(Graphics& g, int w, int h, float scaleFactor) {
         float dotY = cardY + cardH - 50.0f;
         
         for (int i = 1; i <= 3; i++) {
-            SolidBrush dotBr((i == onboardingStep) ? themeColor : Color(255, 60, 60, 60)); // ইনঅ্যাক্টিভ ডট এখন ডার্ক
+            SolidBrush dotBr((i == onboardingStep) ? themeColor : Color(255, 60, 60, 60));
             g.FillEllipse(&dotBr, dotStartX + (i - 1) * 22.0f, dotY, 10.0f, 10.0f);
         }
 
