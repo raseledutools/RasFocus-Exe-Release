@@ -665,15 +665,17 @@ void ApplySilentUpdate() {
     string vbsPath        = GetSecretDir() + "rf_update.vbs";
 
     // ── 1. Write the batch file ──
-    FILE* f = fopen(batPath.c_str(), "w");
+    FILE* f = fopen(batPath.c_str(), "wb"); // binary mode: prevent \r\n -> \r\r\n in text mode
     if (!f) { exit(0); return; }
     fprintf(f, "@echo off\r\n");
-    fprintf(f, "ping -n 2 127.0.0.1 >nul\r\n");
+    fprintf(f, "ping -n 3 127.0.0.1 >nul\r\n");
     fprintf(f, "taskkill /F /IM RasObserve.exe >nul 2>&1\r\n");
+    fprintf(f, "taskkill /F /IM RasFocus.exe >nul 2>&1\r\n");
+    fprintf(f, "ping -n 2 127.0.0.1 >nul\r\n");
     fprintf(f, "move /Y \"%s\" \"%s\" >nul 2>&1\r\n",
             newExePath.c_str(), currentExePath.c_str());
     fprintf(f, "if errorlevel 1 (\r\n");
-    fprintf(f, "  ping -n 2 127.0.0.1 >nul\r\n");
+    fprintf(f, "  ping -n 3 127.0.0.1 >nul\r\n");
     fprintf(f, "  move /Y \"%s\" \"%s\" >nul 2>&1\r\n",
             newExePath.c_str(), currentExePath.c_str());
     fprintf(f, ")\r\n");
@@ -687,7 +689,7 @@ void ApplySilentUpdate() {
     // VBScript এ literal carriage return হিসেবে parse হয়, ফলে line 3 এ
     // "Expected end of statement" (800A0401) error আসে।
     // Solution: path hardcode না করে %APPDATA% env var দিয়ে runtime এ build করা।
-    FILE* v = fopen(vbsPath.c_str(), "w");
+    FILE* v = fopen(vbsPath.c_str(), "wb"); // binary mode: prevent \r\r\n causing VBScript 800A0401 error
     if (!v) { exit(0); return; }
     fprintf(v, "Set sh = CreateObject(\"WScript.Shell\")\r\n");
     fprintf(v, "Dim batFile\r\n");
