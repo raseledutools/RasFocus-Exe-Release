@@ -123,10 +123,12 @@ jobs:
       run: exit 1
 
     - name: Sign RasFocus.exe
+      if: steps.compile.outputs.BUILD_EXIT_CODE == '0'
       run: |
         signtool sign /f "RasAppsCert.pfx" /p "1234" /t http://timestamp.digicert.com /fd SHA256 "RasFocus.exe"
 
     - name: Upload Artifact
+      if: steps.compile.outputs.BUILD_EXIT_CODE == '0'
       uses: actions/upload-artifact@v4
       with:
         name: RasFocus-App-Signed
@@ -134,7 +136,7 @@ jobs:
 
     # ── Release: tag = v1.0.<run_number>, name readable ──
     - name: Create GitHub Release with EXE
-      if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+      if: steps.compile.outputs.BUILD_EXIT_CODE == '0' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
       uses: softprops/action-gh-release@v2
       with:
         tag_name: v1.0.${{ github.run_number }}
@@ -148,4 +150,3 @@ jobs:
         make_latest: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
