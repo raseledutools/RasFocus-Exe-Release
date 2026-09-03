@@ -683,10 +683,12 @@ void ApplySilentUpdate() {
     fclose(f);
 
     // ── 2. Write VBScript invisible launcher ──
+    // Fix: VBScript এ path এ space থাকলে quotes দরকার।
+    // Chr(34) দিয়ে quote করা হচ্ছে — এতে "Expected end of statement" error আসে না।
     FILE* v = fopen(vbsPath.c_str(), "w");
     if (!v) { exit(0); return; }
     fprintf(v, "Set sh = CreateObject(\"WScript.Shell\")\r\n");
-    fprintf(v, "sh.Run \"cmd.exe /c \"\"\"%s\"\"\"\" , 0, False\r\n", batPath.c_str());
+    fprintf(v, "sh.Run \"cmd.exe /c \" & Chr(34) & \"%s\" & Chr(34), 0, False\r\n", batPath.c_str());
     fclose(v);
 
     // ── 3. Launch wscript — সম্পূর্ণ invisible ──
