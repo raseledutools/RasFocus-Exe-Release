@@ -2109,32 +2109,10 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
             Pen sepPen(cDivLine, 1.0f);
             g.DrawLine(&sepPen, 0, bmkY + bmkH - 1, W, bmkY + bmkH - 1);
 
-            // ── Chrome-style bookmark bar items ──────────────────────────────────
-            SolidBrush brTxt(cTxtDim);
-            Font fBmk(&ffSeg, Sf(12.f, dpi), FontStyleRegular, UnitPixel);
-
-            struct BmkItem { const wchar_t* icon; const wchar_t* label; };
-            BmkItem bmkItems[] = {
-                { L"\uE8A4", L"Web Store" },
-                { L"\uE909", L"RasFocus" },
-                { L"\uE81C", L"History" },
-                { L"\uE896", L"Downloads" },
-            };
-            int bmkX = S(8, dpi);
-            for (auto& bm : bmkItems) {
-                // Icon
-                g.DrawString(bm.icon, -1, &fIconSm,
-                    RectF((float)bmkX, (float)bmkY, (float)S(18,dpi), (float)bmkH), &sfC, &brTxt);
-                // Label
-                RectF labelR((float)(bmkX + S(20,dpi)), (float)bmkY, (float)S(90,dpi), (float)bmkH);
-                g.DrawString(bm.label, -1, &fBmk, labelR, &sfL, &brTxt);
-                bmkX += S(116, dpi);
-            }
-            // Right-aligned "All bookmarks" chevron
-            g.DrawString(L"\uE838", -1, &fIconSm,
-                RectF((float)(W - S(100,dpi)), (float)bmkY, (float)S(18,dpi), (float)bmkH), &sfC, &brTxt);
-            g.DrawString(L"Bookmarks", -1, &fBmk,
-                RectF((float)(W - S(82,dpi)), (float)bmkY, (float)S(76,dpi), (float)bmkH), &sfL, &brTxt);
+            // ── Real bookmark bar — g_bookmarks থেকে dynamic ──────────────────
+            POINT cur; GetCursorPos(&cur); ScreenToClient(hWnd, &cur);
+            DrawBookmarkBar(g, W, bmkY, bmkH, wd.isDarkMode, (int)dpi,
+                            cur.x, cur.y, g_bookmarkBarHoverIdx);
         }
     } // End of !g_isPureViewerMode
 
@@ -3503,6 +3481,22 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
         if (g_findBarOpen) {
             bool closed = HandleFindBarClick(x, y, W, H, (int)dpi);
             if (closed) { CloseFindBar(); InvalidateRect(hWnd, NULL, FALSE); return 0; }
+        }
+
+        // ── Bookmark Bar Click (NTP only) ──
+        if (wd.active() && (wd.active()->url == L"LOCAL_NTP" ||
+            wd.active()->url == L"about:blank" ||
+            wd.active()->url.find(L"blocked by rasfocus") != std::wstring::npos))
+        {
+            int bmkY = TitleBarH(dpi) + ToolbarH(dpi);
+            int bmkH = S(D_BOOKMARK_H, dpi);
+            std::wstring bmkUrl = HandleBookmarkBarClick(x, y, W, bmkY, bmkH, (int)dpi);
+            if (!bmkUrl.empty()) {
+                if (wd.active() && wd.active()->webview)
+                    wd.active()->webview->Navigate(bmkUrl.c_str());
+                InvalidateRect(hWnd, NULL, FALSE);
+                return 0;
+            }
         }
 
         // ── Bookmark Panel Click ──
