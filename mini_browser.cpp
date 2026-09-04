@@ -1145,25 +1145,28 @@ public:
         // This runs before page paint, so no white flash occurs.
         // We always inject the helper; the style element is only added when
         // isDarkMode is true at the time of navigation.
+        // ── AddScriptToExecuteOnDocumentCreated: checks window.__RAS_DARK__ at runtime ──
+        // This way toggle always works even after tab was created.
         {
-            bool dark = wd.isDarkMode;
-            std::wstring dmInit = dark
-                ? L"(function(){"
-                  L"  var s=document.createElement('style');"
-                  L"  s.id='__ras_dark_mode__';"
-                  L"  s.innerHTML='"
-                  L"    html{filter:invert(1) hue-rotate(180deg)!important;background:#1e1e1e!important;}"
-                  L"    img,video,canvas,picture,svg,iframe{"
-                  L"      filter:invert(1) hue-rotate(180deg)!important;"
-                  L"    }"
-                  L"  ';"
-                  L"  (document.head||document.documentElement).appendChild(s);"
-                  L"})();"
-                : L""; // light mode: nothing to inject
-
-            if (!dmInit.empty()) {
-                tab.webview->AddScriptToExecuteOnDocumentCreated(dmInit.c_str(), nullptr);
-            }
+            tab.webview->AddScriptToExecuteOnDocumentCreated(
+                L"(function(){"
+                L"  if(!window.__RAS_DARK__) return;"
+                L"  if(document.getElementById('__ras_dark_mode__')) return;"
+                L"  var s=document.createElement('style');"
+                L"  s.id='__ras_dark_mode__';"
+                L"  s.textContent='"
+                L"    html{filter:invert(1) hue-rotate(180deg)!important;background:#1e1e1e!important;}"
+                L"    img,video,canvas,picture,svg,iframe{"
+                L"      filter:invert(1) hue-rotate(180deg)!important;"
+                L"    }"
+                L"  ';"
+                L"  (document.head||document.documentElement).appendChild(s);"
+                L"})();",
+                nullptr);
+            // Set the runtime dark flag so the injected script above reads the correct value
+            std::wstring setVar = std::wstring(L"window.__RAS_DARK__=")
+                                + (wd.isDarkMode ? L"true;" : L"false;");
+            tab.webview->ExecuteScript(setVar.c_str(), nullptr);
         }
 
         // ── Anti-bot / Cloudflare bypass: Full Chrome fingerprint spoofing ──────
@@ -1873,14 +1876,15 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
             // invert(1) hue-rotate(180deg) gives a true dark look;
             // images/videos get a second invert so they stay natural.
             const std::wstring darkInjectScript =
+                L"window.__RAS_DARK__=true;"
                 L"(function(){"
                 L"  var s=document.getElementById('__ras_dark_mode__');"
                 L"  if(!s){"
                 L"    s=document.createElement('style');"
                 L"    s.id='__ras_dark_mode__';"
-                L"    document.head.appendChild(s);"
+                L"    (document.head||document.documentElement).appendChild(s);"
                 L"  }"
-                L"  s.innerHTML='"
+                L"  s.textContent='"
                 L"    html{filter:invert(1) hue-rotate(180deg)!important;background:#1e1e1e!important;}"
                 L"    img,video,canvas,picture,svg,iframe{"
                 L"      filter:invert(1) hue-rotate(180deg)!important;"
@@ -1889,6 +1893,7 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                 L"})();";
 
             const std::wstring lightRemoveScript =
+                L"window.__RAS_DARK__=false;"
                 L"(function(){"
                 L"  var s=document.getElementById('__ras_dark_mode__');"
                 L"  if(s) s.remove();"
