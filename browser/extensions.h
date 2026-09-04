@@ -485,7 +485,7 @@ inline std::wstring HandleExtensionPanelClick(
             y >= pillY2 && y <= pillY2 + pillH)
             return L"toggle:" + std::to_wstring(i);
 
-        return L"item:" + std::to_wstring(i);
+        return L"inside";  // clicked item area but not on pill — consume the click, do nothing
     }
 
     return L"";

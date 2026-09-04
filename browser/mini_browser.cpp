@@ -3035,6 +3035,14 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                 g_extensionPanelOpen = false;
                 InvalidateRect(hWnd, NULL, FALSE);
                 return 0;
+            } else if (action == L"manage") {
+                // "Manage Extensions" button — panel বন্ধ করো, কিছু navigate করো না
+                g_extensionPanelOpen = false;
+                InvalidateRect(hWnd, NULL, FALSE);
+                return 0;
+            } else if (action == L"inside") {
+                // Extension item area-তে click (pill ছাড়া) — consume করো, fall-through না
+                return 0;
             } else if (action.substr(0, 7) == L"toggle:") {
                 int idx = std::stoi(action.substr(7));
                 ToggleExtension(nullptr, idx);
