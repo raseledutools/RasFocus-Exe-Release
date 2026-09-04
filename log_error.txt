@@ -1,6 +1,6 @@
 BUILD STATUS: SUCCESS
-Time: 2026-09-04 03:45:14 UTC
-Run: https://github.com/raseledutools/RasFocus-Exe-Release/actions/runs/33834252319
+Time: 2026-09-04 03:59:25 UTC
+Run: https://github.com/raseledutools/RasFocus-Exe-Release/actions/runs/33835066696
 
 === Compiler Output ===
 Microsoft (R) C/C++ Optimizing Compiler Version 19.51.36256 for x64
@@ -145,14 +145,14 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
 tab_deep_study.cpp
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): warning C4244: '=': conversion from 'wchar_t' to 'char', possible loss of data (compiling source file browser/mini_browser.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): note: the template instantiation context (the oldest one first) is (compiling source file browser/mini_browser.cpp)
-browser/mini_browser.cpp(2274): note: see reference to function template instantiation 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string<std::_String_iterator<std::_String_val<std::_Simple_types<_Elem>>>,0>(_Iter,_Iter,const _Alloc &)' being compiled
+browser/mini_browser.cpp(2299): note: see reference to function template instantiation 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string<std::_String_iterator<std::_String_val<std::_Simple_types<_Elem>>>,0>(_Iter,_Iter,const _Alloc &)' being compiled
         with
         [
             _Elem=wchar_t,
             _Iter=std::_String_iterator<std::_String_val<std::_Simple_types<wchar_t>>>,
             _Alloc=std::allocator<char>
         ]
-browser/mini_browser.cpp(2274): note: see the first reference to 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string' in 'TabControllerHandler::Invoke::<lambda_73edf3dffe15d3a969c1a74867e77878>::()::<lambda_e79adc25f6471789fc222e38bae3625b>::operator ()'
+browser/mini_browser.cpp(2299): note: see the first reference to 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string' in 'TabControllerHandler::Invoke::<lambda_73edf3dffe15d3a969c1a74867e77878>::()::<lambda_e79adc25f6471789fc222e38bae3625b>::operator ()'
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xstring(862): note: see reference to function template instantiation 'void std::basic_string<char,std::char_traits<char>,std::allocator<char>>::_Construct_from_iter<wchar_t*,wchar_t*,_Size_type>(_Iter,const _Sent,_Size)' being compiled
         with
         [
