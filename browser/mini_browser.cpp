@@ -3140,44 +3140,52 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                 InvalidateRect(hWnd, NULL, TRUE);
 
                 if (clickIdx != -1) {
-                    if      (clickIdx == 1) AddTab(hWnd, L"LOCAL_NTP");
+                    if      (clickIdx == 0) {
+                        // Profile — Chrome-style: Google account page নতুন tab এ
+                        AddTab(hWnd, L"https://myaccount.google.com");
+                    }
+                    else if (clickIdx == 1) AddTab(hWnd, L"LOCAL_NTP");
                     else if (clickIdx == 2) LaunchMiniBrowser(L"LOCAL_NTP", L"New Window");
                     else if (clickIdx == 3) {
-                        // History
-                        g_historyPanelOpen   = !g_historyPanelOpen;
+                        // History — নতুন tab এ chrome://history style
+                        AddTab(hWnd, L"LOCAL_NTP");
+                        g_historyPanelOpen   = true;
                         g_bookmarkPanelOpen  = false;
                         g_downloadsPanelOpen = false;
-                        if (g_historyPanelOpen) LoadHistory();
+                        g_extensionPanelOpen = false;
+                        LoadHistory();
                         InvalidateRect(hWnd, NULL, FALSE);
                     }
                     else if (clickIdx == 4) {
-                        // Downloads
-                        g_downloadsPanelOpen = !g_downloadsPanelOpen;
+                        // Downloads — নতুন tab এ
+                        AddTab(hWnd, L"LOCAL_NTP");
+                        g_downloadsPanelOpen = true;
                         g_historyPanelOpen   = false;
                         g_bookmarkPanelOpen  = false;
+                        g_extensionPanelOpen = false;
                         InvalidateRect(hWnd, NULL, FALSE);
                     }
                     else if (clickIdx == 5) {
-                        // Bookmarks
-                        g_bookmarkPanelOpen  = !g_bookmarkPanelOpen;
+                        // Bookmarks — নতুন tab এ
+                        AddTab(hWnd, L"LOCAL_NTP");
+                        g_bookmarkPanelOpen  = true;
                         g_historyPanelOpen   = false;
                         g_downloadsPanelOpen = false;
-                        if (g_bookmarkPanelOpen) LoadBookmarks();
+                        g_extensionPanelOpen = false;
+                        LoadBookmarks();
                         InvalidateRect(hWnd, NULL, FALSE);
                     }
                     else if (clickIdx == 6) {
-                        // Extensions Panel
-                        g_extensionPanelOpen = !g_extensionPanelOpen;
+                        // Extensions — নতুন tab এ
+                        AddTab(hWnd, L"LOCAL_NTP");
+                        g_extensionPanelOpen = true;
                         g_historyPanelOpen   = false;
                         g_bookmarkPanelOpen  = false;
                         g_downloadsPanelOpen = false;
-                        if (g_extensionPanelOpen) ScanExtensionsFolderPublic();
-                        // WebView shrink/restore করো — GDI+ panel এর উপরে আসতে
-                        {
-                            RECT wvr = GetWebViewRect(hWnd);
-                            if (wd.active() && wd.active()->controller)
-                                wd.active()->controller->put_Bounds(wvr);
-                        }
+                        ScanExtensionsFolderPublic();
+                        RECT wvr = GetWebViewRect(hWnd);
+                        if (wd.active() && wd.active()->controller)
+                            wd.active()->controller->put_Bounds(wvr);
                         InvalidateRect(hWnd, NULL, TRUE);
                     }
                     // ── clickIdx 7 = YouTube Mobile/Desktop Mode Toggle ──────────
