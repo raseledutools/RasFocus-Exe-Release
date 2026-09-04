@@ -710,46 +710,70 @@ static bool IsAdOrTrackerUrl(const std::wstring& url) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 🟢 M.YOUTUBE SYSTEM — desktop www.youtube.com কে জোর করে mobile
-// m.youtube.com এ পাঠানো হয় + mobile UA বসানো হয়, কারণ YouTube-এর
-// anti-adblock/SSAI detection desktop web player-এ অনেক বেশি aggressive।
+// 🖥️ DESKTOP-FORCE SYSTEM — সবসময় desktop UA + desktop site
+// m.youtube.com / m.facebook.com / m.twitter.com / youtu.be সহ সব
+// mobile URL কে desktop URL এ redirect করা হয়।
 // ─────────────────────────────────────────────────────────────────────────────
-static const wchar_t* kMobileUA =
-    L"Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 "
-    L"(KHTML, like Gecko) Chrome/136.0.0.0 Mobile Safari/537.36";
-
 static const wchar_t* kDesktopUA =
     L"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     L"AppleWebKit/537.36 (KHTML, like Gecko) "
-    L"Chrome/136.0.0.0 Safari/537.36";
+    L"Chrome/137.0.0.0 Safari/537.36";
 
-// youtube.com পরিবারের host কিনা (video CDN / thumbnail CDN সহ) — এগুলোর
-// request-এও mobile UA পাঠানো দরকার, নাহলে Google পক্ষে UA/host mismatch ধরা পড়ে।
-static bool IsYouTubeFamilyHost(const std::wstring& host) {
-    static const std::vector<std::wstring> kHosts = {
-        L"youtube.com", L"googlevideo.com", L"ytimg.com", L"ggpht.com"
-    };
-    for (const auto& d : kHosts)
-        if (HostMatchesDomain(host, d)) return true;
-    return false;
+// m.youtube.com বা youtu.be → www.youtube.com এ redirect করা দরকার কিনা
+static bool NeedsDesktopYouTubeRedirect(const std::wstring& host) {
+    return host == L"m.youtube.com" || host == L"youtu.be";
 }
 
-// শুধু main site (www.youtube.com / youtube.com) — m.youtube.com বা
-// music.youtube.com বাদ, redirect loop এড়াতে।
-static bool NeedsMobileYouTubeRedirect(const std::wstring& host) {
-    return host == L"youtube.com" || host == L"www.youtube.com";
-}
-
-// "https://www.youtube.com/watch?v=xyz" → "https://m.youtube.com/watch?v=xyz"
-// host অংশটুকু বাদ দিয়ে বাকিটা (scheme + path + query) অবিকৃত রাখা হয়।
-static std::wstring RewriteToMobileYouTube(const std::wstring& url) {
+// m.youtube.com/watch?v=xyz → https://www.youtube.com/watch?v=xyz
+// youtu.be/ID → https://www.youtube.com/watch?v=ID
+static std::wstring RewriteToDesktopYouTube(const std::wstring& url, const std::wstring& host) {
     size_t schemeEnd = url.find(L"://");
     if (schemeEnd == std::wstring::npos) return url;
     size_t hostStart = schemeEnd + 3;
     size_t hostEnd = url.find_first_of(L"/?#", hostStart);
     if (hostEnd == std::wstring::npos) hostEnd = url.size();
-    std::wstring rest = url.substr(hostEnd); // path + query + fragment (থাকলে)
-    return url.substr(0, hostStart) + L"m.youtube.com" + rest;
+    std::wstring rest = url.substr(hostEnd);
+
+    if (host == L"youtu.be") {
+        // youtu.be/ID → /watch?v=ID
+        // rest starts with /ID
+        std::wstring videoId = rest;
+        if (!videoId.empty() && videoId[0] == L'/') videoId = videoId.substr(1);
+        size_t qPos = videoId.find(L'?');
+        std::wstring params;
+        if (qPos != std::wstring::npos) {
+            params = videoId.substr(qPos); // ?t=xxx etc
+            videoId = videoId.substr(0, qPos);
+        }
+        return L"https://www.youtube.com/watch?v=" + videoId + (params.empty() ? L"" : L"&" + params.substr(1));
+    }
+    // m.youtube.com → www.youtube.com, keep path
+    return L"https://www.youtube.com" + rest;
+}
+
+// m.facebook.com / mbasic.facebook.com → www.facebook.com
+static bool NeedsDesktopFacebookRedirect(const std::wstring& host) {
+    return host == L"m.facebook.com" || host == L"mbasic.facebook.com";
+}
+// m.twitter.com / mobile.twitter.com / m.x.com → twitter.com / x.com
+static bool NeedsDesktopTwitterRedirect(const std::wstring& host) {
+    return host == L"m.twitter.com" || host == L"mobile.twitter.com" || host == L"m.x.com";
+}
+// m.twitch.tv → www.twitch.tv
+static bool NeedsDesktopTwitchRedirect(const std::wstring& host) {
+    return host == L"m.twitch.tv";
+}
+
+// Generic: replace mobile host with desktop host, keep path+query
+static std::wstring RewriteHostToDesktop(const std::wstring& url,
+                                          const std::wstring& desktopHost) {
+    size_t schemeEnd = url.find(L"://");
+    if (schemeEnd == std::wstring::npos) return url;
+    size_t hostStart = schemeEnd + 3;
+    size_t hostEnd = url.find_first_of(L"/?#", hostStart);
+    if (hostEnd == std::wstring::npos) hostEnd = url.size();
+    std::wstring rest = url.substr(hostEnd);
+    return url.substr(0, hostStart) + desktopHost + rest;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1200,7 +1224,10 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
 
     Graphics g(hdc);
     g.SetSmoothingMode(SmoothingModeAntiAlias);
-    g.SetTextRenderingHint(TextRenderingHintClearTypeGridFit);
+    // AntiAlias (not ClearTypeGridFit) — ClearType requires RGB sub-pixel stripe
+    // geometry that symbol/PUA fonts like Segoe MDL2 Assets don't have, causing
+    // all icon DrawString calls to render as blank rectangles.
+    g.SetTextRenderingHint(TextRenderingHintAntiAlias);
 
     SolidBrush bFrame(cBgFrame);
     g.FillRectangle(&bFrame, 0, 0, W, titleH);
@@ -1253,12 +1280,17 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
     }
 
     FontFamily ffSeg(L"Segoe UI");
+    // MDL2 fallback guard: if Segoe MDL2 Assets is not available (older Windows),
+    // fall back to Segoe UI Symbol which covers the same PUA codepoints.
     FontFamily ffMDL(L"Segoe MDL2 Assets");
+    if (ffMDL.GetLastStatus() != Ok) {
+        new (&ffMDL) FontFamily(L"Segoe UI Symbol");
+    }
     Font fSmall  (&ffSeg, Sf(12.f, dpi), FontStyleRegular, UnitPixel);
     Font fSmallBd(&ffSeg, Sf(12.f, dpi), FontStyleBold,    UnitPixel);
     Font fBrand  (&ffSeg, Sf(16.f, dpi), FontStyleBold,    UnitPixel);
-    Font fIcon   (&ffMDL, Sf(14.f, dpi), FontStyleRegular, UnitPixel);
-    Font fIconSm (&ffMDL, Sf(11.f, dpi), FontStyleRegular, UnitPixel);
+    Font fIcon   (&ffMDL, Sf(16.f, dpi), FontStyleRegular, UnitPixel);  // 14→16px: better legibility
+    Font fIconSm (&ffMDL, Sf(13.f, dpi), FontStyleRegular, UnitPixel);  // 11→13px: better legibility
 
     StringFormat sfC, sfL, sfR;
     sfC.SetAlignment(StringAlignmentCenter); sfC.SetLineAlignment(StringAlignmentCenter);
@@ -1310,12 +1342,12 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
         };
 
         // ── Chrome order: [Focus][Pin][Dark][─][□][✕] ────────────────────────────
-        DrawWinBtn(bx,               wd.hFocus, false, wd.isFocusMode ? L"çB8" : L"çC8");
-        DrawWinBtn(bx + winBtnW,     wd.hPin,   false, wd.isPinned ? L"è40" : L"ç18");
-        DrawWinBtn(bx + winBtnW * 2, wd.hDark,  false, wd.isDarkMode ? L"ç08" : L"ç06");
-        DrawWinBtn(bx + winBtnW * 3, wd.hMin,   false, L"é21"); // Minimize (─)
-        DrawWinBtn(bx + winBtnW * 4, wd.hMax,   false, IsZoomed(hWnd) ? L"é23" : L"é22"); // Restore/Max
-        DrawWinBtn(bx + winBtnW * 5, wd.hClose, true,  L"èBB"); // Close (✕)
+        DrawWinBtn(bx,               wd.hFocus, false, wd.isFocusMode ? L"\uE7B8" : L"\uE7C8");
+        DrawWinBtn(bx + winBtnW,     wd.hPin,   false, wd.isPinned ? L"\uE840" : L"\uE718");
+        DrawWinBtn(bx + winBtnW * 2, wd.hDark,  false, wd.isDarkMode ? L"\uE708" : L"\uE706");
+        DrawWinBtn(bx + winBtnW * 3, wd.hMin,   false, L"\uE921"); // Minimize (─)
+        DrawWinBtn(bx + winBtnW * 4, wd.hMax,   false, IsZoomed(hWnd) ? L"\uE923" : L"\uE922"); // Restore/Max
+        DrawWinBtn(bx + winBtnW * 5, wd.hClose, true,  L"\uE8BB"); // Close (✕)
     }
 
     if (!g_isPureViewerMode) {
@@ -1409,7 +1441,7 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
                     // Generic fallback: grey globe
                     SolidBrush fvBrush(wd.isDarkMode ? Color(180,95,99,104) : Color(180,95,99,104));
                     Font fGlobe(&ffMDL, Sf(13.f, dpi), FontStyleRegular, UnitPixel);
-                    g.DrawString(L"ç74", -1, &fGlobe,
+                    g.DrawString(L"\uE774", -1, &fGlobe,
                         RectF(iconX, iconY, iconSz, iconSz), &sfC, &fvBrush);
                 }
 
@@ -1446,7 +1478,7 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
                         g.FillEllipse(&hClose, cBtnX - 2, cBtnY - 2, cSz + 4, cSz + 4);
                     }
                     Font fClose(&ffMDL, Sf(10.f, dpi), FontStyleRegular, UnitPixel);
-                    g.DrawString(L"ç11", -1, &fClose,
+                    g.DrawString(L"\uE711", -1, &fClose,
                         RectF(cBtnX, cBtnY, cSz, cSz), &sfC, &brDim);
                 }
             }
@@ -1460,7 +1492,7 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
                 g.FillEllipse(&hbNT, ntX, ntY, ntSz, ntSz);
             }
             Font fNewTab(&ffMDL, Sf(12.f, dpi), FontStyleRegular, UnitPixel);
-            g.DrawString(L"ç10", -1, &fNewTab,
+            g.DrawString(L"\uE710", -1, &fNewTab,
                 RectF(ntX, ntY, ntSz, ntSz), &sfC, &brDim);
         }
 
@@ -1523,19 +1555,19 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
                 if (isNTP) {
                     // NTP: show search icon inside omnibox
                     SolidBrush lockBr(Color(255, 95, 99, 104));
-                    g.DrawString(L"ç21", -1, &fLock,
+                    g.DrawString(L"\uE721", -1, &fLock,
                         RectF((float)addrX + Sf(10.f,dpi), (float)addrY, Sf(20.f,dpi), (float)addrH),
                         &sfC, &lockBr);
                 } else if (isSecure) {
                     // HTTPS: teal lock
                     SolidBrush lockBr(Color(255, 26, 115, 232)); // Google blue lock
-                    g.DrawString(L"ç2E", -1, &fLock,
+                    g.DrawString(L"\uE72E", -1, &fLock,
                         RectF((float)addrX + Sf(10.f,dpi), (float)addrY, Sf(20.f,dpi), (float)addrH),
                         &sfC, &lockBr);
                 } else {
                     // HTTP: warning icon
                     SolidBrush lockBr(Color(255, 234, 67, 53)); // Google red
-                    g.DrawString(L"çBA", -1, &fLock,
+                    g.DrawString(L"\uE7BA", -1, &fLock,
                         RectF((float)addrX + Sf(10.f,dpi), (float)addrY, Sf(20.f,dpi), (float)addrH),
                         &sfC, &lockBr);
                 }
@@ -1578,9 +1610,9 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
                         RectF((float)x, (float)toolY, (float)btnSz, btnHf), &sfC, &brPrim);
                 }
             };
-            DrawRightBtn(wd.hExt,     L"éD2", rx);      rx += btnStep; // Extensions
-            DrawRightBtn(wd.hProfile, L"ç7B", rx, true); rx += btnStep; // Profile (blue)
-            DrawRightBtn(wd.hMenu,    L"ç12", rx);                       // ⋮ Menu 
+            DrawRightBtn(wd.hExt,     L"\uE9D2", rx);      rx += btnStep; // Extensions
+            DrawRightBtn(wd.hProfile, L"\uE77B", rx, true); rx += btnStep; // Profile (blue)
+            DrawRightBtn(wd.hMenu,    L"\uE712", rx);                       // ⋮ Menu 
         }
 
         // Bookmark Bar
@@ -1603,10 +1635,10 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
 
             struct BmkItem { const wchar_t* icon; const wchar_t* label; };
             BmkItem bmkItems[] = {
-                { L"èA4", L"Web Store" },
-                { L"é09", L"RasFocus" },
-                { L"è1C", L"History" },
-                { L"è96", L"Downloads" },
+                { L"\uE8A4", L"Web Store" },
+                { L"\uE909", L"RasFocus" },
+                { L"\uE81C", L"History" },
+                { L"\uE896", L"Downloads" },
             };
             int bmkX = S(8, dpi);
             for (auto& bm : bmkItems) {
@@ -1619,7 +1651,7 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
                 bmkX += S(116, dpi);
             }
             // Right-aligned "All bookmarks" chevron
-            g.DrawString(L"è38", -1, &fIconSm,
+            g.DrawString(L"\uE838", -1, &fIconSm,
                 RectF((float)(W - S(100,dpi)), (float)bmkY, (float)S(18,dpi), (float)bmkH), &sfC, &brTxt);
             g.DrawString(L"Bookmarks", -1, &fBmk,
                 RectF((float)(W - S(82,dpi)), (float)bmkY, (float)S(76,dpi), (float)bmkH), &sfL, &brTxt);
@@ -1909,9 +1941,7 @@ public:
 
             ComPtr<ICoreWebView2Settings2> s2;
             if (SUCCEEDED(settings->QueryInterface(IID_PPV_ARGS(&s2)))) {
-                // Latest Chrome UA — ChatGPT/OpenAI older UA কে suspicious মনে করে।
-                // YouTube family hosts-এর জন্য mobile UA নিচে WebResourceRequested
-                // এ per-request override করা হয় (m.youtube system)।
+                // Desktop Chrome UA — সবসময় desktop site দেখাতে।
                 s2->put_UserAgent(kDesktopUA);
             }
         }
@@ -1931,18 +1961,6 @@ public:
                 if (uri) {
                     std::wstring urlStr(uri);
                     CoTaskMemFree(uri);
-
-                    // 🟢 M.YOUTUBE SYSTEM — youtube.com family-র প্রতিটা
-                    // sub-resource request-এ mobile UA override করো, যাতে
-                    // main-frame redirect (m.youtube.com) + সব asset request
-                    // consistent mobile client হিসেবে দেখা যায়।
-                    std::wstring reqHost = ExtractHost(urlStr);
-                    if (!reqHost.empty() && IsYouTubeFamilyHost(reqHost)) {
-                        ComPtr<ICoreWebView2HttpRequestHeaders> headers;
-                        if (SUCCEEDED(req->get_Headers(&headers)) && headers) {
-                            headers->SetHeader(L"User-Agent", kMobileUA);
-                        }
-                    }
 
                     if (IsAdOrTrackerUrl(urlStr) && g_sharedEnv) {
                         ComPtr<IStream> emptyStream;
@@ -2059,17 +2077,29 @@ public:
                 if (uri) {
                     std::wstring urlStr(uri);
 
-                    // 🟢 M.YOUTUBE SYSTEM — desktop youtube.com/www.youtube.com
-                    // ধরা পড়লে সাথে সাথে cancel করে m.youtube.com এ পাঠাও।
+                    // 🖥️ DESKTOP-FORCE SYSTEM — mobile URL ধরা পড়লে desktop URL এ redirect
                     std::wstring navHost = ExtractHost(urlStr);
-                    if (NeedsMobileYouTubeRedirect(navHost)) {
+                    std::wstring desktopUrl;
+
+                    if (NeedsDesktopYouTubeRedirect(navHost)) {
+                        desktopUrl = RewriteToDesktopYouTube(urlStr, navHost);
+                    } else if (NeedsDesktopFacebookRedirect(navHost)) {
+                        desktopUrl = RewriteHostToDesktop(urlStr, L"www.facebook.com");
+                    } else if (NeedsDesktopTwitterRedirect(navHost)) {
+                        // m.twitter.com → twitter.com (or m.x.com → x.com)
+                        std::wstring destHost = (navHost == L"m.x.com") ? L"x.com" : L"twitter.com";
+                        desktopUrl = RewriteHostToDesktop(urlStr, destHost);
+                    } else if (NeedsDesktopTwitchRedirect(navHost)) {
+                        desktopUrl = RewriteHostToDesktop(urlStr, L"www.twitch.tv");
+                    }
+
+                    if (!desktopUrl.empty()) {
                         args->put_Cancel(TRUE);
-                        std::wstring mobileUrl = RewriteToMobileYouTube(urlStr);
                         if (g_windows.count(m_hWnd)) {
                             auto& w = g_windows[m_hWnd];
                             if (m_tabIdx >= 0 && m_tabIdx < (int)w.tabs.size() &&
                                 w.tabs[m_tabIdx].webview) {
-                                w.tabs[m_tabIdx].webview->Navigate(mobileUrl.c_str());
+                                w.tabs[m_tabIdx].webview->Navigate(desktopUrl.c_str());
                             }
                         }
                         CoTaskMemFree(uri);
