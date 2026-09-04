@@ -1160,10 +1160,19 @@ void ShowUpdateBalloonNotification(const string& version) {
 
     // XML escape version string (সাধারণত safe, তবু নিশ্চিত করা)
     // Build the PowerShell one-liner
+    // FIX: Windows Toast notification এর জন্য AUMID registry তে register করতে হয়।
+    // প্রথমে HKCU\Software\Classes\AppUserModelId\RasFocus+ এ register করি,
+    // তারপর সেই AUMID দিয়ে CreateToastNotifier() call করি।
     string ps =
-        "$app='RasFocus+';"
+        // 1. AUMID register (যদি না থাকে)
+        "$aumid='RasFocus+';"
+        "$rp='HKCU:\\Software\\Classes\\AppUserModelId\\'+$aumid;"
+        "if(-not(Test-Path $rp)){New-Item -Path $rp -Force|Out-Null};"
+        "Set-ItemProperty -Path $rp -Name DisplayName -Value 'RasFocus+' -Force;"
+        // 2. WinRT assemblies load
         "[Windows.UI.Notifications.ToastNotificationManager,Windows.UI.Notifications,ContentType=WindowsRuntime]|Out-Null;"
         "[Windows.Data.Xml.Dom.XmlDocument,Windows.Data.Xml.Dom,ContentType=WindowsRuntime]|Out-Null;"
+        // 3. Toast XML + show
         "$xml=[Windows.Data.Xml.Dom.XmlDocument]::new();"
         "$xml.LoadXml('<toast activationType=\"foreground\">"
             "<visual><binding template=\"ToastGeneric\">"
@@ -1175,7 +1184,7 @@ void ShowUpdateBalloonNotification(const string& version) {
         "$toast=[Windows.UI.Notifications.ToastNotification]::new($xml);"
         "$toast.Tag='RasFocusUpdate';"
         "$toast.Group='RasFocus';"
-        "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($app).Show($toast);";
+        "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($aumid).Show($toast);";
 
     // powershell.exe -WindowStyle Hidden -Command "..."
     string cmd = "powershell.exe -WindowStyle Hidden -NonInteractive -Command \"" + ps + "\"";
