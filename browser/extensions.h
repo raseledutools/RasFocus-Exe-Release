@@ -293,7 +293,7 @@ inline void DrawExtensionPanel(
     // ── Shadow ──
     {
         SolidBrush shadow(Color(40, 0, 0, 0));
-        g.FillRectangle(&shadow, px + S(3), py + S(3), PW, PH);
+        g.FillRectangle(&shadow, px + S(3), py + S(3), PW, actualPH);
     }
 
     // ── Panel background ──
