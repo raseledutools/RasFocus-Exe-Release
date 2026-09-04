@@ -1186,17 +1186,35 @@ void ShowUpdateBalloonNotification(const string& version) {
         "$toast.Group='RasFocus';"
         "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($aumid).Show($toast);";
 
-    // powershell.exe -WindowStyle Hidden -Command "..."
-    string cmd = "powershell.exe -WindowStyle Hidden -NonInteractive -Command \"" + ps + "\"";
+    // ── PowerShell -EncodedCommand (Base64) দিয়ে launch করো ──
+    // -Command "..." এ inner quotes break করে; EncodedCommand সেই সমস্যা নেই।
+    // ps string → UTF-16LE bytes → Base64 → -EncodedCommand
+    {
+        // UTF-16LE encode
+        int wlen = MultiByteToWideChar(CP_UTF8, 0, ps.c_str(), -1, NULL, 0);
+        std::vector<wchar_t> wbuf(wlen);
+        MultiByteToWideChar(CP_UTF8, 0, ps.c_str(), -1, wbuf.data(), wlen);
+        // raw bytes (UTF-16LE, no BOM, no null terminator)
+        const BYTE* raw = reinterpret_cast<const BYTE*>(wbuf.data());
+        DWORD rawLen   = (DWORD)((wlen - 1) * sizeof(wchar_t)); // exclude null
+        // Base64 encode
+        DWORD b64Len = 0;
+        CryptBinaryToStringA(raw, rawLen, CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, NULL, &b64Len);
+        std::vector<char> b64(b64Len);
+        CryptBinaryToStringA(raw, rawLen, CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, b64.data(), &b64Len);
+        std::string encoded(b64.data(), b64Len - 1); // trim null
 
-    STARTUPINFOA si = { sizeof(STARTUPINFOA) };
-    si.dwFlags     = STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_HIDE;
-    PROCESS_INFORMATION pi = {};
-    CreateProcessA(NULL, (LPSTR)cmd.c_str(), NULL, NULL, FALSE,
-                   CREATE_NO_WINDOW, NULL, NULL, &si, &pi);
-    if (pi.hProcess) CloseHandle(pi.hProcess);
-    if (pi.hThread)  CloseHandle(pi.hThread);
+        std::string cmd = "powershell.exe -WindowStyle Hidden -NonInteractive -EncodedCommand " + encoded;
+
+        STARTUPINFOA si = { sizeof(STARTUPINFOA) };
+        si.dwFlags     = STARTF_USESHOWWINDOW;
+        si.wShowWindow = SW_HIDE;
+        PROCESS_INFORMATION pi = {};
+        CreateProcessA(NULL, (LPSTR)cmd.c_str(), NULL, NULL, FALSE,
+                       CREATE_NO_WINDOW, NULL, NULL, &si, &pi);
+        if (pi.hProcess) CloseHandle(pi.hProcess);
+        if (pi.hThread)  CloseHandle(pi.hThread);
+    }
 }
 
 // ==========================================
@@ -2270,7 +2288,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
     StartSilentUpdateCheck();
     // Start PC screen stream server (phone can connect to view/control PC)
     PcStreamerStart();
-    SetTimer(hWnd, 1005,   5000, NULL); // 5 seconds: check for new release
+    SetTimer(hWnd, 1005, 1800000, NULL); // 30 minutes: periodic update check
     SetTimer(hWnd, 1001,   1000, NULL); // Family Link: 1-second enforcement + poll tick
 
     MSG msg;
