@@ -2549,6 +2549,35 @@ public:
             ctl3->add_AcceleratorKeyPressed(new AcceleratorHandler(m_hWnd), &tok);
         }
 
+        // ── WebView focus → menu/panels বন্ধ করো ──
+        // WebView-এ click করলে WM_LBUTTONDOWN আসে না, তাই
+        // GotFocus event দিয়ে menu close করতে হয়।
+        {
+            EventRegistrationToken focusTok;
+            ctl->add_GotFocus(
+                Callback<ICoreWebView2FocusChangedEventHandler>(
+                [this](ICoreWebView2Controller* /*sender*/, IUnknown* /*args*/) -> HRESULT {
+                    if (!g_windows.count(m_hWnd)) return S_OK;
+                    auto& w = g_windows[m_hWnd];
+                    bool needRedraw = false;
+                    if (w.isMenuOpen) {
+                        w.isMenuOpen   = false;
+                        w.hoverMenuIdx = -1;
+                        RECT wvr = GetWebViewRect(m_hWnd);
+                        if (w.active() && w.active()->controller)
+                            w.active()->controller->put_Bounds(wvr);
+                        needRedraw = true;
+                    }
+                    if (g_extensionPanelOpen) { g_extensionPanelOpen = false; needRedraw = true; }
+                    if (g_bookmarkPanelOpen)  { g_bookmarkPanelOpen  = false; needRedraw = true; }
+                    if (g_historyPanelOpen)   { g_historyPanelOpen   = false; needRedraw = true; }
+                    if (g_downloadsPanelOpen) { g_downloadsPanelOpen = false; needRedraw = true; }
+                    if (needRedraw) InvalidateRect(m_hWnd, NULL, TRUE);
+                    return S_OK;
+                }).Get(),
+                &focusTok);
+        }
+
         bool isActive = (m_tabIdx == wd.activeTab);
         ctl->put_IsVisible(TRUE);  // Always visible — hiding causes visibilitychange -> YouTube pauses
         RECT wvr = isActive ? GetWebViewRect(m_hWnd) : RECT{-10000, -10000, -9000, -9000};
@@ -3170,9 +3199,10 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                         }
                     }
                     else if (clickIdx == 11) DestroyWindow(hWnd);
-                    
-                    return 0;
                 }
+                // ── menu বন্ধ হয়েছে — সবসময় return 0 করো ──
+                // নইলে নিচে wd.hMenu check আবার menu toggle করে ফেলে
+                return 0;
             }
 
             {
