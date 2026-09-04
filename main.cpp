@@ -1143,22 +1143,51 @@ void RemoveTrayIcon() { Shell_NotifyIcon(NIM_DELETE, &nid); }
 
 // ── Windows Tray Balloon Notification — নতুন update এলে ──
 void ShowUpdateBalloonNotification(const string& version) {
-    // NIF_INFO flag দিয়ে balloon দেখানো হয়
-    nid.uFlags     = NIF_INFO;
-    nid.dwInfoFlags = NIIF_INFO;                        // blue (i) icon
-    nid.uTimeout   = 10000;                             // 10 সেকেন্ড দেখাবে
-
-    // Title (max 63 chars)
+    // ── 1. Tray balloon (legacy fallback — কোনো sound নেই, notification center এ যায় না) ──
+    nid.uFlags      = NIF_INFO;
+    nid.dwInfoFlags = NIIF_INFO | NIIF_NOSOUND; // sound PowerShell toast-এ হবে
+    nid.uTimeout    = 8000;
     lstrcpyA(nid.szInfoTitle, "RasFocus Update Available!");
-
-    // Body (max 255 chars)
-    string body = "Version " + version + " is ready.\nClick to update now.";
-    lstrcpyA(nid.szInfo, body.c_str());
-
+    string balloonBody = "Version " + version + " is ready. Click to update.";
+    lstrcpyA(nid.szInfo, balloonBody.c_str());
     Shell_NotifyIconA(NIM_MODIFY, &nid);
+    nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP; // restore
 
-    // Restore normal flags for future NIM_MODIFY calls
-    nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+    // ── 2. Windows 10/11 Toast Notification via PowerShell ──
+    // এটা Notification Center এ যায়, sound বাজে, app না খুলেও দেখা যায়।
+    // PowerShell [Windows.UI.Notifications.ToastNotificationManager] ব্যবহার করে।
+    string ver = version; // e.g. "v1.0.475"
+
+    // XML escape version string (সাধারণত safe, তবু নিশ্চিত করা)
+    // Build the PowerShell one-liner
+    string ps =
+        "$app='RasFocus+';"
+        "[Windows.UI.Notifications.ToastNotificationManager,Windows.UI.Notifications,ContentType=WindowsRuntime]|Out-Null;"
+        "[Windows.Data.Xml.Dom.XmlDocument,Windows.Data.Xml.Dom,ContentType=WindowsRuntime]|Out-Null;"
+        "$xml=[Windows.Data.Xml.Dom.XmlDocument]::new();"
+        "$xml.LoadXml('<toast activationType=\"foreground\">"
+            "<visual><binding template=\"ToastGeneric\">"
+            "<text>&#x1F4E6; RasFocus Update Available!</text>"
+            "<text>Version " + ver + " is ready. Open RasFocus to install.</text>"
+            "</binding></visual>"
+            "<audio src=\"ms-winsoundevent:Notification.Default\"/>"
+        "</toast>');"
+        "$toast=[Windows.UI.Notifications.ToastNotification]::new($xml);"
+        "$toast.Tag='RasFocusUpdate';"
+        "$toast.Group='RasFocus';"
+        "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($app).Show($toast);";
+
+    // powershell.exe -WindowStyle Hidden -Command "..."
+    string cmd = "powershell.exe -WindowStyle Hidden -NonInteractive -Command \"" + ps + "\"";
+
+    STARTUPINFOA si = { sizeof(STARTUPINFOA) };
+    si.dwFlags     = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+    PROCESS_INFORMATION pi = {};
+    CreateProcessA(NULL, (LPSTR)cmd.c_str(), NULL, NULL, FALSE,
+                   CREATE_NO_WINDOW, NULL, NULL, &si, &pi);
+    if (pi.hProcess) CloseHandle(pi.hProcess);
+    if (pi.hThread)  CloseHandle(pi.hThread);
 }
 
 // ==========================================
