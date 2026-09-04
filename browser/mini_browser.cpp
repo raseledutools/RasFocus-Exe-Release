@@ -59,6 +59,15 @@ extern bool  g_isPureViewerMode;
 extern float g_scaleFactor;
 
 // ─────────────────────────────────────────────────────────────────────────────
+// YOUTUBE MODE GLOBALS  (3-dot menu toggle)
+// g_youtubeDesktopMode = false → mobile (m.youtube.com, mobile UA) — DEFAULT
+// g_youtubeDesktopMode = true  → desktop (www.youtube.com, desktop UA, no redirect)
+// g_youtubeAdBlockEnabled      → network layer ad/tracker block toggle
+// ─────────────────────────────────────────────────────────────────────────────
+bool g_youtubeDesktopMode    = false; // false = mobile mode (default)
+bool g_youtubeAdBlockEnabled = true;  // true  = ads blocked (default)
+
+// ─────────────────────────────────────────────────────────────────────────────
 // RESOURCE IDs
 // ─────────────────────────────────────────────────────────────────────────────
 #define IDI_APP_ICON    101
@@ -736,7 +745,9 @@ static bool IsYouTubeFamilyHost(const std::wstring& host) {
 
 // শুধু main site (www.youtube.com / youtube.com) — m.youtube.com বা
 // music.youtube.com বাদ, redirect loop এড়াতে।
+// g_youtubeDesktopMode = true হলে redirect বন্ধ — desktop UI দেখাবে।
 static bool NeedsMobileYouTubeRedirect(const std::wstring& host) {
+    if (g_youtubeDesktopMode) return false; // Desktop mode: no m.youtube redirect
     return host == L"youtube.com" || host == L"www.youtube.com";
 }
 
@@ -1163,8 +1174,12 @@ static void BuildChromeTabPath(GraphicsPath& path, float x, float y, float w, fl
 // MENU ITEM TYPES SHARED TABLE
 // Used consistently in DrawBrowserContent, WM_MOUSEMOVE, WM_LBUTTONDOWN
 // ─────────────────────────────────────────────────────────────────────────────
-static const int kMenuTypes[] = { 2, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0 }; // 13 items total
-static const int kMenuTypeCount = 13;
+// Menu item types: 2=profile header, 1=separator, 0=regular item
+// Order matches menuItems vector in DrawBrowserContent:
+// profile, sep, new-tab, new-win, sep, history, downloads, bookmarks, extensions,
+// sep, yt-mode, yt-ads, sep, gemini, settings, exit
+static const int kMenuTypes[] = { 2, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0 }; // 16 items total
+static const int kMenuTypeCount = 16;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN DRAW FUNCTION 
@@ -1642,17 +1657,26 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
         float mY    = GetMenuY(hWnd, dpi);   // ← FIX: use shared helper
 
         struct MenuItem { int type; const wchar_t* icon; const wchar_t* text; const wchar_t* shortcut; };
+        // YouTube mode labels — dynamic based on current state
+        const wchar_t* ytModeIcon  = g_youtubeDesktopMode ? L"\uE8AF" : L"\uE702";
+        const wchar_t* ytModeLabel = g_youtubeDesktopMode ? L"YouTube: Desktop ●" : L"YouTube: Mobile ○";
+        const wchar_t* ytAdIcon    = g_youtubeAdBlockEnabled ? L"\uEA18" : L"\uEA1A";
+        const wchar_t* ytAdLabel   = g_youtubeAdBlockEnabled ? L"YT Ads: Blocked ✔" : L"YT Ads: Allowed ✖";
+
         std::vector<MenuItem> menuItems = {
             { 2, L"\xE77B", L"Rasel Mia",            L"Signed in"  },
-            { 1, L"",       L"",                      L""           },
+            { 1, L"",        L"",                      L""           },
             { 0, L"\xE710", L"New tab",               L"Ctrl+T"     },
             { 0, L"\xE727", L"New window",            L"Ctrl+N"     },
-            { 1, L"",       L"",                      L""           },
+            { 1, L"",        L"",                      L""           },
             { 0, L"\xE81C", L"History",               L"Ctrl+H"     },
             { 0, L"\xE896", L"Downloads",             L"Ctrl+J"     },
             { 0, L"\xE8A4", L"Bookmarks and lists",   L""           },
             { 0, L"\xE9D2", L"Extensions",            L""           },
-            { 1, L"",       L"",                      L""           },
+            { 1, L"",        L"",                      L""           },
+            { 0, ytModeIcon, ytModeLabel,               L""           },
+            { 0, ytAdIcon,   ytAdLabel,                 L""           },
+            { 1, L"",        L"",                      L""           },
             { 0, L"\x2728", L"Open Gemini AI",        L""           },
             { 0, L"\xE713", L"Settings",              L""           },
             { 0, L"\xE7E8", L"Exit",                  L"Alt+F4"     }
@@ -1944,15 +1968,16 @@ public:
                     // sub-resource request-এ mobile UA override করো, যাতে
                     // main-frame redirect (m.youtube.com) + সব asset request
                     // consistent mobile client হিসেবে দেখা যায়।
+                    // Desktop mode এ UA override বন্ধ — desktop YouTube দেখাবে।
                     std::wstring reqHost = ExtractHost(urlStr);
-                    if (!reqHost.empty() && IsYouTubeFamilyHost(reqHost)) {
+                    if (!g_youtubeDesktopMode && !reqHost.empty() && IsYouTubeFamilyHost(reqHost)) {
                         ComPtr<ICoreWebView2HttpRequestHeaders> headers;
                         if (SUCCEEDED(req->get_Headers(&headers)) && headers) {
                             headers->SetHeader(L"User-Agent", kMobileUA);
                         }
                     }
 
-                    if (IsAdOrTrackerUrl(urlStr) && g_sharedEnv) {
+                    if (g_youtubeAdBlockEnabled && IsAdOrTrackerUrl(urlStr) && g_sharedEnv) {
                         ComPtr<IStream> emptyStream;
                         emptyStream.Attach(SHCreateMemStream(nullptr, 0));
                         ComPtr<ICoreWebView2WebResourceResponse> response;
@@ -2967,8 +2992,39 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                         if (g_extensionPanelOpen) ScanExtensionsFolderPublic();
                         InvalidateRect(hWnd, NULL, FALSE);
                     }
-                    else if (clickIdx == 7) AddTab(hWnd, L"https://gemini.google.com/app");
+                    // ── clickIdx 7 = YouTube Mobile/Desktop Mode Toggle ──────────
+                    else if (clickIdx == 7) {
+                        g_youtubeDesktopMode = !g_youtubeDesktopMode;
+                        // Active tab এ YouTube আছে কিনা চেক করে reload করো
+                        if (auto* tab = wd.active()) {
+                            if (tab->webview) {
+                                std::wstring curUrl = tab->url;
+                                bool onYT = (curUrl.find(L"youtube.com") != std::wstring::npos);
+                                if (onYT) {
+                                    // Desktop mode: www.youtube.com, Mobile: m.youtube.com
+                                    std::wstring targetUrl = g_youtubeDesktopMode
+                                        ? L"https://www.youtube.com"
+                                        : L"https://m.youtube.com";
+                                    tab->webview->Navigate(targetUrl.c_str());
+                                }
+                            }
+                        }
+                        // Menu label update এর জন্য redraw
+                        InvalidateRect(hWnd, NULL, TRUE);
+                    }
+                    // ── clickIdx 8 = YouTube Ad Block Toggle ─────────────────────
                     else if (clickIdx == 8) {
+                        g_youtubeAdBlockEnabled = !g_youtubeAdBlockEnabled;
+                        // Active tab reload করো যাতে নতুন setting কাজ করে
+                        if (auto* tab = wd.active()) {
+                            if (tab->webview) {
+                                tab->webview->Reload();
+                            }
+                        }
+                        InvalidateRect(hWnd, NULL, TRUE);
+                    }
+                    else if (clickIdx == 9) AddTab(hWnd, L"https://gemini.google.com/app");
+                    else if (clickIdx == 10) {
                         // Settings — WebView2 এ settings page খোলো
                         if (auto* tab = wd.active()) {
                             if (tab->webview) {
@@ -2977,7 +3033,7 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                             }
                         }
                     }
-                    else if (clickIdx == 9) DestroyWindow(hWnd);
+                    else if (clickIdx == 11) DestroyWindow(hWnd);
                     
                     return 0;
                 }
