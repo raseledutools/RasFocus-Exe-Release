@@ -72,6 +72,8 @@ bool   isCheckingUpdate  = false;
 string newVersionStr     = "";
 bool   hoverUpdateBtn    = false;
 bool   hoverCheckBtn     = false;  // ← "Check for Update" fix button (যখন কোনো update নেই)
+string g_checkResultText = "";     // ← "Latest" বা "" — check শেষে header এ দেখায়
+DWORD  g_checkResultShowUntil = 0; // GetTickCount() পর্যন্ত দেখাবে
 
 // Update popup state
 string g_updateDownloadUrl  = "";
@@ -591,10 +593,17 @@ void __cdecl SilentUpdateThread(void* p) {
                         isUpdateReady        = false;  // download এখনো হয়নি
                         g_showUpdatePopup    = true;   // ← in-app popup দেখাও
                         g_updateDismissedAt  = 0;      // fresh — no dismiss yet
+                        g_checkResultText    = "";     // update popup দেখাচ্ছে, result text দরকার নেই
 
                         // ── Windows tray balloon notification ──
                         ShowUpdateBalloonNotification(latestVer);
 
+                        HWND hw = FindWindowA("RasFocusCore", "RasFocus+");
+                        if (hw) InvalidateRect(hw, NULL, FALSE);
+                    } else {
+                        // Already on latest version — header এ "✓ Latest" দেখাও 4 সেকেন্ড
+                        g_checkResultText     = "v Latest";
+                        g_checkResultShowUntil = GetTickCount() + 4000;
                         HWND hw = FindWindowA("RasFocusCore", "RasFocus+");
                         if (hw) InvalidateRect(hw, NULL, FALSE);
                     }
@@ -1355,14 +1364,30 @@ void DrawTitleBar(Graphics& g, int w) {
         chkPath.AddArc(chkX + chkW - dc2, chkY + chkH - dc2, dc2, dc2, 0.0f, 90.0f);
         chkPath.AddArc(chkX, chkY + chkH - dc2, dc2, dc2, 90.0f, 90.0f);
         chkPath.CloseFigure();
-        // Checking = teal spinner রং, idle = subtle gray-blue
-        Color chkBgNormal  = hoverCheckBtn ? Color(255, 0, 120, 135) : Color(255, 60, 90, 110);
-        Color chkBgChecking(255, 0, 140, 160);
-        SolidBrush chkBg(isCheckingUpdate ? chkBgChecking : chkBgNormal);
+
+        // Result দেখানোর সময় আছে কিনা check করো
+        bool showingResult = !g_checkResultText.empty() &&
+                             (g_checkResultShowUntil == 0 || GetTickCount() < g_checkResultShowUntil);
+        if (!showingResult && !g_checkResultText.empty()) g_checkResultText = ""; // expired, clear
+
+        // রঙ: Checking=teal, Latest=green, idle=gray-blue
+        Color chkBgColor = isCheckingUpdate  ? Color(255, 0, 140, 160)  :
+                           showingResult      ? Color(255, 0, 160, 80)   :
+                           hoverCheckBtn      ? Color(255, 0, 120, 135)  :
+                                               Color(255, 60, 90, 110);
+        SolidBrush chkBg(chkBgColor);
         g.FillPath(&chkBg, &chkPath);
         Font fChk(&ff, 8, FontStyleBold, UnitPixel);
         SolidBrush white(ColWhite);
-        wstring chkTxt = isCheckingUpdate ? L"\u21BB Checking..." : L"\u21BB Check Update";
+        wstring chkTxt;
+        if (isCheckingUpdate) {
+            chkTxt = L"\u21BB Checking...";
+        } else if (showingResult) {
+            wstring wRes(g_checkResultText.begin(), g_checkResultText.end());
+            chkTxt = L"\u2713 " + wRes; // ✓ Latest
+        } else {
+            chkTxt = L"\u21BB Check Update";
+        }
         g.DrawString(chkTxt.c_str(), -1, &fChk, RectF(chkX, chkY, chkW, chkH), &fmtC, &white);
     }
 
@@ -1751,6 +1776,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_TIMER: {
         if (wp == 1005) StartSilentUpdateCheck();
 
+        // ── Check result text expire (4 সেকেন্ড পর "✓ Latest" সরাও) ──
+        if (wp == 1005 && !g_checkResultText.empty() &&
+            g_checkResultShowUntil > 0 && GetTickCount() >= g_checkResultShowUntil) {
+            g_checkResultText = "";
+            InvalidateRect(hWnd, NULL, FALSE);
+        }
+
         // ── Download spinner animation (250 ms) ──
         if (wp == 1006 && g_isDownloading) {
             g_dlAnimFrame++;
@@ -2041,6 +2073,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             float chkX = scaledW - (btnW2*3) - chkW - 10.0f;
             if (x >= chkX && x <= chkX + chkW && y >= 0.0f && y <= (float)TITLEBAR_HEIGHT) {
                 if (!isCheckingUpdate) {
+                    // Fresh check — সব state reset করো
+                    g_checkResultText     = "";
+                    g_checkResultShowUntil = 0;
                     StartSilentUpdateCheck();
                     InvalidateRect(hWnd, NULL, FALSE);
                 }
