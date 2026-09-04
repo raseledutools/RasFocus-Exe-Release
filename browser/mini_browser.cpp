@@ -2148,6 +2148,13 @@ public:
         tab.webview->AddScriptToExecuteOnDocumentCreated(
             GetYouTubeAdPrunerScript().c_str(), nullptr);
 
+        // ── RasExtensions — inject enabled extensions on every document ──
+        {
+            std::wstring extScript = GetExtensionInjectScript();
+            if (!extScript.empty())
+                tab.webview->AddScriptToExecuteOnDocumentCreated(extScript.c_str(), nullptr);
+        }
+
         tab.webview->add_NavigationStarting(
             Callback<ICoreWebView2NavigationStartingEventHandler>(
             [this](ICoreWebView2* sender, ICoreWebView2NavigationStartingEventArgs* args) -> HRESULT {
@@ -2955,21 +2962,8 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
         if (g_extensionPanelOpen) {
             std::wstring action = HandleExtensionPanelClick(
                 x, y, W, H, TitleBarH(dpi), ToolbarH(dpi), (int)dpi);
-            if (action == L"install") {
-                // Folder browse dialog
-                BROWSEINFOW bi = {};
-                bi.hwndOwner  = hWnd;
-                bi.lpszTitle  = L"Unpacked Extension folder select করুন (manifest.json থাকতে হবে)";
-                bi.ulFlags    = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
-                PIDLIST_ABSOLUTE pidl = SHBrowseForFolderW(&bi);
-                if (pidl) {
-                    wchar_t folderPath[MAX_PATH];
-                    if (SHGetPathFromIDListW(pidl, folderPath)) {
-                        // g_sharedEnv use করো
-                        InstallExtensionFromFolder(g_sharedEnv.Get(), nullptr, folderPath);
-                    }
-                    CoTaskMemFree(pidl);
-                }
+            if (action == L"close") {
+                g_extensionPanelOpen = false;
                 InvalidateRect(hWnd, NULL, FALSE);
                 return 0;
             } else if (action.substr(0, 7) == L"toggle:") {
@@ -2983,6 +2977,8 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                 InvalidateRect(hWnd, NULL, FALSE);
                 return 0;
             }
+            // Consume click inside panel (don't fall through)
+            if (action != L"") return 0;
         }
 
         if (!g_isPureViewerMode) {
