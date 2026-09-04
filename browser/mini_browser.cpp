@@ -2457,6 +2457,67 @@ public:
                 tab.webview->AddScriptToExecuteOnDocumentCreated(extScript.c_str(), nullptr);
         }
 
+        // ── Force Dark Mode — website page dark করার জন্য CSS inject ──
+        // prefers-color-scheme: dark ঠিকমতো কাজ করে না WebView2 তে,
+        // তাই meta tag + CSS invert দিয়ে force dark করা হচ্ছে।
+        if (wd.isDarkMode) {
+            tab.webview->AddScriptToExecuteOnDocumentCreated(
+                L"(() => {"
+                // ── Step 1: prefers-color-scheme: dark override ──
+                // YouTube/Google এটা দেখে dark theme switch করে
+                L"  try {"
+                L"    Object.defineProperty(window, 'matchMedia', {"
+                L"      writable: true, configurable: true,"
+                L"      value: function(query) {"
+                L"        const mql = {"
+                L"          matches: query === '(prefers-color-scheme: dark)',"
+                L"          media: query, onchange: null,"
+                L"          addEventListener: () => {}, removeEventListener: () => {},"
+                L"          dispatchEvent: () => false"
+                L"        };"
+                L"        return mql;"
+                L"      }"
+                L"    });"
+                L"  } catch(e) {}"
+                // ── Step 2: color-scheme meta tag inject ──
+                // এটা browser-level dark mode signal দেয় — scrollbar, form controls dark হয়
+                L"  try {"
+                L"    let meta = document.querySelector('meta[name=\"color-scheme\"]');"
+                L"    if (!meta) {"
+                L"      meta = document.createElement('meta');"
+                L"      meta.name = 'color-scheme';"
+                L"      document.head && document.head.appendChild(meta);"
+                L"    }"
+                L"    meta.content = 'dark';"
+                L"  } catch(e) {}"
+                // ── Step 3: CSS filter invert fallback ──
+                // যেসব site নিজে dark mode support করে না তাদের জন্য
+                // ras-dark-forced class দিয়ে inject করা হয়, ras-dark-exempt site গুলোকে বাদ দেওয়া হয়
+                L"  try {"
+                L"    const host = location.hostname;"
+                // এই sites নিজেই dark mode করে — invert দরকার নেই
+                L"    const nativelyDark = ['youtube.com','google.com','gmail.com','drive.google.com',"
+                L"      'maps.google.com','claude.ai','anthropic.com','chat.openai.com','chatgpt.com',"
+                L"      'github.com','stackoverflow.com','twitter.com','x.com','reddit.com',"
+                L"      'wikipedia.org','notion.so','discord.com','slack.com','facebook.com',"
+                L"      'instagram.com','linkedin.com','netflix.com','amazon.com'];"
+                L"    const isNative = nativelyDark.some(d => host === d || host.endsWith('.' + d));"
+                L"    if (!isNative) {"
+                L"      const style = document.createElement('style');"
+                L"      style.id = 'ras-force-dark';"
+                L"      style.textContent = `"
+                L"        html { filter: invert(90%) hue-rotate(180deg) !important; }"
+                L"        img, video, iframe, canvas, picture, svg image, [style*=\"background-image\"] {"
+                L"          filter: invert(100%) hue-rotate(180deg) !important;"
+                L"        }"
+                L"      `;"
+                L"      (document.head || document.documentElement).appendChild(style);"
+                L"    }"
+                L"  } catch(e) {}"
+                L"})();",
+                nullptr);
+        }
+
         tab.webview->add_NavigationStarting(
             Callback<ICoreWebView2NavigationStartingEventHandler>(
             [this](ICoreWebView2* sender, ICoreWebView2NavigationStartingEventArgs* args) -> HRESULT {
@@ -3571,23 +3632,82 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
         }
         
         if (wd.hDark) {
-            wd.isDarkMode = !wd.isDarkMode; 
-            if (wd.active() && wd.active()->controller) {
+            wd.isDarkMode = !wd.isDarkMode;
+
+            // ── সব existing tabs এ dark/light apply করো ──
+            for (auto& tab : wd.tabs) {
+                if (!tab.webview || !tab.controller) continue;
+
+                // Background color update
                 ComPtr<ICoreWebView2Controller2> ctl2;
-                if (SUCCEEDED(wd.active()->controller->QueryInterface(IID_PPV_ARGS(&ctl2)))) {
+                if (SUCCEEDED(tab.controller->QueryInterface(IID_PPV_ARGS(&ctl2)))) {
                     COREWEBVIEW2_COLOR bg = wd.isDarkMode
                         ? COREWEBVIEW2_COLOR{255, 30, 30, 30}
                         : COREWEBVIEW2_COLOR{255, 255, 255, 255};
                     ctl2->put_DefaultBackgroundColor(bg);
                 }
-                
-                std::wstring url = wd.active()->url;
-                if ((url == L"LOCAL_NTP" || url == L"about:blank") && wd.active()->webview) {
-                    wd.active()->webview->NavigateToString(GetLocalNTP_HTML(wd.isDarkMode).c_str());
-                } else if (url.find(L"blocked by rasfocus") != std::wstring::npos && wd.active()->webview) {
-                    wd.active()->webview->NavigateToString(GetBlocked_HTML(wd.isDarkMode).c_str());
+
+                // Local pages reload করো
+                if (tab.url == L"LOCAL_NTP" || tab.url == L"about:blank") {
+                    tab.webview->NavigateToString(GetLocalNTP_HTML(wd.isDarkMode).c_str());
+                    continue;
+                }
+                if (tab.url.find(L"blocked by rasfocus") != std::wstring::npos) {
+                    tab.webview->NavigateToString(GetBlocked_HTML(wd.isDarkMode).c_str());
+                    continue;
+                }
+
+                // Web pages এ dark/light CSS inject করো
+                if (wd.isDarkMode) {
+                    // Dark on করো
+                    tab.webview->ExecuteScript(
+                        L"(() => {"
+                        // matchMedia override
+                        L"  try { Object.defineProperty(window,'matchMedia',{ writable:true,configurable:true,"
+                        L"    value:function(q){ return { matches:q==='(prefers-color-scheme: dark)',media:q,"
+                        L"      onchange:null,addEventListener:()=>{},removeEventListener:()=>{},dispatchEvent:()=>false }; }"
+                        L"  }); } catch(e){}"
+                        // color-scheme meta
+                        L"  try { let m=document.querySelector('meta[name=\"color-scheme\"]');"
+                        L"    if(!m){m=document.createElement('meta');m.name='color-scheme';"
+                        L"    document.head&&document.head.appendChild(m);} m.content='dark'; } catch(e){}"
+                        // CSS filter inject
+                        L"  try {"
+                        L"    if (!document.getElementById('ras-force-dark')) {"
+                        L"      const host=location.hostname;"
+                        L"      const nativelyDark=['youtube.com','google.com','gmail.com','drive.google.com',"
+                        L"        'maps.google.com','claude.ai','anthropic.com','chat.openai.com','chatgpt.com',"
+                        L"        'github.com','stackoverflow.com','twitter.com','x.com','reddit.com',"
+                        L"        'wikipedia.org','notion.so','discord.com','slack.com','facebook.com',"
+                        L"        'instagram.com','linkedin.com','netflix.com','amazon.com'];"
+                        L"      const isNative=nativelyDark.some(d=>host===d||host.endsWith('.'+d));"
+                        L"      if(!isNative){"
+                        L"        const s=document.createElement('style');s.id='ras-force-dark';"
+                        L"        s.textContent='html{filter:invert(90%) hue-rotate(180deg)!important;}'"
+                        L"          +'img,video,iframe,canvas,picture,svg image,[style*=\"background-image\"]'"
+                        L"          +'{filter:invert(100%) hue-rotate(180deg)!important;}';"
+                        L"        (document.head||document.documentElement).appendChild(s);"
+                        L"      }"
+                        L"    }"
+                        L"  } catch(e){}"
+                        L"})();",
+                        nullptr);
+                } else {
+                    // Light mode — dark CSS সরিয়ে দাও
+                    tab.webview->ExecuteScript(
+                        L"(() => {"
+                        L"  try { const s=document.getElementById('ras-force-dark'); if(s) s.remove(); } catch(e){}"
+                        L"  try { let m=document.querySelector('meta[name=\"color-scheme\"]');"
+                        L"    if(m) m.content='light'; } catch(e){}"
+                        L"  try { Object.defineProperty(window,'matchMedia',{ writable:true,configurable:true,"
+                        L"    value:function(q){ return { matches:false,media:q,onchange:null,"
+                        L"      addEventListener:()=>{},removeEventListener:()=>{},dispatchEvent:()=>false }; }"
+                        L"  }); } catch(e){}"
+                        L"})();",
+                        nullptr);
                 }
             }
+
             InvalidateRect(hWnd, NULL, TRUE);
             InvalidateRect(wd.hAddressBar, NULL, TRUE);
         }
