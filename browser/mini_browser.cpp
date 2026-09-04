@@ -710,70 +710,46 @@ static bool IsAdOrTrackerUrl(const std::wstring& url) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 🖥️ DESKTOP-FORCE SYSTEM — সবসময় desktop UA + desktop site
-// m.youtube.com / m.facebook.com / m.twitter.com / youtu.be সহ সব
-// mobile URL কে desktop URL এ redirect করা হয়।
+// 🟢 M.YOUTUBE SYSTEM — desktop www.youtube.com কে জোর করে mobile
+// m.youtube.com এ পাঠানো হয় + mobile UA বসানো হয়, কারণ YouTube-এর
+// anti-adblock/SSAI detection desktop web player-এ অনেক বেশি aggressive।
 // ─────────────────────────────────────────────────────────────────────────────
+static const wchar_t* kMobileUA =
+    L"Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 "
+    L"(KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36";
+
 static const wchar_t* kDesktopUA =
     L"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     L"AppleWebKit/537.36 (KHTML, like Gecko) "
     L"Chrome/137.0.0.0 Safari/537.36";
 
-// m.youtube.com বা youtu.be → www.youtube.com এ redirect করা দরকার কিনা
-static bool NeedsDesktopYouTubeRedirect(const std::wstring& host) {
-    return host == L"m.youtube.com" || host == L"youtu.be";
+// youtube.com পরিবারের host কিনা (video CDN / thumbnail CDN সহ) — এগুলোর
+// request-এও mobile UA পাঠানো দরকার, নাহলে Google পক্ষে UA/host mismatch ধরা পড়ে।
+static bool IsYouTubeFamilyHost(const std::wstring& host) {
+    static const std::vector<std::wstring> kHosts = {
+        L"youtube.com", L"googlevideo.com", L"ytimg.com", L"ggpht.com"
+    };
+    for (const auto& d : kHosts)
+        if (HostMatchesDomain(host, d)) return true;
+    return false;
 }
 
-// m.youtube.com/watch?v=xyz → https://www.youtube.com/watch?v=xyz
-// youtu.be/ID → https://www.youtube.com/watch?v=ID
-static std::wstring RewriteToDesktopYouTube(const std::wstring& url, const std::wstring& host) {
+// শুধু main site (www.youtube.com / youtube.com) — m.youtube.com বা
+// music.youtube.com বাদ, redirect loop এড়াতে।
+static bool NeedsMobileYouTubeRedirect(const std::wstring& host) {
+    return host == L"youtube.com" || host == L"www.youtube.com";
+}
+
+// "https://www.youtube.com/watch?v=xyz" → "https://m.youtube.com/watch?v=xyz"
+// host অংশটুকু বাদ দিয়ে বাকিটা (scheme + path + query) অবিকৃত রাখা হয়।
+static std::wstring RewriteToMobileYouTube(const std::wstring& url) {
     size_t schemeEnd = url.find(L"://");
     if (schemeEnd == std::wstring::npos) return url;
     size_t hostStart = schemeEnd + 3;
     size_t hostEnd = url.find_first_of(L"/?#", hostStart);
     if (hostEnd == std::wstring::npos) hostEnd = url.size();
-    std::wstring rest = url.substr(hostEnd);
-
-    if (host == L"youtu.be") {
-        // youtu.be/ID → /watch?v=ID
-        // rest starts with /ID
-        std::wstring videoId = rest;
-        if (!videoId.empty() && videoId[0] == L'/') videoId = videoId.substr(1);
-        size_t qPos = videoId.find(L'?');
-        std::wstring params;
-        if (qPos != std::wstring::npos) {
-            params = videoId.substr(qPos); // ?t=xxx etc
-            videoId = videoId.substr(0, qPos);
-        }
-        return L"https://www.youtube.com/watch?v=" + videoId + (params.empty() ? L"" : L"&" + params.substr(1));
-    }
-    // m.youtube.com → www.youtube.com, keep path
-    return L"https://www.youtube.com" + rest;
-}
-
-// m.facebook.com / mbasic.facebook.com → www.facebook.com
-static bool NeedsDesktopFacebookRedirect(const std::wstring& host) {
-    return host == L"m.facebook.com" || host == L"mbasic.facebook.com";
-}
-// m.twitter.com / mobile.twitter.com / m.x.com → twitter.com / x.com
-static bool NeedsDesktopTwitterRedirect(const std::wstring& host) {
-    return host == L"m.twitter.com" || host == L"mobile.twitter.com" || host == L"m.x.com";
-}
-// m.twitch.tv → www.twitch.tv
-static bool NeedsDesktopTwitchRedirect(const std::wstring& host) {
-    return host == L"m.twitch.tv";
-}
-
-// Generic: replace mobile host with desktop host, keep path+query
-static std::wstring RewriteHostToDesktop(const std::wstring& url,
-                                          const std::wstring& desktopHost) {
-    size_t schemeEnd = url.find(L"://");
-    if (schemeEnd == std::wstring::npos) return url;
-    size_t hostStart = schemeEnd + 3;
-    size_t hostEnd = url.find_first_of(L"/?#", hostStart);
-    if (hostEnd == std::wstring::npos) hostEnd = url.size();
-    std::wstring rest = url.substr(hostEnd);
-    return url.substr(0, hostStart) + desktopHost + rest;
+    std::wstring rest = url.substr(hostEnd); // path + query + fragment (থাকলে)
+    return url.substr(0, hostStart) + L"m.youtube.com" + rest;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1941,7 +1917,9 @@ public:
 
             ComPtr<ICoreWebView2Settings2> s2;
             if (SUCCEEDED(settings->QueryInterface(IID_PPV_ARGS(&s2)))) {
-                // Desktop Chrome UA — সবসময় desktop site দেখাতে।
+                // Latest Chrome UA — ChatGPT/OpenAI older UA কে suspicious মনে করে।
+                // YouTube family hosts-এর জন্য mobile UA নিচে WebResourceRequested
+                // এ per-request override করা হয় (m.youtube system)।
                 s2->put_UserAgent(kDesktopUA);
             }
         }
@@ -1961,6 +1939,18 @@ public:
                 if (uri) {
                     std::wstring urlStr(uri);
                     CoTaskMemFree(uri);
+
+                    // 🟢 M.YOUTUBE SYSTEM — youtube.com family-র প্রতিটা
+                    // sub-resource request-এ mobile UA override করো, যাতে
+                    // main-frame redirect (m.youtube.com) + সব asset request
+                    // consistent mobile client হিসেবে দেখা যায়।
+                    std::wstring reqHost = ExtractHost(urlStr);
+                    if (!reqHost.empty() && IsYouTubeFamilyHost(reqHost)) {
+                        ComPtr<ICoreWebView2HttpRequestHeaders> headers;
+                        if (SUCCEEDED(req->get_Headers(&headers)) && headers) {
+                            headers->SetHeader(L"User-Agent", kMobileUA);
+                        }
+                    }
 
                     if (IsAdOrTrackerUrl(urlStr) && g_sharedEnv) {
                         ComPtr<IStream> emptyStream;
@@ -2077,29 +2067,17 @@ public:
                 if (uri) {
                     std::wstring urlStr(uri);
 
-                    // 🖥️ DESKTOP-FORCE SYSTEM — mobile URL ধরা পড়লে desktop URL এ redirect
+                    // 🟢 M.YOUTUBE SYSTEM — desktop youtube.com/www.youtube.com
+                    // ধরা পড়লে সাথে সাথে cancel করে m.youtube.com এ পাঠাও।
                     std::wstring navHost = ExtractHost(urlStr);
-                    std::wstring desktopUrl;
-
-                    if (NeedsDesktopYouTubeRedirect(navHost)) {
-                        desktopUrl = RewriteToDesktopYouTube(urlStr, navHost);
-                    } else if (NeedsDesktopFacebookRedirect(navHost)) {
-                        desktopUrl = RewriteHostToDesktop(urlStr, L"www.facebook.com");
-                    } else if (NeedsDesktopTwitterRedirect(navHost)) {
-                        // m.twitter.com → twitter.com (or m.x.com → x.com)
-                        std::wstring destHost = (navHost == L"m.x.com") ? L"x.com" : L"twitter.com";
-                        desktopUrl = RewriteHostToDesktop(urlStr, destHost);
-                    } else if (NeedsDesktopTwitchRedirect(navHost)) {
-                        desktopUrl = RewriteHostToDesktop(urlStr, L"www.twitch.tv");
-                    }
-
-                    if (!desktopUrl.empty()) {
+                    if (NeedsMobileYouTubeRedirect(navHost)) {
                         args->put_Cancel(TRUE);
+                        std::wstring mobileUrl = RewriteToMobileYouTube(urlStr);
                         if (g_windows.count(m_hWnd)) {
                             auto& w = g_windows[m_hWnd];
                             if (m_tabIdx >= 0 && m_tabIdx < (int)w.tabs.size() &&
                                 w.tabs[m_tabIdx].webview) {
-                                w.tabs[m_tabIdx].webview->Navigate(desktopUrl.c_str());
+                                w.tabs[m_tabIdx].webview->Navigate(mobileUrl.c_str());
                             }
                         }
                         CoTaskMemFree(uri);
