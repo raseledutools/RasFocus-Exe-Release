@@ -3140,48 +3140,43 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                 InvalidateRect(hWnd, NULL, TRUE);
 
                 if (clickIdx != -1) {
+                    // Helper lambda: সব panel বন্ধ করো
+                    auto closeAllPanels = [&]() {
+                        g_historyPanelOpen   = false;
+                        g_bookmarkPanelOpen  = false;
+                        g_downloadsPanelOpen = false;
+                        g_extensionPanelOpen = false;
+                    };
                     if      (clickIdx == 0) {
-                        // Profile — Chrome-style: Google account page নতুন tab এ
+                        // Profile — Google account নতুন tab এ
                         AddTab(hWnd, L"https://myaccount.google.com");
                     }
                     else if (clickIdx == 1) AddTab(hWnd, L"LOCAL_NTP");
                     else if (clickIdx == 2) LaunchMiniBrowser(L"LOCAL_NTP", L"New Window");
                     else if (clickIdx == 3) {
-                        // History — নতুন tab এ chrome://history style
-                        AddTab(hWnd, L"LOCAL_NTP");
-                        g_historyPanelOpen   = true;
-                        g_bookmarkPanelOpen  = false;
-                        g_downloadsPanelOpen = false;
-                        g_extensionPanelOpen = false;
+                        // History — current tab এর উপরে full overlay
+                        closeAllPanels();
+                        g_historyPanelOpen = true;
                         LoadHistory();
                         InvalidateRect(hWnd, NULL, FALSE);
                     }
                     else if (clickIdx == 4) {
-                        // Downloads — নতুন tab এ
-                        AddTab(hWnd, L"LOCAL_NTP");
+                        // Downloads — full overlay
+                        closeAllPanels();
                         g_downloadsPanelOpen = true;
-                        g_historyPanelOpen   = false;
-                        g_bookmarkPanelOpen  = false;
-                        g_extensionPanelOpen = false;
                         InvalidateRect(hWnd, NULL, FALSE);
                     }
                     else if (clickIdx == 5) {
-                        // Bookmarks — নতুন tab এ
-                        AddTab(hWnd, L"LOCAL_NTP");
-                        g_bookmarkPanelOpen  = true;
-                        g_historyPanelOpen   = false;
-                        g_downloadsPanelOpen = false;
-                        g_extensionPanelOpen = false;
+                        // Bookmarks — full overlay
+                        closeAllPanels();
+                        g_bookmarkPanelOpen = true;
                         LoadBookmarks();
                         InvalidateRect(hWnd, NULL, FALSE);
                     }
                     else if (clickIdx == 6) {
-                        // Extensions — নতুন tab এ
-                        AddTab(hWnd, L"LOCAL_NTP");
+                        // Extensions — full overlay (WebView shrink)
+                        closeAllPanels();
                         g_extensionPanelOpen = true;
-                        g_historyPanelOpen   = false;
-                        g_bookmarkPanelOpen  = false;
-                        g_downloadsPanelOpen = false;
                         ScanExtensionsFolderPublic();
                         RECT wvr = GetWebViewRect(hWnd);
                         if (wd.active() && wd.active()->controller)
