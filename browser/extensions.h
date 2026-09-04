@@ -280,11 +280,15 @@ inline void DrawExtensionPanel(
     const int ITEM_H = S(72);
     const int HEADER_H = S(52);
 
-    int px = W - PW - S(4);
-    int py = titleBarH + toolbarH + S(4);
+    // WebView ডানদিক থেকে (PW+16)px shrink করা হয় GetWebViewRect এ
+    // তাই panel সেই exact area তে আঁকো — WebView overlap হবে না
+    int px = W - PW - S(8);
+    int py = titleBarH + toolbarH;
 
-    // Clamp to window
-    if (py + PH > H - S(8)) py = H - PH - S(8);
+    // Full height panel (toolbar নিচ থেকে window নিচ পর্যন্ত)
+    const int PH_FULL = H - py;
+    // Clamp PH to window height
+    int actualPH = (PH_FULL > PH) ? PH_FULL : PH;
 
     // ── Shadow ──
     {
@@ -303,14 +307,9 @@ inline void DrawExtensionPanel(
     Color enabledC = Color(255, 26, 115, 232);  // Google blue
     Color pillOffC = dark ? Color(255, 95, 99, 104) : Color(255, 189, 193, 198);
 
-    // Round rect panel
+    // Round rect panel (top corners only — bottom extends to window edge)
     GraphicsPath panelPath;
-    int r = S(12);
-    panelPath.AddArc(px, py, r*2, r*2, 180, 90);
-    panelPath.AddArc(px+PW-r*2, py, r*2, r*2, 270, 90);
-    panelPath.AddArc(px+PW-r*2, py+PH-r*2, r*2, r*2, 0, 90);
-    panelPath.AddArc(px, py+PH-r*2, r*2, r*2, 90, 90);
-    panelPath.CloseFigure();
+    panelPath.AddRectangle(RectF((float)px,(float)py,(float)PW,(float)actualPH));
 
     SolidBrush bgBr(bgCol);
     g.FillPath(&bgBr, &panelPath);
@@ -342,7 +341,7 @@ inline void DrawExtensionPanel(
 
     // ── Extension list ──
     int listY = py + HEADER_H;
-    int listH = PH - HEADER_H - S(48); // bottom reserve for "Manage" button
+    int listH = actualPH - HEADER_H - S(48); // bottom reserve for "Manage" button
     g_extHoverIdx = -1;
 
     RectF clipR((REAL)px, (REAL)listY, (REAL)PW, (REAL)listH);
@@ -430,7 +429,7 @@ inline void DrawExtensionPanel(
 
     // ── Bottom "Get more extensions" button ──
     {
-        int btnY = py + PH - S(44);
+        int btnY = py + actualPH - S(44);
         Pen divPen3(divC, 1.0f);
         g.DrawLine(&divPen3, px, btnY, px + PW, btnY);
 
@@ -459,17 +458,18 @@ inline std::wstring HandleExtensionPanelClick(
     const int PAD      = S(12);
 
     int px2 = W - PW - S(4);
-    int py2 = titleBarH + toolbarH + S(4);
-    if (py2 + PH > H - S(8)) py2 = H - PH - S(8);
+    int py2 = titleBarH + toolbarH;
+
+    int actualPH2 = H - py2;
 
     // Outside panel → close
-    if (x < px2 || x > px2 + PW || y < py2 || y > py2 + PH)
+    if (x < px2 || x > px2 + PW || y < py2 || y > py2 + actualPH2)
         return L"close";
 
     int listY = py2 + HEADER_H;
 
     // Bottom "Manage" button
-    if (y >= py2 + PH - S(44))
+    if (y >= py2 + actualPH2 - S(44))
         return L"manage";
 
     // Item click — check toggle pill area
