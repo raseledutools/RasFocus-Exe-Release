@@ -1096,6 +1096,31 @@ public:
             }
         }
 
+        // ── Dark Mode: inject CSS on every document created ─────────────────────
+        // This runs before page paint, so no white flash occurs.
+        // We always inject the helper; the style element is only added when
+        // isDarkMode is true at the time of navigation.
+        {
+            bool dark = wd.isDarkMode;
+            std::wstring dmInit = dark
+                ? L"(function(){"
+                  L"  var s=document.createElement('style');"
+                  L"  s.id='__ras_dark_mode__';"
+                  L"  s.innerHTML='"
+                  L"    html{filter:invert(1) hue-rotate(180deg)!important;background:#1e1e1e!important;}"
+                  L"    img,video,canvas,picture,svg,iframe{"
+                  L"      filter:invert(1) hue-rotate(180deg)!important;"
+                  L"    }"
+                  L"  ';"
+                  L"  (document.head||document.documentElement).appendChild(s);"
+                  L"})();"
+                : L""; // light mode: nothing to inject
+
+            if (!dmInit.empty()) {
+                tab.webview->AddScriptToExecuteOnDocumentCreated(dmInit.c_str(), nullptr);
+            }
+        }
+
         // ── Anti-bot / Cloudflare bypass: Full Chrome fingerprint spoofing ──────
         // Cloudflare, YouTube, Google সব সাইটে real Chrome-এর মতো দেখাবে
         tab.webview->AddScriptToExecuteOnDocumentCreated(
@@ -1795,21 +1820,61 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
         if (wd.hClose){DestroyWindow(hWnd);break;}
         if (wd.hPin)  {wd.isPinned=!wd.isPinned;SetWindowPos(hWnd,wd.isPinned?HWND_TOPMOST:HWND_NOTOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE);InvalidateRect(hWnd,NULL,TRUE);break;}
         if (wd.hDark) {
-            wd.isDarkMode=!wd.isDarkMode;
-            if (wd.active()&&wd.active()->controller) {
+            wd.isDarkMode = !wd.isDarkMode;
+
+            // Dark/Light CSS inject script for real websites
+            // invert(1) hue-rotate(180deg) gives a true dark look;
+            // images/videos get a second invert so they stay natural.
+            const std::wstring darkInjectScript =
+                L"(function(){"
+                L"  var s=document.getElementById('__ras_dark_mode__');"
+                L"  if(!s){"
+                L"    s=document.createElement('style');"
+                L"    s.id='__ras_dark_mode__';"
+                L"    document.head.appendChild(s);"
+                L"  }"
+                L"  s.innerHTML='"
+                L"    html{filter:invert(1) hue-rotate(180deg)!important;background:#1e1e1e!important;}"
+                L"    img,video,canvas,picture,svg,iframe{"
+                L"      filter:invert(1) hue-rotate(180deg)!important;"
+                L"    }"
+                L"  ';"
+                L"})();";
+
+            const std::wstring lightRemoveScript =
+                L"(function(){"
+                L"  var s=document.getElementById('__ras_dark_mode__');"
+                L"  if(s) s.remove();"
+                L"})();";
+
+            // Apply to ALL tabs
+            for (auto& t : wd.tabs) {
+                if (!t.controller || !t.webview) continue;
+
+                // Update WebView2 background color
                 ComPtr<ICoreWebView2Controller2> c2;
-                if (SUCCEEDED(wd.active()->controller->QueryInterface(IID_PPV_ARGS(&c2)))) {
-                    COREWEBVIEW2_COLOR bg=wd.isDarkMode?COREWEBVIEW2_COLOR{255,30,30,30}:COREWEBVIEW2_COLOR{255,255,255,255};
+                if (SUCCEEDED(t.controller->QueryInterface(IID_PPV_ARGS(&c2)))) {
+                    COREWEBVIEW2_COLOR bg = wd.isDarkMode
+                        ? COREWEBVIEW2_COLOR{255,30,30,30}
+                        : COREWEBVIEW2_COLOR{255,255,255,255};
                     c2->put_DefaultBackgroundColor(bg);
                 }
-                std::wstring url2=wd.active()->url;
-                if ((url2==L"LOCAL_NTP"||url2==L"about:blank")&&wd.active()->webview)
-                    wd.active()->webview->NavigateToString(GetLocalNTP_HTML(wd.isDarkMode).c_str());
-                else if (url2.find(L"blocked by rasfocus")!=std::wstring::npos&&wd.active()->webview)
-                    wd.active()->webview->NavigateToString(GetBlocked_HTML(wd.isDarkMode).c_str());
+
+                // Reload internal pages, inject CSS into real sites
+                if (t.url == L"LOCAL_NTP" || t.url == L"about:blank") {
+                    t.webview->NavigateToString(GetLocalNTP_HTML(wd.isDarkMode).c_str());
+                } else if (t.url.find(L"blocked by rasfocus") != std::wstring::npos) {
+                    t.webview->NavigateToString(GetBlocked_HTML(wd.isDarkMode).c_str());
+                } else {
+                    // Inject or remove dark CSS on the live page
+                    t.webview->ExecuteScript(
+                        wd.isDarkMode ? darkInjectScript.c_str() : lightRemoveScript.c_str(),
+                        nullptr);
+                }
             }
-            InvalidateRect(hWnd,NULL,TRUE);
-            if (wd.hAddressBar) InvalidateRect(wd.hAddressBar,NULL,TRUE);
+
+            InvalidateRect(hWnd, NULL, TRUE);
+            if (wd.hAddressBar) InvalidateRect(wd.hAddressBar, NULL, TRUE);
             break;
         }
 
