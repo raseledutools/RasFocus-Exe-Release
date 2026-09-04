@@ -73,9 +73,12 @@ string newVersionStr     = "";
 bool   hoverUpdateBtn    = false;
 
 // Update popup state
-string g_updateDownloadUrl = "";
-bool   g_showUpdatePopup   = false;
-bool   g_isDownloading     = false;
+string g_updateDownloadUrl  = "";
+bool   g_showUpdatePopup    = false;
+bool   g_isDownloading      = false;
+DWORD  g_updateDismissedAt  = 0;   // GetTickCount() at dismiss; 0 = never dismissed
+// Popup re-appears after this many ms since dismiss (5 minutes)
+static const DWORD UPDATE_REDISPLAY_MS = 5 * 60 * 1000;
 int    g_dlAnimFrame       = 0;
 
 // Professional download progress
@@ -530,8 +533,32 @@ void SetupDefaultViewer() {
 // ==========================================
 // SILENT UPDATER
 // ==========================================
+// Forward declaration — defined after AddTrayIcon/RemoveTrayIcon
+void ShowUpdateBalloonNotification(const string& version);
+
 void __cdecl SilentUpdateThread(void* p) {
-    if (isCheckingUpdate || isUpdateAvailable) { _endthread(); return; }
+    // isUpdateAvailable=true means we already know there's an update.
+    // But if the popup was dismissed we still want to re-show it on the
+    // next timer tick — just skip re-downloading the API JSON.
+    if (isCheckingUpdate) { _endthread(); return; }
+
+    // If we already know about an update but the popup was dismissed,
+    // re-show it after the cooldown period has elapsed.
+    if (isUpdateAvailable && !g_showUpdatePopup && !g_isDownloading) {
+        DWORD now = GetTickCount();
+        bool cooldownExpired = (g_updateDismissedAt == 0) ||
+                               ((now - g_updateDismissedAt) >= UPDATE_REDISPLAY_MS);
+        if (cooldownExpired) {
+            g_showUpdatePopup = true;
+            HWND hw = FindWindowA("RasFocusCore", "RasFocus+");
+            if (hw) InvalidateRect(hw, NULL, FALSE);
+        }
+        _endthread(); return;
+    }
+
+    // Already showing popup or downloading — nothing to do.
+    if (isUpdateAvailable) { _endthread(); return; }
+
     isCheckingUpdate = true;
 
     string secretDir = GetSecretDir();
@@ -561,7 +588,12 @@ void __cdecl SilentUpdateThread(void* p) {
                                              + "/releases/download/" + latestVer + "/RasFocus.exe";
                         isUpdateAvailable    = true;   // version আছে, download হয়নি
                         isUpdateReady        = false;  // download এখনো হয়নি
-                        g_showUpdatePopup    = true;   // ← popup দেখাও
+                        g_showUpdatePopup    = true;   // ← in-app popup দেখাও
+                        g_updateDismissedAt  = 0;      // fresh — no dismiss yet
+
+                        // ── Windows tray balloon notification ──
+                        ShowUpdateBalloonNotification(latestVer);
+
                         HWND hw = FindWindowA("RasFocusCore", "RasFocus+");
                         if (hw) InvalidateRect(hw, NULL, FALSE);
                     }
@@ -923,7 +955,8 @@ void ProcessUpdateMouseClick(float x, float y, int w, int h, HWND hWnd) {
     // "পরে করব"
     if (x >= L.laterX && x <= L.laterX + L.laterW &&
         y >= L.laterY && y <= L.laterY + L.laterH) {
-        g_showUpdatePopup  = false;
+        g_showUpdatePopup   = false;
+        g_updateDismissedAt = GetTickCount(); // 5 মিনিট cooldown শুরু — পরে আবার দেখাবে
         // isUpdateAvailable সত্য রাখো — header এর update button দেখা যাবে
         // শুধু popup বন্ধ হবে, button hide হবে না
         s_hovDlBtn = false; s_hovLaterBtn = false;
@@ -1107,6 +1140,26 @@ void AddTrayIcon(HWND hWnd) {
 }
 
 void RemoveTrayIcon() { Shell_NotifyIcon(NIM_DELETE, &nid); }
+
+// ── Windows Tray Balloon Notification — নতুন update এলে ──
+void ShowUpdateBalloonNotification(const string& version) {
+    // NIF_INFO flag দিয়ে balloon দেখানো হয়
+    nid.uFlags     = NIF_INFO;
+    nid.dwInfoFlags = NIIF_INFO;                        // blue (i) icon
+    nid.uTimeout   = 10000;                             // 10 সেকেন্ড দেখাবে
+
+    // Title (max 63 chars)
+    lstrcpyA(nid.szInfoTitle, "RasFocus Update Available!");
+
+    // Body (max 255 chars)
+    string body = "Version " + version + " is ready.\nClick to update now.";
+    lstrcpyA(nid.szInfo, body.c_str());
+
+    Shell_NotifyIconA(NIM_MODIFY, &nid);
+
+    // Restore normal flags for future NIM_MODIFY calls
+    nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+}
 
 // ==========================================
 // FIREBASE FEEDBACK SUBMIT (Firestore REST)
@@ -1986,6 +2039,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (lp == WM_LBUTTONUP) {
             if (IsWindowVisible(hWnd) && !IsIconic(hWnd)) { ShowWindow(hWnd, SW_HIDE); }
             else { ShowWindow(hWnd, SW_SHOW); ShowWindow(hWnd, SW_RESTORE); SetForegroundWindow(hWnd); }
+        }
+        // Balloon notification-এ click করলে app সামনে আসবে + update popup দেখাবে
+        if (lp == NIN_BALLOONUSERCLICK) {
+            ShowWindow(hWnd, SW_SHOW);
+            ShowWindow(hWnd, SW_RESTORE);
+            SetForegroundWindow(hWnd);
+            if (isUpdateAvailable && !g_isDownloading) {
+                g_showUpdatePopup = true;
+                InvalidateRect(hWnd, NULL, FALSE);
+            }
         }
         break;
     }
