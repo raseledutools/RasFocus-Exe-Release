@@ -1181,22 +1181,50 @@ public:
             L"try{Object.defineProperty(navigator,'webdriver',_wdOD);}catch(e){}"
 
             // 2. window.chrome — পুরোপুরি real Chrome-এর মতো
-            L"window.chrome={"
-            L"  runtime:{"
-            L"    id:undefined,"
-            L"    connect:function(){return{postMessage:function(){},onMessage:{addListener:function(){}},disconnect:function(){}}},"
-            L"    sendMessage:function(){},"
-            L"    onMessage:{addListener:function(){},removeListener:function(){}},"
-            L"    onConnect:{addListener:function(){}},"
-            L"    onInstalled:{addListener:function(){}}"
-            L"  },"
-            L"  loadTimes:function(){return{firstPaintTime:performance.now()/1000+0.1,firstPaintAfterLoadTime:0,requestTime:Date.now()/1000,startLoadTime:Date.now()/1000,commitLoadTime:Date.now()/1000,finishDocumentLoadTime:0,finishLoadTime:0,navigationType:'Other',wasFetchedViaSpdy:true,wasNpnNegotiated:true,npnNegotiatedProtocol:'h2',wasAlternateProtocolAvailable:false,connectionInfo:'h2'};},"
-            L"  csi:function(){return{startE:Date.now(),onloadT:Date.now(),pageT:1.5,tran:15};},"
-            L"  app:{isInstalled:false,InstallState:{DISABLED:'disabled',INSTALLED:'installed',NOT_INSTALLED:'not_installed'},RunningState:{CANNOT_RUN:'cannot_run',READY_TO_RUN:'ready_to_run',RUNNING:'running'}},"
-            L"  webstore:{},"
-            L"  cast:{},"
-            L"  i18n:{getMessage:function(){return'';},getUILanguage:function(){return'en-US';},detectLanguage:function(t,cb){if(cb)cb({isReliable:false,languages:[]});}}"
-            L"};"
+            // FIX: Gemini/ChatGPT/Facebook detect fake extension context via chrome.runtime.id
+            // → for those sites skip injecting chrome.runtime entirely so the native
+            //   WebView2 chrome stub stays untouched and their JS doesn't crash.
+            // For all other sites we inject a full no-op shim with safe addListener
+            // objects (addListener now returns {remove:fn} so callers can chain safely).
+            L"(function(){"
+            L"  var h=location.hostname;"
+            L"  var isSpecial=(h.indexOf('gemini.google.com')!==-1||"
+            L"                 h.indexOf('chatgpt.com')!==-1||"
+            L"                 h.indexOf('chat.openai.com')!==-1||"
+            L"                 h.indexOf('facebook.com')!==-1||"
+            L"                 h.indexOf('messenger.com')!==-1);"
+            L"  if(isSpecial) return;" // ← skip shim for these sites
+            // safe no-op listener factory — addListener returns {remove:fn}
+            L"  function _noopl(){return {addListener:function(){return{remove:function(){}};},removeListener:function(){},hasListener:function(){return false;},hasListeners:function(){return false;}};"
+            L"  }"
+            // port returned by connect()
+            L"  function _port(){return{postMessage:function(){},disconnect:function(){},onDisconnect:_noopl(),onMessage:_noopl()};}"
+            L"  if(!window.chrome||!window.chrome.runtime){"
+            L"    window.chrome={"
+            L"      runtime:{"
+            L"        id:undefined,"
+            L"        connect:_port,"
+            L"        sendMessage:function(){},"
+            L"        onMessage:_noopl(),"
+            L"        onConnect:_noopl(),"
+            L"        onInstalled:_noopl(),"
+            L"        onStartup:_noopl(),"
+            L"        onSuspend:_noopl(),"
+            L"        onUpdateAvailable:_noopl(),"
+            L"        getManifest:function(){return{manifest_version:3,name:'',version:'1.0'};},"
+            L"        getURL:function(p){return'chrome-extension://invalid/'+p;},"
+            L"        lastError:null"
+            L"      },"
+            L"      loadTimes:function(){return{firstPaintTime:performance.now()/1000+0.1,firstPaintAfterLoadTime:0,requestTime:Date.now()/1000,startLoadTime:Date.now()/1000,commitLoadTime:Date.now()/1000,finishDocumentLoadTime:0,finishLoadTime:0,navigationType:'Other',wasFetchedViaSpdy:true,wasNpnNegotiated:true,npnNegotiatedProtocol:'h2',wasAlternateProtocolAvailable:false,connectionInfo:'h2'};},"
+            L"      csi:function(){return{startE:Date.now(),onloadT:Date.now(),pageT:1.5,tran:15};},"
+            L"      app:{isInstalled:false,InstallState:{DISABLED:'disabled',INSTALLED:'installed',NOT_INSTALLED:'not_installed'},RunningState:{CANNOT_RUN:'cannot_run',READY_TO_RUN:'ready_to_run',RUNNING:'running'}},"
+            L"      webstore:{},"
+            L"      cast:{},"
+            L"      i18n:{getMessage:function(){return'';},getUILanguage:function(){return'en-US';},detectLanguage:function(t,cb){if(cb)cb({isReliable:false,languages:[]});}},"
+            L"      storage:{local:{get:function(k,cb){if(cb)cb({});},set:function(o,cb){if(cb)cb();},remove:function(k,cb){if(cb)cb();}}}"
+            L"    };"
+            L"  }"
+            L"})();"
 
             // 3. plugins — Chrome PDF + NaCl
             L"try{Object.defineProperty(navigator,'plugins',{get:function(){"
