@@ -275,7 +275,277 @@ std::wstring GetLocalNTP_HTML(bool isDark) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 2. DYNAMIC BLOCKED PAGE (MOTIVATIONAL QUOTES)
+// 2. LOCAL HISTORY PAGE (Chrome-style rasbrowser://history)
+// ─────────────────────────────────────────────────────────────────────────────
+std::wstring GetLocalHistory_HTML(bool isDark) {
+    LoadHistory(); // সর্বশেষ data লোড করো
+    std::wstring bg      = isDark ? L"#202124" : L"#f8f9fa";
+    std::wstring surface = isDark ? L"#292a2d" : L"#ffffff";
+    std::wstring text    = isDark ? L"#e8eaed" : L"#202124";
+    std::wstring sub     = isDark ? L"#9aa0a6" : L"#5f6368";
+    std::wstring accent  = L"#00969f"; // RasBrowser teal
+    std::wstring border  = isDark ? L"#3c4043" : L"#e0e0e0";
+    std::wstring hover   = isDark ? L"#3c4043" : L"#f1f3f4";
+    std::wstring danger  = L"#ea4335";
+
+    // History items → JSON array for JS
+    std::wstring itemsJson = L"[";
+    for (size_t i = 0; i < g_history.size(); i++) {
+        auto& h = g_history[i];
+        // Escape quotes in strings
+        auto esc = [](std::wstring s) {
+            std::wstring r; r.reserve(s.size());
+            for (auto c : s) {
+                if (c == L'"')  r += L"\\\"";
+                else if (c == L'\\') r += L"\\\\";
+                else if (c == L'\n' || c == L'\r') r += L' ';
+                else r += c;
+            }
+            return r;
+        };
+        if (i > 0) itemsJson += L",";
+        itemsJson += L"{\"ts\":\"" + esc(h.timestamp) + L"\","
+                     L"\"title\":\"" + esc(h.title.empty() ? h.url : h.title) + L"\","
+                     L"\"url\":\"" + esc(h.url) + L"\"}";
+    }
+    itemsJson += L"]";
+
+    std::wstring html =
+        L"<!DOCTYPE html><html><head><meta charset='utf-8'>"
+        L"<title>History</title>"
+        L"<style>"
+        L"*{box-sizing:border-box;margin:0;padding:0;font-family:'Segoe UI',Arial,sans-serif}"
+        L"body{background:" + bg + L";color:" + text + L";min-height:100vh}"
+        L".header{background:" + surface + L";border-bottom:1px solid " + border + L";"
+        L"padding:20px 32px;position:sticky;top:0;z-index:100;display:flex;align-items:center;gap:16px}"
+        L".header h1{font-size:22px;font-weight:600;color:" + text + L"}"
+        L".header .icon{font-size:24px;color:" + accent + L"}"
+        L".clear-btn{margin-left:auto;padding:8px 18px;background:transparent;border:1.5px solid " + danger + L";"
+        L"color:" + danger + L";border-radius:6px;cursor:pointer;font-size:13px;font-weight:500}"
+        L".clear-btn:hover{background:" + danger + L";color:#fff}"
+        L".search-bar{padding:16px 32px;background:" + bg + L"}"
+        L".search-bar input{width:100%;max-width:600px;padding:10px 16px;"
+        L"border:1.5px solid " + border + L";border-radius:8px;font-size:14px;"
+        L"background:" + surface + L";color:" + text + L";outline:none}"
+        L".search-bar input:focus{border-color:" + accent + L"}"
+        L".content{max-width:800px;margin:0 auto;padding:8px 32px 32px}"
+        L".day-group{margin-bottom:8px}"
+        L".day-label{font-size:12px;font-weight:600;color:" + sub + L";padding:12px 0 4px;text-transform:uppercase;letter-spacing:.5px}"
+        L".item{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:8px;cursor:pointer;transition:background .12s}"
+        L".item:hover{background:" + hover + L"}"
+        L".favicon{width:16px;height:16px;border-radius:3px;flex-shrink:0}"
+        L".item-title{font-size:14px;color:" + accent + L";white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}"
+        L".item-title:hover{text-decoration:underline}"
+        L".item-url{font-size:12px;color:" + sub + L";white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px}"
+        L".item-time{font-size:12px;color:" + sub + L";flex-shrink:0;margin-left:auto}"
+        L".del-btn{width:24px;height:24px;border:none;background:transparent;cursor:pointer;"
+        L"color:" + sub + L";font-size:14px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0}"
+        L".del-btn:hover{background:" + danger + L";color:#fff}"
+        L".empty{text-align:center;padding:60px 20px;color:" + sub + L"}"
+        L".empty .big-icon{font-size:48px;margin-bottom:12px}"
+        L"</style></head><body>"
+        L"<div class='header'>"
+        L"  <span class='icon'>📋</span>"
+        L"  <h1>History</h1>"
+        L"  <button class='clear-btn' onclick='clearAll()'>Clear all history</button>"
+        L"</div>"
+        L"<div class='search-bar'><input id='q' placeholder='Search history...' oninput='render()'></div>"
+        L"<div class='content' id='list'></div>"
+        L"<script>"
+        L"const items=" + itemsJson + L";"
+        L"const groups={};"
+        L"items.forEach(h=>{"
+        L"  const d=h.ts.replace(/\\[/,'').replace(/\\].*/,'').split(' ')[0]||'Unknown';"
+        L"  if(!groups[d])groups[d]=[];"
+        L"  groups[d].push(h);"
+        L"});"
+        L"function render(){"
+        L"  const q=(document.getElementById('q').value||'').toLowerCase();"
+        L"  const el=document.getElementById('list');"
+        L"  const keys=Object.keys(groups).sort((a,b)=>b.localeCompare(a));"
+        L"  let html='';"
+        L"  let total=0;"
+        L"  keys.forEach(day=>{"
+        L"    const its=groups[day].filter(h=>!q||h.title.toLowerCase().includes(q)||h.url.toLowerCase().includes(q));"
+        L"    if(!its.length)return;"
+        L"    total+=its.length;"
+        L"    html+=\"<div class='day-group'><div class='day-label'>\"+day+\"</div>\";"
+        L"    its.forEach((h,i)=>{"
+        L"      const time=h.ts.replace(/.*\\s/,'').replace(/\\]/,'');"
+        L"      const fav='https://www.google.com/s2/favicons?sz=16&domain='+encodeURIComponent(h.url);"
+        L"      html+=\"<div class='item' id='item_\"+h.url.replace(/[^a-z0-9]/gi,'_')+'_'+i+\"'\"+"
+        L"            \" onclick=\\\"location.href='\"+h.url.replace(/'/g,\"&#39;\")+\"'\\\">"
+        L"            <img class='favicon' src='\"+fav+\"' onerror=\\\"this.style.display='none'\\\">"
+        L"            <div style='flex:1;overflow:hidden'>"
+        L"              <div class='item-title'>\"+h.title+\"</div>"
+        L"              <div class='item-url'>\"+h.url+\"</div>"
+        L"            </div>"
+        L"            <span class='item-time'>\"+time+\"</span>"
+        L"            <button class='del-btn' title='Remove' onclick='event.stopPropagation();delItem(this)'>✕</button>"
+        L"            </div>\";"
+        L"    });"
+        L"    html+=\"</div>\";"
+        L"  });"
+        L"  if(!total)html=\"<div class='empty'><div class='big-icon'>🕐</div><p>No history found.</p></div>\";"
+        L"  el.innerHTML=html;"
+        L"}"
+        L"function clearAll(){"
+        L"  if(confirm('Clear all browsing history?')){"
+        L"    Object.keys(groups).forEach(k=>delete groups[k]);"
+        L"    render();"
+        L"    window.chrome&&window.chrome.webview&&window.chrome.webview.postMessage('CLEAR_HISTORY');"
+        L"  }"
+        L"}"
+        L"function delItem(btn){"
+        L"  const row=btn.closest('.item');"
+        L"  const url=row.querySelector('.item-url').textContent;"
+        L"  row.remove();"
+        L"}"
+        L"render();"
+        L"</script></body></html>";
+    return html;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 2b. LOCAL DOWNLOADS PAGE (Chrome-style rasbrowser://downloads)
+// ─────────────────────────────────────────────────────────────────────────────
+std::wstring GetLocalDownloads_HTML(bool isDark) {
+    std::wstring bg      = isDark ? L"#202124" : L"#f8f9fa";
+    std::wstring surface = isDark ? L"#292a2d" : L"#ffffff";
+    std::wstring text    = isDark ? L"#e8eaed" : L"#202124";
+    std::wstring sub     = isDark ? L"#9aa0a6" : L"#5f6368";
+    std::wstring accent  = L"#00969f";
+    std::wstring border  = isDark ? L"#3c4043" : L"#e0e0e0";
+    std::wstring hover   = isDark ? L"#3c4043" : L"#f1f3f4";
+    std::wstring green   = L"#34a853";
+    std::wstring danger  = L"#ea4335";
+    std::wstring orange  = L"#fbbc04";
+
+    // Downloads → JSON
+    std::wstring itemsJson = L"[";
+    for (size_t i = 0; i < g_downloads.size(); i++) {
+        auto& d = g_downloads[i];
+        auto esc = [](std::wstring s) {
+            std::wstring r;
+            for (auto c : s) {
+                if (c == L'"')  r += L"\\\"";
+                else if (c == L'\\') r += L"\\\\";
+                else if (c == L'\n' || c == L'\r') r += L' ';
+                else r += c;
+            }
+            return r;
+        };
+        auto fmtSize = [](INT64 bytes) -> std::wstring {
+            if (bytes <= 0) return L"Unknown size";
+            wchar_t buf[32];
+            if (bytes < 1024) { swprintf_s(buf, L"%lld B", bytes); }
+            else if (bytes < 1024*1024) { swprintf_s(buf, L"%.1f KB", bytes/1024.0); }
+            else if (bytes < 1024*1024*1024) { swprintf_s(buf, L"%.1f MB", bytes/(1024.0*1024.0)); }
+            else { swprintf_s(buf, L"%.1f GB", bytes/(1024.0*1024.0*1024.0)); }
+            return buf;
+        };
+        int pct = (d.totalBytes > 0) ? (int)(d.receivedBytes*100/d.totalBytes) : (d.isCompleted?100:0);
+        std::wstring state = d.isCompleted ? L"done" : d.isInterrupted ? L"fail" : L"progress";
+        if (i > 0) itemsJson += L",";
+        itemsJson += L"{\"name\":\"" + esc(d.fileName) + L"\","
+                     L"\"path\":\"" + esc(d.fullPath) + L"\","
+                     L"\"size\":\"" + fmtSize(d.totalBytes) + L"\","
+                     L"\"recv\":\"" + fmtSize(d.receivedBytes) + L"\","
+                     L"\"pct\":" + std::to_wstring(pct) + L","
+                     L"\"state\":\"" + state + L"\"}";
+    }
+    itemsJson += L"]";
+
+    std::wstring html =
+        L"<!DOCTYPE html><html><head><meta charset='utf-8'>"
+        L"<title>Downloads</title>"
+        L"<style>"
+        L"*{box-sizing:border-box;margin:0;padding:0;font-family:'Segoe UI',Arial,sans-serif}"
+        L"body{background:" + bg + L";color:" + text + L";min-height:100vh}"
+        L".header{background:" + surface + L";border-bottom:1px solid " + border + L";"
+        L"padding:20px 32px;position:sticky;top:0;z-index:100;display:flex;align-items:center;gap:16px}"
+        L".header h1{font-size:22px;font-weight:600;color:" + text + L"}"
+        L".header .icon{font-size:24px}"
+        L".clear-btn{margin-left:auto;padding:8px 18px;background:transparent;border:1.5px solid " + sub + L";"
+        L"color:" + sub + L";border-radius:6px;cursor:pointer;font-size:13px;font-weight:500}"
+        L".clear-btn:hover{border-color:" + danger + L";color:" + danger + L"}"
+        L".content{max-width:800px;margin:0 auto;padding:24px 32px}"
+        L".item{background:" + surface + L";border:1px solid " + border + L";border-radius:10px;"
+        L"padding:16px 20px;margin-bottom:12px;display:flex;gap:14px;align-items:flex-start}"
+        L".file-icon{font-size:28px;flex-shrink:0;margin-top:2px}"
+        L".info{flex:1;overflow:hidden}"
+        L".fname{font-size:15px;font-weight:500;color:" + accent + L";cursor:pointer;"
+        L"white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"
+        L".fname:hover{text-decoration:underline}"
+        L".meta{font-size:12px;color:" + sub + L";margin-top:3px}"
+        L".bar-wrap{height:4px;background:" + border + L";border-radius:2px;margin-top:8px}"
+        L".bar{height:4px;border-radius:2px;background:" + accent + L";transition:width .3s}"
+        L".status-done{color:" + green + L";font-size:12px;font-weight:500}"
+        L".status-fail{color:" + danger + L";font-size:12px;font-weight:500}"
+        L".status-prog{color:" + orange + L";font-size:12px;font-weight:500}"
+        L".actions{display:flex;gap:8px;margin-top:8px}"
+        L".act-btn{padding:5px 12px;border:1.5px solid " + border + L";border-radius:5px;"
+        L"cursor:pointer;font-size:12px;background:transparent;color:" + text + L"}"
+        L".act-btn:hover{border-color:" + accent + L";color:" + accent + L"}"
+        L".empty{text-align:center;padding:80px 20px;color:" + sub + L"}"
+        L".empty .big-icon{font-size:56px;margin-bottom:14px}"
+        L"</style></head><body>"
+        L"<div class='header'>"
+        L"  <span class='icon'>⬇️</span>"
+        L"  <h1>Downloads</h1>"
+        L"  <button class='clear-btn' onclick='clearDone()'>Clear completed</button>"
+        L"</div>"
+        L"<div class='content' id='list'></div>"
+        L"<script>"
+        L"const items=" + itemsJson + L";"
+        L"function getIcon(name){"
+        L"  const ext=(name.split('.').pop()||'').toLowerCase();"
+        L"  const m={'pdf':'📄','zip':'🗜️','rar':'🗜️','7z':'🗜️','exe':'⚙️','msi':'⚙️',"
+        L"           'mp4':'🎬','mkv':'🎬','avi':'🎬','mp3':'🎵','wav':'🎵','flac':'🎵',"
+        L"           'jpg':'🖼️','jpeg':'🖼️','png':'🖼️','gif':'🖼️','webp':'🖼️',"
+        L"           'doc':'📝','docx':'📝','xls':'📊','xlsx':'📊','ppt':'📑','pptx':'📑'};"
+        L"  return m[ext]||'📦';"
+        L"}"
+        L"function render(){"
+        L"  const el=document.getElementById('list');"
+        L"  if(!items.length){"
+        L"    el.innerHTML=\"<div class='empty'><div class='big-icon'>⬇️</div><p>No downloads yet.</p></div>\";"
+        L"    return;"
+        L"  }"
+        L"  el.innerHTML=items.map((d,i)=>{"
+        L"    const pct=d.pct||0;"
+        L"    const prog=d.state==='progress'?\"<div class='bar-wrap'><div class='bar' style='width:\"+pct+\"%'></div></div>\":'';"
+        L"    const status=d.state==='done'?\"<span class='status-done'>✓ Done</span>\":"
+        L"                 d.state==='fail'?\"<span class='status-fail'>✕ Failed</span>\":"
+        L"                 \"<span class='status-prog'>⬇ \"+pct+\"%</span>\";"
+        L"    const acts=d.state==='done'"
+        L"      ?\"<button class='act-btn' onclick='openFile(\"+i+\")'>Open file</button>\""
+        L"        +\"<button class='act-btn' onclick='openFolder(\"+i+\")'>Show in folder</button>\""
+        L"      :'';"
+        L"    return \"<div class='item'><div class='file-icon'>\"+getIcon(d.name)+\"</div>\""
+        L"          +\"<div class='info'><div class='fname' onclick='openFile(\"+i+\")' title='\"+d.path+\"'>\"+d.name+\"</div>\""
+        L"          +\"<div class='meta'>\"+d.size+\" &bull; \"+status+\"</div>\""
+        L"          +prog"
+        L"          +\"<div class='actions'>\"+acts+\"</div></div></div>\";"
+        L"  }).join('');"
+        L"}"
+        L"function openFile(i){"
+        L"  window.chrome&&window.chrome.webview&&window.chrome.webview.postMessage('OPEN_FILE:'+items[i].path);"
+        L"}"
+        L"function openFolder(i){"
+        L"  window.chrome&&window.chrome.webview&&window.chrome.webview.postMessage('OPEN_FOLDER:'+items[i].path);"
+        L"}"
+        L"function clearDone(){"
+        L"  for(let i=items.length-1;i>=0;i--){if(items[i].state==='done')items.splice(i,1);}"
+        L"  render();"
+        L"}"
+        L"render();"
+        L"</script></body></html>";
+    return html;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 3. DYNAMIC BLOCKED PAGE (MOTIVATIONAL QUOTES)
 // ─────────────────────────────────────────────────────────────────────────────
 std::wstring GetBlocked_HTML(bool isDark) {
     // ── Chrome-style error page + RasFocus motivation overlay ───────────────
@@ -1517,6 +1787,10 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
                     std::wstring displayTitle = tab.title;
                     if (displayTitle.empty() || tab.url == L"LOCAL_NTP" || tab.url == L"about:blank")
                         displayTitle = L"New Tab";
+                    if (tab.url == L"LOCAL_HISTORY")
+                        displayTitle = L"History";
+                    if (tab.url == L"LOCAL_DOWNLOADS")
+                        displayTitle = L"Downloads";
                     if (tab.url.find(L"blocked by rasfocus") != std::wstring::npos)
                         displayTitle = L"Page Blocked";
 
@@ -1924,7 +2198,8 @@ static void SwitchToTab(HWND hWnd, int idx) {
     }
 
     if (wd.hAddressBar) {
-        if (tab.url == L"LOCAL_NTP" || tab.url == L"about:blank" ||
+        if (tab.url == L"LOCAL_NTP" || tab.url == L"LOCAL_HISTORY" ||
+            tab.url == L"LOCAL_DOWNLOADS" || tab.url == L"about:blank" ||
             tab.url.find(L"blocked by rasfocus") != std::wstring::npos) 
             SetWindowTextW(wd.hAddressBar, L"");
         else 
@@ -2333,7 +2608,8 @@ public:
                     SaveToHistory(urlStr, w.tabs[m_tabIdx].title);
 
                     if (w.hAddressBar) {
-                        if (urlStr == L"LOCAL_NTP" || urlStr == L"about:blank" ||
+                        if (urlStr == L"LOCAL_NTP" || urlStr == L"LOCAL_HISTORY" ||
+                            urlStr == L"LOCAL_DOWNLOADS" || urlStr == L"about:blank" ||
                             urlStr.find(L"blocked by rasfocus") != std::wstring::npos) {
                             SetWindowTextW(w.hAddressBar, L"");
                         } else {
@@ -2605,6 +2881,10 @@ public:
         
         if (nav == L"LOCAL_NTP") {
             tab.webview->NavigateToString(GetLocalNTP_HTML(wd.isDarkMode).c_str());
+        } else if (nav == L"LOCAL_HISTORY") {
+            tab.webview->NavigateToString(GetLocalHistory_HTML(wd.isDarkMode).c_str());
+        } else if (nav == L"LOCAL_DOWNLOADS") {
+            tab.webview->NavigateToString(GetLocalDownloads_HTML(wd.isDarkMode).c_str());
         } else {
             tab.webview->Navigate(nav.c_str());
         }
@@ -3154,17 +3434,14 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                     else if (clickIdx == 1) AddTab(hWnd, L"LOCAL_NTP");
                     else if (clickIdx == 2) LaunchMiniBrowser(L"LOCAL_NTP", L"New Window");
                     else if (clickIdx == 3) {
-                        // History — current tab এর উপরে full overlay
+                        // History — Chrome-style নতুন tab এ খোলো
                         closeAllPanels();
-                        g_historyPanelOpen = true;
-                        LoadHistory();
-                        InvalidateRect(hWnd, NULL, FALSE);
+                        AddTab(hWnd, L"LOCAL_HISTORY");
                     }
                     else if (clickIdx == 4) {
-                        // Downloads — full overlay
+                        // Downloads — Chrome-style নতুন tab এ খোলো
                         closeAllPanels();
-                        g_downloadsPanelOpen = true;
-                        InvalidateRect(hWnd, NULL, FALSE);
+                        AddTab(hWnd, L"LOCAL_DOWNLOADS");
                     }
                     else if (clickIdx == 5) {
                         // Bookmarks — full overlay
@@ -3392,18 +3669,17 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
             case 'N':  // Ctrl+N — New Window
                 LaunchMiniBrowser(L"LOCAL_NTP", L"New Window"); return 0;
 
-            case 'H':  // Ctrl+H — History
-                g_historyPanelOpen   = !g_historyPanelOpen;
-                g_bookmarkPanelOpen  = false;
-                g_downloadsPanelOpen = false;
-                if (g_historyPanelOpen) LoadHistory();
-                InvalidateRect(hWnd, NULL, FALSE); return 0;
-
-            case 'J':  // Ctrl+J — Downloads
-                g_downloadsPanelOpen = !g_downloadsPanelOpen;
+            case 'H':  // Ctrl+H — History (Chrome-style নতুন tab)
                 g_historyPanelOpen   = false;
                 g_bookmarkPanelOpen  = false;
-                InvalidateRect(hWnd, NULL, FALSE); return 0;
+                g_downloadsPanelOpen = false;
+                AddTab(hWnd, L"LOCAL_HISTORY"); return 0;
+
+            case 'J':  // Ctrl+J — Downloads (Chrome-style নতুন tab)
+                g_downloadsPanelOpen = false;
+                g_historyPanelOpen   = false;
+                g_bookmarkPanelOpen  = false;
+                AddTab(hWnd, L"LOCAL_DOWNLOADS"); return 0;
 
             case 'D':  // Ctrl+D — Bookmark current page
                 if (auto* tab = wd.active()) {
