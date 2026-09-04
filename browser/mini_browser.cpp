@@ -1020,6 +1020,13 @@ static RECT GetWebViewRect(HWND hWnd) {
         b.right -= menuAreaW;
         if (b.right < b.left + S(100, dpi)) b.right = b.left + S(100, dpi);
     }
+    // Extension panel open থাকলেও right side shrink করো (panel width 320 + margin)
+    if (g_extensionPanelOpen) {
+        UINT dpi = GetWndDpi(hWnd);
+        int extAreaW = S(340, dpi); // panelW(320) + margin(4) + extra(16)
+        b.right -= extAreaW;
+        if (b.right < b.left + S(100, dpi)) b.right = b.left + S(100, dpi);
+    }
     return b;
 }
 
@@ -2568,7 +2575,14 @@ public:
                             w.active()->controller->put_Bounds(wvr);
                         needRedraw = true;
                     }
-                    if (g_extensionPanelOpen) { g_extensionPanelOpen = false; needRedraw = true; }
+                    if (g_extensionPanelOpen) {
+                        g_extensionPanelOpen = false;
+                        // WebView full width restore করো
+                        RECT wvr = GetWebViewRect(m_hWnd);
+                        if (w.active() && w.active()->controller)
+                            w.active()->controller->put_Bounds(wvr);
+                        needRedraw = true;
+                    }
                     if (g_bookmarkPanelOpen)  { g_bookmarkPanelOpen  = false; needRedraw = true; }
                     if (g_historyPanelOpen)   { g_historyPanelOpen   = false; needRedraw = true; }
                     if (g_downloadsPanelOpen) { g_downloadsPanelOpen = false; needRedraw = true; }
@@ -3061,14 +3075,15 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
         if (g_extensionPanelOpen) {
             std::wstring action = HandleExtensionPanelClick(
                 x, y, W, H, TitleBarH(dpi), ToolbarH(dpi), (int)dpi);
-            if (action == L"close") {
+            if (action == L"close" || action == L"manage") {
                 g_extensionPanelOpen = false;
-                InvalidateRect(hWnd, NULL, FALSE);
-                return 0;
-            } else if (action == L"manage") {
-                // "Manage Extensions" button — panel বন্ধ করো, কিছু navigate করো না
-                g_extensionPanelOpen = false;
-                InvalidateRect(hWnd, NULL, FALSE);
+                // WebView full width restore করো
+                {
+                    RECT wvr = GetWebViewRect(hWnd);
+                    if (wd.active() && wd.active()->controller)
+                        wd.active()->controller->put_Bounds(wvr);
+                }
+                InvalidateRect(hWnd, NULL, TRUE);
                 return 0;
             } else if (action == L"inside") {
                 // Extension item area-তে click (pill ছাড়া) — consume করো, fall-through না
@@ -3156,7 +3171,13 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                         g_bookmarkPanelOpen  = false;
                         g_downloadsPanelOpen = false;
                         if (g_extensionPanelOpen) ScanExtensionsFolderPublic();
-                        InvalidateRect(hWnd, NULL, FALSE);
+                        // WebView shrink/restore করো — GDI+ panel এর উপরে আসতে
+                        {
+                            RECT wvr = GetWebViewRect(hWnd);
+                            if (wd.active() && wd.active()->controller)
+                                wd.active()->controller->put_Bounds(wvr);
+                        }
+                        InvalidateRect(hWnd, NULL, TRUE);
                     }
                     // ── clickIdx 7 = YouTube Mobile/Desktop Mode Toggle ──────────
                     else if (clickIdx == 7) {
@@ -3233,7 +3254,13 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                 g_bookmarkPanelOpen  = false;
                 g_downloadsPanelOpen = false;
                 if (g_extensionPanelOpen) ScanExtensionsFolderPublic();
-                InvalidateRect(hWnd, NULL, FALSE);
+                // WebView shrink/restore করো — GDI+ panel এর উপরে আসতে
+                {
+                    RECT wvr = GetWebViewRect(hWnd);
+                    if (wd.active() && wd.active()->controller)
+                        wd.active()->controller->put_Bounds(wvr);
+                }
+                InvalidateRect(hWnd, NULL, TRUE);
             }
             
             if (wd.hMenu) { 
@@ -3391,7 +3418,13 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                 g_bookmarkPanelOpen  = false;
                 g_downloadsPanelOpen = false;
                 if (g_extensionPanelOpen) ScanExtensionsFolderPublic();
-                InvalidateRect(hWnd, NULL, FALSE); return 0;
+                // WebView shrink/restore করো
+                {
+                    RECT wvr = GetWebViewRect(hWnd);
+                    if (wd.active() && wd.active()->controller)
+                        wd.active()->controller->put_Bounds(wvr);
+                }
+                InvalidateRect(hWnd, NULL, TRUE); return 0;
 
             case 'F':  // Ctrl+F — Find in Page
                 if (g_findBarOpen) CloseFindBar();
