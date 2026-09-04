@@ -1439,13 +1439,43 @@ public:
                 return S_OK;
             }).Get(),nullptr);
 
-        // Ad + Tracker Block (WebResourceRequested)
+        // Ad + Tracker Block + Anti-bot Header Spoofing (WebResourceRequested)
         tab.webview->add_WebResourceRequested(
             Callback<ICoreWebView2WebResourceRequestedEventHandler>(
             [this](ICoreWebView2* sender, ICoreWebView2WebResourceRequestedEventArgs* args)->HRESULT{
                 ComPtr<ICoreWebView2WebResourceRequest> req;
                 args->get_Request(&req);
                 if (!req) return S_OK;
+
+                // ── Cloudflare/Bot-detection Header Spoofing ──────────────
+                // Sec-CH-UA headers: WebView2 এ "Microsoft Edge" থাকে →
+                // এটা Chrome 137-এর মতো করে দিতে হবে
+                ComPtr<ICoreWebView2HttpRequestHeaders> headers;
+                if (SUCCEEDED(req->get_Headers(&headers)) && headers) {
+                    // Sec-CH-UA: Chrome 137 brands
+                    headers->SetHeader(L"Sec-CH-UA",
+                        L"\"Chromium\";v=\"137\", \"Google Chrome\";v=\"137\", \"Not/A)Brand\";v=\"99\"");
+                    // Sec-CH-UA-Mobile: desktop = ?0
+                    headers->SetHeader(L"Sec-CH-UA-Mobile", L"?0");
+                    // Sec-CH-UA-Platform: Windows
+                    headers->SetHeader(L"Sec-CH-UA-Platform", L"\"Windows\"");
+                    // Sec-CH-UA-Platform-Version
+                    headers->SetHeader(L"Sec-CH-UA-Platform-Version", L"\"10.0.0\"");
+                    // Sec-CH-UA-Arch
+                    headers->SetHeader(L"Sec-CH-UA-Arch", L"\"x86\"");
+                    // Sec-CH-UA-Bitness
+                    headers->SetHeader(L"Sec-CH-UA-Bitness", L"\"64\"");
+                    // Sec-CH-UA-Full-Version-List
+                    headers->SetHeader(L"Sec-CH-UA-Full-Version-List",
+                        L"\"Chromium\";v=\"137.0.0.0\", \"Google Chrome\";v=\"137.0.0.0\", \"Not/A)Brand\";v=\"99.0.0.0\"");
+                    // Sec-Fetch-Site, Mode, User — realistic values
+                    // Accept-Language: real Chrome-এর মতো
+                    headers->SetHeader(L"Accept-Language", L"en-US,en;q=0.9");
+                    // X-Forwarded-For বা অন্য automation header থাকলে সরানো
+                    headers->RemoveHeader(L"X-Forwarded-For");
+                }
+
+                // ── Ad / Tracker Block ──────────────────────────────────
                 LPWSTR uri=nullptr; req->get_Uri(&uri);
                 if (uri) {
                     std::wstring url(uri); CoTaskMemFree(uri);
