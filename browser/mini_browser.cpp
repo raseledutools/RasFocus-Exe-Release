@@ -66,6 +66,8 @@ extern float g_scaleFactor;
 // ─────────────────────────────────────────────────────────────────────────────
 bool g_youtubeDesktopMode    = false; // false = mobile mode (default)
 bool g_youtubeAdBlockEnabled = true;  // true  = ads blocked (default)
+bool g_profilePanelOpen      = false; // Profile floating dropdown
+static int g_profilePanelHover = -1; // hovered item index (-1 = none)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // RESOURCE IDs
@@ -1523,6 +1525,140 @@ static const int kMenuTypes[] = { 2, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0
 static const int kMenuTypeCount = 16;
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PROFILE PANEL — Chrome-style floating dropdown
+// ─────────────────────────────────────────────────────────────────────────────
+struct ProfileItem { const wchar_t* ico; const wchar_t* label; const wchar_t* url; };
+static const ProfileItem kProfileItems[] = {
+    { L"\uE8D4", L"Passwords and autofill",   L"https://passwords.google.com" },
+    { L"\uE77B", L"Manage Google Account",    L"https://myaccount.google.com" },
+    { L"\uE70F", L"Customise profile",        L"https://myaccount.google.com/personal-info" },
+    { L"\uE713", L"Your account in RasBrowser", nullptr },
+    { L"\uE8FB", L"Sign out of Google",       L"https://accounts.google.com/Logout" },
+};
+static const int kProfileItemCount = 5;
+
+static void DrawProfilePanel(Gdiplus::Graphics& g, int W, int dpi,
+                              bool isDark, int mouseX, int mouseY)
+{
+    using namespace Gdiplus;
+    auto S = [&](int v) { return v * dpi / 96; };
+
+    // Panel size
+    int pw = S(300);
+    int ph = S(56) + S(20) + S(1) + kProfileItemCount * S(40) + S(8); // header+sep+items+padding
+    // Right-align under profile button — profile button is 3rd from right (index 1 of right buttons)
+    // right buttons start at W - S(36*3+8), each S(36) wide → profile at W-S(36*2+8)
+    int panelX = W - pw - S(8);
+    int panelY = S(36 + 36); // titleBar(36) + toolbar(36)
+
+    // ── Drop shadow ──
+    for (int i = 3; i >= 1; i--) {
+        SolidBrush sh(Color((BYTE)(15*i), 0, 0, 0));
+        g.FillRectangle(&sh, (float)(panelX+i), (float)(panelY+i), (float)pw, (float)ph);
+    }
+
+    // ── Background ──
+    Color bgCol  = isDark ? Color(255, 32, 33, 36)  : Color(255, 255, 255, 255);
+    Color sepCol = isDark ? Color(255, 60, 61, 65)  : Color(255, 218, 220, 224);
+    Color txtCol = isDark ? Color(255, 232, 234, 237): Color(255, 32, 33, 36);
+    Color dimCol = isDark ? Color(255, 154,160, 166): Color(255, 95, 99, 104);
+    Color hovCol = isDark ? Color(40, 255,255,255)  : Color(30, 0, 0, 0);
+
+    SolidBrush bgBr(bgCol);
+    g.FillRectangle(&bgBr, (float)panelX, (float)panelY, (float)pw, (float)ph);
+    Pen borderPen(sepCol, 1.0f);
+    g.DrawRectangle(&borderPen, (float)panelX, (float)panelY, (float)(pw-1), (float)(ph-1));
+
+    // ── Header: big avatar + name + email ──
+    int headerH = S(100);
+    int avR = S(56);
+    int avX = panelX + (pw - avR) / 2;
+    int avY = panelY + S(16);
+
+    // Avatar circle (Google blue)
+    SolidBrush avBr(Color(255, 26, 115, 232));
+    g.FillEllipse(&avBr, (float)avX, (float)avY, (float)avR, (float)avR);
+
+    Font fAvLetter(L"Segoe UI", (REAL)S(26), FontStyleBold, UnitPixel);
+    StringFormat sfC;
+    sfC.SetAlignment(StringAlignmentCenter);
+    sfC.SetLineAlignment(StringAlignmentCenter);
+    SolidBrush wBr(Color(255,255,255,255));
+    g.DrawString(L"R", -1, &fAvLetter,
+        RectF((float)avX, (float)avY, (float)avR, (float)avR), &sfC, &wBr);
+
+    // Name
+    Font fName(L"Segoe UI Semibold", (REAL)S(14), FontStyleBold, UnitPixel);
+    Font fEmail(L"Segoe UI",          (REAL)S(11), FontStyleRegular, UnitPixel);
+    SolidBrush txtBr(txtCol), dimBr(dimCol);
+    StringFormat sfCC; sfCC.SetAlignment(StringAlignmentCenter); sfCC.SetLineAlignment(StringAlignmentNear);
+    StringFormat sfCE; sfCE.SetAlignment(StringAlignmentCenter); sfCE.SetLineAlignment(StringAlignmentNear);
+    int nameY  = avY + avR + S(8);
+    int emailY = nameY + S(20);
+    RectF nameRect ((float)panelX, (float)nameY,  (float)pw, (float)S(22));
+    RectF emailRect((float)panelX, (float)emailY, (float)pw, (float)S(18));
+    g.DrawString(L"Ras User", -1, &fName,  nameRect,  &sfCC, &txtBr);
+    g.DrawString(L"raseledutools@gmail.com", -1, &fEmail, emailRect, &sfCE, &dimBr);
+
+    // ── Separator ──
+    int sepY = panelY + S(56) + S(20) + S(56) + S(8); // header area bottom
+    // recalc: avY + avR + name + email + padding
+    sepY = emailY + S(18) + S(10);
+    Pen sepPen(sepCol, 1.0f);
+    g.DrawLine(&sepPen, (float)(panelX + S(0)), (float)sepY,
+                        (float)(panelX + pw),   (float)sepY);
+
+    // ── Menu Items ──
+    Font fIco (L"Segoe MDL2 Assets", (REAL)S(15), FontStyleRegular, UnitPixel);
+    Font fItem(L"Segoe UI",          (REAL)S(13), FontStyleRegular, UnitPixel);
+    StringFormat sfL; sfL.SetAlignment(StringAlignmentNear); sfL.SetLineAlignment(StringAlignmentCenter);
+
+    int itemStartY = sepY + S(4);
+    g_profilePanelHover = -1;
+
+    for (int i = 0; i < kProfileItemCount; i++) {
+        int iy = itemStartY + i * S(40);
+        RECT ir = { panelX, iy, panelX + pw, iy + S(40) };
+        bool hover = mouseX >= ir.left && mouseX < ir.right &&
+                     mouseY >= ir.top  && mouseY < ir.bottom;
+        if (hover) {
+            g_profilePanelHover = i;
+            SolidBrush hBr(hovCol);
+            g.FillRectangle(&hBr, (float)ir.left, (float)ir.top,
+                            (float)(ir.right-ir.left), (float)(ir.bottom-ir.top));
+        }
+        // icon
+        g.DrawString(kProfileItems[i].ico, -1, &fIco,
+            RectF((float)(panelX+S(16)), (float)iy, (float)S(28), (float)S(40)),
+            &sfL, &dimBr);
+        // label
+        g.DrawString(kProfileItems[i].label, -1, &fItem,
+            RectF((float)(panelX+S(52)), (float)iy, (float)(pw-S(60)), (float)S(40)),
+            &sfL, &txtBr);
+    }
+
+    // store geometry for click detection (static so click handler can read it)
+    // packed into g_profilePanelHover; click handler uses same math
+    (void)panelX; (void)panelY; (void)sepY; (void)itemStartY;
+}
+
+// helper: profile panel rect for click detection
+static void GetProfilePanelItemRect(int W, int dpi, int idx,
+                                     int& panelX, int& itemStartY, int& itemH)
+{
+    auto S = [&](int v){ return v * dpi / 96; };
+    int pw = S(300);
+    panelX     = W - pw - S(8);
+    int avY    = S(36+36) + S(16);
+    int avR    = S(56);
+    int nameY  = avY + avR + S(8);
+    int emailY = nameY + S(20);
+    int sepY   = emailY + S(18) + S(10);
+    itemStartY = sepY + S(4) + idx * S(40);
+    itemH      = S(40);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MAIN DRAW FUNCTION 
 // ─────────────────────────────────────────────────────────────────────────────
 static void DrawBrowserContent(HWND hWnd, HDC hdc) {
@@ -2123,6 +2259,9 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
     if (g_extensionPanelOpen)
         DrawExtensionPanel(g, W2, H2, TitleBarH(dpi), ToolbarH(dpi),
                            wd.isDarkMode, (int)dpi, mousePt.x, mousePt.y);
+
+    if (g_profilePanelOpen)
+        DrawProfilePanel(g, W2, (int)dpi, wd.isDarkMode, mousePt.x, mousePt.y);
 
     if (g_findBarOpen)
         DrawFindBar(g, W2, H2, wd.isDarkMode, (int)dpi);
@@ -2924,6 +3063,7 @@ public:
                     if (g_bookmarkPanelOpen)  { g_bookmarkPanelOpen  = false; needRedraw = true; }
                     if (g_historyPanelOpen)   { g_historyPanelOpen   = false; needRedraw = true; }
                     if (g_downloadsPanelOpen) { g_downloadsPanelOpen = false; needRedraw = true; }
+                    if (g_profilePanelOpen)   { g_profilePanelOpen   = false; needRedraw = true; }
                     if (needRedraw) InvalidateRect(m_hWnd, NULL, TRUE);
                     return S_OK;
                 }).Get(),
@@ -3413,6 +3553,35 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
             }
         }
 
+        // ── Profile Panel Click ──
+        if (g_profilePanelOpen) {
+            auto S = [&](int v){ return v * dpi / 96; };
+            int pw = S(300);
+            int panelX = W - pw - S(8);
+            int panelY = S(36 + 36);
+            int avY    = panelY + S(16);
+            int avR    = S(56);
+            int nameY  = avY + avR + S(8);
+            int emailY = nameY + S(20);
+            int sepY   = emailY + S(18) + S(10);
+            int itemStartY = sepY + S(4);
+            int ph = itemStartY - panelY + kProfileItemCount * S(40) + S(8);
+            // panel বাইরে click → close
+            if (x < panelX || x >= panelX + pw || y < panelY || y >= panelY + ph) {
+                g_profilePanelOpen = false;
+                InvalidateRect(hWnd, NULL, TRUE);
+                return 0;
+            }
+            // item click
+            if (g_profilePanelHover >= 0 && g_profilePanelHover < kProfileItemCount) {
+                const wchar_t* url = kProfileItems[g_profilePanelHover].url;
+                g_profilePanelOpen = false;
+                InvalidateRect(hWnd, NULL, TRUE);
+                if (url) AddTab(hWnd, url);
+            }
+            return 0;
+        }
+
         // ── Extension Panel Click ──
         if (g_extensionPanelOpen) {
             std::wstring action = HandleExtensionPanelClick(
@@ -3593,7 +3762,14 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                 if (wd.hRel  && tab->webview)                 tab->webview->Reload();
             }
 
-            if (wd.hProfile) MessageBoxW(hWnd, L"Profile menu will appear here.", L"Profile", MB_OK|MB_ICONINFORMATION);
+            if (wd.hProfile) {
+                g_profilePanelOpen   = !g_profilePanelOpen;
+                g_extensionPanelOpen = false;
+                g_historyPanelOpen   = false;
+                g_bookmarkPanelOpen  = false;
+                g_downloadsPanelOpen = false;
+                InvalidateRect(hWnd, NULL, TRUE);
+            }
             if (wd.hExt) {
                 g_extensionPanelOpen = !g_extensionPanelOpen;
                 g_historyPanelOpen   = false;
