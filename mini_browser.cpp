@@ -1096,35 +1096,104 @@ public:
             }
         }
 
-        // Anti-bot script (Gemini / Google login fix)
-        // YouTube + Google সাইটে Chrome-এর মতো দেখানোর জন্য সম্পূর্ণ Chrome fingerprint
+        // ── Anti-bot / Cloudflare bypass: Full Chrome fingerprint spoofing ──────
+        // Cloudflare, YouTube, Google সব সাইটে real Chrome-এর মতো দেখাবে
         tab.webview->AddScriptToExecuteOnDocumentCreated(
-            // webdriver flag লুকানো
-            L"Object.defineProperty(navigator,'webdriver',{get:()=>false,configurable:true});"
-            // Chrome-এর সম্পূর্ণ window.chrome object
+            // 1. webdriver flag সম্পূর্ণভাবে লুকানো
+            L"(function(){"
+            L"'use strict';"
+
+            // webdriver
+            L"const _wdOD={get:()=>false,configurable:true};"
+            L"try{Object.defineProperty(navigator,'webdriver',_wdOD);}catch(e){}"
+
+            // 2. window.chrome — পুরোপুরি real Chrome-এর মতো
             L"window.chrome={"
             L"  runtime:{"
             L"    id:undefined,"
-            L"    connect:function(){},"
+            L"    connect:function(){return{postMessage:function(){},onMessage:{addListener:function(){}},disconnect:function(){}}},"
             L"    sendMessage:function(){},"
-            L"    onMessage:{addListener:function(){}}"
+            L"    onMessage:{addListener:function(){},removeListener:function(){}},"
+            L"    onConnect:{addListener:function(){}},"
+            L"    onInstalled:{addListener:function(){}}"
             L"  },"
-            L"  loadTimes:function(){return{firstPaintTime:0,firstPaintAfterLoadTime:0,requestTime:Date.now()/1000};},"
-            L"  csi:function(){return{startE:Date.now(),onloadT:Date.now(),pageT:1,tran:15};},"
+            L"  loadTimes:function(){return{firstPaintTime:performance.now()/1000+0.1,firstPaintAfterLoadTime:0,requestTime:Date.now()/1000,startLoadTime:Date.now()/1000,commitLoadTime:Date.now()/1000,finishDocumentLoadTime:0,finishLoadTime:0,navigationType:'Other',wasFetchedViaSpdy:true,wasNpnNegotiated:true,npnNegotiatedProtocol:'h2',wasAlternateProtocolAvailable:false,connectionInfo:'h2'};},"
+            L"  csi:function(){return{startE:Date.now(),onloadT:Date.now(),pageT:1.5,tran:15};},"
             L"  app:{isInstalled:false,InstallState:{DISABLED:'disabled',INSTALLED:'installed',NOT_INSTALLED:'not_installed'},RunningState:{CANNOT_RUN:'cannot_run',READY_TO_RUN:'ready_to_run',RUNNING:'running'}},"
-            L"  webstore:{}"
+            L"  webstore:{},"
+            L"  cast:{},"
+            L"  i18n:{getMessage:function(){return'';},getUILanguage:function(){return'en-US';},detectLanguage:function(t,cb){if(cb)cb({isReliable:false,languages:[]});}}"
             L"};"
-            // plugins — Chrome-এর মতো
-            L"Object.defineProperty(navigator,'plugins',{get:()=>["
-            L"  {name:'Chrome PDF Plugin',filename:'internal-pdf-viewer',description:'Portable Document Format'},"
-            L"  {name:'Chrome PDF Viewer',filename:'mhjfbmdgcfjbbpaeojofohoefgiehjai',description:''},"
-            L"  {name:'Native Client',filename:'internal-nacl-plugin',description:''}"
-            L"],configurable:true});"
-            // language
-            L"Object.defineProperty(navigator,'languages',{get:()=>['en-US','en'],configurable:true});"
-            // userAgentData — YouTube এটা দিয়ে Chrome চেনে
+
+            // 3. plugins — Chrome PDF + NaCl
+            L"try{Object.defineProperty(navigator,'plugins',{get:function(){"
+            L"var a=Object.create(PluginArray.prototype);"
+            L"var p0=Object.create(Plugin.prototype);"
+            L"Object.defineProperty(p0,'name',{get:()=>'Chrome PDF Plugin'});"
+            L"Object.defineProperty(p0,'filename',{get:()=>'internal-pdf-viewer'});"
+            L"Object.defineProperty(p0,'description',{get:()=>'Portable Document Format'});"
+            L"Object.defineProperty(p0,'length',{get:()=>1});"
+            L"var p1=Object.create(Plugin.prototype);"
+            L"Object.defineProperty(p1,'name',{get:()=>'Chrome PDF Viewer'});"
+            L"Object.defineProperty(p1,'filename',{get:()=>'mhjfbmdgcfjbbpaeojofohoefgiehjai'});"
+            L"Object.defineProperty(p1,'description',{get:()=>''});"
+            L"Object.defineProperty(p1,'length',{get:()=>1});"
+            L"var p2=Object.create(Plugin.prototype);"
+            L"Object.defineProperty(p2,'name',{get:()=>'Native Client'});"
+            L"Object.defineProperty(p2,'filename',{get:()=>'internal-nacl-plugin'});"
+            L"Object.defineProperty(p2,'description',{get:()=>''});"
+            L"Object.defineProperty(p2,'length',{get:()=>0});"
+            L"Object.defineProperty(a,'0',{get:()=>p0});Object.defineProperty(a,'1',{get:()=>p1});Object.defineProperty(a,'2',{get:()=>p2});"
+            L"Object.defineProperty(a,'length',{get:()=>3});"
+            L"a.item=function(i){return[p0,p1,p2][i]||null;};"
+            L"a.namedItem=function(n){return{'Chrome PDF Plugin':p0,'Chrome PDF Viewer':p1,'Native Client':p2}[n]||null;};"
+            L"a.refresh=function(){};"
+            L"return a;},configurable:true});}catch(e){}"
+
+            // 4. mimeTypes
+            L"try{Object.defineProperty(navigator,'mimeTypes',{get:function(){"
+            L"var m=Object.create(MimeTypeArray.prototype);"
+            L"Object.defineProperty(m,'length',{get:()=>2});"
+            L"return m;},configurable:true});}catch(e){}"
+
+            // 5. languages
+            L"try{Object.defineProperty(navigator,'languages',{get:()=>['en-US','en'],configurable:true});}catch(e){}"
+
+            // 6. hardwareConcurrency (real PC-এর মতো)
+            L"try{Object.defineProperty(navigator,'hardwareConcurrency',{get:()=>8,configurable:true});}catch(e){}"
+
+            // 7. deviceMemory
+            L"try{Object.defineProperty(navigator,'deviceMemory',{get:()=>8,configurable:true});}catch(e){}"
+
+            // 8. platform
+            L"try{Object.defineProperty(navigator,'platform',{get:()=>'Win32',configurable:true});}catch(e){}"
+
+            // 9. vendor
+            L"try{Object.defineProperty(navigator,'vendor',{get:()=>'Google Inc.',configurable:true});}catch(e){}"
+
+            // 10. vendorSub, productSub
+            L"try{Object.defineProperty(navigator,'vendorSub',{get:()=>'',configurable:true});}catch(e){}"
+            L"try{Object.defineProperty(navigator,'productSub',{get:()=>'20030107',configurable:true});}catch(e){}"
+
+            // 11. maxTouchPoints — desktop Chrome = 0
+            L"try{Object.defineProperty(navigator,'maxTouchPoints',{get:()=>0,configurable:true});}catch(e){}"
+
+            // 12. Permissions API — Cloudflare এটা দিয়ে পরীক্ষা করে
+            L"try{"
+            L"const origQuery=window.navigator.permissions&&window.navigator.permissions.query;"
+            L"if(origQuery){"
+            L"  window.navigator.permissions.query=(parameters)=>{"
+            L"    if(parameters.name==='notifications'){"
+            L"      return Promise.resolve({state:Notification.permission,onchange:null});"
+            L"    }"
+            L"    return origQuery(parameters);"
+            L"  };"
+            L"}"
+            L"}catch(e){}"
+
+            // 13. userAgentData — Chrome 137 full
             L"if(!navigator.userAgentData){"
-            L"  Object.defineProperty(navigator,'userAgentData',{get:()=>({"
+            L"  try{Object.defineProperty(navigator,'userAgentData',{get:()=>({"
             L"    brands:[{brand:'Chromium',version:'137'},{brand:'Google Chrome',version:'137'},{brand:'Not/A)Brand',version:'99'}],"
             L"    mobile:false,"
             L"    platform:'Windows',"
@@ -1140,9 +1209,63 @@ public:
             L"        platformVersion:'10.0.0',"
             L"        uaFullVersion:'137.0.0.0'"
             L"      });"
+            L"    },"
+            L"    toJSON:function(){return{brands:[{brand:'Chromium',version:'137'},{brand:'Google Chrome',version:'137'},{brand:'Not/A)Brand',version:'99'}],mobile:false,platform:'Windows'};}"
+            L"  }),configurable:true});}catch(e){}"
+            L"}"
+
+            // 14. Canvas fingerprint noise — Cloudflare canvas test bypass
+            L"(function(){"
+            L"  const origToDataURL=HTMLCanvasElement.prototype.toDataURL;"
+            L"  const origGetImageData=CanvasRenderingContext2D.prototype.getImageData;"
+            L"  const origToBlob=HTMLCanvasElement.prototype.toBlob;"
+            L"  HTMLCanvasElement.prototype.toDataURL=function(){"
+            L"    const ctx=this.getContext('2d');"
+            L"    if(ctx){"
+            L"      const id=ctx.getImageData(0,0,1,1);"
+            L"      id.data[0]=(id.data[0]+1)%256;"
+            L"      ctx.putImageData(id,0,0);"
             L"    }"
-            L"  }),configurable:true});"
-            L"}",
+            L"    return origToDataURL.apply(this,arguments);"
+            L"  };"
+            L"  CanvasRenderingContext2D.prototype.getImageData=function(){"
+            L"    const imageData=origGetImageData.apply(this,arguments);"
+            L"    if(imageData&&imageData.data&&imageData.data.length>0){"
+            L"      imageData.data[0]=(imageData.data[0]+1)%256;"
+            L"    }"
+            L"    return imageData;"
+            L"  };"
+            L"})();"
+
+            // 15. WebGL fingerprint — vendor/renderer real Chrome-এর মতো
+            L"(function(){"
+            L"  const origGetParam=WebGLRenderingContext.prototype.getParameter;"
+            L"  WebGLRenderingContext.prototype.getParameter=function(param){"
+            L"    if(param===37445)return'Google Inc. (Intel)';"   // VENDOR
+            L"    if(param===37446)return'ANGLE (Intel, Intel(R) UHD Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)';" // RENDERER
+            L"    return origGetParam.apply(this,arguments);"
+            L"  };"
+            L"  const origGetParam2=WebGL2RenderingContext.prototype.getParameter;"
+            L"  WebGL2RenderingContext.prototype.getParameter=function(param){"
+            L"    if(param===37445)return'Google Inc. (Intel)';"
+            L"    if(param===37446)return'ANGLE (Intel, Intel(R) UHD Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)';"
+            L"    return origGetParam2.apply(this,arguments);"
+            L"  };"
+            L"})();"
+
+            // 16. screen properties — real desktop
+            L"try{Object.defineProperty(screen,'colorDepth',{get:()=>24,configurable:true});}catch(e){}"
+            L"try{Object.defineProperty(screen,'pixelDepth',{get:()=>24,configurable:true});}catch(e){}"
+
+            // 17. connection (network info)
+            L"try{if(!navigator.connection){"
+            L"  Object.defineProperty(navigator,'connection',{get:()=>({effectiveType:'4g',rtt:50,downlink:10,saveData:false}),configurable:true});"
+            L"}}catch(e){}"
+
+            // 18. Cloudflare-specific: __cf_chl_opt guard & turnstile helper
+            L"if(typeof window.__cf_chl_opt==='undefined'){window.__cf_chl_opt={};}"
+
+            L"})();",
             nullptr);
 
         // NavigationStarting — block bad content + enforce desktop URLs
@@ -1438,17 +1561,29 @@ static void CreateWebViewForTab(HWND hWnd, int tabIdx) {
             L"--enable-gpu-rasterization "
             L"--enable-zero-copy "
             L"--disable-features=Translate "
-            // Gemini Fix: allow all cookies, storage, and disable automation flag
+            // Cloudflare + anti-bot: automation flag সম্পূর্ণ বন্ধ
             L"--disable-blink-features=AutomationControlled "
+            // Cookie & storage fix
             L"--enable-features=CookiesWithoutSameSiteMustBeSecure "
-            L"--disable-web-security=false "
             L"--no-proxy-server "
-            // YouTube Fix: Chrome-এর মতো দেখানোর জন্য
+            // Chrome-এর মতো দেখানোর জন্য
             L"--lang=en-US "
             L"--no-first-run "
             L"--no-default-browser-check "
-            L"--disable-extensions-except= "
             L"--force-color-profile=srgb "
+            // Cloudflare TLS fingerprint-এর জন্য: QUIC/H3 সক্রিয়
+            L"--enable-quic "
+            L"--quic-version=h3 "
+            // GPU দিয়ে Canvas/WebGL render করলে fingerprint real-এর মতো হয়
+            L"--enable-webgl "
+            L"--use-angle=d3d11 "
+            // Automation ইনফো header বন্ধ
+            L"--disable-infobars "
+            L"--exclude-switches=enable-automation "
+            // Real Chrome-এর মতো user-data isolation
+            L"--disable-background-timer-throttling "
+            L"--disable-renderer-backgrounding "
+            L"--disable-backgrounding-occluded-windows "
         );
 
         // User data dir in LocalAppData (required for Gemini login persistence)
