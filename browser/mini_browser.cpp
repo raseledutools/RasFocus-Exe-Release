@@ -839,6 +839,7 @@ static std::wstring GetYouTubeAdPrunerScript() {
     L"(function(){"
     L"if(window.__rasAdPrunerInstalled)return;"
     L"window.__rasAdPrunerInstalled=true;"
+    L"if(window.__rasAdBlockEnabled===false)return;"
     // ad fields — uBlock Origin json-prune এর exact list
     L"var AF=['adPlacements','playerAds','adSlots','adBreakHeartbeatParams',"
     L"'auxiliaryUi','adMessagingConfig','adVideoId'];"
@@ -3202,9 +3203,13 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                     // ── clickIdx 8 = YouTube Ad Block Toggle ─────────────────────
                     else if (clickIdx == 8) {
                         g_youtubeAdBlockEnabled = !g_youtubeAdBlockEnabled;
-                        // Active tab reload করো যাতে নতুন setting কাজ করে
+                        // Active tab এ JS flag সেট করো (instant effect)
                         if (auto* tab = wd.active()) {
                             if (tab->webview) {
+                                std::wstring flagScript = g_youtubeAdBlockEnabled
+                                    ? L"window.__rasAdBlockEnabled=true;"
+                                    : L"window.__rasAdBlockEnabled=false;";
+                                tab->webview->ExecuteScript(flagScript.c_str(), nullptr);
                                 tab->webview->Reload();
                             }
                         }
