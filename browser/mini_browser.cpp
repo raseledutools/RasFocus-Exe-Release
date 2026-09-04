@@ -2148,6 +2148,25 @@ public:
         tab.webview->AddScriptToExecuteOnDocumentCreated(
             GetYouTubeAdPrunerScript().c_str(), nullptr);
 
+        // ── Claude.ai / Anthropic — Cloudflare Turnstile early bypass ──
+        // DocumentCreated এ inject করলে Cloudflare-এর challenge script চালানোর
+        // আগেই navigator.webdriver এবং অন্য bot markers সরানো যায়।
+        tab.webview->AddScriptToExecuteOnDocumentCreated(
+            L"(() => {"
+            L"  try { Object.defineProperty(navigator, 'webdriver', { get: () => undefined, configurable: true }); } catch(e){}"
+            L"  if (window.location.hostname.includes('claude.ai') || window.location.hostname.includes('anthropic.com')) {"
+            L"    if (!window.chrome) window.chrome = { app:{isInstalled:false}, csi:()=>({}), loadTimes:()=>({}), runtime:{}, webstore:{} };"
+            L"    try { delete window.chrome.webview; } catch(e){}"
+            L"    try { delete window.__WebView2__; } catch(e){}"
+            L"    try { Object.defineProperty(navigator, 'vendor', { get: () => 'Google Inc.', configurable: true }); } catch(e){}"
+            L"    try { Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8, configurable: true }); } catch(e){}"
+            L"    try { Object.defineProperty(navigator, 'deviceMemory', { get: () => 8, configurable: true }); } catch(e){}"
+            L"    try { if (!navigator.connection) Object.defineProperty(navigator, 'connection', { get: () => ({effectiveType:'4g',rtt:50,downlink:10,saveData:false}), configurable: true }); } catch(e){}"
+            L"    try { Object.defineProperty(navigator, 'plugins', { get: () => { const a=[1,2,3,4,5]; a.item=i=>a[i]; a.namedItem=()=>null; a.refresh=()=>{}; return a; }, configurable:true }); } catch(e){}"
+            L"  }"
+            L"})();",
+            nullptr);
+
         // ── RasExtensions — inject enabled extensions on every document ──
         {
             std::wstring extScript = GetExtensionInjectScript();
@@ -2192,6 +2211,22 @@ public:
                             headers->SetHeader(L"Sec-Fetch-Dest",    L"document");
                             headers->SetHeader(L"Accept-Language",   L"en-US,en;q=0.9");
                             headers->SetHeader(L"Upgrade-Insecure-Requests", L"1");
+                        }
+                    }
+
+                    // ── Claude.ai / Anthropic — Cloudflare bypass ──
+                    bool isClaude = (urlStr.find(L"claude.ai")    != std::wstring::npos ||
+                                     urlStr.find(L"anthropic.com") != std::wstring::npos);
+                    if (isClaude) {
+                        ComPtr<ICoreWebView2HttpRequestHeaders> headers;
+                        if (SUCCEEDED(args->get_RequestHeaders(&headers)) && headers) {
+                            headers->SetHeader(L"Sec-Fetch-Mode",    L"navigate");
+                            headers->SetHeader(L"Sec-Fetch-Site",    L"none");
+                            headers->SetHeader(L"Sec-Fetch-User",    L"?1");
+                            headers->SetHeader(L"Sec-Fetch-Dest",    L"document");
+                            headers->SetHeader(L"Accept-Language",   L"en-US,en;q=0.9");
+                            headers->SetHeader(L"Upgrade-Insecure-Requests", L"1");
+                            headers->SetHeader(L"Accept",            L"text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8");
                         }
                     }
 
@@ -2439,6 +2474,40 @@ public:
                             // WebView2 specific flag remove
                             L"  try { delete window.__WebView2__; } catch(e){}"
                             L"  try { delete window.chrome.webview; } catch(e){}"
+                            L"})();",
+                            nullptr);
+                    }
+                }
+
+                // ── Claude.ai / Anthropic post-load Cloudflare bypass ──
+                {
+                    const std::wstring& curUrl = w.tabs[m_tabIdx].url;
+                    bool isClaude = (curUrl.find(L"claude.ai")     != std::wstring::npos ||
+                                     curUrl.find(L"anthropic.com") != std::wstring::npos);
+                    if (isClaude) {
+                        sender->ExecuteScript(
+                            L"(() => {"
+                            // webdriver flag সরাও — Cloudflare এটা detect করে
+                            L"  try { Object.defineProperty(navigator, 'webdriver', { get: () => undefined, configurable: true }); } catch(e){}"
+                            // chrome object — Cloudflare window.chrome চেক করে
+                            L"  if (!window.chrome || !window.chrome.runtime) {"
+                            L"    window.chrome = { app:{isInstalled:false}, csi:()=>({}), loadTimes:()=>({}), runtime:{onConnect:()=>{},connect:()=>({})}, webstore:{} };"
+                            L"  }"
+                            // WebView2 specific markers সরাও
+                            L"  try { delete window.__WebView2__; } catch(e){}"
+                            L"  try { delete window.chrome.webview; } catch(e){}"
+                            // vendor
+                            L"  try { Object.defineProperty(navigator, 'vendor', { get: () => 'Google Inc.', configurable: true }); } catch(e){}"
+                            // hardwareConcurrency — 0 হলে bot মনে হয়
+                            L"  try { Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8, configurable: true }); } catch(e){}"
+                            // deviceMemory
+                            L"  try { Object.defineProperty(navigator, 'deviceMemory', { get: () => 8, configurable: true }); } catch(e){}"
+                            // connection
+                            L"  try { if (!navigator.connection) Object.defineProperty(navigator, 'connection', { get: () => ({effectiveType:'4g',rtt:50,downlink:10,saveData:false}), configurable: true }); } catch(e){}"
+                            // plugins — empty হলে bot সন্দেহ হয়
+                            L"  try { Object.defineProperty(navigator, 'plugins', { get: () => { const a=[1,2,3,4,5]; a.item=i=>a[i]; a.namedItem=()=>null; a.refresh=()=>{}; return a; }, configurable:true }); } catch(e){}"
+                            // Cloudflare Turnstile এর জন্য setTimeout override — real browser simulation
+                            L"  try { const _orig = window.setTimeout; window.setTimeout = function(fn, delay, ...args) { return _orig.call(this, fn, Math.max(delay||0, 1), ...args); }; } catch(e){}"
                             L"})();",
                             nullptr);
                     }
