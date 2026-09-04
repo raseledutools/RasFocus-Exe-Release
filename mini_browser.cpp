@@ -370,9 +370,38 @@ static const std::vector<std::wstring> TRACKER_DOMAINS = {
     L"google-analytics.com", L"googletagmanager.com", L"googletagservices.com",
     L"analytics.google.com", L"ssl.google-analytics.com", L"stats.wp.com",
     L"bat.bing.com", L"analytics.twitter.com", L"piwik.org", L"matomo.org",
-    L"statcounter.com", L"crazyegg.com", L"amplitude.com", L"mixpanel.com",
-    L"segment.com", L"heap.io", L"rollbar.com", L"sentry.io", L"hotjar.com",
-    L"mouseflow.com", L"fullstory.com", L"logrocket.com"
+    L"statcounter.com", L"crazyegg.com",
+    L"hotjar.com", L"mouseflow.com", L"fullstory.com", L"logrocket.com"
+    // NOTE: sentry.io, segment.com, amplitude.com, mixpanel.com, heap.io, rollbar.com
+    // সরানো হয়েছে — এগুলো claude.ai, Notion, Linear, Vercel সহ অনেক modern
+    // web app-এর core functionality-র জন্য দরকার। block করলে সাইট load হয় না।
+};
+
+// Web apps যেগুলো sentry/segment ছাড়া কাজ করে না — এদের জন্য
+// tracker block bypass করা হবে
+static const std::vector<std::wstring> TRACKER_WHITELIST = {
+    L"sentry.io",       // Error tracking — claude.ai, Notion, Linear, etc.
+    L"ingest.sentry.io",
+    L"o*.ingest.sentry.io",
+    L"segment.com",     // Analytics infra — claude.ai, many SPAs
+    L"cdn.segment.com",
+    L"api.segment.io",
+    L"amplitude.com",   // Product analytics — many web apps depend on it
+    L"api.amplitude.com",
+    L"mixpanel.com",
+    L"api.mixpanel.com",
+    L"heap.io",
+    L"heapanalytics.com",
+    L"rollbar.com",
+    L"statsig.com",     // Feature flags — claude.ai uses this
+    L"statsigapi.net",
+    L"featuregates.org",
+    L"launchdarkly.com",// Feature flags
+    L"app.launchdarkly.com",
+    L"events.launchdarkly.com",
+    L"intercom.io",     // Support chat
+    L"intercomcdn.com",
+    L"widget.intercom.io"
 };
 
 // Extract domain/host from URL
@@ -427,6 +456,22 @@ bool IsTrackerDomain(const std::wstring& url) {
     std::wstring host = ExtractHost(url);
     for (const auto& d : TRACKER_DOMAINS)
         if (HostMatchesDomain(host, d)) return true;
+    return false;
+}
+
+bool IsTrackerWhitelisted(const std::wstring& url) {
+    std::wstring host = ExtractHost(url);
+    for (const auto& d : TRACKER_WHITELIST) {
+        if (d.find(L'*') == std::wstring::npos) {
+            if (HostMatchesDomain(host, d)) return true;
+        } else {
+            auto star = d.find(L'*');
+            std::wstring suffix = d.substr(star + 1);
+            if (host.size() >= suffix.size() &&
+                host.compare(host.size() - suffix.size(), suffix.size(), suffix) == 0)
+                return true;
+        }
+    }
     return false;
 }
 
@@ -1504,7 +1549,9 @@ public:
                 LPWSTR uri=nullptr; req->get_Uri(&uri);
                 if (uri) {
                     std::wstring url(uri); CoTaskMemFree(uri);
-                    if (IsAdDomain(url) || IsTrackerDomain(url)) {
+                    // Whitelist check আগে — whitelisted হলে block করব না
+                    bool whitelisted = IsTrackerWhitelisted(url);
+                    if (!whitelisted && (IsAdDomain(url) || IsTrackerDomain(url))) {
                         // Return empty 200 response — block silently
                         if (g_sharedEnv) {
                             ComPtr<ICoreWebView2WebResourceResponse> resp;
