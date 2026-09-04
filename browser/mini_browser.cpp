@@ -2880,8 +2880,9 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                     { wd.hBack=b; wd.hFwd=f; wd.hRel=rl; dirty=true; }
 
                 int rx = W - S(36*3+8, dpi);
-                bool pr = (y>=toolY&&y<toolY+ToolbarH(dpi)&&x>=rx&&x<rx+S(36,dpi)); rx+=btnStep;
+                // Draw order: Ext → Profile → Menu (hover detection must match!)
                 bool e  = (y>=toolY&&y<toolY+ToolbarH(dpi)&&x>=rx&&x<rx+S(36,dpi)); rx+=btnStep;
+                bool pr = (y>=toolY&&y<toolY+ToolbarH(dpi)&&x>=rx&&x<rx+S(36,dpi)); rx+=btnStep;
                 bool m  = (y>=toolY&&y<toolY+ToolbarH(dpi)&&x>=rx&&x<rx+S(36,dpi));
                 if (wd.hProfile!=pr||wd.hExt!=e||wd.hMenu!=m)
                     { wd.hProfile=pr; wd.hExt=e; wd.hMenu=m; dirty=true; }
