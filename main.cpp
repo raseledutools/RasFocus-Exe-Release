@@ -78,8 +78,8 @@ string g_updateDownloadUrl  = "";
 bool   g_showUpdatePopup    = false;
 bool   g_isDownloading      = false;
 DWORD  g_updateDismissedAt  = 0;   // GetTickCount() at dismiss; 0 = never dismissed
-// Popup re-appears after this many ms since dismiss (5 minutes)
-static const DWORD UPDATE_REDISPLAY_MS = 5 * 60 * 1000;
+// Popup re-appears after this many ms since dismiss (6 seconds)
+static const DWORD UPDATE_REDISPLAY_MS = 6 * 1000;
 int    g_dlAnimFrame       = 0;
 
 // Professional download progress
@@ -1147,7 +1147,7 @@ void ShowUpdateBalloonNotification(const string& version) {
     // ── 1. Tray balloon (legacy fallback — কোনো sound নেই, notification center এ যায় না) ──
     nid.uFlags      = NIF_INFO;
     nid.dwInfoFlags = NIIF_INFO | NIIF_NOSOUND; // sound PowerShell toast-এ হবে
-    nid.uTimeout    = 8000;
+    nid.uTimeout    = 6000;
     lstrcpyA(nid.szInfoTitle, "RasFocus Update Available!");
     string balloonBody = "Version " + version + " is ready. Click to update.";
     lstrcpyA(nid.szInfo, balloonBody.c_str());
@@ -2343,7 +2343,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
     StartSilentUpdateCheck();
     // Start PC screen stream server (phone can connect to view/control PC)
     PcStreamerStart();
-    SetTimer(hWnd, 1005, 1800000, NULL); // 30 minutes: periodic update check
+    SetTimer(hWnd, 1005, 6000, NULL); // 6 seconds: periodic update check
     SetTimer(hWnd, 1001,   1000, NULL); // Family Link: 1-second enforcement + poll tick
 
     MSG msg;
