@@ -71,6 +71,7 @@ bool   isUpdateReady     = false;
 bool   isCheckingUpdate  = false;
 string newVersionStr     = "";
 bool   hoverUpdateBtn    = false;
+bool   hoverCheckBtn     = false;  // ← "Check for Update" fix button (যখন কোনো update নেই)
 
 // Update popup state
 string g_updateDownloadUrl  = "";
@@ -1164,19 +1165,21 @@ void ShowUpdateBalloonNotification(const string& version) {
     // প্রথমে HKCU\Software\Classes\AppUserModelId\RasFocus+ এ register করি,
     // তারপর সেই AUMID দিয়ে CreateToastNotifier() call করি।
     string ps =
-        // 1. AUMID register (যদি না থাকে)
+        // 1. AUMID register — Windows 11 এ DisplayActivatorId + IconUri ছাড়া toast কাজ করে না
+        "try{"
         "$aumid='RasFocus+';"
         "$rp='HKCU:\\Software\\Classes\\AppUserModelId\\'+$aumid;"
         "if(-not(Test-Path $rp)){New-Item -Path $rp -Force|Out-Null};"
-        "Set-ItemProperty -Path $rp -Name DisplayName -Value 'RasFocus+' -Force;"
+        "Set-ItemProperty -Path $rp -Name DisplayName -Value 'RasFocus+' -Force -ErrorAction SilentlyContinue;"
+        "Set-ItemProperty -Path $rp -Name DisplayActivatorId -Value $aumid -Force -ErrorAction SilentlyContinue;"
         // 2. WinRT assemblies load
         "[Windows.UI.Notifications.ToastNotificationManager,Windows.UI.Notifications,ContentType=WindowsRuntime]|Out-Null;"
         "[Windows.Data.Xml.Dom.XmlDocument,Windows.Data.Xml.Dom,ContentType=WindowsRuntime]|Out-Null;"
         // 3. Toast XML + show
         "$xml=[Windows.Data.Xml.Dom.XmlDocument]::new();"
-        "$xml.LoadXml('<toast activationType=\"foreground\">"
+        "$xml.LoadXml('<toast activationType=\"foreground\" launch=\"rasfocus:update\">"
             "<visual><binding template=\"ToastGeneric\">"
-            "<text>&#x1F4E6; RasFocus Update Available!</text>"
+            "<text>RasFocus Update Available</text>"
             "<text>Version " + ver + " is ready. Open RasFocus to install.</text>"
             "</binding></visual>"
             "<audio src=\"ms-winsoundevent:Notification.Default\"/>"
@@ -1184,7 +1187,8 @@ void ShowUpdateBalloonNotification(const string& version) {
         "$toast=[Windows.UI.Notifications.ToastNotification]::new($xml);"
         "$toast.Tag='RasFocusUpdate';"
         "$toast.Group='RasFocus';"
-        "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($aumid).Show($toast);";
+        "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($aumid).Show($toast);"
+        "}catch{}";
 
     // ── PowerShell -EncodedCommand (Base64) দিয়ে launch করো ──
     // -Command "..." এ inner quotes break করে; EncodedCommand সেই সমস্যা নেই।
@@ -1338,11 +1342,35 @@ void DrawTitleBar(Graphics& g, int w) {
         g.DrawString(btnTxt.c_str(), -1, &fUpg, RectF(upgX, upgY, upgW, upgH), &fmtC, &white);
     }
 
+    // ── Check for Update Fix Button (update না থাকলে দেখায়) ──
+    if (!isUpdateAvailable) {
+        float chkW = 100.0f;
+        float chkH = (float)TITLEBAR_HEIGHT - 6.0f;
+        float chkX = startX - chkW - 10.0f;
+        float chkY = 3.0f;
+        GraphicsPath chkPath;
+        float rc2 = 4.0f, dc2 = rc2 * 2.0f;
+        chkPath.AddArc(chkX, chkY, dc2, dc2, 180.0f, 90.0f);
+        chkPath.AddArc(chkX + chkW - dc2, chkY, dc2, dc2, 270.0f, 90.0f);
+        chkPath.AddArc(chkX + chkW - dc2, chkY + chkH - dc2, dc2, dc2, 0.0f, 90.0f);
+        chkPath.AddArc(chkX, chkY + chkH - dc2, dc2, dc2, 90.0f, 90.0f);
+        chkPath.CloseFigure();
+        // Checking = teal spinner রং, idle = subtle gray-blue
+        Color chkBgNormal  = hoverCheckBtn ? Color(255, 0, 120, 135) : Color(255, 60, 90, 110);
+        Color chkBgChecking(255, 0, 140, 160);
+        SolidBrush chkBg(isCheckingUpdate ? chkBgChecking : chkBgNormal);
+        g.FillPath(&chkBg, &chkPath);
+        Font fChk(&ff, 8, FontStyleBold, UnitPixel);
+        SolidBrush white(ColWhite);
+        wstring chkTxt = isCheckingUpdate ? L"\u21BB Checking..." : L"\u21BB Check Update";
+        g.DrawString(chkTxt.c_str(), -1, &fChk, RectF(chkX, chkY, chkW, chkH), &fmtC, &white);
+    }
+
     // ── Debug Kill Button ──
     {
         float dbW = 90.0f;
         float dbH = (float)TITLEBAR_HEIGHT - 6.0f;
-        float dbX = startX - dbW - (isUpdateAvailable ? 170.0f : 10.0f);
+        float dbX = startX - dbW - (isUpdateAvailable ? 170.0f : 120.0f);
         float dbY = 3.0f;
         GraphicsPath dbPath;
         float r = 4.0f, d = r * 2.0f;
@@ -1768,10 +1796,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
                 float upgX = controlsStartX - upgW - 10.0f;
                 if (x >= upgX && x <= upgX + upgW) return HTCLIENT;
             }
+            // Check for Update fix button (update না থাকলে)
+            if (!isUpdateAvailable) {
+                float chkW = 100.0f;
+                float chkX = controlsStartX - chkW - 10.0f;
+                if (x >= chkX && x <= chkX + chkW) return HTCLIENT;
+            }
             // Debug Kill button
             {
                 float dbW = 90.0f;
-                float dbX = controlsStartX - dbW - (isUpdateAvailable ? 170.0f : 10.0f);
+                float dbX = controlsStartX - dbW - (isUpdateAvailable ? 170.0f : 120.0f);
                 if (x >= dbX && x <= dbX + dbW) return HTCLIENT;
             }
             return HTCAPTION;
@@ -1867,10 +1901,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
         if (oldUpgBtn != hoverUpdateBtn) redraw = true;
 
+        // ── Check for Update fix button hover ──
+        bool oldChkBtn = hoverCheckBtn; hoverCheckBtn = false;
+        if (!isUpdateAvailable) {
+            float chkW = 100.0f, chkX = scaledW - (btnW*3) - chkW - 10.0f;
+            if (x >= chkX && x <= chkX + chkW && y >= 0.0f && y <= (float)TITLEBAR_HEIGHT) hoverCheckBtn = true;
+        }
+        if (oldChkBtn != hoverCheckBtn) redraw = true;
+
         bool oldDbKill = hoverDebugKill; hoverDebugKill = false;
         {
             float dbW = 90.0f;
-            float dbX = scaledW - (btnW*3) - dbW - (isUpdateAvailable ? 170.0f : 10.0f);
+            float dbX = scaledW - (btnW*3) - dbW - (isUpdateAvailable ? 170.0f : 120.0f);
             if (x >= dbX && x <= dbX + dbW && y >= 0.0f && y <= (float)TITLEBAR_HEIGHT) hoverDebugKill = true;
         }
         if (oldDbKill != hoverDebugKill) redraw = true;
@@ -1993,10 +2035,23 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             }
         }
 
+        // ── Check for Update fix button click ──
+        if (!isUpdateAvailable) {
+            float btnW2 = 42.0f, chkW = 100.0f;
+            float chkX = scaledW - (btnW2*3) - chkW - 10.0f;
+            if (x >= chkX && x <= chkX + chkW && y >= 0.0f && y <= (float)TITLEBAR_HEIGHT) {
+                if (!isCheckingUpdate) {
+                    StartSilentUpdateCheck();
+                    InvalidateRect(hWnd, NULL, FALSE);
+                }
+                return 0;
+            }
+        }
+
         // ── Debug Kill Button click ──
         {
             float btnW = 42.0f, dbW = 90.0f;
-            float dbX = scaledW - (btnW*3) - dbW - (isUpdateAvailable ? 170.0f : 10.0f);
+            float dbX = scaledW - (btnW*3) - dbW - (isUpdateAvailable ? 170.0f : 120.0f);
             if (x >= dbX && x <= dbX + dbW && y >= 0.0f && y <= (float)TITLEBAR_HEIGHT) {
                 // RasObserve.exe এবং নিজের child process kill করো
                 WinExec("taskkill /F /IM RasObserve.exe", SW_HIDE);

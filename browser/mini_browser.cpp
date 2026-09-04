@@ -1300,6 +1300,14 @@ static RECT GetWebViewRect(HWND hWnd) {
         b.right -= extAreaW;
         if (b.right < b.left + S(100, dpi)) b.right = b.left + S(100, dpi);
     }
+    // Profile panel open থাকলে right side shrink করো — WebView2 GDI+ এর উপরে থাকে,
+    // তাই panel area তে WebView shrink না করলে profile dropdown নিচে চাপা পড়ে
+    if (g_profilePanelOpen) {
+        UINT dpi = GetWndDpi(hWnd);
+        int profileAreaW = S(320, dpi); // pw(300) + margin(8) + extra(12)
+        b.right -= profileAreaW;
+        if (b.right < b.left + S(100, dpi)) b.right = b.left + S(100, dpi);
+    }
     return b;
 }
 
@@ -3569,6 +3577,8 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
             // panel বাইরে click → close
             if (x < panelX || x >= panelX + pw || y < panelY || y >= panelY + ph) {
                 g_profilePanelOpen = false;
+                // WebView full width restore করো
+                { RECT wvr = GetWebViewRect(hWnd); if (g_windows[hWnd].active() && g_windows[hWnd].active()->controller) g_windows[hWnd].active()->controller->put_Bounds(wvr); }
                 InvalidateRect(hWnd, NULL, TRUE);
                 return 0;
             }
@@ -3576,6 +3586,8 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
             if (g_profilePanelHover >= 0 && g_profilePanelHover < kProfileItemCount) {
                 const wchar_t* url = kProfileItems[g_profilePanelHover].url;
                 g_profilePanelOpen = false;
+                // WebView full width restore করো
+                { RECT wvr = GetWebViewRect(hWnd); if (g_windows[hWnd].active() && g_windows[hWnd].active()->controller) g_windows[hWnd].active()->controller->put_Bounds(wvr); }
                 InvalidateRect(hWnd, NULL, TRUE);
                 if (url) AddTab(hWnd, url);
             }
@@ -3768,6 +3780,13 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                 g_historyPanelOpen   = false;
                 g_bookmarkPanelOpen  = false;
                 g_downloadsPanelOpen = false;
+                // WebView shrink/restore করো — profile panel GDI+ এ draw হয়,
+                // WebView2 সবসময় GDI+ এর উপরে থাকে তাই panel area shrink করতে হয়
+                {
+                    RECT wvr = GetWebViewRect(hWnd);
+                    if (wd.active() && wd.active()->controller)
+                        wd.active()->controller->put_Bounds(wvr);
+                }
                 InvalidateRect(hWnd, NULL, TRUE);
             }
             if (wd.hExt) {
