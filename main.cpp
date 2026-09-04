@@ -924,7 +924,8 @@ void ProcessUpdateMouseClick(float x, float y, int w, int h, HWND hWnd) {
     if (x >= L.laterX && x <= L.laterX + L.laterW &&
         y >= L.laterY && y <= L.laterY + L.laterH) {
         g_showUpdatePopup  = false;
-        isUpdateAvailable  = false;  // reset so next timer cycle re-checks & re-shows popup
+        // isUpdateAvailable সত্য রাখো — header এর update button দেখা যাবে
+        // শুধু popup বন্ধ হবে, button hide হবে না
         s_hovDlBtn = false; s_hovLaterBtn = false;
         InvalidateRect(hWnd, NULL, FALSE);
         return;

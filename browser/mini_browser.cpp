@@ -1282,10 +1282,10 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
     FontFamily ffSeg(L"Segoe UI");
     // MDL2 fallback guard: if Segoe MDL2 Assets is not available (older Windows),
     // fall back to Segoe UI Symbol which covers the same PUA codepoints.
-    FontFamily ffMDL(L"Segoe MDL2 Assets");
-    if (ffMDL.GetLastStatus() != Ok) {
-        new (&ffMDL) FontFamily(L"Segoe UI Symbol");
-    }
+    FontFamily ffMDL_primary(L"Segoe MDL2 Assets");
+    FontFamily ffMDL_fallback(L"Segoe UI Symbol");
+    FontFamily& ffMDL = (ffMDL_primary.GetLastStatus() == Ok) ? ffMDL_primary : ffMDL_fallback;
+
     Font fSmall  (&ffSeg, Sf(12.f, dpi), FontStyleRegular, UnitPixel);
     Font fSmallBd(&ffSeg, Sf(12.f, dpi), FontStyleBold,    UnitPixel);
     Font fBrand  (&ffSeg, Sf(16.f, dpi), FontStyleBold,    UnitPixel);
