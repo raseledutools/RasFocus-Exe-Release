@@ -1011,8 +1011,18 @@ static void SwitchToTab(HWND hWnd, int idx) {
 static void CloseTab(HWND hWnd, int idx) {
     auto& wd=g_windows[hWnd];
     if (wd.tabs.empty()) return;
-    auto& tab=wd.tabs[idx];
-    if (tab.controller){tab.controller->put_IsVisible(FALSE);tab.controller->Close();}
+    if (idx<0||idx>=(int)wd.tabs.size()) return;  // guard: bad index
+    {
+        // Release controller inside its own scope so the ComPtr destructor
+        // fires (decrements ref) before we erase the TabData from the vector.
+        auto& tab=wd.tabs[idx];
+        if (tab.controller) {
+            tab.controller->put_IsVisible(FALSE);
+            tab.controller->Close();
+            tab.controller = nullptr;  // explicit release — avoids dangling ref after erase
+        }
+        tab.webview = nullptr;
+    }
     wd.tabs.erase(wd.tabs.begin()+idx);
     if (wd.tabs.empty()){DestroyWindow(hWnd);return;}
     wd.activeTab=min(wd.activeTab,(int)wd.tabs.size()-1);
@@ -1024,8 +1034,9 @@ static void AddTab(HWND hWnd, std::wstring url) {
     TabData tab; tab.url=url; tab.title=L"New Tab";
     wd.tabs.push_back(tab);
     int newIdx=(int)wd.tabs.size()-1;
+    // SwitchToTab already calls CreateWebViewForTab when controller is null —
+    // do NOT call it again here, that caused a double WebView creation making new tabs slow.
     SwitchToTab(hWnd,newIdx);
-    CreateWebViewForTab(hWnd,newIdx);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1646,16 +1657,32 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                     SwitchToTab(hWnd,i);return 0;
                 }
             }
+            // New-tab button: use hover flag (no modal loop issues here)
             if (wd.hNewTab){AddTab(hWnd,L"LOCAL_NTP");break;}
+
+            // Back/Forward/Reload: use hover flags (no modal loop issues)
             if (auto* tab=wd.active()) {
                 if (wd.hBack&&tab->webview&&tab->canBack) tab->webview->GoBack();
                 if (wd.hFwd &&tab->webview&&tab->canFwd)  tab->webview->GoForward();
                 if (wd.hRel &&tab->webview)               tab->webview->Reload();
             }
-            // Chrome-like menus
-            if (wd.hProfile) { ShowProfileMenu(hWnd); break; }
-            if (wd.hExt)     { ShowExtensionsMenu(hWnd); break; }
-            if (wd.hMenu)    { ShowMainMenu(hWnd); break; }
+
+            // FIX: Three-dot / Profile / Extensions menus — do NOT rely on hover flags here.
+            // TrackPopupMenu runs a modal message loop that generates WM_MOUSELEAVE while
+            // the menu is open, which resets hMenu/hProfile/hExt to false. On the next click
+            // (after menu closes) the flags are still false → ShowMainMenu never fires.
+            // Instead, re-compute hit from the raw click coordinates every time.
+            {
+                int toolY2 = TitleBarH(dpi);
+                int btnStep2 = S(36,dpi);
+                int rx2 = W - S(36*3+8, dpi);
+                bool clickProfile = (y>=toolY2&&y<toolY2+ToolbarH(dpi)&&x>=rx2&&x<rx2+S(34,dpi)); rx2+=btnStep2;
+                bool clickExt     = (y>=toolY2&&y<toolY2+ToolbarH(dpi)&&x>=rx2&&x<rx2+S(34,dpi)); rx2+=btnStep2;
+                bool clickMenu    = (y>=toolY2&&y<toolY2+ToolbarH(dpi)&&x>=rx2&&x<rx2+S(34,dpi));
+                if (clickProfile) { ShowProfileMenu(hWnd); break; }
+                if (clickExt)     { ShowExtensionsMenu(hWnd); break; }
+                if (clickMenu)    { ShowMainMenu(hWnd); break; }
+            }
         }
         break;
     }
