@@ -1,13 +1,24 @@
 // ================================================================
 // tab_phone_remote.cpp  —  PC generates 6-digit code → Phone connects
 //
+// Updated: Relay server integration
+//   - PC registers {code, ip, port} to Firebase Firestore
+//   - Phone looks up code → gets IP → connects directly (LAN)
+//   - If LAN fails → relay server bridges the connection
+//
 // PC = WebSocket SERVER (port 9224)
 //   1. "Generate Code" → random 6-digit code on screen
-//   2. Phone types code → connects ws://pc-ip:9224
+//      + uploads to Firestore (code → IP mapping)
+//   2. Phone types code → Firestore lookup → connects ws://pc-ip:9224
 //   3. Phone sends {"type":"auth","code":"XXXXXX"}
 //   4. PC verifies → sends {"type":"ready","width":W,"height":H,"fps":30}
 //   5. PC H.264 screen stream → phone decodes (MediaCodec) → live video
 //   6. Phone sends {"type":"mouse"/"key"/"scroll"} → PC SendInput
+//
+// Relay fallback (different networks):
+//   Phone → wss://relay.rasfocus.com/relay/<code>
+//   PC    → wss://relay.rasfocus.com/relay/<code>  (host mode)
+//   Relay bridges both connections transparently.
 //
 // Inspired by RustDesk open source (MIT License)
 // ================================================================
@@ -18,6 +29,7 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include "tab_phone_remote.h"
+#include "tab_phone_remote_relay.h"   // ← NEW: relay signaling
 #include "globals.h"
 #include "pc_screen_streamer.h"
 
@@ -83,6 +95,7 @@ static mutex        s_sendMtx;
 static float s_drawX=0, s_drawY=0, s_drawW=0, s_drawH=0;
 static bool  s_hovGenerate = false;
 static bool  s_hovStop     = false;
+static bool  s_hovCopyCode = false;  // ← NEW: copy code button
 
 extern HWND hParentWnd;
 
@@ -112,6 +125,40 @@ static string Jget(const string& j, const string& k) {
     string v=j.substr(p,e-p);
     while(!v.empty()&&(v.back()==' '||v.back()=='\r'||v.back()=='\n')) v.pop_back();
     return v;
+}
+
+// ── Get local IP ──────────────────────────────────────────────────
+static string GetLocalIp() {
+    char host[256] = {};
+    gethostname(host, sizeof(host));
+    addrinfo hints = {}, *res = nullptr;
+    hints.ai_family = AF_INET;
+    if (getaddrinfo(host, nullptr, &hints, &res) != 0 || !res) return "127.0.0.1";
+    char ip[INET_ADDRSTRLEN] = {};
+    inet_ntop(AF_INET, &((sockaddr_in*)res->ai_addr)->sin_addr, ip, sizeof(ip));
+    freeaddrinfo(res);
+    return string(ip);
+}
+
+// ── Copy text to clipboard ────────────────────────────────────────
+static void CopyToClipboard(const string& text) {
+    if (!OpenClipboard(hParentWnd)) return;
+    EmptyClipboard();
+    HGLOBAL hg = GlobalAlloc(GMEM_MOVEABLE, text.size() + 1);
+    if (!hg) { CloseClipboard(); return; }
+    memcpy(GlobalLock(hg), text.c_str(), text.size() + 1);
+    GlobalUnlock(hg);
+    SetClipboardData(CF_TEXT, hg);
+    CloseClipboard();
+}
+
+// ── Code generator (6 digits) ─────────────────────────────────────
+static string GenCode() {
+    srand((unsigned)time(nullptr) ^ GetTickCount());
+    char buf[7];
+    for(int i=0;i<6;i++) buf[i]='0'+(rand()%10);
+    buf[6]=0;
+    return string(buf);
 }
 
 // ── SHA1 + Base64 (for WS handshake) ─────────────────────────────
@@ -148,340 +195,272 @@ static pair<int,vector<BYTE>> WsRecvFrame(SOCKET s) {
     if(len==126){BYTE e[2];if(!WsRecvAll(s,(char*)e,2))return{-1,{}};len=((size_t)e[0]<<8)|e[1];}
     else if(len==127){BYTE e[8];if(!WsRecvAll(s,(char*)e,8))return{-1,{}};
         len=0;for(int i=0;i<8;i++)len=(len<<8)|e[i];}
-    BYTE mask[4]={0}; if(masked)if(!WsRecvAll(s,(char*)mask,4))return{-1,{}};
-    if(len>8*1024*1024) return {-1,{}};
-    vector<BYTE> data(len); size_t got=0;
-    while(got<len){int r=recv(s,(char*)data.data()+got,(int)min((size_t)65536,len-got),0);if(r<=0)return{-1,{}};got+=r;}
+    BYTE mask[4]={};
+    if(masked&&!WsRecvAll(s,(char*)mask,4)) return{-1,{}};
+    vector<BYTE> data(len);
+    if(len>0&&!WsRecvAll(s,(char*)data.data(),(int)len)) return{-1,{}};
     if(masked) for(size_t i=0;i<len;i++) data[i]^=mask[i%4];
-    return {op,data};
-}
-static bool WsSendBin(SOCKET s, const BYTE* data, size_t len) {
-    if(s==INVALID_SOCKET) return false;
-    vector<BYTE> f;
-    f.push_back(0x82); // FIN + binary
-    if(len<126)       f.push_back((BYTE)len);
-    else if(len<65536){f.push_back(126);f.push_back((BYTE)(len>>8));f.push_back((BYTE)(len&0xFF));}
-    else{f.push_back(127);for(int i=7;i>=0;i--)f.push_back((BYTE)((len>>(8*i))&0xFF));}
-    f.insert(f.end(),data,data+len);
-    lock_guard<mutex> lk(s_sendMtx);
-    return send(s,(char*)f.data(),(int)f.size(),0)>0;
+    return{op,data};
 }
 static bool WsSendText(SOCKET s, const string& txt) {
-    if(s==INVALID_SOCKET) return false;
-    size_t len=txt.size(); vector<BYTE> f;
-    f.push_back(0x81);
-    if(len<126)       f.push_back((BYTE)len);
-    else if(len<65536){f.push_back(126);f.push_back((BYTE)(len>>8));f.push_back((BYTE)(len&0xFF));}
-    f.insert(f.end(),txt.begin(),txt.end());
     lock_guard<mutex> lk(s_sendMtx);
-    return send(s,(char*)f.data(),(int)f.size(),0)>0;
-}
-
-// ── Code generator ────────────────────────────────────────────────
-static string GenCode() {
-    srand((unsigned)time(nullptr)^GetTickCount());
-    char buf[7];
-    snprintf(buf,sizeof(buf),"%06d", rand()%1000000);
-    return string(buf);
-}
-
-// ── Local IP ─────────────────────────────────────────────────────
-static string GetLocalIp() {
-    char host[256]={}; gethostname(host,sizeof(host));
-    addrinfo hints={},*res=nullptr; hints.ai_family=AF_INET;
-    if(getaddrinfo(host,"",&hints,&res)==0&&res){
-        char ip[INET_ADDRSTRLEN]={};
-        inet_ntop(AF_INET,&((sockaddr_in*)res->ai_addr)->sin_addr,ip,sizeof(ip));
-        freeaddrinfo(res); return string(ip);
+    vector<BYTE> frame;
+    size_t len=txt.size();
+    frame.push_back(0x81); // FIN + text opcode
+    if(len<126){ frame.push_back((BYTE)len); }
+    else if(len<65536){
+        frame.push_back(126);
+        frame.push_back((len>>8)&0xFF);
+        frame.push_back(len&0xFF);
+    } else {
+        frame.push_back(127);
+        for(int i=7;i>=0;i--) frame.push_back((len>>(i*8))&0xFF);
     }
-    return "?.?.?.?";
+    for(char c:txt) frame.push_back((BYTE)c);
+    return send(s,(char*)frame.data(),(int)frame.size(),0)>0;
 }
-
-// ── H.264 MFT encoder ────────────────────────────────────────────
-class H264Enc {
-public:
-    IMFTransform* mft=nullptr;
-    int W=0,H=0; bool ready=false;
-
-    bool Init(int w,int h){
-        W=w; H=h; MFStartup(MF_VERSION);
-        IMFActivate** acts=nullptr; UINT32 cnt=0;
-        MFT_REGISTER_TYPE_INFO oi{MFMediaType_Video,MFVideoFormat_H264};
-        if(FAILED(MFTEnumEx(MFT_CATEGORY_VIDEO_ENCODER,
-            MFT_ENUM_FLAG_SYNCMFT|MFT_ENUM_FLAG_LOCALMFT|MFT_ENUM_FLAG_SORTANDFILTER,
-            nullptr,&oi,&acts,&cnt))||cnt==0) return false;
-        acts[0]->ActivateObject(__uuidof(IMFTransform),(void**)&mft);
-        for(UINT32 i=0;i<cnt;i++) acts[i]->Release();
-        CoTaskMemFree(acts);
-
-        // Output: H264
-        IMFMediaType* ot=nullptr; MFCreateMediaType(&ot);
-        ot->SetGUID(MF_MT_MAJOR_TYPE,MFMediaType_Video);
-        ot->SetGUID(MF_MT_SUBTYPE,MFVideoFormat_H264);
-        MFSetAttributeSize(ot,MF_MT_FRAME_SIZE,w,h);
-        MFSetAttributeRatio(ot,MF_MT_FRAME_RATE,TARGET_FPS,1);
-        ot->SetUINT32(MF_MT_AVG_BITRATE,TARGET_BPS);
-        ot->SetUINT32(MF_MT_INTERLACE_MODE,MFVideoInterlace_Progressive);
-        ot->SetUINT32(CODECAPI_AVEncCommonRateControlMode,eAVEncCommonRateControlMode_CBR);
-        ot->SetUINT32(CODECAPI_AVLowLatencyMode,TRUE);
-        mft->SetOutputType(0,ot,0); ot->Release();
-
-        // Input: RGB32
-        IMFMediaType* it=nullptr; MFCreateMediaType(&it);
-        it->SetGUID(MF_MT_MAJOR_TYPE,MFMediaType_Video);
-        it->SetGUID(MF_MT_SUBTYPE,MFVideoFormat_RGB32);
-        MFSetAttributeSize(it,MF_MT_FRAME_SIZE,w,h);
-        MFSetAttributeRatio(it,MF_MT_FRAME_RATE,TARGET_FPS,1);
-        it->SetUINT32(MF_MT_INTERLACE_MODE,MFVideoInterlace_Progressive);
-        it->SetUINT32(MF_MT_DEFAULT_STRIDE,w*4);
-        mft->SetInputType(0,it,0); it->Release();
-
-        mft->ProcessMessage(MFT_MESSAGE_NOTIFY_BEGIN_STREAMING,0);
-        mft->ProcessMessage(MFT_MESSAGE_NOTIFY_START_OF_STREAM,0);
-        ready=true; return true;
+static bool WsSendBinary(SOCKET s, const BYTE* data, size_t len) {
+    lock_guard<mutex> lk(s_sendMtx);
+    vector<BYTE> frame;
+    frame.push_back(0x82); // FIN + binary opcode
+    if(len<126){ frame.push_back((BYTE)len); }
+    else if(len<65536){
+        frame.push_back(126);
+        frame.push_back((len>>8)&0xFF);
+        frame.push_back(len&0xFF);
+    } else {
+        frame.push_back(127);
+        for(int i=7;i>=0;i--) frame.push_back((len>>(i*8))&0xFF);
     }
+    frame.insert(frame.end(), data, data+len);
+    return send(s,(char*)frame.data(),(int)frame.size(),0)>0;
+}
 
-    vector<BYTE> Encode(const BYTE* rgb,size_t sz,LONGLONG pts){
-        if(!ready) return {};
-        IMFSample* ins=nullptr; MFCreateSample(&ins);
-        IMFMediaBuffer* ib=nullptr; MFCreateMemoryBuffer((DWORD)sz,&ib);
-        BYTE* p=nullptr; ib->Lock(&p,nullptr,nullptr);
-        memcpy(p,rgb,sz); ib->Unlock();
-        ib->SetCurrentLength((DWORD)sz);
-        ins->AddBuffer(ib); ib->Release();
-        ins->SetSampleTime(pts);
-        ins->SetSampleDuration(10000000LL/TARGET_FPS);
-        mft->ProcessInput(0,ins,0); ins->Release();
-
-        MFT_OUTPUT_DATA_BUFFER od{}; DWORD st=0;
-        IMFSample* os=nullptr; MFCreateSample(&os);
-        IMFMediaBuffer* ob=nullptr; MFCreateMemoryBuffer(W*H*4,&ob);
-        os->AddBuffer(ob); ob->Release(); od.pSample=os;
-        vector<BYTE> result;
-        if(SUCCEEDED(mft->ProcessOutput(0,1,&od,&st))){
-            IMFMediaBuffer* buf=nullptr; os->ConvertToContiguousBuffer(&buf);
-            if(buf){ BYTE* d=nullptr; DWORD len=0;
-                buf->Lock(&d,nullptr,&len);
-                result.assign(d,d+len);
-                buf->Unlock(); buf->Release();
-            }
-        }
-        os->Release(); return result;
+// ── WebSocket HTTP upgrade handshake ─────────────────────────────
+static bool DoHandshake(SOCKET s) {
+    char buf[4096]={};
+    int total=0;
+    while(total<(int)sizeof(buf)-1){
+        int r=recv(s,buf+total,(int)sizeof(buf)-1-total,0);
+        if(r<=0) return false;
+        total+=r;
+        buf[total]=0;
+        if(strstr(buf,"\r\n\r\n")) break;
     }
-
-    void Shutdown(){
-        if(mft){mft->ProcessMessage(MFT_MESSAGE_NOTIFY_END_OF_STREAM,0);mft->Release();mft=nullptr;}
-        MFShutdown(); ready=false;
-    }
-};
-
-// ── Screen capture (RGB32, scaled for streaming) ──────────────────
-static vector<BYTE> CaptureScreen(int& outW,int& outH){
-    int sw=GetSystemMetrics(SM_CXSCREEN),sh=GetSystemMetrics(SM_CYSCREEN);
-    float scale=max(1.f,(float)max(sw,sh)/1280.f);
-    int dw=((int)(sw/scale)/16)*16;
-    int dh=((int)(sh/scale)/16)*16;
-    outW=dw; outH=dh;
-    HDC hScr=GetDC(NULL),hMem=CreateCompatibleDC(hScr);
-    BITMAPINFO bi{}; bi.bmiHeader.biSize=sizeof(bi.bmiHeader);
-    bi.bmiHeader.biWidth=dw; bi.bmiHeader.biHeight=-dh;
-    bi.bmiHeader.biPlanes=1; bi.bmiHeader.biBitCount=32;
-    bi.bmiHeader.biCompression=BI_RGB;
-    BYTE* bits=nullptr;
-    HBITMAP hBmp=CreateDIBSection(hMem,&bi,DIB_RGB_COLORS,(void**)&bits,NULL,0);
-    HBITMAP hOld=(HBITMAP)SelectObject(hMem,hBmp);
-    SetStretchBltMode(hMem,HALFTONE);
-    StretchBlt(hMem,0,0,dw,dh,hScr,0,0,sw,sh,SRCCOPY);
-    GdiFlush();
-    vector<BYTE> data(bits,bits+(size_t)dw*dh*4);
-    SelectObject(hMem,hOld); DeleteObject(hBmp); DeleteDC(hMem); ReleaseDC(NULL,hScr);
-    return data;
-}
-
-// ── Input injection: Phone → PC ───────────────────────────────────
-static void InjectMouse(int mask,float rx,float ry){
-    int sw=GetSystemMetrics(SM_CXSCREEN),sh=GetSystemMetrics(SM_CYSCREEN);
-    INPUT inp{}; inp.type=INPUT_MOUSE;
-    inp.mi.dx=(LONG)(rx*65535); inp.mi.dy=(LONG)(ry*65535);
-    inp.mi.dwFlags=MOUSEEVENTF_ABSOLUTE|MOUSEEVENTF_MOVE;
-    SendInput(1,&inp,sizeof(INPUT));
-    DWORD click=0;
-    if(mask==1)      click=MOUSEEVENTF_ABSOLUTE|MOUSEEVENTF_LEFTDOWN;
-    else if(mask==2) click=MOUSEEVENTF_ABSOLUTE|MOUSEEVENTF_LEFTUP;
-    else if(mask==3) click=MOUSEEVENTF_ABSOLUTE|MOUSEEVENTF_RIGHTDOWN;
-    else if(mask==4) click=MOUSEEVENTF_ABSOLUTE|MOUSEEVENTF_RIGHTUP;
-    if(click){inp.mi.dwFlags=click; SendInput(1,&inp,sizeof(INPUT));}
-}
-static void InjectKey(int vk,int action){
-    INPUT inp{}; inp.type=INPUT_KEYBOARD;
-    inp.ki.wVk=(WORD)vk;
-    inp.ki.dwFlags=(action==1)?KEYEVENTF_KEYUP:0;
-    SendInput(1,&inp,sizeof(INPUT));
-}
-static void InjectScroll(float /*rx*/,float /*ry*/,const string& dir){
-    INPUT inp{}; inp.type=INPUT_MOUSE;
-    inp.mi.dwFlags=MOUSEEVENTF_WHEEL;
-    inp.mi.mouseData=(dir=="up")?(DWORD)120:(DWORD)((DWORD)-120);
-    SendInput(1,&inp,sizeof(INPUT));
-}
-
-// ── Capture + encode + stream loop ───────────────────────────────
-static void StreamLoop(SOCKET client){
-    H264Enc enc;
-    int fw=0,fh=0;
-    auto first=CaptureScreen(fw,fh);
-    if(!enc.Init(fw,fh)){
-        g_rdStatusMsg="H264 encoder init failed"; g_rdState=RdState::Error;
-        if(hParentWnd) InvalidateRect(hParentWnd,NULL,FALSE);
-        return;
-    }
-
-    LONGLONG pts=0;
-    LONGLONG frameDur=10000000LL/TARGET_FPS;
-    DWORD frameMs=1000/TARGET_FPS;
-    int fpsCount=0; DWORD fpsTimer=GetTickCount();
-
-    while(s_active && client!=INVALID_SOCKET){
-        DWORD t0=GetTickCount();
-        int w,h; auto rgb=CaptureScreen(w,h);
-        auto nal=enc.Encode(rgb.data(),rgb.size(),pts);
-        if(!nal.empty()){
-            // Packet header: [flags 1B][pts_ms 4B] + NAL data
-            bool kf=(nal.size()>4&&(nal[4]&0x1F)==7); // NAL type=7 is SPS (keyframe)
-            BYTE flags=(BYTE)((kf?1:0)|(kf?2:0));
-            DWORD pts_ms=(DWORD)(pts/10000);
-            vector<BYTE> pkt(5+nal.size());
-            pkt[0]=flags;
-            pkt[1]=(BYTE)((pts_ms>>24)&0xFF); pkt[2]=(BYTE)((pts_ms>>16)&0xFF);
-            pkt[3]=(BYTE)((pts_ms>>8)&0xFF);  pkt[4]=(BYTE)(pts_ms&0xFF);
-            memcpy(pkt.data()+5,nal.data(),nal.size());
-            if(!WsSendBin(client,pkt.data(),pkt.size())) break;
-            fpsCount++;
-        }
-        pts+=frameDur;
-
-        DWORD elapsed=GetTickCount()-t0;
-        if(elapsed<frameMs) Sleep(frameMs-elapsed);
-
-        DWORD now=GetTickCount();
-        if(now-fpsTimer>=1000){
-            g_rdFps=fpsCount; fpsCount=0; fpsTimer=now;
-            if(hParentWnd) InvalidateRect(hParentWnd,NULL,FALSE);
-        }
-    }
-    enc.Shutdown();
-}
-
-// ── Input recv loop (runs parallel to stream) ─────────────────────
-static void InputRecvLoop(SOCKET client){
-    DWORD tv=100; setsockopt(client,SOL_SOCKET,SO_RCVTIMEO,(char*)&tv,sizeof(tv));
-    while(s_active && client!=INVALID_SOCKET){
-        auto [op,data]=WsRecvFrame(client);
-        if(op<0||op==8) { s_active=false; break; }
-        if(op!=1||data.empty()) continue;
-        if(!g_rdInputEnabled) continue;
-        string msg(data.begin(),data.end());
-        string type=Jget(msg,"type");
-        if(type=="mouse"||type=="touch"){
-            float rx=(float)atof(Jget(msg,"x").c_str());
-            float ry=(float)atof(Jget(msg,"y").c_str());
-            int mask=atoi(Jget(msg,"mask").c_str());
-            InjectMouse(mask,rx,ry);
-        } else if(type=="key"){
-            InjectKey(atoi(Jget(msg,"vk").c_str()),atoi(Jget(msg,"action").c_str()));
-        } else if(type=="scroll"){
-            float rx=(float)atof(Jget(msg,"x").c_str());
-            float ry=(float)atof(Jget(msg,"y").c_str());
-            InjectScroll(rx,ry,Jget(msg,"dir"));
-        }
-    }
-}
-
-// ── WS handshake (server-side) ────────────────────────────────────
-static bool DoHandshake(SOCKET s){
-    char buf[4096]={}; int r=recv(s,buf,sizeof(buf)-1,0);
-    if(r<=0) return false;
-    string req(buf,r);
-    if(req.find("Upgrade: websocket")==string::npos &&
-       req.find("Upgrade: WebSocket")==string::npos) return false;
-    size_t kp=req.find("Sec-WebSocket-Key:"); if(kp==string::npos) return false;
-    kp+=18; while(kp<req.size()&&req[kp]==' ')kp++;
-    size_t ke=req.find("\r\n",kp);
-    string key=req.substr(kp,ke-kp);
-    string acc=Sha1B64(key+"258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
-    string resp="HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n"
-                "Connection: Upgrade\r\nSec-WebSocket-Accept: "+acc+"\r\n\r\n";
+    const char* keyHdr=strstr(buf,"Sec-WebSocket-Key:");
+    if(!keyHdr) return false;
+    keyHdr+=18;
+    while(*keyHdr==' ') keyHdr++;
+    char key[256]={};
+    int ki=0;
+    while(*keyHdr&&*keyHdr!='\r'&&*keyHdr!='\n'&&ki<(int)sizeof(key)-1)
+        key[ki++]=*keyHdr++;
+    while(ki>0&&(key[ki-1]==' '||key[ki-1]=='\r'||key[ki-1]=='\n')) ki--;
+    key[ki]=0;
+    string accept=Sha1B64(string(key)+"258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
+    string resp="HTTP/1.1 101 Switching Protocols\r\n"
+                "Upgrade: websocket\r\n"
+                "Connection: Upgrade\r\n"
+                "Sec-WebSocket-Accept: "+accept+"\r\n\r\n";
     return send(s,resp.c_str(),(int)resp.size(),0)>0;
 }
 
-// ── Phone connection handler ──────────────────────────────────────
-static void HandlePhone(SOCKET client, const string& clientIp){
-    // 1. Verify auth code
-    DWORD tv=8000; setsockopt(client,SOL_SOCKET,SO_RCVTIMEO,(char*)&tv,sizeof(tv));
-    auto [op,data]=WsRecvFrame(client);
-    if(op!=1||data.empty()){
-        WsSendText(client,"{\"type\":\"error\",\"msg\":\"auth timeout\"}");
-        closesocket(client); return;
+// ── GDI+ screen capture helper ────────────────────────────────────
+struct CaptureFrame {
+    vector<BYTE> data; // raw JPEG or H264
+    int width=0, height=0;
+};
+
+// Simple JPEG fallback capture using GDI+
+// (H264 is handled by pc_screen_streamer.cpp — this is for auth phase only)
+static CaptureFrame CaptureJpeg(int quality=60) {
+    CaptureFrame cf;
+    int sw=GetSystemMetrics(SM_CXSCREEN);
+    int sh=GetSystemMetrics(SM_CYSCREEN);
+    // Scale down to max 1280 wide
+    float scale=min(1.f, 1280.f/sw);
+    cf.width=(int)(sw*scale); cf.height=(int)(sh*scale);
+
+    HDC hScreen=GetDC(NULL);
+    HDC hMem=CreateCompatibleDC(hScreen);
+    HBITMAP hBmp=CreateCompatibleBitmap(hScreen,cf.width,cf.height);
+    SelectObject(hMem,hBmp);
+    SetStretchBltMode(hMem,HALFTONE);
+    StretchBlt(hMem,0,0,cf.width,cf.height,hScreen,0,0,sw,sh,SRCCOPY);
+
+    Bitmap bmp(hBmp, NULL);
+    CLSID jpegClsid;
+    // Get JPEG encoder
+    UINT num=0,sz=0;
+    GetImageEncodersSize(&num,&sz);
+    if(sz==0){ DeleteObject(hBmp);DeleteDC(hMem);ReleaseDC(NULL,hScreen); return cf; }
+    vector<BYTE> codecBuf(sz);
+    ImageCodecInfo* ci=(ImageCodecInfo*)codecBuf.data();
+    GetImageEncoders(num,sz,ci);
+    for(UINT i=0;i<num;i++){
+        if(wcscmp(ci[i].MimeType,L"image/jpeg")==0){ jpegClsid=ci[i].Clsid; break; }
     }
-    string msg(data.begin(),data.end());
-    string code=Jget(msg,"code");
-    if(code!=g_rdCode){
-        WsSendText(client,"{\"type\":\"error\",\"msg\":\"wrong code\"}");
-        closesocket(client); return;
+    EncoderParameters ep; ep.Count=1;
+    ep.Parameter[0].Guid=EncoderQuality;
+    ep.Parameter[0].Type=EncoderParameterValueTypeLong;
+    ep.Parameter[0].NumberOfValues=1;
+    ULONG q=(ULONG)quality;
+    ep.Parameter[0].Value=&q;
+
+    IStream* pStream=NULL;
+    CreateStreamOnHGlobal(NULL,TRUE,&pStream);
+    bmp.Save(pStream,&jpegClsid,&ep);
+    STATSTG stat; pStream->Stat(&stat,STATFLAG_NONAME);
+    ULARGE_INTEGER pos; pos.QuadPart=0;
+    pStream->Seek({},STREAM_SEEK_SET,NULL);
+    cf.data.resize((size_t)stat.cbSize.QuadPart);
+    ULONG read=0;
+    pStream->Read(cf.data.data(),(ULONG)cf.data.size(),&read);
+    pStream->Release();
+
+    DeleteObject(hBmp); DeleteDC(hMem); ReleaseDC(NULL,hScreen);
+    return cf;
+}
+
+// ── Handle one connected phone client ────────────────────────────
+static void HandlePhone(SOCKET sock, string phoneIp) {
+    s_clientSock = sock;
+    g_phoneRemoteRunning = true;
+    g_connectedClients = 1;
+
+    // Send ready message first (before auth in relaxed mode)
+    // Wait for auth
+    bool authed = false;
+    string deviceName = "Unknown";
+
+    // Receive auth frame
+    auto [op, data] = WsRecvFrame(sock);
+    if(op==1) { // text
+        string msg(data.begin(), data.end());
+        string type=Jget(msg,"type");
+        string code=Jget(msg,"code");
+        deviceName=Jget(msg,"device");
+        if(type=="auth" && code==g_rdCode) {
+            authed=true;
+        } else {
+            WsSendText(sock, "{\"type\":\"error\",\"msg\":\"wrong code\"}");
+        }
     }
 
-    // 2. Code OK — send ready
-    g_rdPhoneIp   = clientIp;
-    g_rdPhoneName = Jget(msg,"device");
-    if(g_rdPhoneName.empty()) g_rdPhoneName="Phone";
-    g_rdState     = RdState::Connected;
+    if(!authed) { closesocket(sock); s_clientSock=INVALID_SOCKET; g_phoneRemoteRunning=false; g_connectedClients=0; return; }
+
+    // Auth OK
+    int sw=GetSystemMetrics(SM_CXSCREEN);
+    int sh=GetSystemMetrics(SM_CYSCREEN);
+    float scale=min(1.f,1280.f/sw);
+    int vw=(int)(sw*scale), vh=(int)(sh*scale);
+
+    string readyMsg="{\"type\":\"ready\",\"width\":"+to_string(vw)+
+                    ",\"height\":"+to_string(vh)+
+                    ",\"fps\":"+to_string(TARGET_FPS)+
+                    ",\"mode\":\"h264\"}";
+    WsSendText(sock, readyMsg);
+
+    g_rdPhoneName=deviceName;
+    g_rdPhoneIp=phoneIp;
+    g_rdState=RdState::Connected;
     g_phoneRemoteRunning=true;
     g_connectedClients=1;
-    s_clientSock  = client;
-
-    int sw=GetSystemMetrics(SM_CXSCREEN), sh=GetSystemMetrics(SM_CYSCREEN);
-    float scale=max(1.f,(float)max(sw,sh)/1280.f);
-    int dw=((int)(sw/scale)/16)*16, dh=((int)(sh/scale)/16)*16;
-    char ready[256];
-    snprintf(ready,sizeof(ready),
-        "{\"type\":\"ready\",\"width\":%d,\"height\":%d,\"fps\":%d,\"codec\":\"h264\"}",
-        dw,dh,TARGET_FPS);
-    WsSendText(client,ready);
-
-    g_rdStatusMsg="Streaming to "+g_rdPhoneName+" ("+clientIp+")";
     if(hParentWnd) InvalidateRect(hParentWnd,NULL,FALSE);
 
-    // 3. Input recv in background, stream on this thread
-    thread(InputRecvLoop,client).detach();
-    StreamLoop(client);
+    // Start H264 screen streamer (pc_screen_streamer.cpp)
+    PcStreamerStart();
 
-    // 4. Cleanup
-    closesocket(client);
+    // Input receive loop (phone → PC mouse/key events)
+    DWORD lastFpsUpdate = GetTickCount();
+    int fpsCount = 0;
+
+    while(s_active && sock!=INVALID_SOCKET) {
+        auto [iop, idata] = WsRecvFrame(sock);
+        if(iop<0) break;
+
+        if(iop==1) { // text: input event
+            string msg(idata.begin(), idata.end());
+            string type=Jget(msg,"type");
+
+            if(type=="mouse") {
+                float nx=stof(Jget(msg,"nx")); // normalized 0..1
+                float ny=stof(Jget(msg,"ny"));
+                int mask=stoi(Jget(msg,"mask")); // 0=move,1=ldown,2=lup,4=rdown,8=rup,16=lclick,32=rclick
+
+                int ax=(int)(nx*GetSystemMetrics(SM_CXSCREEN));
+                int ay=(int)(ny*GetSystemMetrics(SM_CYSCREEN));
+
+                INPUT inp={};
+                inp.type=INPUT_MOUSE;
+                inp.mi.dx=(LONG)(nx*65535);
+                inp.mi.dy=(LONG)(ny*65535);
+                inp.mi.dwFlags=MOUSEEVENTF_ABSOLUTE|MOUSEEVENTF_MOVE;
+                if(mask&1)  inp.mi.dwFlags|=MOUSEEVENTF_LEFTDOWN;
+                if(mask&2)  inp.mi.dwFlags|=MOUSEEVENTF_LEFTUP;
+                if(mask&4)  inp.mi.dwFlags|=MOUSEEVENTF_RIGHTDOWN;
+                if(mask&8)  inp.mi.dwFlags|=MOUSEEVENTF_RIGHTUP;
+                if(g_rdInputEnabled) SendInput(1,&inp,sizeof(INPUT));
+
+            } else if(type=="key") {
+                int vk=stoi(Jget(msg,"vk"));
+                string action=Jget(msg,"action"); // "down" or "up"
+                INPUT ki={}; ki.type=INPUT_KEYBOARD;
+                ki.ki.wVk=(WORD)vk;
+                if(action=="up") ki.ki.dwFlags=KEYEVENTF_KEYUP;
+                if(g_rdInputEnabled) SendInput(1,&ki,sizeof(INPUT));
+
+            } else if(type=="scroll") {
+                float x=stof(Jget(msg,"nx"));
+                float y=stof(Jget(msg,"ny"));
+                string dir=Jget(msg,"dir");
+                INPUT si={}; si.type=INPUT_MOUSE;
+                si.mi.dx=(LONG)(x*65535); si.mi.dy=(LONG)(y*65535);
+                si.mi.dwFlags=MOUSEEVENTF_ABSOLUTE|MOUSEEVENTF_WHEEL;
+                si.mi.mouseData=(dir=="up")?WHEEL_DELTA:(DWORD)-(int)WHEEL_DELTA;
+                if(g_rdInputEnabled) SendInput(1,&si,sizeof(INPUT));
+
+            } else if(type=="ping") {
+                WsSendText(sock,"{\"type\":\"pong\"}");
+            }
+        } else if(iop==8) { // close frame
+            break;
+        }
+    }
+
+    PcStreamerStop();
+    closesocket(sock);
     s_clientSock=INVALID_SOCKET;
-    g_rdState=RdState::WaitPhone;
-    g_rdStatusMsg="Phone disconnected. Waiting for new connection...";
+    g_rdState=RdState::WaitPhone; // go back to waiting (code still valid)
+    g_rdPhoneName=""; g_rdPhoneIp="";
+    g_rdStatusMsg="Phone disconnected — waiting for reconnect";
     g_phoneRemoteRunning=false; g_connectedClients=0; g_rdFps=0;
     if(hParentWnd) InvalidateRect(hParentWnd,NULL,FALSE);
 }
 
-// ── Accept loop ───────────────────────────────────────────────────
-static void AcceptLoop(){
+// ── Accept loop (runs in background thread) ───────────────────────
+static void AcceptLoop() {
     WSADATA wd; WSAStartup(MAKEWORD(2,2),&wd);
     s_listenSock=socket(AF_INET,SOCK_STREAM,0);
-    int opt=1; setsockopt(s_listenSock,SOL_SOCKET,SO_REUSEADDR,(char*)&opt,sizeof(opt));
-    DWORD tv=500; setsockopt(s_listenSock,SOL_SOCKET,SO_RCVTIMEO,(char*)&tv,sizeof(tv));
-    sockaddr_in addr{}; addr.sin_family=AF_INET;
-    addr.sin_addr.s_addr=INADDR_ANY; addr.sin_port=htons((u_short)RD_PORT);
-    if(bind(s_listenSock,(sockaddr*)&addr,sizeof(addr))!=0){
-        g_rdStatusMsg="Port "+to_string(RD_PORT)+" bind failed";
-        g_rdState=RdState::Error;
-        if(hParentWnd) InvalidateRect(hParentWnd,NULL,FALSE);
-        return;
-    }
-    listen(s_listenSock,4);
+    if(s_listenSock==INVALID_SOCKET) return;
 
-    while(s_active){
-        sockaddr_in ca{}; int cal=sizeof(ca);
+    int reuse=1;
+    setsockopt(s_listenSock,SOL_SOCKET,SO_REUSEADDR,(char*)&reuse,sizeof(reuse));
+
+    sockaddr_in addr={}; addr.sin_family=AF_INET;
+    addr.sin_addr.s_addr=INADDR_ANY;
+    addr.sin_port=htons((u_short)RD_PORT);
+    if(bind(s_listenSock,(sockaddr*)&addr,sizeof(addr))<0){
+        closesocket(s_listenSock); s_listenSock=INVALID_SOCKET; return;
+    }
+    listen(s_listenSock,5);
+
+    // Set non-blocking accept with timeout
+    DWORD timeout=500;
+    setsockopt(s_listenSock,SOL_SOCKET,SO_RCVTIMEO,(char*)&timeout,sizeof(timeout));
+
+    while(s_active) {
+        sockaddr_in ca={}; int cal=sizeof(ca);
         SOCKET cl=accept(s_listenSock,(sockaddr*)&ca,&cal);
         if(cl==INVALID_SOCKET) continue;
         char cip[INET_ADDRSTRLEN]={};
@@ -503,8 +482,15 @@ void RdGenerateCode(){
     RdStopServer();
     g_rdCode=GenCode();
     g_rdState=RdState::WaitPhone;
+
     string ip=GetLocalIp();
     g_rdStatusMsg="PC IP: "+ip+" | Port: "+to_string(RD_PORT);
+
+    // ── NEW: Upload to Firebase relay so phone can find us by code alone ──
+    RelayRegisterSession(g_rdCode, ip, RD_PORT);
+    // Status shows both the code and relay info
+    g_rdStatusMsg="Code registered to relay  •  LAN: "+ip+":"+to_string(RD_PORT);
+
     g_phoneRemoteRunning=false; g_connectedClients=0; g_rdFps=0;
     s_active=true;
     thread(AcceptLoop).detach();
@@ -513,6 +499,9 @@ void RdGenerateCode(){
 
 void RdStopServer(){
     s_active=false;
+    // ── NEW: Remove from relay ────────────────────────────────────
+    if(!g_rdCode.empty()) RelayUnregisterSession(g_rdCode);
+
     if(s_clientSock!=INVALID_SOCKET){closesocket(s_clientSock);s_clientSock=INVALID_SOCKET;}
     if(s_listenSock!=INVALID_SOCKET){closesocket(s_listenSock);s_listenSock=INVALID_SOCKET;}
     g_rdState=RdState::Idle;
@@ -536,26 +525,22 @@ static void RoundRect(Graphics& g, Brush& fill, Pen* pen,
     p.CloseFigure(); g.FillPath(&fill,&p); if(pen) g.DrawPath(pen,&p);
 }
 
-// ── Draw large digits (RustDesk style code display) ───────────────
+// ── Draw 6 digit code boxes (RustDesk style) ─────────────────────
 static void DrawCode(Graphics& g, const wstring& code,
                      float x,float y,float w,float h){
     FontFamily ff(L"Segoe UI");
-    StringFormat fmt; fmt.SetAlignment(StringAlignmentCenter); fmt.SetLineAlignment(StringAlignmentCenter);
+    StringFormat fmt; fmt.SetAlignment(StringAlignmentCenter);
+    fmt.SetLineAlignment(StringAlignmentCenter);
 
-    // Draw 6 digit boxes: 3-space-3
     float boxW=(w-80)/6.f, boxH=h;
     float gapX=8.f, groupGap=24.f;
     float startX=x+40;
 
     for(int i=0;i<6;i++){
         float bx=startX + i*(boxW+gapX) + (i>=3?groupGap:0);
-
-        // box background
         SolidBrush boxBg(Color(255,30,30,50));
         Pen boxBrd(Color(255,0,180,220),2.f);
         RoundRect(g,boxBg,&boxBrd,bx,y,boxW,boxH,8);
-
-        // digit
         if(i<(int)code.size()){
             wstring digit(1,code[i]);
             SolidBrush wh(Color(255,240,240,255));
@@ -567,8 +552,7 @@ static void DrawCode(Graphics& g, const wstring& code,
             g.DrawString(L"—",-1,&bigF,RectF(bx,y,boxW,boxH),&fmt,&gr);
         }
     }
-
-    // Separator dot between groups
+    // Separator dots
     float midX=startX+3*(boxW+gapX)+groupGap/2-2;
     SolidBrush dotC(Color(255,0,180,220));
     g.FillEllipse(&dotC,midX,y+boxH/2-6.f,5.f,5.f);
@@ -583,7 +567,6 @@ void DrawPhoneRemoteTab(Graphics& g, float x, float y, float w, float h){
     StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
     StringFormat fmtL; fmtL.SetAlignment(StringAlignmentNear);   fmtL.SetLineAlignment(StringAlignmentCenter);
 
-    // Background
     SolidBrush bg(Color(255,14,14,22)); g.FillRectangle(&bg,x,y,w,h);
 
     SolidBrush cyan(Color(255,0,200,230));
@@ -593,18 +576,17 @@ void DrawPhoneRemoteTab(Graphics& g, float x, float y, float w, float h){
 
     float cx=x+24, cw=w-48;
 
-    // ── Title ──
+    // Title
     Font fTitle(&ff,17,FontStyleBold,UnitPixel);
-    g.DrawString(L"Phone Remote Control",-1,&fTitle,RectF(cx,y+14,cw,28),&fmtL,&cyan);
+    g.DrawString(L"PC ↔ Phone Remote Control",-1,&fTitle,RectF(cx,y+14,cw,28),&fmtL,&cyan);
     Font fSub(&ff,11,FontStyleRegular,UnitPixel);
-    g.DrawString(L"PC screen → Phone live video | Phone touches → PC mouse",-1,&fSub,
+    g.DrawString(L"Phone এ code দিলেই connect হবে — IP দিতে হবে না (Relay Server)",-1,&fSub,
                  RectF(cx,y+44,cw,20),&fmtL,&gray);
 
     float py=y+76;
 
     // ══ CONNECTED STATE ══════════════════════════════════════════
     if(g_rdState==RdState::Connected){
-        // Status bar
         SolidBrush connBg(Color(255,12,60,32));
         Pen connBrd(Color(255,0,180,80),1.f);
         RoundRect(g,connBg,&connBrd,cx,py,cw,44,10);
@@ -612,21 +594,20 @@ void DrawPhoneRemoteTab(Graphics& g, float x, float y, float w, float h){
         wstring lbl=L"● Streaming to: "+ToWStr(g_rdPhoneName)+L"  ("+ToWStr(g_rdPhoneIp)+L")";
         g.DrawString(lbl.c_str(),-1,&fB,RectF(cx+14,py,cw-28,44),&fmtL,&green);
 
-        // FPS
         Font fR(&ff,11,FontStyleRegular,UnitPixel);
         wstring fps=ToWStr(to_string(g_rdFps))+L" fps  •  H.264  •  "+
-                    ToWStr(to_string(TARGET_BPS/1000000))+L" Mbps target";
+                    ToWStr(to_string(TARGET_BPS/1000000))+L" Mbps  •  Relay ON";
         g.DrawString(fps.c_str(),-1,&fR,RectF(cx,py+54,cw,20),&fmtC,&gray);
         py+=86;
 
-        // Code (still shown for reconnect)
+        // Code display
         Font fLbl(&ff,11,FontStyleRegular,UnitPixel);
         g.DrawString(L"Session Code",-1,&fLbl,RectF(cx,py,cw,20),&fmtC,&gray);
         py+=24;
         DrawCode(g,ToWStr(g_rdCode),cx,py,cw,68);
         py+=84;
 
-        // Input toggle
+        // Input toggle + Disconnect
         bool ienabled=g_rdInputEnabled;
         SolidBrush itBg(ienabled?Color(255,10,80,40):Color(255,45,45,65));
         Pen itBrd(ienabled?Color(255,0,160,80):Color(255,70,70,100),1.f);
@@ -635,7 +616,6 @@ void DrawPhoneRemoteTab(Graphics& g, float x, float y, float w, float h){
         g.DrawString(ienabled?L"✓ Input: ON":L"✗ Input: OFF",-1,&fBtn,
                      RectF(cx,py,cw/2-6,40),&fmtC,&white);
 
-        // Disconnect button
         float dx=cx+cw/2+6;
         SolidBrush stopBg(s_hovStop?Color(255,180,30,30):Color(255,140,20,20));
         Pen stopBrd(Color(255,200,50,50),1.f);
@@ -643,7 +623,6 @@ void DrawPhoneRemoteTab(Graphics& g, float x, float y, float w, float h){
         g.DrawString(L"Disconnect",-1,&fBtn,RectF(dx,py,cw/2-6,40),&fmtC,&white);
         py+=56;
 
-        // Tip
         g.DrawString(L"Phone এ RasFocus খুলে code টাইপ করলে নতুন session হবে",-1,
                      &Font(&ff,10,FontStyleRegular,UnitPixel),RectF(cx,py,cw,20),&fmtC,&gray);
         return;
@@ -651,24 +630,30 @@ void DrawPhoneRemoteTab(Graphics& g, float x, float y, float w, float h){
 
     // ══ WAITING STATE ═════════════════════════════════════════════
     if(g_rdState==RdState::WaitPhone){
-        // Code label
         Font fLbl(&ff,13,FontStyleRegular,UnitPixel);
-        g.DrawString(L"Phone এ এই Code টাইপ করো:",-1,&fLbl,RectF(cx,py,cw,24),&fmtL,&gray);
+        g.DrawString(L"Phone এ RasFocus খুলে এই Code দাও:",-1,&fLbl,RectF(cx,py,cw,24),&fmtL,&gray);
         py+=30;
 
-        // 6-digit code boxes — big, centered
         DrawCode(g,ToWStr(g_rdCode),cx,py,cw,80);
         py+=96;
 
-        // Pulsing "waiting" text
-        DWORD tick=GetTickCount()/600; // blink every 600ms
+        // Copy code button
+        SolidBrush copyBg(s_hovCopyCode?Color(255,40,80,100):Color(255,25,55,75));
+        Pen copyBrd(Color(255,0,140,170),1.f);
+        RoundRect(g,copyBg,&copyBrd,cx,py,cw/2-4,34,8);
+        Font fBtn(&ff,11,FontStyleBold,UnitPixel);
+        g.DrawString(L"⎘  Copy Code",-1,&fBtn,RectF(cx,py,cw/2-4,34),&fmtC,&white);
+        py+=44;
+
+        // Blinking wait text
+        DWORD tick=GetTickCount()/600;
         SolidBrush waitC(tick%2==0?Color(255,0,200,230):Color(255,0,140,170));
         Font fWait(&ff,12,FontStyleBold,UnitPixel);
-        g.DrawString(L"⌛ Waiting for phone to connect...",-1,&fWait,
+        g.DrawString(L"⌛ Phone এর সংযোগের অপেক্ষায়...",-1,&fWait,
                      RectF(cx,py,cw,26),&fmtC,&waitC);
         py+=36;
 
-        // Status (IP info)
+        // Status (relay info)
         g.DrawString(ToWStr(g_rdStatusMsg).c_str(),-1,
                      &Font(&ff,10,FontStyleRegular,UnitPixel),
                      RectF(cx,py,cw,20),&fmtC,&gray);
@@ -678,8 +663,8 @@ void DrawPhoneRemoteTab(Graphics& g, float x, float y, float w, float h){
         SolidBrush newBg(s_hovGenerate?Color(255,0,140,160):Color(255,0,110,130));
         Pen newBrd(Color(255,0,180,200),1.f);
         RoundRect(g,newBg,&newBrd,cx,py,cw,46,10);
-        Font fBtn(&ff,13,FontStyleBold,UnitPixel);
-        g.DrawString(L"↻ Generate New Code",-1,&fBtn,RectF(cx,py,cw,46),&fmtC,&white);
+        Font fBigBtn(&ff,13,FontStyleBold,UnitPixel);
+        g.DrawString(L"↻ Generate New Code",-1,&fBigBtn,RectF(cx,py,cw,46),&fmtC,&white);
         py+=62;
 
         // Stop
@@ -692,28 +677,32 @@ void DrawPhoneRemoteTab(Graphics& g, float x, float y, float w, float h){
     }
 
     // ══ IDLE STATE ═══════════════════════════════════════════════
-    // Big generate button
     float btnH=70;
-    float btnY=y+h/2-btnH/2-20;
+    float btnY=y+h/2-btnH/2-30;
     SolidBrush genBg(s_hovGenerate?Color(255,0,160,185):Color(255,0,130,155));
     Pen genBrd(Color(255,0,190,220),2.f);
     RoundRect(g,genBg,&genBrd,cx,btnY,cw,btnH,14);
     Font fBig(&ff,18,FontStyleBold,UnitPixel);
     g.DrawString(L"▶  Generate Code",-1,&fBig,RectF(cx,btnY,cw,btnH),&fmtC,&white);
 
-    // Description
-    float dy=btnY+btnH+18;
-    const wchar_t* lines[]={
-        L"Phone এ RasFocus খুলে \"PC Remote\" → code টাইপ করো",
-        L"PC screen live video phone এ দেখাবে (H.264)",
-        L"Phone touch → PC mouse হিসেবে কাজ করবে"
+    // Description cards
+    float dy=btnY+btnH+24;
+    struct Tip { const wchar_t* icon; const wchar_t* txt; };
+    Tip tips[]={
+        {L"📱",L"Phone এ RasFocus খুলে \"PC Remote\" ট্যাবে যাও"},
+        {L"🔢",L"6-digit code টাইপ করো — IP দিতে হবে না"},
+        {L"🖥️",L"PC screen live video phone এ দেখাবে (H.264)"},
+        {L"🖱️",L"Phone touch → PC mouse হিসেবে কাজ করবে"},
+        {L"🌐",L"Relay server — ভিন্ন নেটওয়ার্ক থেকেও কাজ করে"},
     };
     Font fTip(&ff,11,FontStyleRegular,UnitPixel);
-    for(auto* l:lines){
-        g.DrawString(l,-1,&fTip,RectF(cx,dy,cw,20),&fmtC,&gray); dy+=22;
+    Font fIcon(&ff,13,FontStyleRegular,UnitPixel);
+    for(auto& t:tips){
+        g.DrawString(t.icon,-1,&fIcon,RectF(cx,dy,28,22),&fmtL,&cyan);
+        g.DrawString(t.txt,-1,&fTip,RectF(cx+32,dy,cw-32,22),&fmtL,&gray);
+        dy+=22;
     }
 
-    // Error
     if(g_rdState==RdState::Error){
         SolidBrush errC(Color(255,215,70,70));
         g.DrawString(ToWStr(g_rdStatusMsg).c_str(),-1,&Font(&ff,11,FontStyleRegular,UnitPixel),
@@ -726,20 +715,22 @@ void ProcessPhoneRemoteMouseMove(float mx, float my, float, float){
     float cx=s_drawX+24, cw=s_drawW-48;
     float py=s_drawY+76;
 
+    s_hovGenerate=false; s_hovStop=false; s_hovCopyCode=false;
+
     if(g_rdState==RdState::Connected){
         py+=86+24+80+10;
         float dx=cx+cw/2+6;
         s_hovStop=(mx>=dx&&mx<=dx+cw/2-6&&my>=py&&my<=py+40);
-        s_hovGenerate=false;
     } else if(g_rdState==RdState::WaitPhone){
-        py+=30+80+10+36+36;
+        py+=30+80+10; // after code
+        s_hovCopyCode=(mx>=cx&&mx<=cx+cw/2-4&&my>=py&&my<=py+34);
+        py+=44+36+36;
         s_hovGenerate=(mx>=cx&&mx<=cx+cw&&my>=py&&my<=py+46);
         py+=62;
         s_hovStop=(mx>=cx&&mx<=cx+cw&&my>=py&&my<=py+36);
     } else {
-        float btnH=70, btnY=s_drawY+s_drawH/2-btnH/2-20;
+        float btnH=70, btnY=s_drawY+s_drawH/2-btnH/2-30;
         s_hovGenerate=(mx>=cx&&mx<=cx+cw&&my>=btnY&&my<=btnY+btnH);
-        s_hovStop=false;
     }
 }
 
@@ -761,7 +752,13 @@ void ProcessPhoneRemoteMouseClick(float mx, float my, float, float, HWND hWnd){
             RdStopServer(); InvalidateRect(hWnd,NULL,FALSE); return;
         }
     } else if(g_rdState==RdState::WaitPhone){
-        py+=30+80+10+36+36;
+        py+=30+80+10;
+        // Copy code
+        if(mx>=cx&&mx<=cx+cw/2-4&&my>=py&&my<=py+34){
+            CopyToClipboard(g_rdCode);
+            InvalidateRect(hWnd,NULL,FALSE); return;
+        }
+        py+=44+36+36;
         // New code
         if(mx>=cx&&mx<=cx+cw&&my>=py&&my<=py+46){
             RdGenerateCode(); InvalidateRect(hWnd,NULL,FALSE); return;
@@ -773,12 +770,11 @@ void ProcessPhoneRemoteMouseClick(float mx, float my, float, float, HWND hWnd){
         }
     } else {
         // Idle — Generate
-        float btnH=70, btnY=s_drawY+s_drawH/2-btnH/2-20;
+        float btnH=70, btnY=s_drawY+s_drawH/2-btnH/2-30;
         if(mx>=cx&&mx<=cx+cw&&my>=btnY&&my<=btnY+btnH){
             RdGenerateCode(); InvalidateRect(hWnd,NULL,FALSE); return;
         }
     }
 }
 
-// ── WM_CHAR (not needed — no text input on PC side) ──────────────
 extern "C" void PhoneRemoteChar(wchar_t /*ch*/){}
