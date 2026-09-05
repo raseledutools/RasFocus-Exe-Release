@@ -68,6 +68,68 @@ extern float g_scaleFactor;
 bool g_youtubeDesktopMode    = false; // false = mobile mode (default)
 bool g_youtubeAdBlockEnabled = true;  // true  = ads blocked (default)
 bool g_profilePanelOpen      = false; // Profile floating dropdown
+bool g_forceSiteDark         = false; // true  = all websites force-dark (CSS invert)
+
+// ── Profile Photo Bitmap (toolbar avatar) ─────────────────────────────────
+static Gdiplus::Bitmap* g_profilePhotoBmp = nullptr; // decoded photo, nullptr = use letter
+static std::wstring      g_profilePhotoLoadedUrl;     // which URL is currently loaded
+
+// Google profile photo URL থেকে Bitmap download করে load করা
+static void LoadProfilePhotoAsync(const std::wstring& url) {
+    if (url.empty() || url == g_profilePhotoLoadedUrl) return;
+    g_profilePhotoLoadedUrl = url; // duplicate fetch এড়াতে আগেই set করো
+
+    struct Ctx { std::wstring url; };
+    auto* ctx = new Ctx{ url };
+
+    _beginthread([](void* arg) {
+        auto* ctx = static_cast<Ctx*>(arg);
+        std::string urlA(ctx->url.begin(), ctx->url.end());
+        delete ctx;
+
+        // WinINet দিয়ে image bytes download করো
+        HINTERNET hNet = InternetOpenA("RasBrowser/1.0", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
+        if (!hNet) { _endthread(); return; }
+        HINTERNET hUrl = InternetOpenUrlA(hNet, urlA.c_str(), NULL, 0,
+            INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_SECURE, 0);
+        if (!hUrl) { InternetCloseHandle(hNet); _endthread(); return; }
+
+        std::vector<BYTE> data;
+        char buf[8192]; DWORD rd = 0;
+        while (InternetReadFile(hUrl, buf, sizeof(buf), &rd) && rd > 0)
+            data.insert(data.end(), buf, buf + rd);
+        InternetCloseHandle(hUrl);
+        InternetCloseHandle(hNet);
+
+        if (data.empty()) { _endthread(); return; }
+
+        // bytes থেকে IStream তৈরি করে Gdiplus::Bitmap load করো
+        HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, data.size());
+        if (!hMem) { _endthread(); return; }
+        memcpy(GlobalLock(hMem), data.data(), data.size());
+        GlobalUnlock(hMem);
+
+        IStream* stream = nullptr;
+        if (FAILED(CreateStreamOnHGlobal(hMem, TRUE, &stream))) {
+            GlobalFree(hMem); _endthread(); return;
+        }
+
+        auto* bmp = Gdiplus::Bitmap::FromStream(stream);
+        stream->Release();
+
+        if (bmp && bmp->GetLastStatus() == Gdiplus::Ok) {
+            delete g_profilePhotoBmp;
+            g_profilePhotoBmp = bmp;
+            // toolbar repaint
+            HWND hw = FindWindowA("RasBrowserCore", nullptr);
+            if (!hw) hw = FindWindowExA(NULL, NULL, "RasBrowserCore", NULL);
+            if (hw) InvalidateRect(hw, NULL, FALSE);
+        } else {
+            delete bmp;
+        }
+        _endthread();
+    }, 0, ctx);
+}
 
 // ── Profile Panel extended state ──────────────────────────────────────────
 // Panel has 3 sub-views: MAIN, ACCOUNTS, ADD_PROFILE
@@ -2512,9 +2574,58 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
                         RectF((float)x, (float)toolY, (float)btnSz, btnHf), &sfC, &brPrim);
                 }
             };
-            DrawRightBtn(wd.hExt,     L"\uE9D2", rx);      rx += btnStep; // Extensions
-            DrawRightBtn(wd.hProfile, L"\uE77B", rx, true); rx += btnStep; // Profile (blue)
-            DrawRightBtn(wd.hMenu,    L"\uE712", rx);                       // ⋮ Menu 
+            DrawRightBtn(wd.hExt,  L"\uE9D2", rx); rx += btnStep; // Extensions
+
+            // ── Profile avatar button ─────────────────────────────────────
+            // Google photo URL আছে কিনা দেখো — থাকলে async load শুরু করো
+            {
+                std::wstring photoUrl;
+                if (auto* prof = GetActiveProfile()) {
+                    if (prof->activeAccount >= 0 && prof->activeAccount < (int)prof->accounts.size())
+                        photoUrl = prof->accounts[prof->activeAccount].photoUrl;
+                }
+                if (!photoUrl.empty() && photoUrl != g_profilePhotoLoadedUrl)
+                    LoadProfilePhotoAsync(photoUrl);
+            }
+
+            // hover ring
+            if (wd.hProfile) {
+                SolidBrush hb(wd.isDarkMode ? Color(40,255,255,255) : Color(20,0,0,0));
+                g.FillEllipse(&hb, (float)(rx+S(2,dpi)), (float)(toolY+S(4,dpi)),
+                              (float)S(28,dpi), (float)S(28,dpi));
+            }
+
+            float avX = (float)(rx + S(6, dpi));
+            float avY = (float)(toolY + S(7, dpi));
+            float avD = (float)S(22, dpi); // diameter
+
+            if (g_profilePhotoBmp) {
+                // Round clip → draw photo
+                Gdiplus::GraphicsPath clipPath;
+                clipPath.AddEllipse(avX, avY, avD, avD);
+                Gdiplus::Region clipRgn(&clipPath);
+                g.SetClip(&clipRgn);
+                g.DrawImage(g_profilePhotoBmp, avX, avY, avD, avD);
+                g.ResetClip();
+            } else {
+                // Letter avatar (Google blue circle + white initial)
+                SolidBrush avBg(Color(255, 66, 133, 244));
+                g.FillEllipse(&avBg, avX, avY, avD, avD);
+                FontFamily ffAv(L"Segoe UI");
+                Font fAv(&ffAv, avD * 0.55f, FontStyleBold, UnitPixel);
+                StringFormat sfAv; sfAv.SetAlignment(StringAlignmentCenter);
+                sfAv.SetLineAlignment(StringAlignmentCenter);
+                SolidBrush wBr(Color(255,255,255,255));
+                // Letter: active profile এর প্রথম অক্ষর
+                wchar_t letter = L'R';
+                if (auto* prof = GetActiveProfile())
+                    letter = prof->avatarLetter;
+                wchar_t lStr[2] = { letter, 0 };
+                g.DrawString(lStr, 1, &fAv, RectF(avX, avY, avD, avD), &sfAv, &wBr);
+            }
+            rx += btnStep; // Profile done
+
+            DrawRightBtn(wd.hMenu, L"\uE712", rx); // ⋮ Menu
         }
 
         // Bookmark Bar — সব page এ দেখাবে
@@ -2549,9 +2660,21 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
         const wchar_t* ytModeLabel = g_youtubeDesktopMode ? L"YouTube: Desktop ●" : L"YouTube: Mobile ○";
         const wchar_t* ytAdIcon    = g_youtubeAdBlockEnabled ? L"\uEA18" : L"\uEA1A";
         const wchar_t* ytAdLabel   = g_youtubeAdBlockEnabled ? L"YT Ads: Blocked ✔" : L"YT Ads: Allowed ✖";
+        const wchar_t* darkSiteIcon  = g_forceSiteDark ? L"\uE708" : L"\uE793";
+        const wchar_t* darkSiteLabel = g_forceSiteDark ? L"Dark Theme: On ●" : L"Dark Theme: Off ○";
+
+        // ── Profile header: name + email from active profile ──
+        std::wstring menuProfileName  = L"Rasel Mia";
+        std::wstring menuProfileSub   = L"Signed in";
+        if (auto* prof = GetActiveProfile()) {
+            if (!prof->primaryEmail().empty()) {
+                menuProfileName = prof->displayName();
+                menuProfileSub  = prof->primaryEmail();
+            }
+        }
 
         std::vector<MenuItem> menuItems = {
-            { 2, L"\xE77B", L"Rasel Mia",            L"Signed in"  },
+            { 2, L"\xE77B", menuProfileName,           menuProfileSub },
             { 1, L"",        L"",                      L""           },
             { 0, L"\xE710", L"New tab",               L"Ctrl+T"     },
             { 0, L"\xE727", L"New window",            L"Ctrl+N"     },
@@ -2561,6 +2684,7 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
             { 0, L"\xE8A4", L"Bookmarks and lists",   L""           },
             { 0, L"\xE9D2", L"Extensions",            L""           },
             { 1, L"",        L"",                      L""           },
+            { 0, darkSiteIcon, darkSiteLabel,           L""           },
             { 0, ytModeIcon, ytModeLabel,               L""           },
             { 0, ytAdIcon,   ytAdLabel,                 L""           },
             { 1, L"",        L"",                      L""           },
@@ -3067,6 +3191,21 @@ public:
                 nullptr);
         }
 
+        // ── g_forceSiteDark — menu "Dark Theme" toggle ──
+        if (g_forceSiteDark) {
+            tab.webview->AddScriptToExecuteOnDocumentCreated(
+                L"(() => {"
+                L"  if (document.getElementById('ras-force-dark')) return;"
+                L"  const s = document.createElement('style');"
+                L"  s.id = 'ras-force-dark';"
+                L"  s.textContent = 'html{filter:invert(90%) hue-rotate(180deg)!important}'"
+                L"    + 'img,video,iframe,canvas,picture,svg image,[style*=\"background-image\"]'"
+                L"    + '{filter:invert(100%) hue-rotate(180deg)!important}';"
+                L"  (document.head||document.documentElement).appendChild(s);"
+                L"})()",
+                nullptr);
+        }
+
         tab.webview->add_NavigationStarting(
             Callback<ICoreWebView2NavigationStartingEventHandler>(
             [this](ICoreWebView2* sender, ICoreWebView2NavigationStartingEventArgs* args) -> HRESULT {
@@ -3404,6 +3543,62 @@ public:
                             L"  try { const _orig = window.setTimeout; window.setTimeout = function(fn, delay, ...args) { return _orig.call(this, fn, Math.max(delay||0, 1), ...args); }; } catch(e){}"
                             L"})();",
                             nullptr);
+                    }
+                }
+
+                // ── Google Profile Photo extract ──
+                // accounts.google.com বা myaccount.google.com এ গেলে
+                // signed-in user এর photo URL JS দিয়ে বের করো।
+                {
+                    const std::wstring& curUrl = w.tabs[m_tabIdx].url;
+                    bool isGoogleAcct = (curUrl.find(L"accounts.google.com") != std::wstring::npos ||
+                                         curUrl.find(L"myaccount.google.com") != std::wstring::npos ||
+                                         curUrl.find(L"mail.google.com") != std::wstring::npos ||
+                                         curUrl.find(L"google.com") != std::wstring::npos);
+                    if (isGoogleAcct) {
+                        HWND captureWnd = m_hWnd;
+                        sender->ExecuteScript(
+                            L"(() => {"
+                            // Google page এ signed-in user এর avatar img খোঁজো
+                            L"  const img = document.querySelector("
+                            L"    'img[src*=\"googleusercontent.com\"],"
+                            L"     img[data-src*=\"googleusercontent.com\"],"
+                            L"     [style*=\"googleusercontent.com\"]');"
+                            L"  if (img) {"
+                            L"    const src = img.src || img.getAttribute('data-src') || '';"
+                            L"    if (src.includes('googleusercontent.com')) return src;"
+                            L"  }"
+                            // meta tag থেকেও চেষ্টা করো
+                            L"  const og = document.querySelector('meta[property=\"og:image\"]');"
+                            L"  if (og && og.content && og.content.includes('googleusercontent.com')) return og.content;"
+                            L"  return '';"
+                            L"})()",
+                            Callback<ICoreWebView2ExecuteScriptCompletedHandler>(
+                            [captureWnd](HRESULT, LPCWSTR resultJson) -> HRESULT {
+                                if (!resultJson) return S_OK;
+                                std::wstring s(resultJson);
+                                // strip JSON string quotes
+                                if (s.size() >= 2 && s.front() == L'"' && s.back() == L'"')
+                                    s = s.substr(1, s.size() - 2);
+                                if (s.empty() || s == L"null") return S_OK;
+                                // =s96-c size suffix → বড় করো
+                                auto pos = s.find(L"=s");
+                                if (pos != std::wstring::npos) {
+                                    auto end = s.find(L'-', pos+2);
+                                    if (end != std::wstring::npos)
+                                        s = s.substr(0, pos) + L"=s96-c";
+                                    else
+                                        s = s.substr(0, pos) + L"=s96-c";
+                                }
+                                // active profile এ save করো
+                                if (auto* prof = GetActiveProfile()) {
+                                    if (prof->activeAccount >= 0 && prof->activeAccount < (int)prof->accounts.size()) {
+                                        prof->accounts[prof->activeAccount].photoUrl = s;
+                                        LoadProfilePhotoAsync(s);
+                                    }
+                                }
+                                return S_OK;
+                            }).Get());
                     }
                 }
 
@@ -4198,16 +4393,39 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                             wd.active()->controller->put_Bounds(wvr);
                         InvalidateRect(hWnd, NULL, TRUE);
                     }
-                    // ── clickIdx 7 = YouTube Mobile/Desktop Mode Toggle ──────────
+                    // ── clickIdx 7 = Dark Theme Toggle (all websites) ────────────
                     else if (clickIdx == 7) {
+                        g_forceSiteDark = !g_forceSiteDark;
+                        // সব open tabs এ inject/remove dark CSS করো
+                        for (auto& tab : wd.tabs) {
+                            if (!tab.webview) continue;
+                            if (g_forceSiteDark) {
+                                tab.webview->ExecuteScript(
+                                    L"(() => {"
+                                    L"  if (document.getElementById('ras-force-dark')) return;"
+                                    L"  const s = document.createElement('style');"
+                                    L"  s.id = 'ras-force-dark';"
+                                    L"  s.textContent = 'html{filter:invert(90%) hue-rotate(180deg)!important}'"
+                                    L"    + 'img,video,iframe,canvas,picture,svg image,[style*=\"background-image\"]'"
+                                    L"    + '{filter:invert(100%) hue-rotate(180deg)!important}';"
+                                    L"  (document.head||document.documentElement).appendChild(s);"
+                                    L"})()", nullptr);
+                            } else {
+                                tab.webview->ExecuteScript(
+                                    L"try{const s=document.getElementById('ras-force-dark');if(s)s.remove();}catch(e){}",
+                                    nullptr);
+                            }
+                        }
+                        InvalidateRect(hWnd, NULL, TRUE);
+                    }
+                    // ── clickIdx 8 = YouTube Mobile/Desktop Mode Toggle ───────────
+                    else if (clickIdx == 8) {
                         g_youtubeDesktopMode = !g_youtubeDesktopMode;
-                        // Active tab এ YouTube আছে কিনা চেক করে reload করো
                         if (auto* tab = wd.active()) {
                             if (tab->webview) {
                                 std::wstring curUrl = tab->url;
                                 bool onYT = (curUrl.find(L"youtube.com") != std::wstring::npos);
                                 if (onYT) {
-                                    // Desktop mode: www.youtube.com, Mobile: m.youtube.com
                                     std::wstring targetUrl = g_youtubeDesktopMode
                                         ? L"https://www.youtube.com"
                                         : L"https://m.youtube.com";
@@ -4215,13 +4433,11 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                                 }
                             }
                         }
-                        // Menu label update এর জন্য redraw
                         InvalidateRect(hWnd, NULL, TRUE);
                     }
-                    // ── clickIdx 8 = YouTube Ad Block Toggle ─────────────────────
-                    else if (clickIdx == 8) {
+                    // ── clickIdx 9 = YouTube Ad Block Toggle ─────────────────────
+                    else if (clickIdx == 9) {
                         g_youtubeAdBlockEnabled = !g_youtubeAdBlockEnabled;
-                        // Active tab এ JS flag সেট করো (instant effect)
                         if (auto* tab = wd.active()) {
                             if (tab->webview) {
                                 std::wstring flagScript = g_youtubeAdBlockEnabled
@@ -4233,9 +4449,9 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                         }
                         InvalidateRect(hWnd, NULL, TRUE);
                     }
-                    else if (clickIdx == 9) AddTab(hWnd, L"https://gemini.google.com/app");
-                    else if (clickIdx == 10) {
-                        // Settings — WebView2 এ settings page খোলো
+                    else if (clickIdx == 10) AddTab(hWnd, L"https://gemini.google.com/app");
+                    else if (clickIdx == 11) {
+                        // Settings
                         if (auto* tab = wd.active()) {
                             if (tab->webview) {
                                 tab->webview->NavigateToString(
@@ -4243,7 +4459,7 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                             }
                         }
                     }
-                    else if (clickIdx == 11) DestroyWindow(hWnd);
+                    else if (clickIdx == 12) DestroyWindow(hWnd);
                 }
                 // ── menu বন্ধ হয়েছে — সবসময় return 0 করো ──
                 // নইলে নিচে wd.hMenu check আবার menu toggle করে ফেলে

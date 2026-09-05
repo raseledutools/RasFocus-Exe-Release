@@ -21,6 +21,7 @@
 struct GoogleAccount {
     std::wstring email;        // e.g. "user@gmail.com"
     std::wstring displayName;  // e.g. "Ras Edu"
+    std::wstring photoUrl;     // Google profile photo URL (https://...googleusercontent.com/...)
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
