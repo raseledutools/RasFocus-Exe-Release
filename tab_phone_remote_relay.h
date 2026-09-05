@@ -31,8 +31,8 @@ static const std::string RELAY_SERVER_URL = "wss://relay.rasfocus.com";
 
 // ── Firebase REST endpoint (no SDK needed on PC) ─────────────────
 // Uses Firebase REST API: no C++ SDK required on Windows.
-static const std::string FIREBASE_PROJECT = "rasfocus-app";          // ← your project id
-static const std::string FIREBASE_API_KEY = "AIzaSy-YOUR-KEY-HERE";  // ← your web API key
+static const std::string FIREBASE_PROJECT = "rasfocus-c746d";
+static const std::string FIREBASE_API_KEY = "AIzaSyBcsyn2COOfawUn0MVvQsM08_FUdlDd8Mw";
 static const std::string FIRESTORE_BASE   =
     "https://firestore.googleapis.com/v1/projects/" + FIREBASE_PROJECT +
     "/databases/(default)/documents/rd_sessions/";
