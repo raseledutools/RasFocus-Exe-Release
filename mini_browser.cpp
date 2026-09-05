@@ -158,7 +158,127 @@ std::wstring GetBlocked_HTML(bool isDark) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 3. AI INJECT SCRIPT
+// 3. YOUTUBE AD BLOCK SCRIPT
+// uBlock Origin-এর মতো network-layer block + DOM manipulation দুটোই।
+// NavigationCompleted এ inject হয়, তারপর MutationObserver দিয়ে continuously চলে।
+// ─────────────────────────────────────────────────────────────────────────────
+std::wstring GetYouTubeAdBlockScript() {
+    return
+        L"(function(){"
+        // Guard: শুধু youtube.com এ চলবে
+        L"if(location.hostname.indexOf('youtube.com')===-1)return;"
+        // Already running? skip
+        L"if(window.__RAS_ADBLOCK_RUNNING__)return;"
+        L"window.__RAS_ADBLOCK_RUNNING__=true;"
+
+        // ── Helper: click skip button ────────────────────────────────────
+        L"function clickSkip(){"
+        //   New skip button (2024+)
+        L"  var btns=document.querySelectorAll('.ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-ad-skip-button-modern,.ytp-ad-skip-button-container button');"
+        L"  btns.forEach(function(b){if(b.offsetParent!==null)b.click();});"
+        L"}"
+
+        // ── Helper: mute + speed-forward ad video to end ─────────────────
+        L"function skipAdVideo(){"
+        L"  var v=document.querySelector('video');"
+        L"  if(!v)return;"
+        // If ad overlay is active
+        L"  var isAd=document.querySelector('.ad-showing,.ad-interrupting');"
+        L"  if(!isAd)return;"
+        L"  if(!v.muted)v.muted=true;"
+        // Jump to end — triggers skip button appearance immediately
+        L"  if(isFinite(v.duration)&&v.duration>0&&v.currentTime<v.duration-0.1){"
+        L"    try{v.currentTime=v.duration;}catch(e){}"
+        L"  }"
+        L"}"
+
+        // ── Helper: remove ad overlay elements from DOM ──────────────────
+        L"function removeAdOverlays(){"
+        //   Banner ads above video list
+        L"  var selectors=["
+        L"    'ytd-banner-promo-renderer',"        // homepage banner
+        L"    'ytd-statement-banner-renderer',"     // statement banner
+        L"    'ytd-ad-slot-renderer',"              // sidebar/below-player ads
+        L"    'ytd-in-feed-ad-layout-renderer',"    // in-feed ads (home/search)
+        L"    'ytd-promoted-sparkles-web-renderer',"// search promoted
+        L"    'ytd-promoted-video-renderer',"       // promoted video
+        L"    'ytd-display-ad-renderer',"           // display ads
+        L"    '.ytd-action-companion-ad-renderer'," // companion ads
+        L"    '#masthead-ad',"                      // masthead ad
+        L"    '.ytp-ad-overlay-container',"         // video overlay ad
+        L"    '.ytp-ad-text-overlay',"              // text overlay
+        L"    '.ytp-ad-image-overlay',"             // image overlay
+        L"    '.ytp-ad-player-overlay-instream-info'" // pre-roll info bar
+        L"  ];"
+        L"  selectors.forEach(function(sel){"
+        L"    document.querySelectorAll(sel).forEach(function(el){"
+        L"      if(el&&el.parentNode)el.parentNode.removeChild(el);"
+        L"    });"
+        L"  });"
+        L"}"
+
+        // ── Main poll loop: runs every 300ms ─────────────────────────────
+        L"function adBlockTick(){"
+        L"  skipAdVideo();"
+        L"  clickSkip();"
+        L"  removeAdOverlays();"
+        L"}"
+        L"var _rasAdTimer=setInterval(adBlockTick,300);"
+
+        // ── MutationObserver: catch new ad elements instantly ─────────────
+        L"var _rasObserver=new MutationObserver(function(){"
+        L"  skipAdVideo();"
+        L"  clickSkip();"
+        L"  removeAdOverlays();"
+        L"});"
+        L"_rasObserver.observe(document.body||document.documentElement,{"
+        L"  childList:true,subtree:true"
+        L"});"
+
+        // ── XHR/Fetch intercept: block ad API calls from JS ───────────────
+        // YouTube calls these endpoints via fetch/XHR — intercept and drop them
+        L"(function(){"
+        L"  var AD_URL_PATTERNS=["
+        L"    '/pagead/','/ptracking','/api/stats/ads','/api/stats/atr',"
+        L"    'adsid=','adformat=','get_midroll_info','ad_survey',"
+        L"    'doubleclick.net','googlesyndication.com','googleadservices.com'"
+        L"  ];"
+        L"  function isAdUrl(url){"
+        L"    if(!url)return false;"
+        L"    var u=url.toString().toLowerCase();"
+        L"    for(var i=0;i<AD_URL_PATTERNS.length;i++){"
+        L"      if(u.indexOf(AD_URL_PATTERNS[i])!==-1)return true;"
+        L"    }"
+        L"    return false;"
+        L"  }"
+        // Intercept fetch
+        L"  var _origFetch=window.fetch;"
+        L"  window.fetch=function(input,init){"
+        L"    var url=typeof input==='string'?input:(input&&input.url?input.url:'');"
+        L"    if(isAdUrl(url))return Promise.resolve(new Response('',{status:204}));"
+        L"    return _origFetch.apply(this,arguments);"
+        L"  };"
+        // Intercept XHR
+        L"  var _origXHROpen=XMLHttpRequest.prototype.open;"
+        L"  XMLHttpRequest.prototype.open=function(method,url){"
+        L"    if(isAdUrl(url)){"
+        L"      this._rasBlocked=true;"
+        L"      return;"
+        L"    }"
+        L"    return _origXHROpen.apply(this,arguments);"
+        L"  };"
+        L"  var _origXHRSend=XMLHttpRequest.prototype.send;"
+        L"  XMLHttpRequest.prototype.send=function(){"
+        L"    if(this._rasBlocked)return;"
+        L"    return _origXHRSend.apply(this,arguments);"
+        L"  };"
+        L"})();"
+
+        L"})();";
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 4. AI INJECT SCRIPT
 // ─────────────────────────────────────────────────────────────────────────────
 std::wstring GetAiInjectScript(const std::wstring& currentUrl) {
     std::wifstream in(L"rasfocus_ai_data.txt");
@@ -1488,6 +1608,16 @@ public:
                         return S_OK;
                     }
 
+                    // ── 1b. Ad / Tracker domain block (network-level, like uBlock Origin) ──
+                    // Main-frame navigation to known ad/tracker domains is cancelled silently.
+                    // Sub-resource requests (scripts, images, XHR) are handled separately in
+                    // WebResourceRequested. Together they cover all request types.
+                    if (!IsTrackerWhitelisted(urlStr) &&
+                        (IsAdDomain(urlStr) || IsTrackerDomain(urlStr))) {
+                        args->put_Cancel(TRUE);
+                        return S_OK;
+                    }
+
                     // ── 2. Force desktop version for mobile URLs ─────────────
                     // YouTube: m.youtube.com → www.youtube.com
                     {
@@ -1643,6 +1773,14 @@ public:
                         L"})();";
                     sender->ExecuteScript(reapply.c_str(), nullptr);
                 }
+                // YouTube Ad Block inject (always, for all YouTube navigations)
+                {
+                    const std::wstring& tabUrl = w.tabs[m_tabIdx].url;
+                    if (tabUrl.find(L"youtube.com") != std::wstring::npos) {
+                        std::wstring adScript = GetYouTubeAdBlockScript();
+                        sender->ExecuteScript(adScript.c_str(), nullptr);
+                    }
+                }
                 // AI inject
                 std::wstring script=GetAiInjectScript(w.tabs[m_tabIdx].url);
                 if (!script.empty()) sender->ExecuteScript(script.c_str(),nullptr);
@@ -1703,14 +1841,64 @@ public:
                 LPWSTR uri=nullptr; req->get_Uri(&uri);
                 if (uri) {
                     std::wstring url(uri); CoTaskMemFree(uri);
-                    // Whitelist check আগে — whitelisted হলে block করব না
+                    std::wstring urlLow = url;
+                    std::transform(urlLow.begin(),urlLow.end(),urlLow.begin(),::towlower);
+
+                    bool shouldBlock = false;
+
+                    // 1. Known ad/tracker domains
                     bool whitelisted = IsTrackerWhitelisted(url);
-                    if (!whitelisted && (IsAdDomain(url) || IsTrackerDomain(url))) {
-                        // Return empty 200 response — block silently
+                    if (!whitelisted && (IsAdDomain(url) || IsTrackerDomain(url)))
+                        shouldBlock = true;
+
+                    // 2. YouTube ad URL patterns
+                    // YouTube serves ads from youtube.com itself, so domain block won't work.
+                    // These URL patterns identify ad requests specifically.
+                    if (!shouldBlock) {
+                        // YouTube ad video request: /videoplayback?...&ctier=L&... or adsid= param
+                        bool isYT = (urlLow.find(L"youtube.com") != std::wstring::npos ||
+                                     urlLow.find(L"googlevideo.com") != std::wstring::npos ||
+                                     urlLow.find(L"ytimg.com") != std::wstring::npos);
+                        if (isYT) {
+                            // pagead: Google ads on YouTube
+                            if (urlLow.find(L"/pagead/") != std::wstring::npos)         shouldBlock = true;
+                            // ptracking: ad impression tracking
+                            else if (urlLow.find(L"ptracking") != std::wstring::npos)    shouldBlock = true;
+                            // YouTube ad video streams: adsid= in videoplayback URL
+                            else if (urlLow.find(L"adsid=") != std::wstring::npos)       shouldBlock = true;
+                            // YouTube ad metrics: /api/stats/ads
+                            else if (urlLow.find(L"/api/stats/ads") != std::wstring::npos) shouldBlock = true;
+                            // YouTube ad tracking: /api/stats/atr
+                            else if (urlLow.find(L"/api/stats/atr") != std::wstring::npos) shouldBlock = true;
+                            // YouTube ad impression: /api/stats/qoe and &adformat= param
+                            else if (urlLow.find(L"adformat=") != std::wstring::npos)    shouldBlock = true;
+                            // YouTube get_midroll_info: mid-roll ad metadata
+                            else if (urlLow.find(L"get_midroll_info") != std::wstring::npos) shouldBlock = true;
+                            // YouTube ad survey
+                            else if (urlLow.find(L"ad_survey") != std::wstring::npos)    shouldBlock = true;
+                            // googlevideo.com with ctier=L — ad video stream flag
+                            else if (urlLow.find(L"googlevideo.com") != std::wstring::npos &&
+                                     urlLow.find(L"ctier=l") != std::wstring::npos)       shouldBlock = true;
+                        }
+                    }
+
+                    // 3. Generic ad URL patterns across all sites
+                    if (!shouldBlock && !whitelisted) {
+                        if (urlLow.find(L"/ads/") != std::wstring::npos &&
+                            urlLow.find(L"loads") == std::wstring::npos)                 shouldBlock = true;
+                        else if (urlLow.find(L"/adserve") != std::wstring::npos)         shouldBlock = true;
+                        else if (urlLow.find(L"/adserver") != std::wstring::npos)        shouldBlock = true;
+                        else if (urlLow.find(L"googlesyndication.com") != std::wstring::npos) shouldBlock = true;
+                        else if (urlLow.find(L"doubleclick.net") != std::wstring::npos)  shouldBlock = true;
+                    }
+
+                    if (shouldBlock) {
+                        // Return empty 204 No Content — safest way to silently block
+                        // (200 with empty body sometimes causes JS parse errors)
                         if (g_sharedEnv) {
                             ComPtr<ICoreWebView2WebResourceResponse> resp;
                             g_sharedEnv->CreateWebResourceResponse(
-                                nullptr, 200, L"OK", L"Content-Type: text/plain",
+                                nullptr, 204, L"No Content", L"",
                                 &resp);
                             if (resp) args->put_Response(resp.Get());
                         }
@@ -1746,6 +1934,13 @@ public:
                 }
                 return S_OK;
             }).Get(),nullptr);
+
+        // ── YouTube Ad Block: AddScriptToExecuteOnDocumentCreated ────────────
+        // Fires before page renders — earliest possible injection point.
+        // Guards itself with hostname check so it only activates on youtube.com.
+        tab.webview->AddScriptToExecuteOnDocumentCreated(
+            GetYouTubeAdBlockScript().c_str(),
+            nullptr);
 
         // F11 accelerator
         ComPtr<ICoreWebView2Controller3> ctl3;
