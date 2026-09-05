@@ -980,41 +980,69 @@ void DrawCheckUpdatePopup(Graphics& g, int w, int h) {
         Font fBtn(&ff, 12, FontStyleBold, UnitPixel);
         g.DrawString(L"OK", -1, &fBtn, RectF(bX, bY, bW, bH), &fmtC, &white);
     } else {
-        // ── Update available ──
-        Font fBigIco(&ffIco, 22, FontStyleRegular, UnitPixel);
-        g.DrawString(L"\xE896", -1, &fBigIco, RectF(popX, popY + 4.0f, popW, 40.0f), &fmtC, &white);
-        Font fHead(&ff, 13, FontStyleBold, UnitPixel);
-           // newVersionStr empty = network error (from fallback Fix3)
+        // newVersionStr empty = network error
         bool isNetErr = newVersionStr.empty();
+
+        // Icon
+        Font fBigIco(&ffIco, 22, FontStyleRegular, UnitPixel);
+        // Network error: orange warning icon; update available: download icon
+        g.DrawString(isNetErr ? L"\xE7BA" : L"\xE896",
+                     -1, &fBigIco, RectF(popX, popY + 4.0f, popW, 40.0f), &fmtC, &white);
+
+        // Header
+        Font fHead(&ff, 13, FontStyleBold, UnitPixel);
         g.DrawString(isNetErr ? L"Check Failed!" : L"Update Available!",
                      -1, &fHead, RectF(popX + 40.0f, popY + 4.0f, popW - 80.0f, 40.0f), &fmtL, &white);
+
+        // Body text
         Font fBody(&ff, 12, FontStyleRegular, UnitPixel);
         wstring wv(newVersionStr.begin(), newVersionStr.end());
-        g.DrawString(isNetErr ? L"Could not reach update server.\nCheck internet and try again."
-                              : (L"New version: " + wv).c_str(), -1, &fBody,
-                     RectF(popX, popY + 58.0f, popW, 28.0f), &fmtC, &dark);
-        g.DrawString(L"Bug fixes and new features included.", -1, &fBody,
-                     RectF(popX, popY + 84.0f, popW, 26.0f), &fmtC, &gray);
+        g.DrawString(isNetErr
+                     ? L"Could not reach update server.\nCheck internet and try again."
+                     : (L"New version: " + wv).c_str(),
+                     -1, &fBody, RectF(popX, popY + 58.0f, popW, 28.0f), &fmtC, &dark);
 
-        // Download & Install button
-        float bW = 220.0f, bH = 42.0f;
-        float bX = popX + (popW - bW) / 2.0f;
-        float bY = popY + popH - bH - 30.0f;
-        float br = 7.0f, bd = br * 2.0f;
-        GraphicsPath bPath;
-        bPath.AddArc(bX, bY, bd, bd, 180, 90); bPath.AddArc(bX + bW - bd, bY, bd, bd, 270, 90);
-        bPath.AddArc(bX + bW - bd, bY + bH - bd, bd, bd, 0, 90); bPath.AddArc(bX, bY + bH - bd, bd, bd, 90, 90);
-        bPath.CloseFigure();
-        SolidBrush bBg(s_hovCheckPopupBtn ? Color(255, 0, 120, 130) : Color(255, 0, 150, 160));
-        g.FillPath(&bBg, &bPath);
-        Font fBtn(&ff, 12, FontStyleBold, UnitPixel);
-        g.DrawString(L"\u2B07  Download & Install", -1, &fBtn, RectF(bX, bY, bW, bH), &fmtC, &white);
+        if (isNetErr) {
+            // ── Network error: show version info + OK only ──────────────────
+            wstring wCur(CURRENT_VERSION.begin(), CURRENT_VERSION.end());
+            g.DrawString((L"Installed: " + wCur).c_str(), -1, &fBody,
+                         RectF(popX, popY + 88.0f, popW, 26.0f), &fmtC, &gray);
 
-        // Later link
-        Font fLater(&ff, 11, FontStyleRegular, UnitPixel);
-        SolidBrush laterClr(Color(255, 150, 150, 150));
-        g.DrawString(L"Later", -1, &fLater,
-                     RectF(popX, bY + bH + 6.0f, popW, 20.0f), &fmtC, &laterClr);
+            float bW = 120.0f, bH = 38.0f;
+            float bX = popX + (popW - bW) / 2.0f;
+            float bY = popY + popH - bH - 22.0f;
+            float br = 7.0f, bd = br * 2.0f;
+            GraphicsPath bPath;
+            bPath.AddArc(bX, bY, bd, bd, 180, 90); bPath.AddArc(bX + bW - bd, bY, bd, bd, 270, 90);
+            bPath.AddArc(bX + bW - bd, bY + bH - bd, bd, bd, 0, 90); bPath.AddArc(bX, bY + bH - bd, bd, bd, 90, 90);
+            bPath.CloseFigure();
+            SolidBrush bBg(s_hovCheckPopupBtn ? Color(255, 150, 80, 0) : Color(255, 190, 100, 0));
+            g.FillPath(&bBg, &bPath);
+            Font fBtn(&ff, 12, FontStyleBold, UnitPixel);
+            g.DrawString(L"OK", -1, &fBtn, RectF(bX, bY, bW, bH), &fmtC, &white);
+        } else {
+            // ── Update available: show Download & Install + Later ────────────
+            g.DrawString(L"Bug fixes and new features included.", -1, &fBody,
+                         RectF(popX, popY + 84.0f, popW, 26.0f), &fmtC, &gray);
+
+            float bW = 220.0f, bH = 42.0f;
+            float bX = popX + (popW - bW) / 2.0f;
+            float bY = popY + popH - bH - 30.0f;
+            float br = 7.0f, bd = br * 2.0f;
+            GraphicsPath bPath;
+            bPath.AddArc(bX, bY, bd, bd, 180, 90); bPath.AddArc(bX + bW - bd, bY, bd, bd, 270, 90);
+            bPath.AddArc(bX + bW - bd, bY + bH - bd, bd, bd, 0, 90); bPath.AddArc(bX, bY + bH - bd, bd, bd, 90, 90);
+            bPath.CloseFigure();
+            SolidBrush bBg(s_hovCheckPopupBtn ? Color(255, 0, 120, 130) : Color(255, 0, 150, 160));
+            g.FillPath(&bBg, &bPath);
+            Font fBtn(&ff, 12, FontStyleBold, UnitPixel);
+            g.DrawString(L"\u2B07  Download & Install", -1, &fBtn, RectF(bX, bY, bW, bH), &fmtC, &white);
+
+            Font fLater(&ff, 11, FontStyleRegular, UnitPixel);
+            SolidBrush laterClr(Color(255, 150, 150, 150));
+            g.DrawString(L"Later", -1, &fLater,
+                         RectF(popX, bY + bH + 6.0f, popW, 20.0f), &fmtC, &laterClr);
+        }
     }
 }
 
@@ -1029,9 +1057,17 @@ void ProcessCheckPopupMouseMove(float x, float y, int w, int h) {
         float bX = popX + (popW - bW) / 2.0f, bY = popY + popH - bH - 22.0f;
         s_hovCheckPopupBtn = (x >= bX && x <= bX + bW && y >= bY && y <= bY + bH);
     } else {
-        float bW = 220.0f, bH = 42.0f;
-        float bX = popX + (popW - bW) / 2.0f, bY = popY + popH - bH - 30.0f;
-        s_hovCheckPopupBtn = (x >= bX && x <= bX + bW && y >= bY && y <= bY + bH);
+        // net error: OK button (small); update: Download button (wide)
+        bool netErr = newVersionStr.empty();
+        if (netErr) {
+            float bW = 120.0f, bH = 38.0f;
+            float bX = popX + (popW - bW) / 2.0f, bY = popY + popH - bH - 22.0f;
+            s_hovCheckPopupBtn = (x >= bX && x <= bX + bW && y >= bY && y <= bY + bH);
+        } else {
+            float bW = 220.0f, bH = 42.0f;
+            float bX = popX + (popW - bW) / 2.0f, bY = popY + popH - bH - 30.0f;
+            s_hovCheckPopupBtn = (x >= bX && x <= bX + bW && y >= bY && y <= bY + bH);
+        }
     }
 }
 
@@ -1056,19 +1092,31 @@ void ProcessCheckPopupMouseClick(float x, float y, int w, int h, HWND hWnd) {
             InvalidateRect(hWnd, NULL, FALSE); return;
         }
     } else {
-        float bW = 220.0f, bH = 42.0f;
-        float bX = popX + (popW - bW) / 2.0f, bY = popY + popH - bH - 30.0f;
-        // "Later" link
-        if (x >= popX && x <= popX + popW && y >= bY + bH + 6.0f && y <= bY + bH + 26.0f) {
-            g_showCheckPopup = false;
-            InvalidateRect(hWnd, NULL, FALSE); return;
-        }
-        // Download & Install button
-        if (x >= bX && x <= bX + bW && y >= bY && y <= bY + bH) {
-            g_showCheckPopup  = false;
-            g_showUpdatePopup = true;  // hand off to existing download popup
-            s_hovCheckPopupBtn = false;
-            InvalidateRect(hWnd, NULL, FALSE); return;
+        bool netErr = newVersionStr.empty();
+        if (netErr) {
+            // Net error — OK button just closes popup
+            float bW = 120.0f, bH = 38.0f;
+            float bX = popX + (popW - bW) / 2.0f, bY = popY + popH - bH - 22.0f;
+            if (x >= bX && x <= bX + bW && y >= bY && y <= bY + bH) {
+                g_showCheckPopup = false;
+                s_hovCheckPopupBtn = false;
+                InvalidateRect(hWnd, NULL, FALSE); return;
+            }
+        } else {
+            float bW = 220.0f, bH = 42.0f;
+            float bX = popX + (popW - bW) / 2.0f, bY = popY + popH - bH - 30.0f;
+            // "Later" link
+            if (x >= popX && x <= popX + popW && y >= bY + bH + 6.0f && y <= bY + bH + 26.0f) {
+                g_showCheckPopup = false;
+                InvalidateRect(hWnd, NULL, FALSE); return;
+            }
+            // Download & Install button
+            if (x >= bX && x <= bX + bW && y >= bY && y <= bY + bH) {
+                g_showCheckPopup  = false;
+                g_showUpdatePopup = true;  // hand off to download popup
+                s_hovCheckPopupBtn = false;
+                InvalidateRect(hWnd, NULL, FALSE); return;
+            }
         }
     }
 }
