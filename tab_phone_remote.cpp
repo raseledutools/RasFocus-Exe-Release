@@ -679,7 +679,7 @@ void DrawPhoneRemoteTab(Graphics& g, float x, float y, float w, float h){
             // Measure text width
             int n = (int)s_inputId.size();
             float cx2 = rx + 12 + n * 10.5f;
-            g.FillRectangle(&cursor, cx2, ry+10, 2.f, inputH-20);
+            g.FillRectangle(&cursor, cx2, ry+10.f, 2.f, inputH-20.f);
         }
 
         // Connect button (blue)
@@ -742,7 +742,7 @@ void DrawPhoneRemoteTab(Graphics& g, float x, float y, float w, float h){
         if(t.active) {
             // Underline
             SolidBrush ul(Color(255,0,120,215));
-            g.FillRectangle(&ul, tabX2, tabY+tabH2-2, 28, 2.f);
+            g.FillRectangle(&ul, tabX2, tabY+tabH2-2.f, 28.f, 2.f);
         }
         tabX2 += 36;
     }
@@ -770,7 +770,7 @@ void DrawPhoneRemoteTab(Graphics& g, float x, float y, float w, float h){
     g.FillRectangle(&statusBg, x, statusBarY, w, statusBarH);
     // Green dot
     SolidBrush greenDot(Color(255, 50, 200, 90));
-    g.FillEllipse(&greenDot, x+pad, statusBarY+10, 8, 8);
+    g.FillEllipse(&greenDot, x+pad, statusBarY+10.f, 8.f, 8.f);
     Font fStatus(&ff, 10, FontStyleRegular, UnitPixel);
     SolidBrush grayStatus(Color(255, 130, 132, 155));
     wstring statusLine = ToWStr(g_rdStatusMsg);
@@ -815,7 +815,7 @@ void DrawPhoneRemoteTab(Graphics& g, float x, float y, float w, float h){
         // Orange dot for offline, green for online
         bool online = (rc.id == g_rdPhoneIp && g_rdState==RdState::Connected);
         SolidBrush dotC(online ? Color(255,50,205,100) : Color(255,255,140,0));
-        g.FillEllipse(&dotC, cardX+10, cardsY+cardH-22, 8, 8);
+        g.FillEllipse(&dotC, cardX+10.f, cardsY+cardH-22.f, 8.f, 8.f);
         g.DrawString(FormatId(rc.id).c_str(), -1, &fCardId,
                      RectF(cardX+22, cardsY+cardH-24, cardW-54, 18), &fmtL, &idC);
 
