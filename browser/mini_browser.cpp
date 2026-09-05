@@ -1430,38 +1430,45 @@ public:
         COREWEBVIEW2_KEY_EVENT_KIND kind; args->get_KeyEventKind(&kind);
         if (kind == COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN || kind == COREWEBVIEW2_KEY_EVENT_KIND_SYSTEM_KEY_DOWN) {
             UINT vk; args->get_VirtualKey(&vk);
-            bool ctrl  = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
-            bool shift = (GetKeyState(VK_SHIFT)   & 0x8000) != 0;
+            bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
 
+            // F11 — Fullscreen
             if (vk == VK_F11) { ToggleFullScreen(m_hWnd); args->put_Handled(TRUE); return S_OK; }
-            if (vk == VK_F5 && g_windows.count(m_hWnd)) {
-                auto* tab = g_windows[m_hWnd].active();
-                if (tab && tab->webview) { tab->webview->Reload(); args->put_Handled(TRUE); return S_OK; }
+
+            // F5 / Ctrl+R — Reload (no forward-decl needed)
+            if ((vk == VK_F5) || (ctrl && vk == 'R')) {
+                if (g_windows.count(m_hWnd)) {
+                    auto* tab = g_windows[m_hWnd].active();
+                    if (tab && tab->webview) tab->webview->Reload();
+                }
+                args->put_Handled(TRUE); return S_OK;
             }
+
+            // Escape — close panels / focus mode
             if (vk == VK_ESCAPE && g_windows.count(m_hWnd)) {
                 auto& wdEsc = g_windows[m_hWnd];
-                if (wdEsc.isFocusMode) { ToggleFocusMode(m_hWnd); args->put_Handled(TRUE); return S_OK; }
-                if (wdEsc.isFullScreen) { ToggleFullScreen(m_hWnd); args->put_Handled(TRUE); return S_OK; }
+                if (wdEsc.isFocusMode)   { ToggleFocusMode(m_hWnd);   args->put_Handled(TRUE); return S_OK; }
+                if (wdEsc.isFullScreen)  { ToggleFullScreen(m_hWnd);  args->put_Handled(TRUE); return S_OK; }
                 bool any = g_bookmarkPanelOpen || g_historyPanelOpen ||
                            g_downloadsPanelOpen || g_findBarOpen ||
                            g_contextMenuOpen   || g_extensionPanelOpen;
                 if (any) {
                     g_bookmarkPanelOpen = g_historyPanelOpen = g_downloadsPanelOpen = false;
-                    g_extensionPanelOpen = false; g_findBarOpen = false; g_contextMenuOpen = false;
+                    g_extensionPanelOpen = g_findBarOpen = g_contextMenuOpen = false;
                     InvalidateRect(m_hWnd, NULL, FALSE);
                     args->put_Handled(TRUE); return S_OK;
                 }
             }
-            if (ctrl && g_windows.count(m_hWnd)) {
-                auto& wd = g_windows[m_hWnd];
-                switch (vk) {
-                case 'D': // Ctrl+D — Bookmark current page
-                    if (auto* tab = wd.active()) {
-                        ToggleBookmark(tab->url, tab->title);
-                        InvalidateRect(m_hWnd, NULL, FALSE);
-                    }
+
+            if (ctrl) {
+                // Ctrl+D — Bookmark (no AddTab/SwitchToTab needed)
+                if (vk == 'D' && g_windows.count(m_hWnd)) {
+                    auto* tab = g_windows[m_hWnd].active();
+                    if (tab) { ToggleBookmark(tab->url, tab->title); InvalidateRect(m_hWnd, NULL, FALSE); }
                     args->put_Handled(TRUE); return S_OK;
-                case 'B': // Ctrl+B — Bookmarks panel
+                }
+                // Ctrl+B — Bookmarks panel (no AddTab needed)
+                if (vk == 'B') {
                     g_bookmarkPanelOpen  = !g_bookmarkPanelOpen;
                     g_historyPanelOpen   = false;
                     g_downloadsPanelOpen = false;
@@ -1469,51 +1476,21 @@ public:
                     if (g_bookmarkPanelOpen) LoadBookmarks();
                     InvalidateRect(m_hWnd, NULL, FALSE);
                     args->put_Handled(TRUE); return S_OK;
-                case 'T': // Ctrl+T — New tab
-                    AddTab(m_hWnd, L"LOCAL_NTP");
-                    args->put_Handled(TRUE); return S_OK;
-                case 'W': // Ctrl+W — Close tab
-                    if (wd.tabs.size() > 1) CloseTab(m_hWnd, wd.activeTab);
-                    else DestroyWindow(m_hWnd);
-                    args->put_Handled(TRUE); return S_OK;
-                case 'N': // Ctrl+N — New window
-                    LaunchMiniBrowser(L"LOCAL_NTP", L"New Window");
-                    args->put_Handled(TRUE); return S_OK;
-                case 'H': // Ctrl+H — History tab
-                    g_historyPanelOpen = false; g_bookmarkPanelOpen = false; g_downloadsPanelOpen = false;
-                    AddTab(m_hWnd, L"LOCAL_HISTORY");
-                    args->put_Handled(TRUE); return S_OK;
-                case 'J': // Ctrl+J — Downloads tab
-                    g_downloadsPanelOpen = false; g_historyPanelOpen = false; g_bookmarkPanelOpen = false;
-                    AddTab(m_hWnd, L"LOCAL_DOWNLOADS");
-                    args->put_Handled(TRUE); return S_OK;
-                case 'F': // Ctrl+F — Find in page
+                }
+                // Ctrl+F — Find in page (no AddTab needed)
+                if (vk == 'F') {
                     if (g_findBarOpen) CloseFindBar(); else OpenFindBar();
                     InvalidateRect(m_hWnd, NULL, FALSE);
                     args->put_Handled(TRUE); return S_OK;
-                case 'R': // Ctrl+R — Reload
-                    if (auto* tab = wd.active()) if (tab->webview) tab->webview->Reload();
+                }
+                // Ctrl+T/W/N/H/J/E/Tab/1-9 — PostMessage to BrowserWndProc
+                // (AddTab/CloseTab/SwitchToTab are forward-declared later in this file)
+                if (vk == 'T' || vk == 'W' || vk == 'N' || vk == 'H' ||
+                    vk == 'J' || vk == 'E' || vk == VK_TAB ||
+                    (vk >= '1' && vk <= '9'))
+                {
+                    PostMessage(m_hWnd, WM_KEYDOWN, (WPARAM)vk, 0);
                     args->put_Handled(TRUE); return S_OK;
-                case 'E': // Ctrl+E — Extensions panel
-                    g_extensionPanelOpen = !g_extensionPanelOpen;
-                    g_historyPanelOpen = false; g_bookmarkPanelOpen = false; g_downloadsPanelOpen = false;
-                    if (g_extensionPanelOpen) ScanExtensionsFolderPublic();
-                    { RECT wvr = GetWebViewRect(m_hWnd); if (wd.active() && wd.active()->controller) wd.active()->controller->put_Bounds(wvr); }
-                    InvalidateRect(m_hWnd, NULL, TRUE);
-                    args->put_Handled(TRUE); return S_OK;
-                case VK_TAB: // Ctrl+Tab — switch tab
-                    if (!wd.tabs.empty()) {
-                        int next = (wd.activeTab + (shift ? -1 : 1) + (int)wd.tabs.size()) % (int)wd.tabs.size();
-                        SwitchToTab(m_hWnd, next);
-                    }
-                    args->put_Handled(TRUE); return S_OK;
-                default:
-                    if (vk >= '1' && vk <= '9') {
-                        int idx = (int)(vk - '1');
-                        if (idx < (int)wd.tabs.size()) SwitchToTab(m_hWnd, idx);
-                        args->put_Handled(TRUE); return S_OK;
-                    }
-                    break;
                 }
             }
         }
