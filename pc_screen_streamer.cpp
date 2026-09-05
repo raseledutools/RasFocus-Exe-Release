@@ -21,6 +21,7 @@
 #include <ws2tcpip.h>
 #include "pc_screen_streamer.h"
 #include "tab_phone_remote.h"  // WsSendText, WsRecvFrame helpers
+#include "tab_phone_remote_relay.h"  // RelaySendBinary
 
 #include <windows.h>
 #include <gdiplus.h>
@@ -426,6 +427,7 @@ static void CaptureLoop(){
                 pkt[3]=(BYTE)((pts>> 8)&0xFF);pkt[4]=(BYTE)((pts    )&0xFF);
                 memcpy(pkt.data()+5,nal.data(),nal.size());
                 WsBroadcastBin(pkt.data(),pkt.size());
+                RelaySendBinary(pkt.data(),pkt.size());  // also send via relay for internet clients
                 fpsCount++;
             }
             pts+=frameDur;

@@ -49,3 +49,8 @@ void RelayUnregisterSession(const std::string& code);
 // ── Check if relay is needed (returns true if phone is not on LAN) ─
 //    Not needed for basic implementation — phone always tries LAN first.
 bool RelayIsAvailable();
+
+// ── Relay HOST (PC connects to relay as host) ────────────────────
+void RelayHostStart(const std::string& code);  // call after RdGenerateCode
+void RelayHostStop();                           // call on RdStopServer
+void RelaySendBinary(const BYTE* data, size_t len); // call for each H264 frame

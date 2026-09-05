@@ -450,10 +450,11 @@ void RdGenerateCode(){
     RdStopServer();
     g_rdCode = s_myId;
     g_rdState = RdState::WaitPhone;
-    g_rdStatusMsg = "Ready. For faster connection, please set up your own server";
+    g_rdStatusMsg = "Ready";
 
     string ip = GetLocalIp();
     RelayRegisterSession(g_rdCode, ip, RD_PORT);
+    RelayHostStart(g_rdCode);  // PC connects to relay as host
 
     g_phoneRemoteRunning=false; g_connectedClients=0; g_rdFps=0;
     s_active=true;
@@ -461,8 +462,43 @@ void RdGenerateCode(){
     if(hParentWnd) InvalidateRect(hParentWnd,NULL,FALSE);
 }
 
+// Called by relay thread when phone sends input via relay (internet path)
+void RelayInjectInput(const string& json) {
+    string type=Jget(json,"type");
+    if(type=="mouse") {
+        float nx=0,ny=0; int mask=0;
+        try{ nx=stof(Jget(json,"nx")); ny=stof(Jget(json,"ny")); mask=stoi(Jget(json,"mask")); }catch(...){}
+        INPUT inp={}; inp.type=INPUT_MOUSE;
+        inp.mi.dx=(LONG)(nx*65535); inp.mi.dy=(LONG)(ny*65535);
+        inp.mi.dwFlags=MOUSEEVENTF_ABSOLUTE|MOUSEEVENTF_MOVE;
+        if(mask&1) inp.mi.dwFlags|=MOUSEEVENTF_LEFTDOWN;
+        if(mask&2) inp.mi.dwFlags|=MOUSEEVENTF_LEFTUP;
+        if(mask&4) inp.mi.dwFlags|=MOUSEEVENTF_RIGHTDOWN;
+        if(mask&8) inp.mi.dwFlags|=MOUSEEVENTF_RIGHTUP;
+        if(g_rdInputEnabled) SendInput(1,&inp,sizeof(INPUT));
+    } else if(type=="key") {
+        int vk=0; string action;
+        try{ vk=stoi(Jget(json,"vk")); }catch(...){}
+        action=Jget(json,"action");
+        INPUT ki={}; ki.type=INPUT_KEYBOARD;
+        ki.ki.wVk=(WORD)vk;
+        if(action=="up") ki.ki.dwFlags=KEYEVENTF_KEYUP;
+        if(g_rdInputEnabled) SendInput(1,&ki,sizeof(INPUT));
+    } else if(type=="scroll") {
+        float x=0,y=0; string dir;
+        try{ x=stof(Jget(json,"nx")); y=stof(Jget(json,"ny")); }catch(...){}
+        dir=Jget(json,"dir");
+        INPUT si={}; si.type=INPUT_MOUSE;
+        si.mi.dx=(LONG)(x*65535); si.mi.dy=(LONG)(y*65535);
+        si.mi.dwFlags=MOUSEEVENTF_ABSOLUTE|MOUSEEVENTF_WHEEL;
+        si.mi.mouseData=(dir=="up")?WHEEL_DELTA:(DWORD)-(int)WHEEL_DELTA;
+        if(g_rdInputEnabled) SendInput(1,&si,sizeof(INPUT));
+    }
+}
+
 void RdStopServer(){
     s_active=false;
+    RelayHostStop();
     if(!g_rdCode.empty()) RelayUnregisterSession(g_rdCode);
     if(s_clientSock!=INVALID_SOCKET){closesocket(s_clientSock);s_clientSock=INVALID_SOCKET;}
     if(s_listenSock!=INVALID_SOCKET){closesocket(s_listenSock);s_listenSock=INVALID_SOCKET;}
