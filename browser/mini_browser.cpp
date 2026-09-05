@@ -2670,13 +2670,13 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
         std::wstring menuProfileSub   = L"Signed in";
         if (auto* prof = GetActiveProfile()) {
             if (!prof->primaryEmail().empty()) {
-                menuProfileName = prof->displayName();
+                menuProfileName = prof->displayLabel();
                 menuProfileSub  = prof->primaryEmail();
             }
         }
 
         std::vector<MenuItem> menuItems = {
-            { 2, L"\xE77B", menuProfileName,           menuProfileSub },
+            { 2, L"\xE77B", menuProfileName.c_str(),    menuProfileSub.c_str() },
             { 1, L"",        L"",                      L""           },
             { 0, L"\xE710", L"New tab",               L"Ctrl+T"     },
             { 0, L"\xE727", L"New window",            L"Ctrl+N"     },
