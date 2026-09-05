@@ -71,6 +71,7 @@ bool   isUpdateReady     = false;
 bool   isCheckingUpdate  = false;
 string newVersionStr     = "";
 bool   hoverUpdateBtn    = false;
+static RectF s_subhdrUpdateRect;   // subheader update chip hit-test rect
 bool   hoverCheckBtn     = false;  // ← "Check for Update" fix button (যখন কোনো update নেই)
 string g_checkResultText = "";     // ← "Latest" বা "" — check শেষে header এ দেখায়
 DWORD  g_checkResultShowUntil = 0; // GetTickCount() পর্যন্ত দেখাবে
@@ -1688,8 +1689,53 @@ void DrawSubHeader(Graphics& g, int w) {
     }
     g.DrawString(sidebarAccLabel.c_str(), -1, &fBtnTxt, RectF(acBtnX + 28.0f, btnY, acBtnW - 30.0f, btnH), &fmtTL, &white);
 
-    float fbIconW = 60.0f;
-    float fbIconX = acBtnX - fbIconW - 10.0f;
+    // ── Update Available chip (APK TopHeader green chip এর মতো) ──────
+    float fbIconW  = 60.0f;
+    float updChipW = 0.0f;  // chip না থাকলে 0
+
+    if (isUpdateAvailable && !newVersionStr.empty()) {
+        updChipW = 130.0f;
+        float updBtnX = acBtnX - fbIconW - 10.0f - updChipW - 8.0f;
+        float updBtnH = btnH;
+        float updBtnY = btnY;
+
+        GraphicsPath updPath;
+        float ru = 4.0f, du = ru * 2.0f;
+        updPath.AddArc(updBtnX,             updBtnY,             du, du, 180, 90);
+        updPath.AddArc(updBtnX+updChipW-du, updBtnY,             du, du, 270, 90);
+        updPath.AddArc(updBtnX+updChipW-du, updBtnY+updBtnH-du,  du, du, 0,   90);
+        updPath.AddArc(updBtnX,             updBtnY+updBtnH-du,  du, du, 90,  90);
+        updPath.CloseFigure();
+
+        SolidBrush updBg(hoverUpdateBtn
+            ? Color(255, 0, 170, 80)
+            : Color(255, 0, 200, 100));
+        g.FillPath(&updBg, &updPath);
+        Pen updBorder(Color(180, 255, 255, 255), 1.0f);
+        g.DrawPath(&updBorder, &updPath);
+
+        Font fUpdIcon(&ffIcons, 12, FontStyleRegular, UnitPixel);
+        Font fUpdTxt(&ff, 10, FontStyleBold, UnitPixel);
+        StringFormat fmtUpdL;
+        fmtUpdL.SetAlignment(StringAlignmentNear);
+        fmtUpdL.SetLineAlignment(StringAlignmentCenter);
+
+        g.DrawString(L"\xEBE8", -1, &fUpdIcon,
+            RectF(updBtnX + 7.0f, updBtnY, 18.0f, updBtnH), &fmtC, &white);
+
+        wstring updLabel = L"Update ";
+        updLabel += wstring(newVersionStr.begin(), newVersionStr.end());
+        g.DrawString(updLabel.c_str(), -1, &fUpdTxt,
+            RectF(updBtnX + 26.0f, updBtnY, updChipW - 30.0f, updBtnH),
+            &fmtUpdL, &white);
+
+        s_subhdrUpdateRect = RectF(updBtnX, updBtnY, updChipW, updBtnH);
+    } else {
+        s_subhdrUpdateRect = RectF(0, 0, 0, 0);
+    }
+
+    float fbIconX = acBtnX - fbIconW - 10.0f
+                    - (updChipW > 0 ? updChipW + 8.0f : 0.0f);
 
     if (hoverFeedback) {
         SolidBrush fbHover(Color(50, 255, 255, 255));
@@ -2133,8 +2179,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
 
         bool oldUpgBtn = hoverUpdateBtn; hoverUpdateBtn = false;
         if (isUpdateAvailable) {
+            // titlebar button
             float upgW = 150.0f, upgX = scaledW - (btnW*3) - upgW - 10.0f;
             if (x >= upgX && x <= upgX + upgW && y >= 0.0f && y <= (float)TITLEBAR_HEIGHT) hoverUpdateBtn = true;
+            // subheader chip
+            if (s_subhdrUpdateRect.Width > 0.0f &&
+                x >= s_subhdrUpdateRect.X && x <= s_subhdrUpdateRect.X + s_subhdrUpdateRect.Width &&
+                y >= s_subhdrUpdateRect.Y && y <= s_subhdrUpdateRect.Y + s_subhdrUpdateRect.Height)
+                hoverUpdateBtn = true;
         }
         if (oldUpgBtn != hoverUpdateBtn) redraw = true;
 
@@ -2272,6 +2324,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             float btnW = 42.0f, upgW = 150.0f, upgX = scaledW - (btnW*3) - upgW - 10.0f;
             if (x >= upgX && x <= upgX + upgW && y >= 0.0f && y <= (float)TITLEBAR_HEIGHT) {
                 // Popup reopen করো — user এখান থেকে download করবে
+                g_showUpdatePopup = true;
+                InvalidateRect(hWnd, NULL, FALSE);
+                return 0;
+            }
+        }
+
+        // Subheader update chip click → same popup খোলে
+        if (isUpdateAvailable && s_subhdrUpdateRect.Width > 0.0f) {
+            if (x >= s_subhdrUpdateRect.X &&
+                x <= s_subhdrUpdateRect.X + s_subhdrUpdateRect.Width &&
+                y >= s_subhdrUpdateRect.Y &&
+                y <= s_subhdrUpdateRect.Y + s_subhdrUpdateRect.Height) {
                 g_showUpdatePopup = true;
                 InvalidateRect(hWnd, NULL, FALSE);
                 return 0;
