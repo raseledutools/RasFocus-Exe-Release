@@ -1,6 +1,6 @@
 BUILD STATUS: FAILED (exit code 2)
-Time: 2026-09-05 11:41:58 UTC
-Run: https://github.com/raseledutools/RasFocus-Exe-Release/actions/runs/33963975089
+Time: 2026-09-05 11:45:36 UTC
+Run: https://github.com/raseledutools/RasFocus-Exe-Release/actions/runs/33964126140
 
 === Compiler Output ===
 Microsoft (R) C/C++ Optimizing Compiler Version 19.51.36256 for x64
@@ -93,6 +93,7 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
 browser/advanced_feature.cpp(23): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>::codecvt_utf8': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
 browser/advanced_feature.cpp(26): warning C4996: 'localtime': This function or variable may be unsafe. Consider using localtime_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
 browser/advanced_feature.cpp(116): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+history_panel.cpp
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xlocale(251): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning. (compiling source file browser/advanced_feature.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\codecvt(34): note: see declaration of 'std::codecvt_utf8' (compiling source file browser/advanced_feature.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xlocale(251): note: the template instantiation context (the oldest one first) is (compiling source file browser/advanced_feature.cpp)
@@ -101,7 +102,6 @@ browser/advanced_feature.cpp(23): note: see reference to function template insta
         [
             _Facet=std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>
         ]
-history_panel.cpp
 settings.cpp
 keyboard_shortcuts.cpp
 browser_profiles.cpp
@@ -187,7 +187,6 @@ tab_adult.cpp(406): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::code
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\codecvt(34): note: see declaration of 'std::codecvt_utf8' (compiling source file tab_adult.cpp)
 tab_adult.cpp(400): warning C4996: 'localtime': This function or variable may be unsafe. Consider using localtime_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
 tab_adult.cpp(406): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>::codecvt_utf8': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
-tab_special.cpp
 tab_adult.cpp(518): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\codecvt(34): note: see declaration of 'std::codecvt_utf8' (compiling source file tab_adult.cpp)
 tab_adult.cpp(518): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>::codecvt_utf8': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
@@ -199,6 +198,7 @@ tab_adult.cpp(219): note: see reference to function template instantiation 'std:
         [
             _Facet=std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>
         ]
+tab_special.cpp
 tab_statistics.cpp
 tab_settings.cpp
 tab_special.cpp(115): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
@@ -266,59 +266,6 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
             _InIt=wchar_t *,
             _SizeTy=std::+::_Size_type
         ] (compiling source file accounts.cpp)
-tab_phone_remote.cpp(712): error C2676: binary '+': 'std::basic_string<wchar_t,std::char_traits<wchar_t>,std::allocator<wchar_t>>' does not define this operator or a conversion to a type acceptable to the predefined operator
-C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xstring(3383): note: could be 'std::basic_string<_Elem,_Traits,_Alloc> std::operator +(std::basic_string<_Elem,_Traits,_Alloc> &&,const _Elem)' (compiling source file tab_phone_remote.cpp)
-tab_phone_remote.cpp(711): note: 'std::basic_string<_Elem,_Traits,_Alloc> std::operator +(std::basic_string<_Elem,_Traits,_Alloc> &&,const _Elem)': template parameter '_Elem' is ambiguous
-tab_phone_remote.cpp(711): note: could be 'std::string'
-tab_phone_remote.cpp(711): note: or       'wchar_t'
-tab_phone_remote.cpp(711): note: 'std::basic_string<_Elem,_Traits,_Alloc> std::operator +(std::basic_string<_Elem,_Traits,_Alloc> &&,const _Elem)': could not deduce template argument for 'const _Elem' from 'std::string'
-C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xstring(3377): note: or       'std::basic_string<_Elem,_Traits,_Alloc> std::operator +(std::basic_string<_Elem,_Traits,_Alloc> &&,const _Elem *const )' (compiling source file tab_phone_remote.cpp)
-tab_phone_remote.cpp(711): note: 'std::basic_string<_Elem,_Traits,_Alloc> std::operator +(std::basic_string<_Elem,_Traits,_Alloc> &&,const _Elem *const )': could not deduce template argument for 'const _Elem *const ' from 'std::string'
-C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xstring(3371): note: or       'std::basic_string<_Elem,_Traits,_Alloc> std::operator +(const _Elem,std::basic_string<_Elem,_Traits,_Alloc> &&)' (compiling source file tab_phone_remote.cpp)
-tab_phone_remote.cpp(711): note: 'std::basic_string<_Elem,_Traits,_Alloc> std::operator +(const _Elem,std::basic_string<_Elem,_Traits,_Alloc> &&)': template parameter '_Elem' is ambiguous
-tab_phone_remote.cpp(711): note: could be 'char'
-tab_phone_remote.cpp(711): note: or       'std::basic_string<wchar_t,std::char_traits<wchar_t>,std::allocator<wchar_t>>'
-tab_phone_remote.cpp(711): note: 'std::basic_string<_Elem,_Traits,_Alloc> std::operator +(const _Elem,std::basic_string<_Elem,_Traits,_Alloc> &&)': could not deduce template argument for 'std::basic_string<_Elem,_Traits,_Alloc> &&' from 'std::string'
-C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xstring(3365): note: or       'std::basic_string<_Elem,_Traits,_Alloc> std::operator +(const _Elem *const ,std::basic_string<_Elem,_Traits,_Alloc> &&)' (compiling source file tab_phone_remote.cpp)
-tab_phone_remote.cpp(711): note: 'std::basic_string<_Elem,_Traits,_Alloc> std::operator +(const _Elem *const ,std::basic_string<_Elem,_Traits,_Alloc> &&)': could not deduce template argument for 'const _Elem *const ' from 'std::basic_string<wchar_t,std::char_traits<wchar_t>,std::allocator<wchar_t>>'
-C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xstring(3352): note: or       'std::basic_string<_Elem,_Traits,_Alloc> std::operator +(std::basic_string<_Elem,_Traits,_Alloc> &&,std::basic_string<_Elem,_Traits,_Alloc> &&)' (compiling source file tab_phone_remote.cpp)
-tab_phone_remote.cpp(711): note: 'std::basic_string<_Elem,_Traits,_Alloc> std::operator +(std::basic_string<_Elem,_Traits,_Alloc> &&,std::basic_string<_Elem,_Traits,_Alloc> &&)': template parameter '_Elem' is ambiguous
-tab_phone_remote.cpp(711): note: could be 'char'
-tab_phone_remote.cpp(711): note: or       'wchar_t'
-tab_phone_remote.cpp(711): note: 'std::basic_string<_Elem,_Traits,_Alloc> std::operator +(std::basic_string<_Elem,_Traits,_Alloc> &&,std::basic_string<_Elem,_Traits,_Alloc> &&)': could not deduce template argument for 'std::basic_string<_Elem,_Traits,_Alloc> &&' from 'std::string'
-C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xstring(3346): note: or       'std::basic_string<_Elem,_Traits,_Alloc> std::operator +(std::basic_string<_Elem,_Traits,_Alloc> &&,const std::basic_string<_Elem,_Traits,_Alloc> &)' (compiling source file tab_phone_remote.cpp)
-tab_phone_remote.cpp(711): note: 'std::basic_string<_Elem,_Traits,_Alloc> std::operator +(std::basic_string<_Elem,_Traits,_Alloc> &&,const std::basic_string<_Elem,_Traits,_Alloc> &)': template parameter '_Elem' is ambiguous
-tab_phone_remote.cpp(711): note: could be 'char'
-tab_phone_remote.cpp(711): note: or       'wchar_t'
-tab_phone_remote.cpp(711): note: 'std::basic_string<_Elem,_Traits,_Alloc> std::operator +(std::basic_string<_Elem,_Traits,_Alloc> &&,const std::basic_string<_Elem,_Traits,_Alloc> &)': could not deduce template argument for 'const std::basic_string<_Elem,_Traits,_Alloc> &' from 'std::string'
-C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xstring(3340): note: or       'std::basic_string<_Elem,_Traits,_Alloc> std::operator +(const std::basic_string<_Elem,_Traits,_Alloc> &,std::basic_string<_Elem,_Traits,_Alloc> &&)' (compiling source file tab_phone_remote.cpp)
-tab_phone_remote.cpp(711): note: 'std::basic_string<_Elem,_Traits,_Alloc> std::operator +(const std::basic_string<_Elem,_Traits,_Alloc> &,std::basic_string<_Elem,_Traits,_Alloc> &&)': template parameter '_Elem' is ambiguous
-tab_phone_remote.cpp(711): note: could be 'char'
-tab_phone_remote.cpp(711): note: or       'wchar_t'
-tab_phone_remote.cpp(711): note: 'std::basic_string<_Elem,_Traits,_Alloc> std::operator +(const std::basic_string<_Elem,_Traits,_Alloc> &,std::basic_string<_Elem,_Traits,_Alloc> &&)': could not deduce template argument for 'std::basic_string<_Elem,_Traits,_Alloc> &&' from 'std::string'
-C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xstring(3329): note: or       'std::basic_string<_Elem,_Traits,_Alloc> std::operator +(const std::basic_string<_Elem,_Traits,_Alloc> &,const _Elem)' (compiling source file tab_phone_remote.cpp)
-tab_phone_remote.cpp(711): note: 'std::basic_string<_Elem,_Traits,_Alloc> std::operator +(const std::basic_string<_Elem,_Traits,_Alloc> &,const _Elem)': template parameter '_Elem' is ambiguous
-tab_phone_remote.cpp(711): note: could be 'std::string'
-tab_phone_remote.cpp(711): note: or       'wchar_t'
-tab_phone_remote.cpp(711): note: 'std::basic_string<_Elem,_Traits,_Alloc> std::operator +(const std::basic_string<_Elem,_Traits,_Alloc> &,const _Elem)': could not deduce template argument for 'const _Elem' from 'std::string'
-C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xstring(3316): note: or       'std::basic_string<_Elem,_Traits,_Alloc> std::operator +(const std::basic_string<_Elem,_Traits,_Alloc> &,const _Elem *const )' (compiling source file tab_phone_remote.cpp)
-tab_phone_remote.cpp(711): note: 'std::basic_string<_Elem,_Traits,_Alloc> std::operator +(const std::basic_string<_Elem,_Traits,_Alloc> &,const _Elem *const )': could not deduce template argument for 'const _Elem *const ' from 'std::string'
-C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xstring(3305): note: or       'std::basic_string<_Elem,_Traits,_Alloc> std::operator +(const _Elem,const std::basic_string<_Elem,_Traits,_Alloc> &)' (compiling source file tab_phone_remote.cpp)
-tab_phone_remote.cpp(711): note: 'std::basic_string<_Elem,_Traits,_Alloc> std::operator +(const _Elem,const std::basic_string<_Elem,_Traits,_Alloc> &)': template parameter '_Elem' is ambiguous
-tab_phone_remote.cpp(711): note: could be 'char'
-tab_phone_remote.cpp(711): note: or       'std::basic_string<wchar_t,std::char_traits<wchar_t>,std::allocator<wchar_t>>'
-tab_phone_remote.cpp(711): note: 'std::basic_string<_Elem,_Traits,_Alloc> std::operator +(const _Elem,const std::basic_string<_Elem,_Traits,_Alloc> &)': could not deduce template argument for 'const std::basic_string<_Elem,_Traits,_Alloc> &' from 'std::string'
-C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xstring(3292): note: or       'std::basic_string<_Elem,_Traits,_Alloc> std::operator +(const _Elem *const ,const std::basic_string<_Elem,_Traits,_Alloc> &)' (compiling source file tab_phone_remote.cpp)
-tab_phone_remote.cpp(711): note: 'std::basic_string<_Elem,_Traits,_Alloc> std::operator +(const _Elem *const ,const std::basic_string<_Elem,_Traits,_Alloc> &)': could not deduce template argument for 'const _Elem *const ' from 'std::basic_string<wchar_t,std::char_traits<wchar_t>,std::allocator<wchar_t>>'
-C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xstring(3280): note: or       'std::basic_string<_Elem,_Traits,_Alloc> std::operator +(const std::basic_string<_Elem,_Traits,_Alloc> &,const std::basic_string<_Elem,_Traits,_Alloc> &)' (compiling source file tab_phone_remote.cpp)
-tab_phone_remote.cpp(711): note: 'std::basic_string<_Elem,_Traits,_Alloc> std::operator +(const std::basic_string<_Elem,_Traits,_Alloc> &,const std::basic_string<_Elem,_Traits,_Alloc> &)': template parameter '_Elem' is ambiguous
-tab_phone_remote.cpp(711): note: could be 'char'
-tab_phone_remote.cpp(711): note: or       'wchar_t'
-tab_phone_remote.cpp(711): note: 'std::basic_string<_Elem,_Traits,_Alloc> std::operator +(const std::basic_string<_Elem,_Traits,_Alloc> &,const std::basic_string<_Elem,_Traits,_Alloc> &)': could not deduce template argument for 'const std::basic_string<_Elem,_Traits,_Alloc> &' from 'std::string'
-C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(4718): note: or       'std::move_iterator<_Iter> std::operator +(move_iterator<_Iter>::difference_type,const std::move_iterator<_Iter> &) noexcept(<expr>)' (compiling source file tab_phone_remote.cpp)
-tab_phone_remote.cpp(711): note: 'std::move_iterator<_Iter> std::operator +(move_iterator<_Iter>::difference_type,const std::move_iterator<_Iter> &) noexcept(<expr>)': could not deduce template argument for 'const std::move_iterator<_Iter> &' from 'std::string'
-C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(2183): note: or       'std::reverse_iterator<_BidIt> std::operator +(reverse_iterator<_BidIt>::difference_type,const std::reverse_iterator<_BidIt> &) noexcept(<expr>)' (compiling source file tab_phone_remote.cpp)
-tab_phone_remote.cpp(711): note: 'std::reverse_iterator<_BidIt> std::operator +(reverse_iterator<_BidIt>::difference_type,const std::reverse_iterator<_BidIt> &) noexcept(<expr>)': could not deduce template argument for 'const std::reverse_iterator<_BidIt> &' from 'std::string'
 tab_phone_remote.cpp(745): error C2666: 'Gdiplus::Graphics::FillRectangle': overloaded functions have similar conversions
 C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusGraphics.h(997): note: could be 'Gdiplus::Status Gdiplus::Graphics::FillRectangle(const Gdiplus::Brush *,INT,INT,INT,INT)' (compiling source file tab_phone_remote.cpp)
 C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusGraphics.h(967): note: or       'Gdiplus::Status Gdiplus::Graphics::FillRectangle(const Gdiplus::Brush *,Gdiplus::REAL,Gdiplus::REAL,Gdiplus::REAL,Gdiplus::REAL)' (compiling source file tab_phone_remote.cpp)
