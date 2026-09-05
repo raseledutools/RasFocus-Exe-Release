@@ -3128,67 +3128,18 @@ public:
                 tab.webview->AddScriptToExecuteOnDocumentCreated(extScript.c_str(), nullptr);
         }
 
-        // ── Force Dark Mode — website page dark করার জন্য CSS inject ──
-        // prefers-color-scheme: dark ঠিকমতো কাজ করে না WebView2 তে,
-        // তাই meta tag + CSS invert দিয়ে force dark করা হচ্ছে।
+        // ── Force Dark Mode — নতুন page load এ সব website dark করো ──
+        // Header dark button: সব site এ CSS invert, কোনো exception নেই।
         if (wd.isDarkMode) {
             tab.webview->AddScriptToExecuteOnDocumentCreated(
                 L"(() => {"
-                // নিজেই dark mode করে এমন sites — এদের matchMedia override করা যাবে না।
-                // Facebook/Instagram/ChatGPT নিজেরা matchMedia ব্যবহার করে এবং
-                // addEventListener/addListener এর return value নিয়ে কাজ করে।
-                // Override করলে 'e.addListener is not a function' error হয়।
-                L"  const host = location.hostname;"
-                L"  const nativelyDark = ['youtube.com','google.com','gmail.com','drive.google.com',"
-                L"    'maps.google.com','claude.ai','anthropic.com','chat.openai.com','chatgpt.com',"
-                L"    'github.com','stackoverflow.com','twitter.com','x.com','reddit.com',"
-                L"    'wikipedia.org','notion.so','discord.com','slack.com','facebook.com',"
-                L"    'instagram.com','linkedin.com','netflix.com','amazon.com'];"
-                L"  const isNative = nativelyDark.some(d => host === d || host.endsWith('.' + d));"
-                // ── Step 1: prefers-color-scheme: dark override ──
-                // শুধু non-native sites এ — native sites এ override করলে তাদের JS chain ভাঙে
-                L"  if (!isNative) {"
-                L"    try {"
-                L"      Object.defineProperty(window, 'matchMedia', {"
-                L"        writable: true, configurable: true,"
-                L"        value: function(query) {"
-                L"          const ls = [];"
-                L"          return {"
-                L"            matches: query === '(prefers-color-scheme: dark)',"
-                L"            media: query, onchange: null,"
-                L"            addEventListener: function(t,fn){ if(fn) ls.push(fn); },"
-                L"            removeEventListener: function(t,fn){ const i=ls.indexOf(fn); if(i>=0) ls.splice(i,1); },"
-                L"            addListener: function(fn){ if(fn) ls.push(fn); },"
-                L"            removeListener: function(fn){ const i=ls.indexOf(fn); if(i>=0) ls.splice(i,1); },"
-                L"            dispatchEvent: function(){ return false; }"
-                L"          };"
-                L"        }"
-                L"      });"
-                L"    } catch(e) {}"
-                L"  }"
-                // ── Step 2: color-scheme meta tag inject ──
-                // সব sites এ নিরাপদ — শুধু HTML meta tag
-                L"  try {"
-                L"    let meta = document.querySelector('meta[name=\"color-scheme\"]');"
-                L"    if (!meta) {"
-                L"      meta = document.createElement('meta');"
-                L"      meta.name = 'color-scheme';"
-                L"      document.head && document.head.appendChild(meta);"
-                L"    }"
-                L"    meta.content = 'dark';"
-                L"  } catch(e) {}"
-                // ── Step 3: CSS filter invert fallback ──
-                // শুধু non-native sites এ — native sites এ invert করলে উল্টো হয়
-                L"  if (!isNative) {"
-                L"    try {"
-                L"      const style = document.createElement('style');"
-                L"      style.id = 'ras-force-dark';"
-                L"      style.textContent = 'html { filter: invert(90%) hue-rotate(180deg) !important; }'"
-                L"        + 'img, video, iframe, canvas, picture, svg image, [style*=\"background-image\"] {'"
-                L"        + ' filter: invert(100%) hue-rotate(180deg) !important; }';"
-                L"      (document.head || document.documentElement).appendChild(style);"
-                L"    } catch(e) {}"
-                L"  }"
+                L"  if (document.getElementById('ras-force-dark')) return;"
+                L"  const s = document.createElement('style');"
+                L"  s.id = 'ras-force-dark';"
+                L"  s.textContent = 'html { filter: invert(90%) hue-rotate(180deg) !important; }'"
+                L"    + 'img, video, iframe, canvas, picture, svg image, [style*=\"background-image\"] '"
+                L"    + '{ filter: invert(100%) hue-rotate(180deg) !important; }';"
+                L"  (document.head || document.documentElement).appendChild(s);"
                 L"})();",
                 nullptr);
         }
@@ -4566,80 +4517,26 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                     continue;
                 }
 
-                // Web pages এ dark/light CSS inject করো
+                // Web pages এ dark/light CSS inject করো — সব site, কোনো exception নেই
                 if (wd.isDarkMode) {
-                    // Dark on করো
                     tab.webview->ExecuteScript(
                         L"(() => {"
-                        L"  const host=location.hostname;"
-                        L"  const nativelyDark=['youtube.com','google.com','gmail.com','drive.google.com',"
-                        L"    'maps.google.com','claude.ai','anthropic.com','chat.openai.com','chatgpt.com',"
-                        L"    'github.com','stackoverflow.com','twitter.com','x.com','reddit.com',"
-                        L"    'wikipedia.org','notion.so','discord.com','slack.com','facebook.com',"
-                        L"    'instagram.com','linkedin.com','netflix.com','amazon.com'];"
-                        L"  const isNative=nativelyDark.some(d=>host===d||host.endsWith('.'+d));"
-                        // matchMedia override — শুধু non-native sites এ, proper addListener সহ
-                        L"  if(!isNative){"
-                        L"    try { Object.defineProperty(window,'matchMedia',{ writable:true,configurable:true,"
-                        L"      value:function(q){"
-                        L"        const ls=[];"
-                        L"        return { matches:q==='(prefers-color-scheme: dark)',media:q,onchange:null,"
-                        L"          addEventListener:function(t,fn){if(fn)ls.push(fn);},"
-                        L"          removeEventListener:function(t,fn){const i=ls.indexOf(fn);if(i>=0)ls.splice(i,1);},"
-                        L"          addListener:function(fn){if(fn)ls.push(fn);},"
-                        L"          removeListener:function(fn){const i=ls.indexOf(fn);if(i>=0)ls.splice(i,1);},"
-                        L"          dispatchEvent:function(){return false;}"
-                        L"        };"
-                        L"      }"
-                        L"    }); } catch(e){}"
-                        L"  }"
-                        // color-scheme meta — সব sites এ নিরাপদ
-                        L"  try { let m=document.querySelector('meta[name=\"color-scheme\"]');"
-                        L"    if(!m){m=document.createElement('meta');m.name='color-scheme';"
-                        L"    document.head&&document.head.appendChild(m);} m.content='dark'; } catch(e){}"
-                        // CSS filter — শুধু non-native sites এ
-                        L"  if(!isNative){"
-                        L"    try {"
-                        L"      if (!document.getElementById('ras-force-dark')) {"
-                        L"        const s=document.createElement('style');s.id='ras-force-dark';"
-                        L"        s.textContent='html{filter:invert(90%) hue-rotate(180deg)!important;}'"
-                        L"          +'img,video,iframe,canvas,picture,svg image,[style*=\"background-image\"]'"
-                        L"          +'{filter:invert(100%) hue-rotate(180deg)!important;}';"
-                        L"        (document.head||document.documentElement).appendChild(s);"
-                        L"      }"
-                        L"    } catch(e){}"
-                        L"  }"
+                        L"  try {"
+                        L"    if (!document.getElementById('ras-force-dark')) {"
+                        L"      const s = document.createElement('style');"
+                        L"      s.id = 'ras-force-dark';"
+                        L"      s.textContent = 'html { filter: invert(90%) hue-rotate(180deg) !important; }'"
+                        L"        + 'img, video, iframe, canvas, picture, svg image, [style*=\"background-image\"] '"
+                        L"        + '{ filter: invert(100%) hue-rotate(180deg) !important; }';"
+                        L"      (document.head || document.documentElement).appendChild(s);"
+                        L"    }"
+                        L"  } catch(e) {}"
                         L"})();",
                         nullptr);
                 } else {
-                    // Light mode — dark CSS সরিয়ে দাও
                     tab.webview->ExecuteScript(
                         L"(() => {"
-                        L"  try { const s=document.getElementById('ras-force-dark'); if(s) s.remove(); } catch(e){}"
-                        L"  try { let m=document.querySelector('meta[name=\"color-scheme\"]');"
-                        L"    if(m) m.content='light'; } catch(e){}"
-                        // Light mode এ matchMedia restore — শুধু non-native sites এ, proper stub সহ
-                        L"  const host=location.hostname;"
-                        L"  const nativelyDark=['youtube.com','google.com','gmail.com','drive.google.com',"
-                        L"    'maps.google.com','claude.ai','anthropic.com','chat.openai.com','chatgpt.com',"
-                        L"    'github.com','stackoverflow.com','twitter.com','x.com','reddit.com',"
-                        L"    'wikipedia.org','notion.so','discord.com','slack.com','facebook.com',"
-                        L"    'instagram.com','linkedin.com','netflix.com','amazon.com'];"
-                        L"  const isNative=nativelyDark.some(d=>host===d||host.endsWith('.'+d));"
-                        L"  if(!isNative){"
-                        L"    try { Object.defineProperty(window,'matchMedia',{ writable:true,configurable:true,"
-                        L"      value:function(q){"
-                        L"        const ls=[];"
-                        L"        return { matches:false,media:q,onchange:null,"
-                        L"          addEventListener:function(t,fn){if(fn)ls.push(fn);},"
-                        L"          removeEventListener:function(t,fn){const i=ls.indexOf(fn);if(i>=0)ls.splice(i,1);},"
-                        L"          addListener:function(fn){if(fn)ls.push(fn);},"
-                        L"          removeListener:function(fn){const i=ls.indexOf(fn);if(i>=0)ls.splice(i,1);},"
-                        L"          dispatchEvent:function(){return false;}"
-                        L"        };"
-                        L"      }"
-                        L"    }); } catch(e){}"
-                        L"  }"
+                        L"  try { const s = document.getElementById('ras-force-dark'); if (s) s.remove(); } catch(e) {}"
                         L"})();",
                         nullptr);
                 }
