@@ -580,6 +580,9 @@ void __cdecl SilentUpdateThread(void* p) {
     string apiUrl    = "https://api.github.com/repos/" + GITHUB_USER + "/" + GITHUB_REPO + "/releases/latest";
     DeleteUrlCacheEntryA(apiUrl.c_str());
 
+    // ── Default: assume "latest" unless we find a newer version ──
+    bool foundResult = false;
+
     HRESULT hrApi = URLDownloadToFileA(NULL, apiUrl.c_str(), apiFile.c_str(), 0, NULL);
     if (hrApi == S_OK) {
         ifstream vf(apiFile);
@@ -595,6 +598,7 @@ void __cdecl SilentUpdateThread(void* p) {
                 size_t q2 = json.find("\"", q1 + 1);
                 if (q2 != string::npos) {
                     string latestVer = json.substr(q1 + 1, q2 - q1 - 1);
+                    foundResult = true;
                     // Only treat v1.0.NNN style tags as valid releases
                     if (latestVer != CURRENT_VERSION && latestVer.rfind("v", 0) == 0) {
                         newVersionStr        = latestVer;
@@ -628,6 +632,17 @@ void __cdecl SilentUpdateThread(void* p) {
             }
         }
     }
+
+    // ── Fallback: network fail বা JSON parse fail হলেও popup দেখাও ──
+    if (!foundResult && !isUpdateAvailable) {
+        g_checkResultText     = "v Latest";
+        g_checkResultShowUntil = GetTickCount() + 4000;
+        g_checkPopupIsLatest  = true;
+        g_showCheckPopup      = true;
+        HWND hw = FindWindowA("RasFocusCore", "RasFocus+");
+        if (hw) InvalidateRect(hw, NULL, FALSE);
+    }
+
     isCheckingUpdate = false;
     _endthread();
 }
@@ -2263,6 +2278,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
                     g_checkResultShowUntil = 0;
                     g_showCheckPopup       = false; // reset popup; thread will re-set it
                     StartSilentUpdateCheck();
+                    InvalidateRect(hWnd, NULL, FALSE);
+                } else {
+                    // Thread already running — just show the popup in "checking" state
+                    // so user sees feedback instead of nothing happening
+                    g_showCheckPopup     = true;
+                    g_checkPopupIsLatest = true; // will be overwritten by thread when done
                     InvalidateRect(hWnd, NULL, FALSE);
                 }
                 return 0;
