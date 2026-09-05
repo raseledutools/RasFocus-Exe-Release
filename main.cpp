@@ -75,6 +75,12 @@ bool   hoverCheckBtn     = false;  // ← "Check for Update" fix button (যখ�
 string g_checkResultText = "";     // ← "Latest" বা "" — check শেষে header এ দেখায়
 DWORD  g_checkResultShowUntil = 0; // GetTickCount() পর্যন্ত দেখাবে
 
+// ── Manual Check Popup state ──
+bool   g_showCheckPopup     = false; // manual check popup visible
+bool   g_checkPopupIsLatest = false; // true=latest, false=update available
+bool   s_hovCheckPopupBtn   = false; // OK / Download button hover
+bool   s_hovCheckPopupClose = false; // close X hover
+
 // Update popup state
 string g_updateDownloadUrl  = "";
 bool   g_showUpdatePopup    = false;
@@ -599,6 +605,9 @@ void __cdecl SilentUpdateThread(void* p) {
                         g_showUpdatePopup    = true;   // ← in-app popup দেখাও
                         g_updateDismissedAt  = 0;      // fresh — no dismiss yet
                         g_checkResultText    = "";     // update popup দেখাচ্ছে, result text দরকার নেই
+                        // Also populate manual check popup
+                        g_checkPopupIsLatest = false;
+                        g_showCheckPopup     = true;
 
                         // ── Windows tray balloon notification ──
                         ShowUpdateBalloonNotification(latestVer);
@@ -609,6 +618,9 @@ void __cdecl SilentUpdateThread(void* p) {
                         // Already on latest version — header এ "✓ Latest" দেখাও 4 সেকেন্ড
                         g_checkResultText     = "v Latest";
                         g_checkResultShowUntil = GetTickCount() + 4000;
+                        // Also show manual check popup with "latest" state
+                        g_checkPopupIsLatest = true;
+                        g_showCheckPopup     = true;
                         HWND hw = FindWindowA("RasFocusCore", "RasFocus+");
                         if (hw) InvalidateRect(hw, NULL, FALSE);
                     }
@@ -760,6 +772,177 @@ void ApplySilentUpdate() {
 // ==========================================
 // UPDATE POPUP UI
 // ==========================================
+
+// ══════════════════════════════════════════════════════════
+// MANUAL CHECK UPDATE POPUP
+// ══════════════════════════════════════════════════════════
+void DrawCheckUpdatePopup(Graphics& g, int w, int h) {
+    if (!g_showCheckPopup) return;
+    using namespace Gdiplus;
+    FontFamily ff(L"Segoe UI");
+    FontFamily ffIco(L"Segoe MDL2 Assets");
+    StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
+    StringFormat fmtL; fmtL.SetAlignment(StringAlignmentNear);   fmtL.SetLineAlignment(StringAlignmentCenter);
+
+    // Overlay
+    SolidBrush ov(Color(160, 0, 0, 0));
+    g.FillRectangle(&ov, 0.0f, 0.0f, (float)w, (float)h);
+
+    float popW = 380.0f, popH = 220.0f;
+    float popX = (w - popW) / 2.0f;
+    float popY = (h - popH) / 2.0f;
+    float rad = 12.0f, d = rad * 2.0f;
+
+    // Shadow
+    SolidBrush shd(Color(40, 0, 0, 0));
+    g.FillRectangle(&shd, popX + 4, popY + 4, popW, popH);
+
+    // Card
+    GraphicsPath card;
+    card.AddArc(popX, popY, d, d, 180, 90);
+    card.AddArc(popX + popW - d, popY, d, d, 270, 90);
+    card.AddArc(popX + popW - d, popY + popH - d, d, d, 0, 90);
+    card.AddArc(popX, popY + popH - d, d, d, 90, 90);
+    card.CloseFigure();
+    SolidBrush cardBg(Color(255, 255, 255, 255));
+    g.FillPath(&cardBg, &card);
+
+    // Top bar colour: teal for update available, green for latest
+    Color barClr = g_checkPopupIsLatest ? Color(255, 0, 160, 80) : Color(255, 0, 150, 160);
+    GraphicsPath topBar;
+    topBar.AddArc(popX, popY, d, d, 180, 90);
+    topBar.AddArc(popX + popW - d, popY, d, d, 270, 90);
+    topBar.AddLine(popX + popW, popY + 46, popX, popY + 46);
+    topBar.CloseFigure();
+    SolidBrush topBrush(barClr);
+    g.FillPath(&topBrush, &topBar);
+
+    // Close X
+    Font fIco(&ffIco, 11, FontStyleBold, UnitPixel);
+    SolidBrush closeClr(s_hovCheckPopupClose ? Color(255, 255, 80, 80) : Color(255, 255, 255, 255));
+    g.DrawString(L"\xE8BB", -1, &fIco, RectF(popX + popW - 36.0f, popY + 2.0f, 32.0f, 40.0f), &fmtC, &closeClr);
+
+    SolidBrush white(Color(255, 255, 255, 255));
+    SolidBrush dark(Color(255, 40, 40, 40));
+    SolidBrush gray(Color(255, 120, 120, 120));
+
+    if (g_checkPopupIsLatest) {
+        // ── You're up to date ──
+        Font fBigIco(&ffIco, 32, FontStyleRegular, UnitPixel);
+        SolidBrush greenIco(Color(255, 255, 255, 255));
+        g.DrawString(L"\xE73E", -1, &fBigIco, RectF(popX, popY + 4.0f, popW, 40.0f), &fmtC, &greenIco);
+        Font fHead(&ff, 13, FontStyleBold, UnitPixel);
+        g.DrawString(L"You\'re up to date!", -1, &fHead, RectF(popX + 50.0f, popY + 4.0f, popW - 90.0f, 40.0f), &fmtL, &white);
+        Font fBody(&ff, 12, FontStyleRegular, UnitPixel);
+        wstring wv(CURRENT_VERSION.begin(), CURRENT_VERSION.end());
+        g.DrawString((L"Current version: " + wv).c_str(), -1, &fBody,
+                     RectF(popX, popY + 60.0f, popW, 28.0f), &fmtC, &dark);
+        g.DrawString(L"No update available at this time.", -1, &fBody,
+                     RectF(popX, popY + 88.0f, popW, 26.0f), &fmtC, &gray);
+
+        // OK button
+        float bW = 120.0f, bH = 38.0f;
+        float bX = popX + (popW - bW) / 2.0f;
+        float bY = popY + popH - bH - 22.0f;
+        float br = 7.0f, bd = br * 2.0f;
+        GraphicsPath bPath;
+        bPath.AddArc(bX, bY, bd, bd, 180, 90); bPath.AddArc(bX + bW - bd, bY, bd, bd, 270, 90);
+        bPath.AddArc(bX + bW - bd, bY + bH - bd, bd, bd, 0, 90); bPath.AddArc(bX, bY + bH - bd, bd, bd, 90, 90);
+        bPath.CloseFigure();
+        SolidBrush bBg(s_hovCheckPopupBtn ? Color(255, 0, 130, 65) : Color(255, 0, 160, 80));
+        g.FillPath(&bBg, &bPath);
+        Font fBtn(&ff, 12, FontStyleBold, UnitPixel);
+        g.DrawString(L"OK", -1, &fBtn, RectF(bX, bY, bW, bH), &fmtC, &white);
+    } else {
+        // ── Update available ──
+        Font fBigIco(&ffIco, 22, FontStyleRegular, UnitPixel);
+        g.DrawString(L"\xE896", -1, &fBigIco, RectF(popX, popY + 4.0f, popW, 40.0f), &fmtC, &white);
+        Font fHead(&ff, 13, FontStyleBold, UnitPixel);
+        g.DrawString(L"Update Available!", -1, &fHead, RectF(popX + 40.0f, popY + 4.0f, popW - 80.0f, 40.0f), &fmtL, &white);
+        Font fBody(&ff, 12, FontStyleRegular, UnitPixel);
+        wstring wv(newVersionStr.begin(), newVersionStr.end());
+        g.DrawString((L"New version: " + wv).c_str(), -1, &fBody,
+                     RectF(popX, popY + 58.0f, popW, 28.0f), &fmtC, &dark);
+        g.DrawString(L"Bug fixes and new features included.", -1, &fBody,
+                     RectF(popX, popY + 84.0f, popW, 26.0f), &fmtC, &gray);
+
+        // Download & Install button
+        float bW = 220.0f, bH = 42.0f;
+        float bX = popX + (popW - bW) / 2.0f;
+        float bY = popY + popH - bH - 30.0f;
+        float br = 7.0f, bd = br * 2.0f;
+        GraphicsPath bPath;
+        bPath.AddArc(bX, bY, bd, bd, 180, 90); bPath.AddArc(bX + bW - bd, bY, bd, bd, 270, 90);
+        bPath.AddArc(bX + bW - bd, bY + bH - bd, bd, bd, 0, 90); bPath.AddArc(bX, bY + bH - bd, bd, bd, 90, 90);
+        bPath.CloseFigure();
+        SolidBrush bBg(s_hovCheckPopupBtn ? Color(255, 0, 120, 130) : Color(255, 0, 150, 160));
+        g.FillPath(&bBg, &bPath);
+        Font fBtn(&ff, 12, FontStyleBold, UnitPixel);
+        g.DrawString(L"\u2B07  Download & Install", -1, &fBtn, RectF(bX, bY, bW, bH), &fmtC, &white);
+
+        // Later link
+        Font fLater(&ff, 11, FontStyleRegular, UnitPixel);
+        SolidBrush laterClr(Color(255, 150, 150, 150));
+        g.DrawString(L"Later", -1, &fLater,
+                     RectF(popX, bY + bH + 6.0f, popW, 20.0f), &fmtC, &laterClr);
+    }
+}
+
+void ProcessCheckPopupMouseMove(float x, float y, int w, int h) {
+    if (!g_showCheckPopup) return;
+    float popW = 380.0f, popH = 220.0f;
+    float popX = (w - popW) / 2.0f, popY = (h - popH) / 2.0f;
+    s_hovCheckPopupClose = (x >= popX + popW - 36.0f && x <= popX + popW - 4.0f &&
+                            y >= popY + 2.0f && y <= popY + 42.0f);
+    if (g_checkPopupIsLatest) {
+        float bW = 120.0f, bH = 38.0f;
+        float bX = popX + (popW - bW) / 2.0f, bY = popY + popH - bH - 22.0f;
+        s_hovCheckPopupBtn = (x >= bX && x <= bX + bW && y >= bY && y <= bY + bH);
+    } else {
+        float bW = 220.0f, bH = 42.0f;
+        float bX = popX + (popW - bW) / 2.0f, bY = popY + popH - bH - 30.0f;
+        s_hovCheckPopupBtn = (x >= bX && x <= bX + bW && y >= bY && y <= bY + bH);
+    }
+}
+
+void ProcessCheckPopupMouseClick(float x, float y, int w, int h, HWND hWnd) {
+    if (!g_showCheckPopup) return;
+    float popW = 380.0f, popH = 220.0f;
+    float popX = (w - popW) / 2.0f, popY = (h - popH) / 2.0f;
+
+    // Close X
+    if (x >= popX + popW - 36.0f && x <= popX + popW - 4.0f &&
+        y >= popY + 2.0f && y <= popY + 42.0f) {
+        g_showCheckPopup = false;
+        s_hovCheckPopupBtn = s_hovCheckPopupClose = false;
+        InvalidateRect(hWnd, NULL, FALSE); return;
+    }
+
+    if (g_checkPopupIsLatest) {
+        float bW = 120.0f, bH = 38.0f;
+        float bX = popX + (popW - bW) / 2.0f, bY = popY + popH - bH - 22.0f;
+        if (x >= bX && x <= bX + bW && y >= bY && y <= bY + bH) {
+            g_showCheckPopup = false;
+            InvalidateRect(hWnd, NULL, FALSE); return;
+        }
+    } else {
+        float bW = 220.0f, bH = 42.0f;
+        float bX = popX + (popW - bW) / 2.0f, bY = popY + popH - bH - 30.0f;
+        // "Later" link
+        if (x >= popX && x <= popX + popW && y >= bY + bH + 6.0f && y <= bY + bH + 26.0f) {
+            g_showCheckPopup = false;
+            InvalidateRect(hWnd, NULL, FALSE); return;
+        }
+        // Download & Install button
+        if (x >= bX && x <= bX + bW && y >= bY && y <= bY + bH) {
+            g_showCheckPopup  = false;
+            g_showUpdatePopup = true;  // hand off to existing download popup
+            s_hovCheckPopupBtn = false;
+            InvalidateRect(hWnd, NULL, FALSE); return;
+        }
+    }
+}
+
 struct UpdateLayout {
     float popX, popY, popW, popH;
     float dlBtnX, dlBtnY, dlBtnW, dlBtnH;
@@ -1356,8 +1539,8 @@ void DrawTitleBar(Graphics& g, int w) {
         g.DrawString(btnTxt.c_str(), -1, &fUpg, RectF(upgX, upgY, upgW, upgH), &fmtC, &white);
     }
 
-    // ── Check for Update Fix Button (update না থাকলে দেখায়) ──
-    if (!isUpdateAvailable) {
+    // ── Check for Update Button (always visible) ──
+    {
         float chkW = 100.0f;
         float chkH = (float)TITLEBAR_HEIGHT - 6.0f;
         float chkX = startX - chkW - 10.0f;
@@ -1369,30 +1552,14 @@ void DrawTitleBar(Graphics& g, int w) {
         chkPath.AddArc(chkX + chkW - dc2, chkY + chkH - dc2, dc2, dc2, 0.0f, 90.0f);
         chkPath.AddArc(chkX, chkY + chkH - dc2, dc2, dc2, 90.0f, 90.0f);
         chkPath.CloseFigure();
-
-        // Result দেখানোর সময় আছে কিনা check করো
-        bool showingResult = !g_checkResultText.empty() &&
-                             (g_checkResultShowUntil == 0 || GetTickCount() < g_checkResultShowUntil);
-        if (!showingResult && !g_checkResultText.empty()) g_checkResultText = ""; // expired, clear
-
-        // রঙ: Checking=teal, Latest=green, idle=gray-blue
-        Color chkBgColor = isCheckingUpdate  ? Color(255, 0, 140, 160)  :
-                           showingResult      ? Color(255, 0, 160, 80)   :
-                           hoverCheckBtn      ? Color(255, 0, 120, 135)  :
-                                               Color(255, 60, 90, 110);
+        Color chkBgColor = isCheckingUpdate ? Color(255, 0, 140, 160) :
+                           hoverCheckBtn     ? Color(255, 0, 120, 135) :
+                                              Color(255, 60, 90, 110);
         SolidBrush chkBg(chkBgColor);
         g.FillPath(&chkBg, &chkPath);
         Font fChk(&ff, 8, FontStyleBold, UnitPixel);
         SolidBrush white(ColWhite);
-        wstring chkTxt;
-        if (isCheckingUpdate) {
-            chkTxt = L"\u21BB Checking...";
-        } else if (showingResult) {
-            wstring wRes(g_checkResultText.begin(), g_checkResultText.end());
-            chkTxt = L"\u2713 " + wRes; // ✓ Latest
-        } else {
-            chkTxt = L"\u21BB Check Update";
-        }
+        wstring chkTxt = isCheckingUpdate ? L"\u21BB Checking..." : L"\u21BB Check Update";
         g.DrawString(chkTxt.c_str(), -1, &fChk, RectF(chkX, chkY, chkW, chkH), &fmtC, &white);
     }
 
@@ -1728,6 +1895,7 @@ void OnPaint(HWND hWnd, HDC hdc) {
     DrawFeedbackPopup(g, scaledW, scaledH);
     DrawUpgradePopup(g, scaledW, scaledH); // ← Upgrade Popup Draw Call
     DrawUpdatePopup(g, scaledW, scaledH);  // ← Update Popup Draw Call (auto-update notification)
+    DrawCheckUpdatePopup(g, scaledW, scaledH); // ← Manual Check Update Popup
 
     if (showDailyMessage || onboardingStep > 0) {
         DrawPreWindowOverlay(g, scaledW, scaledH, g_scaleFactor);
@@ -1833,8 +2001,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
                 float upgX = controlsStartX - upgW - 10.0f;
                 if (x >= upgX && x <= upgX + upgW) return HTCLIENT;
             }
-            // Check for Update fix button (update না থাকলে)
-            if (!isUpdateAvailable) {
+            // Check for Update button (always present)
+            {
                 float chkW = 100.0f;
                 float chkX = controlsStartX - chkW - 10.0f;
                 if (x >= chkX && x <= chkX + chkW) return HTCLIENT;
@@ -1901,6 +2069,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         // ← Upgrade Popup Intercept
         if (g_showUpgradePopup) {
             ProcessUpgradeMouseMove(x, y);
+            InvalidateRect(hWnd, NULL, FALSE);
+            break;
+        }
+
+        // ← Manual Check Update Popup Intercept
+        if (g_showCheckPopup) {
+            ProcessCheckPopupMouseMove(x, y, (int)scaledW, (int)scaledH);
             InvalidateRect(hWnd, NULL, FALSE);
             break;
         }
@@ -2034,6 +2209,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             break;
         }
 
+        // ← Manual Check Update Popup Intercept
+        if (g_showCheckPopup) {
+            ProcessCheckPopupMouseClick(x, y, (int)(windowWidth / g_scaleFactor), (int)(windowHeight / g_scaleFactor), hWnd);
+            break;
+        }
+
         if (showFeedbackBox) {
             auto pr = GetPopupRects((int)scaledW, (int)scaledH);
             if (x >= pr.popX + pr.popW - 32.0f && x <= pr.popX + pr.popW && y >= pr.popY && y <= pr.popY + 40.0f) {
@@ -2072,15 +2253,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             }
         }
 
-        // ── Check for Update fix button click ──
-        if (!isUpdateAvailable) {
+        // ── Check for Update button click ──
+        {
             float btnW2 = 42.0f, chkW = 100.0f;
             float chkX = scaledW - (btnW2*3) - chkW - 10.0f;
             if (x >= chkX && x <= chkX + chkW && y >= 0.0f && y <= (float)TITLEBAR_HEIGHT) {
                 if (!isCheckingUpdate) {
-                    // Fresh check — সব state reset করো
-                    g_checkResultText     = "";
+                    g_checkResultText      = "";
                     g_checkResultShowUntil = 0;
+                    g_showCheckPopup       = false; // reset popup; thread will re-set it
                     StartSilentUpdateCheck();
                     InvalidateRect(hWnd, NULL, FALSE);
                 }
