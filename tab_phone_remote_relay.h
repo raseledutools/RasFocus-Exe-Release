@@ -53,4 +53,4 @@ bool RelayIsAvailable();
 // ── Relay HOST (PC connects to relay as host) ────────────────────
 void RelayHostStart(const std::string& code);  // call after RdGenerateCode
 void RelayHostStop();                           // call on RdStopServer
-void RelaySendBinary(const BYTE* data, size_t len); // call for each H264 frame
+void RelaySendBinary(const void* data, size_t len); // call for each H264 frame

@@ -148,6 +148,9 @@ bool RelayIsAvailable() {
 // ════════════════════════════════════════════════════════════════════
 
 #include <winhttp.h>
+#include <atomic>
+#include <thread>
+#include <vector>
 #pragma comment(lib, "winhttp.lib")
 
 static HINTERNET g_relaySession  = NULL;
@@ -160,20 +163,20 @@ static std::atomic<bool> g_relayRunning { false };
 // This bridges relay→PC→phone direction (relay delivers phone input to PC)
 
 static void RelayHostThread(const std::string& code) {
-    g_relayRunning = true;
+    g_relayRunning.store(true);
 
     g_relaySession = WinHttpOpen(L"RasFocus-PC/1.0",
                                   WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                                   WINHTTP_NO_PROXY_NAME,
                                   WINHTTP_NO_PROXY_BYPASS, 0);
-    if (!g_relaySession) { g_relayRunning = false; return; }
+    if (!g_relaySession) { g_relayRunning.store(false); return; }
 
     g_relayConnect = WinHttpConnect(g_relaySession,
                                      L"relay.rasfocus.com",
                                      INTERNET_DEFAULT_HTTPS_PORT, 0);
     if (!g_relayConnect) {
         WinHttpCloseHandle(g_relaySession); g_relaySession = NULL;
-        g_relayRunning = false; return;
+        g_relayRunning.store(false); return;
     }
 
     // Path: /relay/<code>
@@ -185,7 +188,7 @@ static void RelayHostThread(const std::string& code) {
     if (!g_relayRequest) {
         WinHttpCloseHandle(g_relayConnect); g_relayConnect = NULL;
         WinHttpCloseHandle(g_relaySession); g_relaySession = NULL;
-        g_relayRunning = false; return;
+        g_relayRunning.store(false); return;
     }
 
     // Set headers for WS upgrade + identify as host
@@ -201,7 +204,7 @@ static void RelayHostThread(const std::string& code) {
         WinHttpCloseHandle(g_relayRequest); g_relayRequest = NULL;
         WinHttpCloseHandle(g_relayConnect); g_relayConnect = NULL;
         WinHttpCloseHandle(g_relaySession); g_relaySession = NULL;
-        g_relayRunning = false; return;
+        g_relayRunning.store(false); return;
     }
 
     g_relayWs = WinHttpWebSocketCompleteUpgrade(g_relayRequest, NULL);
@@ -209,7 +212,7 @@ static void RelayHostThread(const std::string& code) {
     if (!g_relayWs) {
         WinHttpCloseHandle(g_relayConnect); g_relayConnect = NULL;
         WinHttpCloseHandle(g_relaySession); g_relaySession = NULL;
-        g_relayRunning = false; return;
+        g_relayRunning.store(false); return;
     }
 
     // Send relay_host registration
@@ -219,7 +222,7 @@ static void RelayHostThread(const std::string& code) {
 
     // Receive loop: phone sends input → relay forwards to PC → inject
     std::vector<BYTE> buf(65536);
-    while (g_relayRunning) {
+    while (g_relayRunning.load()) {
         DWORD bytesRead = 0;
         WINHTTP_WEB_SOCKET_BUFFER_TYPE bufType;
         DWORD total = 0;
@@ -231,12 +234,12 @@ static void RelayHostThread(const std::string& code) {
             DWORD err = WinHttpWebSocketReceive(g_relayWs,
                             buf.data(), (DWORD)buf.size(),
                             &r, &bufType);
-            if (err != ERROR_SUCCESS) { g_relayRunning = false; break; }
+            if (err != ERROR_SUCCESS) { g_relayRunning.store(false); break; }
             msg.insert(msg.end(), buf.begin(), buf.begin() + r);
         } while (bufType == WINHTTP_WEB_SOCKET_UTF8_FRAGMENT_BUFFER_TYPE ||
                  bufType == WINHTTP_WEB_SOCKET_BINARY_FRAGMENT_BUFFER_TYPE);
 
-        if (!g_relayRunning) break;
+        if (!g_relayRunning.load()) break;
 
         if (bufType == WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE && !msg.empty()) {
             std::string text(msg.begin(), msg.end());
@@ -263,25 +266,25 @@ static void RelayHostThread(const std::string& code) {
     if (g_relayWs)      { WinHttpWebSocketClose(g_relayWs, WINHTTP_WEB_SOCKET_SUCCESS_CLOSE_STATUS, NULL, 0); WinHttpCloseHandle(g_relayWs); g_relayWs = NULL; }
     if (g_relayConnect) { WinHttpCloseHandle(g_relayConnect); g_relayConnect = NULL; }
     if (g_relaySession) { WinHttpCloseHandle(g_relaySession); g_relaySession = NULL; }
-    g_relayRunning = false;
+    g_relayRunning.store(false);
 }
 
 // Also need to broadcast H264 frames to relay phone clients
 // This sends a binary frame to the relay WebSocket so phone gets video via relay
-void RelaySendBinary(const BYTE* data, size_t len) {
-    if (!g_relayWs || !g_relayRunning) return;
+void RelaySendBinary(const void* data, size_t len) {
+    if (!g_relayWs || !g_relayRunning.load()) return;
     WinHttpWebSocketSend(g_relayWs,
                           WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE,
-                          (PVOID)data, (DWORD)len);
+                          const_cast<void*>(data), (DWORD)len);
 }
 
 void RelayHostStart(const std::string& code) {
-    if (g_relayRunning) return;
+    if (g_relayRunning.load()) return;
     std::thread(RelayHostThread, code).detach();
 }
 
 void RelayHostStop() {
-    g_relayRunning = false;
+    g_relayRunning.store(false);
     if (g_relayWs) {
         WinHttpWebSocketClose(g_relayWs, WINHTTP_WEB_SOCKET_SUCCESS_CLOSE_STATUS, NULL, 0);
     }

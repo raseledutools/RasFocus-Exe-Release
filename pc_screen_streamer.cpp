@@ -427,7 +427,7 @@ static void CaptureLoop(){
                 pkt[3]=(BYTE)((pts>> 8)&0xFF);pkt[4]=(BYTE)((pts    )&0xFF);
                 memcpy(pkt.data()+5,nal.data(),nal.size());
                 WsBroadcastBin(pkt.data(),pkt.size());
-                RelaySendBinary(pkt.data(),pkt.size());  // also send via relay for internet clients
+                RelaySendBinary(static_cast<const void*>(pkt.data()), pkt.size());  // relay
                 fpsCount++;
             }
             pts+=frameDur;
