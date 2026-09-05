@@ -2351,10 +2351,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             float btnW = 42.0f, dbW = 90.0f;
             float dbX = scaledW - (btnW*3) - dbW - 10.0f;
             if (x >= dbX && x <= dbX + dbW && y >= 0.0f && y <= (float)TITLEBAR_HEIGHT) {
-                // RasObserve.exe এবং নিজের child process kill করো
+                // 1. RasObserve.exe kill করো
                 WinExec("taskkill /F /IM RasObserve.exe", SW_HIDE);
-                MessageBoxA(hWnd, "Debug observer process killed.", "RasFocus+ Debug", MB_OK | MB_ICONINFORMATION);
-                InvalidateRect(hWnd, NULL, FALSE);
+                // 2. Tray icon সরাও (না করলে ghost icon থাকে)
+                RemoveTrayIcon();
+                // 3. Window destroy → WM_DESTROY → PostQuitMessage(0) chain
+                //    এটাই proper shutdown — SW_HIDE নয়
+                DestroyWindow(hWnd);
                 return 0;
             }
         }
