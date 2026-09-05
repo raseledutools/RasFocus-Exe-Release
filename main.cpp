@@ -90,7 +90,7 @@ bool   g_showUpdatePopup    = false;
 bool   g_isDownloading      = false;
 DWORD  g_updateDismissedAt  = 0;   // GetTickCount() at dismiss; 0 = never dismissed
 // Popup re-appears after this many ms since dismiss (6 seconds)
-static const DWORD UPDATE_REDISPLAY_MS = 5 * 1000;
+static const DWORD UPDATE_REDISPLAY_MS = 30 * 60 * 1000; // 30 min cooldown
 int    g_dlAnimFrame       = 0;
 
 // Professional download progress
@@ -593,6 +593,13 @@ void __cdecl SilentUpdateThread(void* p) {
             (DWORD)-1,
             INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_SECURE, 0);
         if (!hUrl) { InternetCloseHandle(hNet); return result; }
+        // HTTP 200 check — 403/rate-limit → return empty
+        DWORD statusCode = 0, statusSize = sizeof(statusCode);
+        HttpQueryInfoA(hUrl, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER,
+                       &statusCode, &statusSize, NULL);
+        if (statusCode != 200) {
+            InternetCloseHandle(hUrl); InternetCloseHandle(hNet); return result;
+        }
         char buf[4096]; DWORD rd = 0;
         while (InternetReadFile(hUrl, buf, sizeof(buf)-1, &rd) && rd > 0) {
             buf[rd] = 0; result += buf;
@@ -660,14 +667,14 @@ void __cdecl SilentUpdateThread(void* p) {
         }
     }
 
-    // ── Fallback: network fail বা JSON parse fail হলেও header text দেখাও ──
+    // ── Fallback: network/parse fail — auto-এ silent, manual-এ error ──
     if (!foundResult && !isUpdateAvailable) {
-        g_checkResultText     = "v Latest";
-        g_checkResultShowUntil = GetTickCount() + 4000;
-        // শুধু manual check-এ popup দেখাও, auto timer-এ না
         if (g_isManualCheck) {
-            g_checkPopupIsLatest  = true;
-            g_showCheckPopup      = true;
+            g_checkPopupIsLatest   = false;  // error branch
+            newVersionStr          = "";     // empty = network error sentinel
+            g_checkResultText      = "! Check failed";
+            g_checkResultShowUntil = GetTickCount() + 5000;
+            g_showCheckPopup       = true;
         }
         HWND hw = FindWindowA("RasFocusCore", "RasFocus+");
         if (hw) InvalidateRect(hw, NULL, FALSE);
@@ -904,10 +911,14 @@ void DrawCheckUpdatePopup(Graphics& g, int w, int h) {
         Font fBigIco(&ffIco, 22, FontStyleRegular, UnitPixel);
         g.DrawString(L"\xE896", -1, &fBigIco, RectF(popX, popY + 4.0f, popW, 40.0f), &fmtC, &white);
         Font fHead(&ff, 13, FontStyleBold, UnitPixel);
-        g.DrawString(L"Update Available!", -1, &fHead, RectF(popX + 40.0f, popY + 4.0f, popW - 80.0f, 40.0f), &fmtL, &white);
+           // newVersionStr empty = network error (from fallback Fix3)
+        bool isNetErr = newVersionStr.empty();
+        g.DrawString(isNetErr ? L"Check Failed!" : L"Update Available!",
+                     -1, &fHead, RectF(popX + 40.0f, popY + 4.0f, popW - 80.0f, 40.0f), &fmtL, &white);
         Font fBody(&ff, 12, FontStyleRegular, UnitPixel);
         wstring wv(newVersionStr.begin(), newVersionStr.end());
-        g.DrawString((L"New version: " + wv).c_str(), -1, &fBody,
+        g.DrawString(isNetErr ? L"Could not reach update server.\nCheck internet and try again."
+                              : (L"New version: " + wv).c_str(), -1, &fBody,
                      RectF(popX, popY + 58.0f, popW, 28.0f), &fmtC, &dark);
         g.DrawString(L"Bug fixes and new features included.", -1, &fBody,
                      RectF(popX, popY + 84.0f, popW, 26.0f), &fmtC, &gray);
