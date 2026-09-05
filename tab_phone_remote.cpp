@@ -709,7 +709,7 @@ void DrawPhoneRemoteTab(Graphics& g, float x, float y, float w, float h){
         Font fStat(&ff, 10, FontStyleRegular, UnitPixel);
         SolidBrush green(Color(255, 50, 205, 100));
         wstring connected = L"● Connected to " + ToWStr(g_rdPhoneName) +
-                            L" (" + to_string(g_rdFps) + L" fps)";
+                            L" (" + to_wstring(g_rdFps) + L" fps)";
         g.DrawString(connected.c_str(), -1, &fStat, RectF(rx, ry, rw, 18), &fmtL, &green);
     }
 
