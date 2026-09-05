@@ -1,26 +1,19 @@
 // ================================================================
-// tab_phone_remote.cpp  —  PC generates 6-digit code → Phone connects
+// tab_phone_remote.cpp  —  RustDesk-style layout
 //
-// Updated: Relay server integration
-//   - PC registers {code, ip, port} to Firebase Firestore
-//   - Phone looks up code → gets IP → connects directly (LAN)
-//   - If LAN fails → relay server bridges the connection
+// Layout (RustDesk exact):
+//   ┌──────────────┬──────────────────────────────────┐
+//   │ Your Desktop │  Control Remote Desktop           │
+//   │  ID: XXX XXX │  [ID input box]   [Connect ▼]    │
+//   │  Password: - │                                   │
+//   ├──────────────┴──────────────────────────────────┤
+//   │  Recent connections (cards grid)                 │
+//   └─────────────────────────────────────────────────┘
 //
 // PC = WebSocket SERVER (port 9224)
-//   1. "Generate Code" → random 6-digit code on screen
-//      + uploads to Firestore (code → IP mapping)
-//   2. Phone types code → Firestore lookup → connects ws://pc-ip:9224
-//   3. Phone sends {"type":"auth","code":"XXXXXX"}
-//   4. PC verifies → sends {"type":"ready","width":W,"height":H,"fps":30}
-//   5. PC H.264 screen stream → phone decodes (MediaCodec) → live video
-//   6. Phone sends {"type":"mouse"/"key"/"scroll"} → PC SendInput
-//
-// Relay fallback (different networks):
-//   Phone → wss://relay.rasfocus.com/relay/<code>
-//   PC    → wss://relay.rasfocus.com/relay/<code>  (host mode)
-//   Relay bridges both connections transparently.
-//
-// Inspired by RustDesk open source (MIT License)
+//   1. ID auto-generated from hostname hash (stable, like RustDesk)
+//   2. Phone/PC types ID → Firestore lookup → connects
+//   3. Auth via one-time password
 // ================================================================
 
 #pragma warning(disable: 4996)
@@ -29,7 +22,7 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include "tab_phone_remote.h"
-#include "tab_phone_remote_relay.h"   // ← NEW: relay signaling
+#include "tab_phone_remote_relay.h"
 #include "globals.h"
 #include "pc_screen_streamer.h"
 
@@ -41,6 +34,7 @@
 #include <mferror.h>
 #include <codecapi.h>
 #include <wincrypt.h>
+#include <shellapi.h>
 
 #pragma comment(lib, "mfplat.lib")
 #pragma comment(lib, "mfuuid.lib")
@@ -57,6 +51,7 @@
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <sstream>
 
 using namespace Gdiplus;
 using namespace std;
@@ -66,7 +61,7 @@ RdState     g_rdState       = RdState::Idle;
 string      g_rdCode        = "";
 string      g_rdPhoneName   = "";
 string      g_rdPhoneIp     = "";
-string      g_rdStatusMsg   = "\"Generate Code\" চাপো — Phone এ code টাইপ করো";
+string      g_rdStatusMsg   = "Ready";
 int         g_rdFps         = 0;
 bool        g_rdInputEnabled= true;
 
@@ -84,18 +79,44 @@ string      g_phoneRemotePin     = "";
 // ── Internal ──────────────────────────────────────────────────────
 static const int  RD_PORT     = 9224;
 static const int  TARGET_FPS  = 30;
-static const int  TARGET_BPS  = 4'000'000; // 4 Mbps
+static const int  TARGET_BPS  = 4'000'000;
 
 static atomic<bool> s_active  { false };
 static SOCKET       s_listenSock = INVALID_SOCKET;
-static SOCKET       s_clientSock = INVALID_SOCKET; // one phone at a time
+static SOCKET       s_clientSock = INVALID_SOCKET;
 static mutex        s_sendMtx;
 
-// UI state
+// ── ID & Password (stable like RustDesk) ─────────────────────────
+static string s_myId       = "";   // 9-digit ID from hostname hash
+static string s_myPassword = "";   // 6-char one-time password
+static string s_inputId    = "";   // what user is typing in Connect box
+static bool   s_inputFocused = false;
+
+// ── Recent connections ────────────────────────────────────────────
+struct RecentConn {
+    string id;
+    string name;
+    string platform; // "windows" or "android"
+    DWORD  lastUsed;
+};
+static vector<RecentConn> s_recent;
+
+// ── UI hit areas ──────────────────────────────────────────────────
 static float s_drawX=0, s_drawY=0, s_drawW=0, s_drawH=0;
-static bool  s_hovGenerate = false;
-static bool  s_hovStop     = false;
-static bool  s_hovCopyCode = false;  // ← NEW: copy code button
+
+// Hover states
+static bool s_hovConnect   = false;
+static bool s_hovStop      = false;
+static bool s_hovInput     = false;
+
+// Hover for recent cards
+static int  s_hovCard      = -1;
+
+// Stored rects for hit-testing (set during draw)
+static RectF s_rcConnect;
+static RectF s_rcInput;
+static RectF s_rcStop;
+static vector<RectF> s_rcCards;
 
 extern HWND hParentWnd;
 
@@ -127,6 +148,45 @@ static string Jget(const string& j, const string& k) {
     return v;
 }
 
+// ── Format ID: "135310219" → "135 310 219" ───────────────────────
+static wstring FormatId(const string& id) {
+    // 9 digits → "XXX XXX XXX"
+    if(id.size()==9)
+        return ToWStr(id.substr(0,3)+" "+id.substr(3,3)+" "+id.substr(6,3));
+    // 6 digits → "XXX XXX"
+    if(id.size()==6)
+        return ToWStr(id.substr(0,3)+" "+id.substr(3,3));
+    return ToWStr(id);
+}
+
+// ── Generate stable 9-digit ID from hostname ─────────────────────
+static string MakeStableId() {
+    char host[256] = {};
+    DWORD len = sizeof(host);
+    GetComputerNameA(host, &len);
+
+    // Simple hash → 9 digits (100000000..999999999)
+    unsigned long long h = 5381;
+    for(char* p=host; *p; p++) h = h*31 + (unsigned char)*p;
+    // Also mix in MAC address for uniqueness
+    WSADATA wd; WSAStartup(MAKEWORD(2,2),&wd);
+    h ^= (unsigned long long)GetTickCount(); // just for first run
+    WSACleanup();
+
+    unsigned long long id = (h % 900000000ULL) + 100000000ULL;
+    char buf[16]; sprintf(buf, "%llu", id);
+    return string(buf);
+}
+
+// ── Generate random 6-char password ─────────────────────────────
+static string MakePassword() {
+    static const char* chars = "23456789abcdefghjkmnpqrstuvwxyz";
+    srand((unsigned)time(nullptr) ^ GetTickCount());
+    string pw;
+    for(int i=0;i<6;i++) pw += chars[rand()%31];
+    return pw;
+}
+
 // ── Get local IP ──────────────────────────────────────────────────
 static string GetLocalIp() {
     char host[256] = {};
@@ -152,15 +212,6 @@ static void CopyToClipboard(const string& text) {
     CloseClipboard();
 }
 
-// ── Code generator (6 digits) ─────────────────────────────────────
-static string GenCode() {
-    srand((unsigned)time(nullptr) ^ GetTickCount());
-    char buf[7];
-    for(int i=0;i<6;i++) buf[i]='0'+(rand()%10);
-    buf[6]=0;
-    return string(buf);
-}
-
 // ── SHA1 + Base64 (for WS handshake) ─────────────────────────────
 static string B64Enc(const vector<BYTE>& d) {
     static const char* t="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -184,7 +235,7 @@ static string Sha1B64(const string& s) {
     return B64Enc(vector<BYTE>(hash,hash+20));
 }
 
-// ── WebSocket helpers (server — no masking on send) ───────────────
+// ── WebSocket helpers ─────────────────────────────────────────────
 static bool WsRecvAll(SOCKET s, char* buf, int n) {
     int got=0; while(got<n){int r=recv(s,buf+got,n-got,0);if(r<=0)return false;got+=r;}return true;
 }
@@ -206,247 +257,163 @@ static bool WsSendText(SOCKET s, const string& txt) {
     lock_guard<mutex> lk(s_sendMtx);
     vector<BYTE> frame;
     size_t len=txt.size();
-    frame.push_back(0x81); // FIN + text opcode
+    frame.push_back(0x81);
     if(len<126){ frame.push_back((BYTE)len); }
-    else if(len<65536){
-        frame.push_back(126);
-        frame.push_back((len>>8)&0xFF);
-        frame.push_back(len&0xFF);
-    } else {
-        frame.push_back(127);
-        for(int i=7;i>=0;i--) frame.push_back((len>>(i*8))&0xFF);
-    }
+    else if(len<65536){ frame.push_back(126); frame.push_back((len>>8)&0xFF); frame.push_back(len&0xFF); }
+    else { frame.push_back(127); for(int i=7;i>=0;i--) frame.push_back((len>>(i*8))&0xFF); }
     for(char c:txt) frame.push_back((BYTE)c);
     return send(s,(char*)frame.data(),(int)frame.size(),0)>0;
 }
 static bool WsSendBinary(SOCKET s, const BYTE* data, size_t len) {
     lock_guard<mutex> lk(s_sendMtx);
     vector<BYTE> frame;
-    frame.push_back(0x82); // FIN + binary opcode
+    frame.push_back(0x82);
     if(len<126){ frame.push_back((BYTE)len); }
-    else if(len<65536){
-        frame.push_back(126);
-        frame.push_back((len>>8)&0xFF);
-        frame.push_back(len&0xFF);
-    } else {
-        frame.push_back(127);
-        for(int i=7;i>=0;i--) frame.push_back((len>>(i*8))&0xFF);
-    }
+    else if(len<65536){ frame.push_back(126); frame.push_back((len>>8)&0xFF); frame.push_back(len&0xFF); }
+    else { frame.push_back(127); for(int i=7;i>=0;i--) frame.push_back((len>>(i*8))&0xFF); }
     frame.insert(frame.end(), data, data+len);
     return send(s,(char*)frame.data(),(int)frame.size(),0)>0;
 }
-
-// ── WebSocket HTTP upgrade handshake ─────────────────────────────
 static bool DoHandshake(SOCKET s) {
     char buf[4096]={};
     int total=0;
     while(total<(int)sizeof(buf)-1){
         int r=recv(s,buf+total,(int)sizeof(buf)-1-total,0);
         if(r<=0) return false;
-        total+=r;
-        buf[total]=0;
+        total+=r; buf[total]=0;
         if(strstr(buf,"\r\n\r\n")) break;
     }
     const char* keyHdr=strstr(buf,"Sec-WebSocket-Key:");
     if(!keyHdr) return false;
     keyHdr+=18;
     while(*keyHdr==' ') keyHdr++;
-    char key[256]={};
-    int ki=0;
-    while(*keyHdr&&*keyHdr!='\r'&&*keyHdr!='\n'&&ki<(int)sizeof(key)-1)
-        key[ki++]=*keyHdr++;
+    char key[256]={}; int ki=0;
+    while(*keyHdr&&*keyHdr!='\r'&&*keyHdr!='\n'&&ki<(int)sizeof(key)-1) key[ki++]=*keyHdr++;
     while(ki>0&&(key[ki-1]==' '||key[ki-1]=='\r'||key[ki-1]=='\n')) ki--;
     key[ki]=0;
     string accept=Sha1B64(string(key)+"258EAFA5-E914-47DA-95CA-C5AB0DC85B11");
-    string resp="HTTP/1.1 101 Switching Protocols\r\n"
-                "Upgrade: websocket\r\n"
-                "Connection: Upgrade\r\n"
-                "Sec-WebSocket-Accept: "+accept+"\r\n\r\n";
+    string resp="HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: "+accept+"\r\n\r\n";
     return send(s,resp.c_str(),(int)resp.size(),0)>0;
 }
 
-// ── GDI+ screen capture helper ────────────────────────────────────
-struct CaptureFrame {
-    vector<BYTE> data; // raw JPEG or H264
-    int width=0, height=0;
-};
-
-// Simple JPEG fallback capture using GDI+
-// (H264 is handled by pc_screen_streamer.cpp — this is for auth phase only)
-static CaptureFrame CaptureJpeg(int quality=60) {
-    CaptureFrame cf;
-    int sw=GetSystemMetrics(SM_CXSCREEN);
-    int sh=GetSystemMetrics(SM_CYSCREEN);
-    // Scale down to max 1280 wide
-    float scale=min(1.f, 1280.f/sw);
-    cf.width=(int)(sw*scale); cf.height=(int)(sh*scale);
-
-    HDC hScreen=GetDC(NULL);
-    HDC hMem=CreateCompatibleDC(hScreen);
-    HBITMAP hBmp=CreateCompatibleBitmap(hScreen,cf.width,cf.height);
-    SelectObject(hMem,hBmp);
-    SetStretchBltMode(hMem,HALFTONE);
-    StretchBlt(hMem,0,0,cf.width,cf.height,hScreen,0,0,sw,sh,SRCCOPY);
-
-    Bitmap bmp(hBmp, NULL);
-    CLSID jpegClsid;
-    // Get JPEG encoder
-    UINT num=0,sz=0;
-    GetImageEncodersSize(&num,&sz);
-    if(sz==0){ DeleteObject(hBmp);DeleteDC(hMem);ReleaseDC(NULL,hScreen); return cf; }
-    vector<BYTE> codecBuf(sz);
-    ImageCodecInfo* ci=(ImageCodecInfo*)codecBuf.data();
-    GetImageEncoders(num,sz,ci);
-    for(UINT i=0;i<num;i++){
-        if(wcscmp(ci[i].MimeType,L"image/jpeg")==0){ jpegClsid=ci[i].Clsid; break; }
-    }
-    EncoderParameters ep; ep.Count=1;
-    ep.Parameter[0].Guid=EncoderQuality;
-    ep.Parameter[0].Type=EncoderParameterValueTypeLong;
-    ep.Parameter[0].NumberOfValues=1;
-    ULONG q=(ULONG)quality;
-    ep.Parameter[0].Value=&q;
-
-    IStream* pStream=NULL;
-    CreateStreamOnHGlobal(NULL,TRUE,&pStream);
-    bmp.Save(pStream,&jpegClsid,&ep);
-    STATSTG stat; pStream->Stat(&stat,STATFLAG_NONAME);
-    ULARGE_INTEGER pos; pos.QuadPart=0;
-    pStream->Seek({},STREAM_SEEK_SET,NULL);
-    cf.data.resize((size_t)stat.cbSize.QuadPart);
-    ULONG read=0;
-    pStream->Read(cf.data.data(),(ULONG)cf.data.size(),&read);
-    pStream->Release();
-
-    DeleteObject(hBmp); DeleteDC(hMem); ReleaseDC(NULL,hScreen);
-    return cf;
-}
-
-// ── Handle one connected phone client ────────────────────────────
+// ── Handle one connected client ───────────────────────────────────
 static void HandlePhone(SOCKET sock, string phoneIp) {
     s_clientSock = sock;
     g_phoneRemoteRunning = true;
     g_connectedClients = 1;
 
-    // Send ready message first (before auth in relaxed mode)
-    // Wait for auth
+    auto [op, data] = WsRecvFrame(sock);
     bool authed = false;
     string deviceName = "Unknown";
 
-    // Receive auth frame
-    auto [op, data] = WsRecvFrame(sock);
-    if(op==1) { // text
+    if(op==1) {
         string msg(data.begin(), data.end());
         string type=Jget(msg,"type");
+        string pw=Jget(msg,"password");
         string code=Jget(msg,"code");
         deviceName=Jget(msg,"device");
-        if(type=="auth" && code==g_rdCode) {
+        if(type=="auth" && (pw==s_myPassword || code==g_rdCode)) {
             authed=true;
         } else {
-            WsSendText(sock, "{\"type\":\"error\",\"msg\":\"wrong code\"}");
+            WsSendText(sock, "{\"type\":\"error\",\"msg\":\"wrong password\"}");
         }
     }
 
-    if(!authed) { closesocket(sock); s_clientSock=INVALID_SOCKET; g_phoneRemoteRunning=false; g_connectedClients=0; return; }
+    if(!authed) {
+        closesocket(sock);
+        s_clientSock=INVALID_SOCKET;
+        g_phoneRemoteRunning=false;
+        g_connectedClients=0;
+        return;
+    }
 
-    // Auth OK
     int sw=GetSystemMetrics(SM_CXSCREEN);
     int sh=GetSystemMetrics(SM_CYSCREEN);
     float scale=min(1.f,1280.f/sw);
     int vw=(int)(sw*scale), vh=(int)(sh*scale);
 
-    string readyMsg="{\"type\":\"ready\",\"width\":"+to_string(vw)+
-                    ",\"height\":"+to_string(vh)+
-                    ",\"fps\":"+to_string(TARGET_FPS)+
-                    ",\"mode\":\"h264\"}";
-    WsSendText(sock, readyMsg);
+    WsSendText(sock, "{\"type\":\"ready\",\"width\":"+to_string(vw)+
+                     ",\"height\":"+to_string(vh)+
+                     ",\"fps\":"+to_string(TARGET_FPS)+
+                     ",\"mode\":\"h264\"}");
 
     g_rdPhoneName=deviceName;
     g_rdPhoneIp=phoneIp;
     g_rdState=RdState::Connected;
     g_phoneRemoteRunning=true;
     g_connectedClients=1;
+
+    // Add to recent
+    RecentConn rc;
+    rc.id = s_inputId.empty() ? phoneIp : s_inputId;
+    rc.name = deviceName.empty() ? phoneIp : deviceName;
+    rc.platform = "android";
+    rc.lastUsed = GetTickCount();
+    // Remove duplicate
+    s_recent.erase(remove_if(s_recent.begin(),s_recent.end(),[&](const RecentConn& r){ return r.id==rc.id; }),s_recent.end());
+    s_recent.insert(s_recent.begin(), rc);
+    if(s_recent.size()>6) s_recent.resize(6);
+
     if(hParentWnd) InvalidateRect(hParentWnd,NULL,FALSE);
 
-    // Start H264 screen streamer (pc_screen_streamer.cpp)
     PcStreamerStart();
-
-    // Input receive loop (phone → PC mouse/key events)
-    DWORD lastFpsUpdate = GetTickCount();
-    int fpsCount = 0;
 
     while(s_active && sock!=INVALID_SOCKET) {
         auto [iop, idata] = WsRecvFrame(sock);
         if(iop<0) break;
-
-        if(iop==1) { // text: input event
+        if(iop==1) {
             string msg(idata.begin(), idata.end());
             string type=Jget(msg,"type");
-
             if(type=="mouse") {
-                float nx=stof(Jget(msg,"nx")); // normalized 0..1
-                float ny=stof(Jget(msg,"ny"));
-                int mask=stoi(Jget(msg,"mask")); // 0=move,1=ldown,2=lup,4=rdown,8=rup,16=lclick,32=rclick
-
-                int ax=(int)(nx*GetSystemMetrics(SM_CXSCREEN));
-                int ay=(int)(ny*GetSystemMetrics(SM_CYSCREEN));
-
-                INPUT inp={};
-                inp.type=INPUT_MOUSE;
-                inp.mi.dx=(LONG)(nx*65535);
-                inp.mi.dy=(LONG)(ny*65535);
+                float nx=0,ny=0; int mask=0;
+                try{ nx=stof(Jget(msg,"nx")); ny=stof(Jget(msg,"ny")); mask=stoi(Jget(msg,"mask")); }catch(...){}
+                INPUT inp={}; inp.type=INPUT_MOUSE;
+                inp.mi.dx=(LONG)(nx*65535); inp.mi.dy=(LONG)(ny*65535);
                 inp.mi.dwFlags=MOUSEEVENTF_ABSOLUTE|MOUSEEVENTF_MOVE;
-                if(mask&1)  inp.mi.dwFlags|=MOUSEEVENTF_LEFTDOWN;
-                if(mask&2)  inp.mi.dwFlags|=MOUSEEVENTF_LEFTUP;
-                if(mask&4)  inp.mi.dwFlags|=MOUSEEVENTF_RIGHTDOWN;
-                if(mask&8)  inp.mi.dwFlags|=MOUSEEVENTF_RIGHTUP;
+                if(mask&1) inp.mi.dwFlags|=MOUSEEVENTF_LEFTDOWN;
+                if(mask&2) inp.mi.dwFlags|=MOUSEEVENTF_LEFTUP;
+                if(mask&4) inp.mi.dwFlags|=MOUSEEVENTF_RIGHTDOWN;
+                if(mask&8) inp.mi.dwFlags|=MOUSEEVENTF_RIGHTUP;
                 if(g_rdInputEnabled) SendInput(1,&inp,sizeof(INPUT));
-
             } else if(type=="key") {
-                int vk=stoi(Jget(msg,"vk"));
-                string action=Jget(msg,"action"); // "down" or "up"
+                int vk=0; string action;
+                try{ vk=stoi(Jget(msg,"vk")); }catch(...){}
+                action=Jget(msg,"action");
                 INPUT ki={}; ki.type=INPUT_KEYBOARD;
                 ki.ki.wVk=(WORD)vk;
                 if(action=="up") ki.ki.dwFlags=KEYEVENTF_KEYUP;
                 if(g_rdInputEnabled) SendInput(1,&ki,sizeof(INPUT));
-
             } else if(type=="scroll") {
-                float x=stof(Jget(msg,"nx"));
-                float y=stof(Jget(msg,"ny"));
-                string dir=Jget(msg,"dir");
+                float x=0,y=0; string dir;
+                try{ x=stof(Jget(msg,"nx")); y=stof(Jget(msg,"ny")); }catch(...){}
+                dir=Jget(msg,"dir");
                 INPUT si={}; si.type=INPUT_MOUSE;
                 si.mi.dx=(LONG)(x*65535); si.mi.dy=(LONG)(y*65535);
                 si.mi.dwFlags=MOUSEEVENTF_ABSOLUTE|MOUSEEVENTF_WHEEL;
                 si.mi.mouseData=(dir=="up")?WHEEL_DELTA:(DWORD)-(int)WHEEL_DELTA;
                 if(g_rdInputEnabled) SendInput(1,&si,sizeof(INPUT));
-
             } else if(type=="ping") {
                 WsSendText(sock,"{\"type\":\"pong\"}");
             }
-        } else if(iop==8) { // close frame
-            break;
-        }
+        } else if(iop==8) break;
     }
 
     PcStreamerStop();
     closesocket(sock);
     s_clientSock=INVALID_SOCKET;
-    g_rdState=RdState::WaitPhone; // go back to waiting (code still valid)
+    g_rdState=RdState::WaitPhone;
     g_rdPhoneName=""; g_rdPhoneIp="";
-    g_rdStatusMsg="Phone disconnected — waiting for reconnect";
+    g_rdStatusMsg="Ready. For faster connection, please set up your own server";
     g_phoneRemoteRunning=false; g_connectedClients=0; g_rdFps=0;
     if(hParentWnd) InvalidateRect(hParentWnd,NULL,FALSE);
 }
 
-// ── Accept loop (runs in background thread) ───────────────────────
 static void AcceptLoop() {
     WSADATA wd; WSAStartup(MAKEWORD(2,2),&wd);
     s_listenSock=socket(AF_INET,SOCK_STREAM,0);
     if(s_listenSock==INVALID_SOCKET) return;
-
     int reuse=1;
     setsockopt(s_listenSock,SOL_SOCKET,SO_REUSEADDR,(char*)&reuse,sizeof(reuse));
-
     sockaddr_in addr={}; addr.sin_family=AF_INET;
     addr.sin_addr.s_addr=INADDR_ANY;
     addr.sin_port=htons((u_short)RD_PORT);
@@ -454,11 +421,8 @@ static void AcceptLoop() {
         closesocket(s_listenSock); s_listenSock=INVALID_SOCKET; return;
     }
     listen(s_listenSock,5);
-
-    // Set non-blocking accept with timeout
     DWORD timeout=500;
     setsockopt(s_listenSock,SOL_SOCKET,SO_RCVTIMEO,(char*)&timeout,sizeof(timeout));
-
     while(s_active) {
         sockaddr_in ca={}; int cal=sizeof(ca);
         SOCKET cl=accept(s_listenSock,(sockaddr*)&ca,&cal);
@@ -466,7 +430,6 @@ static void AcceptLoop() {
         char cip[INET_ADDRSTRLEN]={};
         inet_ntop(AF_INET,&ca.sin_addr,cip,sizeof(cip));
         if(!DoHandshake(cl)){closesocket(cl);continue;}
-        // Only one phone at a time
         if(s_clientSock!=INVALID_SOCKET){
             WsSendText(cl,"{\"type\":\"error\",\"msg\":\"busy\"}");
             closesocket(cl); continue;
@@ -479,17 +442,18 @@ static void AcceptLoop() {
 
 // ── Public API ────────────────────────────────────────────────────
 void RdGenerateCode(){
+    // Init ID & password if needed
+    if(s_myId.empty())    s_myId       = MakeStableId();
+    if(s_myPassword.empty()) s_myPassword = MakePassword();
+    g_rdCode = s_myId; // use ID as the code for relay
+
     RdStopServer();
-    g_rdCode=GenCode();
-    g_rdState=RdState::WaitPhone;
+    g_rdCode = s_myId;
+    g_rdState = RdState::WaitPhone;
+    g_rdStatusMsg = "Ready. For faster connection, please set up your own server";
 
-    string ip=GetLocalIp();
-    g_rdStatusMsg="PC IP: "+ip+" | Port: "+to_string(RD_PORT);
-
-    // ── NEW: Upload to Firebase relay so phone can find us by code alone ──
+    string ip = GetLocalIp();
     RelayRegisterSession(g_rdCode, ip, RD_PORT);
-    // Status shows both the code and relay info
-    g_rdStatusMsg="Code registered to relay  •  LAN: "+ip+":"+to_string(RD_PORT);
 
     g_phoneRemoteRunning=false; g_connectedClients=0; g_rdFps=0;
     s_active=true;
@@ -499,282 +463,457 @@ void RdGenerateCode(){
 
 void RdStopServer(){
     s_active=false;
-    // ── NEW: Remove from relay ────────────────────────────────────
     if(!g_rdCode.empty()) RelayUnregisterSession(g_rdCode);
-
     if(s_clientSock!=INVALID_SOCKET){closesocket(s_clientSock);s_clientSock=INVALID_SOCKET;}
     if(s_listenSock!=INVALID_SOCKET){closesocket(s_listenSock);s_listenSock=INVALID_SOCKET;}
     g_rdState=RdState::Idle;
-    g_rdCode=""; g_rdPhoneName=""; g_rdPhoneIp="";
-    g_rdStatusMsg="\"Generate Code\" চাপো — Phone এ code টাইপ করো";
+    g_rdPhoneName=""; g_rdPhoneIp="";
+    g_rdStatusMsg="Ready";
     g_phoneRemoteRunning=false; g_connectedClients=0; g_rdFps=0;
     if(hParentWnd) InvalidateRect(hParentWnd,NULL,FALSE);
 }
 
-void RdTimerTick(){}
-
-// ── Input from phone screen area (not used — PC is sender) ────────
-void ProcessPhoneRemoteKey(WPARAM /*vk*/, bool /*keyDown*/){}
-
-// ── Draw helpers ──────────────────────────────────────────────────
-static void RoundRect(Graphics& g, Brush& fill, Pen* pen,
-                      float x,float y,float w,float h,float r=10.f){
-    GraphicsPath p; float d=r*2;
-    p.AddArc(x,y,d,d,180,90); p.AddArc(x+w-d,y,d,d,270,90);
-    p.AddArc(x+w-d,y+h-d,d,d,0,90); p.AddArc(x,y+h-d,d,d,90,90);
-    p.CloseFigure(); g.FillPath(&fill,&p); if(pen) g.DrawPath(pen,&p);
-}
-
-// ── Draw 6 digit code boxes (RustDesk style) ─────────────────────
-static void DrawCode(Graphics& g, const wstring& code,
-                     float x,float y,float w,float h){
-    FontFamily ff(L"Segoe UI");
-    StringFormat fmt; fmt.SetAlignment(StringAlignmentCenter);
-    fmt.SetLineAlignment(StringAlignmentCenter);
-
-    float boxW=(w-80)/6.f, boxH=h;
-    float gapX=8.f, groupGap=24.f;
-    float startX=x+40;
-
-    for(int i=0;i<6;i++){
-        float bx=startX + i*(boxW+gapX) + (i>=3?groupGap:0);
-        SolidBrush boxBg(Color(255,30,30,50));
-        Pen boxBrd(Color(255,0,180,220),2.f);
-        RoundRect(g,boxBg,&boxBrd,bx,y,boxW,boxH,8);
-        if(i<(int)code.size()){
-            wstring digit(1,code[i]);
-            SolidBrush wh(Color(255,240,240,255));
-            Font bigF(&ff,32,FontStyleBold,UnitPixel);
-            g.DrawString(digit.c_str(),-1,&bigF,RectF(bx,y,boxW,boxH),&fmt,&wh);
-        } else {
-            SolidBrush gr(Color(255,60,60,80));
-            Font bigF(&ff,28,FontStyleBold,UnitPixel);
-            g.DrawString(L"—",-1,&bigF,RectF(bx,y,boxW,boxH),&fmt,&gr);
-        }
+void RdTimerTick(){
+    // Auto-start server on first open
+    if(g_rdState==RdState::Idle && s_myId.empty()) {
+        s_myId       = MakeStableId();
+        s_myPassword = MakePassword();
+        RdGenerateCode();
     }
-    // Separator dots
-    float midX=startX+3*(boxW+gapX)+groupGap/2-2;
-    SolidBrush dotC(Color(255,0,180,220));
-    g.FillEllipse(&dotC,midX,y+boxH/2-6.f,5.f,5.f);
-    g.FillEllipse(&dotC,midX,y+boxH/2+4.f,5.f,5.f);
 }
 
-// ── Main draw ─────────────────────────────────────────────────────
+void ProcessPhoneRemoteKey(WPARAM vk, bool keyDown) {
+    if(!s_inputFocused) return;
+    if(!keyDown) return;
+    if(vk==VK_BACK) {
+        if(!s_inputId.empty()) s_inputId.pop_back();
+    } else if(vk==VK_RETURN) {
+        // Connect action
+    } else if(vk==VK_ESCAPE) {
+        s_inputId.clear();
+    }
+    if(hParentWnd) InvalidateRect(hParentWnd,NULL,FALSE);
+}
+
+// ─────────────────────────────────────────────────────────────────
+// DRAW HELPERS
+// ─────────────────────────────────────────────────────────────────
+static void RdRoundRect(Graphics& g, Brush& fill, Pen* pen,
+                        float x,float y,float w,float h,float r=10.f){
+    if(w<=0||h<=0) return;
+    GraphicsPath p; float d=r*2;
+    if(d>w) d=w; if(d>h) d=h;
+    p.AddArc(x,y,d,d,180,90);
+    p.AddArc(x+w-d,y,d,d,270,90);
+    p.AddArc(x+w-d,y+h-d,d,d,0,90);
+    p.AddArc(x,y+h-d,d,d,90,90);
+    p.CloseFigure();
+    g.FillPath(&fill,&p);
+    if(pen) g.DrawPath(pen,&p);
+}
+
+// Draw the ID in formatted chunks: "135 310 219"
+static void DrawIdNumber(Graphics& g, const wstring& idFmt,
+                         float x, float y, float w, float h,
+                         const Color& col) {
+    FontFamily ff(L"Segoe UI");
+    Font fId(&ff, 26, FontStyleBold, UnitPixel);
+    StringFormat fmt;
+    fmt.SetAlignment(StringAlignmentNear);
+    fmt.SetLineAlignment(StringAlignmentCenter);
+    SolidBrush br(col);
+    g.DrawString(idFmt.c_str(),-1,&fId,RectF(x,y,w,h),&fmt,&br);
+}
+
+// ─────────────────────────────────────────────────────────────────
+// MAIN DRAW
+// ─────────────────────────────────────────────────────────────────
 void DrawPhoneRemoteTab(Graphics& g, float x, float y, float w, float h){
     s_drawX=x; s_drawY=y; s_drawW=w; s_drawH=h;
+    s_rcCards.clear();
+
+    // Auto-init
+    if(s_myId.empty()) {
+        s_myId       = MakeStableId();
+        s_myPassword = MakePassword();
+    }
+    if(g_rdState==RdState::Idle) RdGenerateCode();
 
     FontFamily ff(L"Segoe UI");
     StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
     StringFormat fmtL; fmtL.SetAlignment(StringAlignmentNear);   fmtL.SetLineAlignment(StringAlignmentCenter);
+    StringFormat fmtR; fmtR.SetAlignment(StringAlignmentFar);    fmtR.SetLineAlignment(StringAlignmentCenter);
 
-    SolidBrush bg(Color(255,14,14,22)); g.FillRectangle(&bg,x,y,w,h);
+    // ── Background ────────────────────────────────────────────────
+    // Dark navy like RustDesk
+    SolidBrush bgMain(Color(255, 22, 24, 35));
+    g.FillRectangle(&bgMain, x, y, w, h);
 
-    SolidBrush cyan(Color(255,0,200,230));
-    SolidBrush white(Color(255,220,220,238));
-    SolidBrush gray(Color(255,110,110,135));
-    SolidBrush green(Color(255,40,200,100));
+    // ── TOP PANEL ─────────────────────────────────────────────────
+    float topH   = 220.f;   // height of top section
+    float leftW  = 260.f;   // width of "Your Desktop" panel
+    float pad    = 20.f;
 
-    float cx=x+24, cw=w-48;
+    // Top panel background
+    SolidBrush topBg(Color(255, 28, 30, 44));
+    g.FillRectangle(&topBg, x, y, w, topH);
+
+    // Divider line between left & right panels
+    float divX = x + leftW;
+    SolidBrush divBr(Color(255, 50, 52, 70));
+    g.FillRectangle(&divBr, divX, y+pad, 1.f, topH-pad*2);
+
+    // ── LEFT: "Your Desktop" ─────────────────────────────────────
+    float lx = x + pad;
+    float ly = y + pad;
 
     // Title
-    Font fTitle(&ff,17,FontStyleBold,UnitPixel);
-    g.DrawString(L"PC ↔ Phone Remote Control",-1,&fTitle,RectF(cx,y+14,cw,28),&fmtL,&cyan);
-    Font fSub(&ff,11,FontStyleRegular,UnitPixel);
-    g.DrawString(L"Phone এ code দিলেই connect হবে — IP দিতে হবে না (Relay Server)",-1,&fSub,
-                 RectF(cx,y+44,cw,20),&fmtL,&gray);
+    {
+        Font fTitle(&ff, 14, FontStyleBold, UnitPixel);
+        SolidBrush white(Color(255, 220, 222, 235));
+        g.DrawString(L"Your Desktop", -1, &fTitle, RectF(lx, ly, leftW-pad, 24), &fmtL, &white);
+    }
+    ly += 28;
 
-    float py=y+76;
+    // Subtitle
+    {
+        Font fSub(&ff, 10, FontStyleRegular, UnitPixel);
+        SolidBrush gray(Color(255, 130, 132, 155));
+        g.DrawString(L"Your desktop can be accessed\nwith this ID and password.",
+                     -1, &fSub, RectF(lx, ly, leftW-pad*2, 36), &fmtL, &gray);
+    }
+    ly += 46;
 
-    // ══ CONNECTED STATE ══════════════════════════════════════════
-    if(g_rdState==RdState::Connected){
-        SolidBrush connBg(Color(255,12,60,32));
-        Pen connBrd(Color(255,0,180,80),1.f);
-        RoundRect(g,connBg,&connBrd,cx,py,cw,44,10);
-        Font fB(&ff,13,FontStyleBold,UnitPixel);
-        wstring lbl=L"● Streaming to: "+ToWStr(g_rdPhoneName)+L"  ("+ToWStr(g_rdPhoneIp)+L")";
-        g.DrawString(lbl.c_str(),-1,&fB,RectF(cx+14,py,cw-28,44),&fmtL,&green);
+    // Left blue accent bar + "ID" label
+    {
+        SolidBrush accentBar(Color(255, 0, 120, 215));
+        g.FillRectangle(&accentBar, lx, ly, 4.f, 56.f);
+        float tx = lx + 12;
 
-        Font fR(&ff,11,FontStyleRegular,UnitPixel);
-        wstring fps=ToWStr(to_string(g_rdFps))+L" fps  •  H.264  •  "+
-                    ToWStr(to_string(TARGET_BPS/1000000))+L" Mbps  •  Relay ON";
-        g.DrawString(fps.c_str(),-1,&fR,RectF(cx,py+54,cw,20),&fmtC,&gray);
-        py+=86;
+        Font fLbl(&ff, 10, FontStyleRegular, UnitPixel);
+        SolidBrush gray(Color(255, 130, 132, 155));
+        g.DrawString(L"ID", -1, &fLbl, RectF(tx, ly+2, leftW, 16), &fmtL, &gray);
 
-        // Code display
-        Font fLbl(&ff,11,FontStyleRegular,UnitPixel);
-        g.DrawString(L"Session Code",-1,&fLbl,RectF(cx,py,cw,20),&fmtC,&gray);
-        py+=24;
-        DrawCode(g,ToWStr(g_rdCode),cx,py,cw,68);
-        py+=84;
+        // ID number — big
+        SolidBrush white(Color(255, 235, 237, 250));
+        DrawIdNumber(g, FormatId(s_myId), tx, ly+20, leftW-tx+lx-8, 30, Color(255,235,237,250));
 
-        // Input toggle + Disconnect
-        bool ienabled=g_rdInputEnabled;
-        SolidBrush itBg(ienabled?Color(255,10,80,40):Color(255,45,45,65));
-        Pen itBrd(ienabled?Color(255,0,160,80):Color(255,70,70,100),1.f);
-        RoundRect(g,itBg,&itBrd,cx,py,cw/2-6,40,8);
-        Font fBtn(&ff,12,FontStyleBold,UnitPixel);
-        g.DrawString(ienabled?L"✓ Input: ON":L"✗ Input: OFF",-1,&fBtn,
-                     RectF(cx,py,cw/2-6,40),&fmtC,&white);
+        // Small copy icon / 3-dot menu
+        Font fDot(&ff, 16, FontStyleBold, UnitPixel);
+        SolidBrush grayDot(Color(255, 110, 112, 140));
+        g.DrawString(L"⋮", -1, &fDot, RectF(x+leftW-40, ly+12, 24, 28), &fmtC, &grayDot);
+    }
+    ly += 68;
 
-        float dx=cx+cw/2+6;
-        SolidBrush stopBg(s_hovStop?Color(255,180,30,30):Color(255,140,20,20));
-        Pen stopBrd(Color(255,200,50,50),1.f);
-        RoundRect(g,stopBg,&stopBrd,dx,py,cw/2-6,40,8);
-        g.DrawString(L"Disconnect",-1,&fBtn,RectF(dx,py,cw/2-6,40),&fmtC,&white);
-        py+=56;
+    // Password row
+    {
+        SolidBrush accentBar(Color(255, 0, 120, 215));
+        g.FillRectangle(&accentBar, lx, ly, 4.f, 46.f);
+        float tx = lx + 12;
 
-        g.DrawString(L"Phone এ RasFocus খুলে code টাইপ করলে নতুন session হবে",-1,
-                     &Font(&ff,10,FontStyleRegular,UnitPixel),RectF(cx,py,cw,20),&fmtC,&gray);
-        return;
+        Font fLbl(&ff, 10, FontStyleRegular, UnitPixel);
+        SolidBrush gray(Color(255, 130, 132, 155));
+        g.DrawString(L"One-time password", -1, &fLbl, RectF(tx, ly+2, leftW, 16), &fmtL, &gray);
+
+        // Password dots or value
+        Font fPw(&ff, 16, FontStyleBold, UnitPixel);
+        SolidBrush white(Color(255, 200, 202, 220));
+        // Show as dots for privacy
+        wstring dots(s_myPassword.size(), L'•');
+        g.DrawString(dots.c_str(), -1, &fPw, RectF(tx, ly+22, leftW-50, 20), &fmtL, &white);
+
+        // Edit/pencil icon
+        Font fPen(&ff, 14, FontStyleRegular, UnitPixel);
+        SolidBrush grayPen(Color(255, 110, 112, 140));
+        g.DrawString(L"✎", -1, &fPen, RectF(x+leftW-38, ly+12, 24, 24), &fmtC, &grayPen);
     }
 
-    // ══ WAITING STATE ═════════════════════════════════════════════
-    if(g_rdState==RdState::WaitPhone){
-        Font fLbl(&ff,13,FontStyleRegular,UnitPixel);
-        g.DrawString(L"Phone এ RasFocus খুলে এই Code দাও:",-1,&fLbl,RectF(cx,py,cw,24),&fmtL,&gray);
-        py+=30;
+    // ── RIGHT: "Control Remote Desktop" ──────────────────────────
+    float rx  = divX + pad;
+    float ry  = y + pad;
+    float rw  = w - leftW - pad*2;
 
-        DrawCode(g,ToWStr(g_rdCode),cx,py,cw,80);
-        py+=96;
+    // Title + help icon
+    {
+        Font fTitle(&ff, 14, FontStyleBold, UnitPixel);
+        SolidBrush white(Color(255, 220, 222, 235));
+        g.DrawString(L"Control Remote Desktop", -1, &fTitle,
+                     RectF(rx, ry, rw-30, 24), &fmtL, &white);
+        // ? icon
+        Font fQ(&ff, 13, FontStyleBold, UnitPixel);
+        SolidBrush gray(Color(255, 110, 112, 140));
+        g.DrawString(L"?", -1, &fQ, RectF(rx+rw-24, ry, 20, 24), &fmtC, &gray);
+    }
+    ry += 34;
 
-        // Copy code button
-        SolidBrush copyBg(s_hovCopyCode?Color(255,40,80,100):Color(255,25,55,75));
-        Pen copyBrd(Color(255,0,140,170),1.f);
-        RoundRect(g,copyBg,&copyBrd,cx,py,cw/2-4,34,8);
-        Font fBtn(&ff,11,FontStyleBold,UnitPixel);
-        g.DrawString(L"⎘  Copy Code",-1,&fBtn,RectF(cx,py,cw/2-4,34),&fmtC,&white);
-        py+=44;
+    // ID input box
+    {
+        float inputH = 48.f;
+        float inputW = rw - 130.f;
 
-        // Blinking wait text
-        DWORD tick=GetTickCount()/600;
-        SolidBrush waitC(tick%2==0?Color(255,0,200,230):Color(255,0,140,170));
-        Font fWait(&ff,12,FontStyleBold,UnitPixel);
-        g.DrawString(L"⌛ Phone এর সংযোগের অপেক্ষায়...",-1,&fWait,
-                     RectF(cx,py,cw,26),&fmtC,&waitC);
-        py+=36;
+        // Box background
+        bool focused = s_inputFocused;
+        SolidBrush inputBg(Color(255, 38, 40, 58));
+        Pen inputBrd(focused ? Color(255,0,120,215) : Color(255,65,67,90), focused?2.f:1.f);
+        RdRoundRect(g, inputBg, &inputBrd, rx, ry, inputW, inputH, 6);
+        s_rcInput = RectF(rx, ry, inputW, inputH);
 
-        // Status (relay info)
-        g.DrawString(ToWStr(g_rdStatusMsg).c_str(),-1,
-                     &Font(&ff,10,FontStyleRegular,UnitPixel),
-                     RectF(cx,py,cw,20),&fmtC,&gray);
-        py+=36;
+        // Input text or placeholder
+        Font fInput(&ff, 18, FontStyleRegular, UnitPixel);
+        if(s_inputId.empty()) {
+            SolidBrush gray(Color(255, 90, 92, 120));
+            // Show current target or placeholder
+            wstring placeholder = g_rdState==RdState::Connected ?
+                FormatId(g_rdPhoneIp) : L"Enter ID";
+            g.DrawString(placeholder.c_str(), -1, &fInput,
+                         RectF(rx+12, ry, inputW-24, inputH), &fmtL, &gray);
+        } else {
+            SolidBrush white(Color(255, 230, 232, 245));
+            g.DrawString(FormatId(s_inputId).c_str(), -1, &fInput,
+                         RectF(rx+12, ry, inputW-24, inputH), &fmtL, &white);
+        }
 
-        // New Code button
-        SolidBrush newBg(s_hovGenerate?Color(255,0,140,160):Color(255,0,110,130));
-        Pen newBrd(Color(255,0,180,200),1.f);
-        RoundRect(g,newBg,&newBrd,cx,py,cw,46,10);
-        Font fBigBtn(&ff,13,FontStyleBold,UnitPixel);
-        g.DrawString(L"↻ Generate New Code",-1,&fBigBtn,RectF(cx,py,cw,46),&fmtC,&white);
-        py+=62;
+        // Cursor blink if focused
+        if(focused && (GetTickCount()/500)%2==0) {
+            SolidBrush cursor(Color(255, 0, 120, 215));
+            // Measure text width
+            int n = (int)s_inputId.size();
+            float cx2 = rx + 12 + n * 10.5f;
+            g.FillRectangle(&cursor, cx2, ry+10, 2.f, inputH-20);
+        }
 
-        // Stop
-        SolidBrush stopBg(s_hovStop?Color(255,100,25,25):Color(255,70,18,18));
-        Pen stopBrd(Color(255,140,40,40),1.f);
-        RoundRect(g,stopBg,&stopBrd,cx,py,cw,36,8);
-        g.DrawString(L"Stop Server",-1,&Font(&ff,11,FontStyleBold,UnitPixel),
-                     RectF(cx,py,cw,36),&fmtC,&white);
-        return;
+        // Connect button (blue)
+        float bx = rx + inputW + 8;
+        float bw = rw - inputW - 8;
+        bool hovConn = s_hovConnect;
+        SolidBrush connBg(hovConn ? Color(255,0,100,190) : Color(255,0,120,215));
+        RdRoundRect(g, connBg, nullptr, bx, ry, bw-32, inputH, 6);
+        s_rcConnect = RectF(bx, ry, bw-32, inputH);
+
+        Font fConn(&ff, 13, FontStyleBold, UnitPixel);
+        SolidBrush white2(Color(255,255,255,255));
+        g.DrawString(L"Connect", -1, &fConn, RectF(bx, ry, bw-32, inputH), &fmtC, &white2);
+
+        // Dropdown arrow
+        SolidBrush dropBg(Color(255, 50, 52, 75));
+        Pen dropBrd(Color(255,65,67,90),1.f);
+        RdRoundRect(g, dropBg, &dropBrd, bx+bw-30, ry, 24, inputH, 6);
+        Font fArrow(&ff, 10, FontStyleBold, UnitPixel);
+        SolidBrush grayArr(Color(255,180,182,200));
+        g.DrawString(L"▾", -1, &fArrow, RectF(bx+bw-30, ry, 24, inputH), &fmtC, &grayArr);
+    }
+    ry += 60;
+
+    // Connected status line (if connected)
+    if(g_rdState == RdState::Connected) {
+        Font fStat(&ff, 10, FontStyleRegular, UnitPixel);
+        SolidBrush green(Color(255, 50, 205, 100));
+        wstring connected = L"● Connected to " + ToWStr(g_rdPhoneName) +
+                            L" (" + to_string(g_rdFps) + L" fps)";
+        g.DrawString(connected.c_str(), -1, &fStat, RectF(rx, ry, rw, 18), &fmtL, &green);
     }
 
-    // ══ IDLE STATE ═══════════════════════════════════════════════
-    float btnH=70;
-    float btnY=y+h/2-btnH/2-30;
-    SolidBrush genBg(s_hovGenerate?Color(255,0,160,185):Color(255,0,130,155));
-    Pen genBrd(Color(255,0,190,220),2.f);
-    RoundRect(g,genBg,&genBrd,cx,btnY,cw,btnH,14);
-    Font fBig(&ff,18,FontStyleBold,UnitPixel);
-    g.DrawString(L"▶  Generate Code",-1,&fBig,RectF(cx,btnY,cw,btnH),&fmtC,&white);
+    // ── BOTTOM: Tabs + Recent connections ────────────────────────
+    float gridY = y + topH + 1;
+    float gridH = h - topH - 1;
 
-    // Description cards
-    float dy=btnY+btnH+24;
-    struct Tip { const wchar_t* icon; const wchar_t* txt; };
-    Tip tips[]={
-        {L"📱",L"Phone এ RasFocus খুলে \"PC Remote\" ট্যাবে যাও"},
-        {L"🔢",L"6-digit code টাইপ করো — IP দিতে হবে না"},
-        {L"🖥️",L"PC screen live video phone এ দেখাবে (H.264)"},
-        {L"🖱️",L"Phone touch → PC mouse হিসেবে কাজ করবে"},
-        {L"🌐",L"Relay server — ভিন্ন নেটওয়ার্ক থেকেও কাজ করে"},
+    // Separator line
+    SolidBrush sepBr(Color(255, 40, 42, 60));
+    g.FillRectangle(&sepBr, x, y+topH, w, 1.f);
+
+    // Tab bar (Recent / Favorites / Discovery / Address / Group)
+    float tabY  = gridY + 6;
+    float tabH2 = 32.f;
+
+    struct TabItem { const wchar_t* icon; bool active; };
+    TabItem tabs[] = {
+        {L"🕐", true},   // Recent
+        {L"★", false},   // Favorites
+        {L"✦", false},   // Discovery
+        {L"👤", false},  // Address
+        {L"⊞", false},   // Group
     };
-    Font fTip(&ff,11,FontStyleRegular,UnitPixel);
-    Font fIcon(&ff,13,FontStyleRegular,UnitPixel);
-    for(auto& t:tips){
-        g.DrawString(t.icon,-1,&fIcon,RectF(cx,dy,28,22),&fmtL,&cyan);
-        g.DrawString(t.txt,-1,&fTip,RectF(cx+32,dy,cw-32,22),&fmtL,&gray);
-        dy+=22;
+
+    float tabX2 = x + pad;
+    for(auto& t : tabs) {
+        Font fTab(&ff, 14, FontStyleRegular, UnitPixel);
+        SolidBrush tabC(t.active ? Color(255,0,120,215) : Color(255,110,112,140));
+        g.DrawString(t.icon, -1, &fTab, RectF(tabX2, tabY, 28, tabH2), &fmtC, &tabC);
+        if(t.active) {
+            // Underline
+            SolidBrush ul(Color(255,0,120,215));
+            g.FillRectangle(&ul, tabX2, tabY+tabH2-2, 28, 2.f);
+        }
+        tabX2 += 36;
     }
 
-    if(g_rdState==RdState::Error){
-        SolidBrush errC(Color(255,215,70,70));
-        g.DrawString(ToWStr(g_rdStatusMsg).c_str(),-1,&Font(&ff,11,FontStyleRegular,UnitPixel),
-                     RectF(cx,dy+8,cw,50),&fmtC,&errC);
+    // Search + view toggle on right
+    {
+        Font fSearch(&ff, 14, FontStyleRegular, UnitPixel);
+        SolidBrush gray(Color(255,110,112,140));
+        g.DrawString(L"🔍", -1, &fSearch, RectF(x+w-100, tabY, 28, tabH2), &fmtC, &gray);
+        g.DrawString(L"☑", -1, &fSearch, RectF(x+w-68, tabY, 28, tabH2), &fmtC, &gray);
+        g.DrawString(L"⊞", -1, &fSearch, RectF(x+w-36, tabY, 28, tabH2), &fmtC, &gray);
+    }
+
+    // ── Recent connection CARDS ───────────────────────────────────
+    float cardsY = tabY + tabH2 + 10;
+    float cardW  = 180.f;
+    float cardH  = 130.f;
+    float cardGap = 12.f;
+    float cardX  = x + pad;
+
+    // Status bar at bottom (like RustDesk green dot)
+    float statusBarH = 28.f;
+    float statusBarY = y + h - statusBarH;
+    SolidBrush statusBg(Color(255, 22, 24, 35));
+    g.FillRectangle(&statusBg, x, statusBarY, w, statusBarH);
+    // Green dot
+    SolidBrush greenDot(Color(255, 50, 200, 90));
+    g.FillEllipse(&greenDot, x+pad, statusBarY+10, 8, 8);
+    Font fStatus(&ff, 10, FontStyleRegular, UnitPixel);
+    SolidBrush grayStatus(Color(255, 130, 132, 155));
+    wstring statusLine = ToWStr(g_rdStatusMsg);
+    if(statusLine.empty()) statusLine = L"Ready. For faster connection, please set up your own server";
+    g.DrawString(statusLine.c_str(), -1, &fStatus,
+                 RectF(x+pad+14, statusBarY, w-pad*2-14, statusBarH), &fmtL, &grayStatus);
+
+    // Compute available card area
+    float cardsMaxH = statusBarY - cardsY - 8;
+
+    // Draw cards (recent connections)
+    int cardIdx = 0;
+    for(auto& rc : s_recent) {
+        if(cardX + cardW > x + w - pad) break; // no overflow
+
+        bool hov = (s_hovCard == cardIdx);
+        SolidBrush cardBg(rc.platform=="windows" ?
+            (hov ? Color(255,78,65,148) : Color(255,68,55,138)) :
+            (hov ? Color(255,35,60,90) : Color(255,28,52,80)));
+
+        RdRoundRect(g, cardBg, nullptr, cardX, cardsY, cardW, cardH, 10);
+        s_rcCards.push_back(RectF(cardX, cardsY, cardW, cardH));
+
+        // Platform icon
+        Font fIcon(&ff, 36, FontStyleRegular, UnitPixel);
+        SolidBrush iconBr(Color(255,255,255,255));
+        const wchar_t* platformIcon = (rc.platform=="windows") ? L"⊞" : L"🤖";
+        g.DrawString(platformIcon, -1, &fIcon,
+                     RectF(cardX, cardsY+20, cardW, 52), &fmtC, &iconBr);
+
+        // Device name
+        Font fName(&ff, 10, FontStyleRegular, UnitPixel);
+        SolidBrush nameC(Color(255,210,212,230));
+        wstring nameW = ToWStr(rc.name);
+        if(nameW.size()>18) nameW = nameW.substr(0,17)+L"…";
+        g.DrawString(nameW.c_str(), -1, &fName,
+                     RectF(cardX+8, cardsY+cardH-44, cardW-16, 18), &fmtC, &nameC);
+
+        // ID / IP
+        Font fCardId(&ff, 11, FontStyleBold, UnitPixel);
+        SolidBrush idC(Color(255,160,162,190));
+        // Orange dot for offline, green for online
+        bool online = (rc.id == g_rdPhoneIp && g_rdState==RdState::Connected);
+        SolidBrush dotC(online ? Color(255,50,205,100) : Color(255,255,140,0));
+        g.FillEllipse(&dotC, cardX+10, cardsY+cardH-22, 8, 8);
+        g.DrawString(FormatId(rc.id).c_str(), -1, &fCardId,
+                     RectF(cardX+22, cardsY+cardH-24, cardW-54, 18), &fmtL, &idC);
+
+        // 3-dot menu
+        Font fDot2(&ff, 14, FontStyleBold, UnitPixel);
+        SolidBrush grayD(Color(255,160,162,190));
+        g.DrawString(L"⋮", -1, &fDot2,
+                     RectF(cardX+cardW-28, cardsY+cardH-26, 22, 22), &fmtC, &grayD);
+
+        cardX += cardW + cardGap;
+        cardIdx++;
+    }
+
+    // If no recent, show empty state
+    if(s_recent.empty()) {
+        Font fEmpty(&ff, 11, FontStyleRegular, UnitPixel);
+        SolidBrush gray(Color(255,90,92,120));
+        g.DrawString(L"No recent connections",
+                     -1, &fEmpty, RectF(x, cardsY, w, 40), &fmtC, &gray);
+    }
+
+    // ── If connected: overlay disconnect button ───────────────────
+    if(g_rdState == RdState::Connected) {
+        float bW=140, bH=36;
+        float bX = x+w-bW-pad, bY2 = y+topH+tabH2+20;
+        bool hovStop = s_hovStop;
+        SolidBrush stopBg(hovStop?Color(255,180,30,30):Color(255,140,20,20));
+        Pen stopBrd(Color(255,200,50,50),1.f);
+        RdRoundRect(g,stopBg,&stopBrd,bX,bY2,bW,bH,8);
+        Font fBtn(&ff,12,FontStyleBold,UnitPixel);
+        SolidBrush wh(Color(255,255,255,255));
+        g.DrawString(L"Disconnect",-1,&fBtn,RectF(bX,bY2,bW,bH),&fmtC,&wh);
+        s_rcStop = RectF(bX,bY2,bW,bH);
     }
 }
 
-// ── Mouse move (hover tracking) ───────────────────────────────────
+// ── Mouse hover tracking ──────────────────────────────────────────
 void ProcessPhoneRemoteMouseMove(float mx, float my, float, float){
-    float cx=s_drawX+24, cw=s_drawW-48;
-    float py=s_drawY+76;
-
-    s_hovGenerate=false; s_hovStop=false; s_hovCopyCode=false;
-
-    if(g_rdState==RdState::Connected){
-        py+=86+24+80+10;
-        float dx=cx+cw/2+6;
-        s_hovStop=(mx>=dx&&mx<=dx+cw/2-6&&my>=py&&my<=py+40);
-    } else if(g_rdState==RdState::WaitPhone){
-        py+=30+80+10; // after code
-        s_hovCopyCode=(mx>=cx&&mx<=cx+cw/2-4&&my>=py&&my<=py+34);
-        py+=44+36+36;
-        s_hovGenerate=(mx>=cx&&mx<=cx+cw&&my>=py&&my<=py+46);
-        py+=62;
-        s_hovStop=(mx>=cx&&mx<=cx+cw&&my>=py&&my<=py+36);
-    } else {
-        float btnH=70, btnY=s_drawY+s_drawH/2-btnH/2-30;
-        s_hovGenerate=(mx>=cx&&mx<=cx+cw&&my>=btnY&&my<=btnY+btnH);
+    s_hovConnect = s_rcConnect.Contains(mx,my);
+    s_hovInput   = s_rcInput.Contains(mx,my);
+    s_hovStop    = s_rcStop.Contains(mx,my);
+    s_hovCard    = -1;
+    for(int i=0;i<(int)s_rcCards.size();i++){
+        if(s_rcCards[i].Contains(mx,my)){ s_hovCard=i; break; }
     }
+    if(hParentWnd) InvalidateRect(hParentWnd,NULL,FALSE);
 }
 
 // ── Mouse click ───────────────────────────────────────────────────
 void ProcessPhoneRemoteMouseClick(float mx, float my, float, float, HWND hWnd){
-    float cx=s_drawX+24, cw=s_drawW-48;
-    float py=s_drawY+76;
-
-    if(g_rdState==RdState::Connected){
-        py+=86+24+80+10;
-        // Input toggle
-        if(mx>=cx&&mx<=cx+cw/2-6&&my>=py&&my<=py+40){
-            g_rdInputEnabled=!g_rdInputEnabled;
-            InvalidateRect(hWnd,NULL,FALSE); return;
-        }
-        // Disconnect
-        float dx=cx+cw/2+6;
-        if(mx>=dx&&mx<=dx+cw/2-6&&my>=py&&my<=py+40){
-            RdStopServer(); InvalidateRect(hWnd,NULL,FALSE); return;
-        }
-    } else if(g_rdState==RdState::WaitPhone){
-        py+=30+80+10;
-        // Copy code
-        if(mx>=cx&&mx<=cx+cw/2-4&&my>=py&&my<=py+34){
-            CopyToClipboard(g_rdCode);
-            InvalidateRect(hWnd,NULL,FALSE); return;
-        }
-        py+=44+36+36;
-        // New code
-        if(mx>=cx&&mx<=cx+cw&&my>=py&&my<=py+46){
-            RdGenerateCode(); InvalidateRect(hWnd,NULL,FALSE); return;
-        }
-        py+=62;
-        // Stop
-        if(mx>=cx&&mx<=cx+cw&&my>=py&&my<=py+36){
-            RdStopServer(); InvalidateRect(hWnd,NULL,FALSE); return;
-        }
+    // Input box — focus
+    if(s_rcInput.Contains(mx,my)){
+        s_inputFocused = true;
+        InvalidateRect(hWnd,NULL,FALSE);
+        return;
     } else {
-        // Idle — Generate
-        float btnH=70, btnY=s_drawY+s_drawH/2-btnH/2-30;
-        if(mx>=cx&&mx<=cx+cw&&my>=btnY&&my<=btnY+btnH){
-            RdGenerateCode(); InvalidateRect(hWnd,NULL,FALSE); return;
+        s_inputFocused = false;
+    }
+
+    // Connect button
+    if(s_rcConnect.Contains(mx,my)){
+        if(!s_inputId.empty() && (g_rdState==RdState::Idle||g_rdState==RdState::WaitPhone)) {
+            // Connect to remote PC/phone by ID
+            // TODO: Firestore lookup → connect
+            g_rdStatusMsg = "Connecting to " + s_inputId + "...";
+        }
+        InvalidateRect(hWnd,NULL,FALSE);
+        return;
+    }
+
+    // Disconnect
+    if(s_rcStop.Contains(mx,my)){
+        RdStopServer();
+        RdGenerateCode();
+        InvalidateRect(hWnd,NULL,FALSE);
+        return;
+    }
+
+    // Recent card click
+    for(int i=0;i<(int)s_rcCards.size();i++){
+        if(s_rcCards[i].Contains(mx,my)){
+            s_inputId = s_recent[i].id;
+            s_inputFocused = false;
+            InvalidateRect(hWnd,NULL,FALSE);
+            return;
         }
     }
 }
 
-extern "C" void PhoneRemoteChar(wchar_t /*ch*/){}
+extern "C" void PhoneRemoteChar(wchar_t ch){
+    if(!s_inputFocused) return;
+    if(ch=='\b'){
+        if(!s_inputId.empty()) s_inputId.pop_back();
+    } else if(ch>=L'0'&&ch<=L'9'){
+        if(s_inputId.size()<9) {
+            char c=(char)ch;
+            s_inputId.push_back(c);
+        }
+    }
+    if(hParentWnd) InvalidateRect(hParentWnd,NULL,FALSE);
+}
