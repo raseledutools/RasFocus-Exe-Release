@@ -80,6 +80,7 @@ bool   g_showCheckPopup     = false; // manual check popup visible
 bool   g_checkPopupIsLatest = false; // true=latest, false=update available
 bool   s_hovCheckPopupBtn   = false; // OK / Download button hover
 bool   s_hovCheckPopupClose = false; // close X hover
+bool   g_isManualCheck      = false; // true = user clicked "Check Update" button; false = auto timer
 
 // Update popup state
 string g_updateDownloadUrl  = "";
@@ -606,12 +607,12 @@ void __cdecl SilentUpdateThread(void* p) {
                                              + "/releases/download/" + latestVer + "/RasFocus.exe";
                         isUpdateAvailable    = true;   // version আছে, download হয়নি
                         isUpdateReady        = false;  // download এখনো হয়নি
-                        g_showUpdatePopup    = true;   // ← in-app popup দেখাও
+                        g_showUpdatePopup    = true;   // ← in-app update popup দেখাও (real update)
                         g_updateDismissedAt  = 0;      // fresh — no dismiss yet
                         g_checkResultText    = "";     // update popup দেখাচ্ছে, result text দরকার নেই
-                        // Also populate manual check popup
+                        // check popup শুধু manual check-এ দেখাও
                         g_checkPopupIsLatest = false;
-                        g_showCheckPopup     = true;
+                        if (g_isManualCheck) g_showCheckPopup = true;
 
                         // ── Windows tray balloon notification ──
                         ShowUpdateBalloonNotification(latestVer);
@@ -622,9 +623,11 @@ void __cdecl SilentUpdateThread(void* p) {
                         // Already on latest version — header এ "✓ Latest" দেখাও 4 সেকেন্ড
                         g_checkResultText     = "v Latest";
                         g_checkResultShowUntil = GetTickCount() + 4000;
-                        // Also show manual check popup with "latest" state
-                        g_checkPopupIsLatest = true;
-                        g_showCheckPopup     = true;
+                        // শুধু manual check-এ popup দেখাও, auto timer-এ না
+                        if (g_isManualCheck) {
+                            g_checkPopupIsLatest = true;
+                            g_showCheckPopup     = true;
+                        }
                         HWND hw = FindWindowA("RasFocusCore", "RasFocus+");
                         if (hw) InvalidateRect(hw, NULL, FALSE);
                     }
@@ -633,17 +636,21 @@ void __cdecl SilentUpdateThread(void* p) {
         }
     }
 
-    // ── Fallback: network fail বা JSON parse fail হলেও popup দেখাও ──
+    // ── Fallback: network fail বা JSON parse fail হলেও header text দেখাও ──
     if (!foundResult && !isUpdateAvailable) {
         g_checkResultText     = "v Latest";
         g_checkResultShowUntil = GetTickCount() + 4000;
-        g_checkPopupIsLatest  = true;
-        g_showCheckPopup      = true;
+        // শুধু manual check-এ popup দেখাও, auto timer-এ না
+        if (g_isManualCheck) {
+            g_checkPopupIsLatest  = true;
+            g_showCheckPopup      = true;
+        }
         HWND hw = FindWindowA("RasFocusCore", "RasFocus+");
         if (hw) InvalidateRect(hw, NULL, FALSE);
     }
 
     isCheckingUpdate = false;
+    g_isManualCheck  = false;  // reset — পরের auto check-এ popup দেখাবে না
     _endthread();
 }
 
@@ -1962,7 +1969,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         return 1;
 
     case WM_TIMER: {
-        if (wp == 1005) StartSilentUpdateCheck();
+        if (wp == 1005) {
+            g_isManualCheck = false;  // auto timer — popup দেখাবে না (শুধু real update হলে দেখাবে)
+            StartSilentUpdateCheck();
+        }
 
         // ── Check result text expire (4 সেকেন্ড পর "✓ Latest" সরাও) ──
         if (wp == 1005 && !g_checkResultText.empty() &&
@@ -2277,11 +2287,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
                     g_checkResultText      = "";
                     g_checkResultShowUntil = 0;
                     g_showCheckPopup       = false; // reset popup; thread will re-set it
+                    g_isManualCheck        = true;  // user clicked — popup দেখাবে
                     StartSilentUpdateCheck();
                     InvalidateRect(hWnd, NULL, FALSE);
                 } else {
                     // Thread already running — just show the popup in "checking" state
                     // so user sees feedback instead of nothing happening
+                    g_isManualCheck      = true;
                     g_showCheckPopup     = true;
                     g_checkPopupIsLatest = true; // will be overwritten by thread when done
                     InvalidateRect(hWnd, NULL, FALSE);
