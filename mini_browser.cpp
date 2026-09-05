@@ -401,7 +401,7 @@ static int NavTotalH(HWND hWnd) {
     int h = S(D_TITLEBAR_H + D_TOOLBAR_H, dpi);
     if (g_windows.count(hWnd)) {
         auto* tab = g_windows[hWnd].active();
-        if (tab && (tab->url == L"LOCAL_NTP" || tab->url == L"about:blank"))
+        if (tab && tab->url == L"LOCAL_NTP")
             h += S(D_BOOKMARK_H, dpi);
     }
     return h;
@@ -1198,7 +1198,7 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
         }
 
         // Bookmark bar — শুধু homepage (LOCAL_NTP) এ দেখাবে, অন্য কোনো website-এ নয়
-        if (wd.active() && (wd.active()->url == L"LOCAL_NTP" || wd.active()->url == L"about:blank")) {
+        if (wd.active() && wd.active()->url == L"LOCAL_NTP") {
             int bmkY=titleH+toolH, bmkH=S(D_BOOKMARK_H,dpi);
             SolidBrush bmkBg(cBgTool); g.FillRectangle(&bmkBg,0,bmkY,W,bmkH);
             Pen sepPen2(cDivLine,1.0f); g.DrawLine(&sepPen2,0,bmkY+bmkH-1,W,bmkY+bmkH-1);
