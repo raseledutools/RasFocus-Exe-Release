@@ -72,7 +72,6 @@ bool   isCheckingUpdate  = false;
 string newVersionStr     = "";
 bool   hoverUpdateBtn    = false;
 static RectF s_subhdrUpdateRect;   // subheader update chip hit-test rect
-bool   hoverCheckBtn     = false;  // ← "Check for Update" fix button (যখন কোনো update নেই)
 string g_checkResultText = "";     // ← "Latest" বা "" — check শেষে header এ দেখায়
 DWORD  g_checkResultShowUntil = 0; // GetTickCount() পর্যন্ত দেখাবে
 
@@ -1541,56 +1540,11 @@ void DrawTitleBar(Graphics& g, int w) {
     g.DrawString(L"\xE8BB", -1, &fIcons, RectF(startX + (btnW * 2), 0.0f, btnW, btnH),
                  &fmtC, hoverClose ? &iconWhite : &iconColor);
 
-    if (isUpdateAvailable) {
-        float upgW = 150.0f;
-        float upgH = (float)TITLEBAR_HEIGHT - 6.0f;
-        float upgX = startX - upgW - 10.0f;
-        float upgY = 3.0f;
-        GraphicsPath upgPath;
-        float r = 4.0f, d = r * 2.0f;
-        upgPath.AddArc(upgX, upgY, d, d, 180.0f, 90.0f);
-        upgPath.AddArc(upgX + upgW - d, upgY, d, d, 270.0f, 90.0f);
-        upgPath.AddArc(upgX + upgW - d, upgY + upgH - d, d, d, 0.0f, 90.0f);
-        upgPath.AddArc(upgX, upgY + upgH - d, d, d, 90.0f, 90.0f);
-        upgPath.CloseFigure();
-        SolidBrush upgBg(hoverUpdateBtn ? Color(255, 30, 215, 96) : Color(255, 0, 180, 70));
-        g.FillPath(&upgBg, &upgPath);
-        Font fUpg(&ff, 9, FontStyleBold, UnitPixel);
-        wstring wVer(newVersionStr.begin(), newVersionStr.end());
-        wstring btnTxt = g_isDownloading ? L"Downloading..." : (L"Update " + wVer + L" Available");
-        SolidBrush white(ColWhite);
-        g.DrawString(btnTxt.c_str(), -1, &fUpg, RectF(upgX, upgY, upgW, upgH), &fmtC, &white);
-    }
-
-    // ── Check for Update Button (always visible) ──
-    {
-        float chkW = 100.0f;
-        float chkH = (float)TITLEBAR_HEIGHT - 6.0f;
-        float chkX = startX - chkW - 10.0f;
-        float chkY = 3.0f;
-        GraphicsPath chkPath;
-        float rc2 = 4.0f, dc2 = rc2 * 2.0f;
-        chkPath.AddArc(chkX, chkY, dc2, dc2, 180.0f, 90.0f);
-        chkPath.AddArc(chkX + chkW - dc2, chkY, dc2, dc2, 270.0f, 90.0f);
-        chkPath.AddArc(chkX + chkW - dc2, chkY + chkH - dc2, dc2, dc2, 0.0f, 90.0f);
-        chkPath.AddArc(chkX, chkY + chkH - dc2, dc2, dc2, 90.0f, 90.0f);
-        chkPath.CloseFigure();
-        Color chkBgColor = isCheckingUpdate ? Color(255, 0, 140, 160) :
-                           hoverCheckBtn     ? Color(255, 0, 120, 135) :
-                                              Color(255, 60, 90, 110);
-        SolidBrush chkBg(chkBgColor);
-        g.FillPath(&chkBg, &chkPath);
-        Font fChk(&ff, 8, FontStyleBold, UnitPixel);
-        SolidBrush white(ColWhite);
-        wstring chkTxt = isCheckingUpdate ? L"\u21BB Checking..." : L"\u21BB Check Update";
-        g.DrawString(chkTxt.c_str(), -1, &fChk, RectF(chkX, chkY, chkW, chkH), &fmtC, &white);
-    }
-
     // ── Debug Kill Button ──
     {
         float dbW = 90.0f;
         float dbH = (float)TITLEBAR_HEIGHT - 6.0f;
-        float dbX = startX - dbW - (isUpdateAvailable ? 170.0f : 120.0f);
+        float dbX = startX - dbW - 10.0f;
         float dbY = 3.0f;
         GraphicsPath dbPath;
         float r = 4.0f, d = r * 2.0f;
@@ -2081,7 +2035,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             // Debug Kill button
             {
                 float dbW = 90.0f;
-                float dbX = controlsStartX - dbW - (isUpdateAvailable ? 170.0f : 120.0f);
+                float dbX = controlsStartX - dbW - 10.0f;
                 if (x >= dbX && x <= dbX + dbW) return HTCLIENT;
             }
             return HTCAPTION;
@@ -2178,30 +2132,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (oldMin != hoverMinimize || oldMax != hoverMaximize || oldClose != hoverClose) redraw = true;
 
         bool oldUpgBtn = hoverUpdateBtn; hoverUpdateBtn = false;
-        if (isUpdateAvailable) {
-            // titlebar button
-            float upgW = 150.0f, upgX = scaledW - (btnW*3) - upgW - 10.0f;
-            if (x >= upgX && x <= upgX + upgW && y >= 0.0f && y <= (float)TITLEBAR_HEIGHT) hoverUpdateBtn = true;
-            // subheader chip
-            if (s_subhdrUpdateRect.Width > 0.0f &&
-                x >= s_subhdrUpdateRect.X && x <= s_subhdrUpdateRect.X + s_subhdrUpdateRect.Width &&
+        if (isUpdateAvailable && s_subhdrUpdateRect.Width > 0.0f) {
+            if (x >= s_subhdrUpdateRect.X && x <= s_subhdrUpdateRect.X + s_subhdrUpdateRect.Width &&
                 y >= s_subhdrUpdateRect.Y && y <= s_subhdrUpdateRect.Y + s_subhdrUpdateRect.Height)
                 hoverUpdateBtn = true;
         }
         if (oldUpgBtn != hoverUpdateBtn) redraw = true;
 
-        // ── Check for Update fix button hover ──
-        bool oldChkBtn = hoverCheckBtn; hoverCheckBtn = false;
-        if (!isUpdateAvailable) {
-            float chkW = 100.0f, chkX = scaledW - (btnW*3) - chkW - 10.0f;
-            if (x >= chkX && x <= chkX + chkW && y >= 0.0f && y <= (float)TITLEBAR_HEIGHT) hoverCheckBtn = true;
-        }
-        if (oldChkBtn != hoverCheckBtn) redraw = true;
-
         bool oldDbKill = hoverDebugKill; hoverDebugKill = false;
         {
             float dbW = 90.0f;
-            float dbX = scaledW - (btnW*3) - dbW - (isUpdateAvailable ? 170.0f : 120.0f);
+            float dbX = scaledW - (btnW*3) - dbW - 10.0f;
             if (x >= dbX && x <= dbX + dbW && y >= 0.0f && y <= (float)TITLEBAR_HEIGHT) hoverDebugKill = true;
         }
         if (oldDbKill != hoverDebugKill) redraw = true;
@@ -2320,16 +2261,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             break;
         }
 
-        if (isUpdateAvailable) {
-            float btnW = 42.0f, upgW = 150.0f, upgX = scaledW - (btnW*3) - upgW - 10.0f;
-            if (x >= upgX && x <= upgX + upgW && y >= 0.0f && y <= (float)TITLEBAR_HEIGHT) {
-                // Popup reopen করো — user এখান থেকে download করবে
-                g_showUpdatePopup = true;
-                InvalidateRect(hWnd, NULL, FALSE);
-                return 0;
-            }
-        }
-
         // Subheader update chip click → same popup খোলে
         if (isUpdateAvailable && s_subhdrUpdateRect.Width > 0.0f) {
             if (x >= s_subhdrUpdateRect.X &&
@@ -2342,34 +2273,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             }
         }
 
-        // ── Check for Update button click ──
-        {
-            float btnW2 = 42.0f, chkW = 100.0f;
-            float chkX = scaledW - (btnW2*3) - chkW - 10.0f;
-            if (x >= chkX && x <= chkX + chkW && y >= 0.0f && y <= (float)TITLEBAR_HEIGHT) {
-                if (!isCheckingUpdate) {
-                    g_checkResultText      = "";
-                    g_checkResultShowUntil = 0;
-                    g_showCheckPopup       = false; // reset popup; thread will re-set it
-                    g_isManualCheck        = true;  // user clicked — popup দেখাবে
-                    StartSilentUpdateCheck();
-                    InvalidateRect(hWnd, NULL, FALSE);
-                } else {
-                    // Thread already running — just show the popup in "checking" state
-                    // so user sees feedback instead of nothing happening
-                    g_isManualCheck      = true;
-                    g_showCheckPopup     = true;
-                    g_checkPopupIsLatest = true; // will be overwritten by thread when done
-                    InvalidateRect(hWnd, NULL, FALSE);
-                }
-                return 0;
-            }
-        }
-
         // ── Debug Kill Button click ──
         {
             float btnW = 42.0f, dbW = 90.0f;
-            float dbX = scaledW - (btnW*3) - dbW - (isUpdateAvailable ? 170.0f : 120.0f);
+            float dbX = scaledW - (btnW*3) - dbW - 10.0f;
             if (x >= dbX && x <= dbX + dbW && y >= 0.0f && y <= (float)TITLEBAR_HEIGHT) {
                 // RasObserve.exe এবং নিজের child process kill করো
                 WinExec("taskkill /F /IM RasObserve.exe", SW_HIDE);
