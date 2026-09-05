@@ -849,8 +849,8 @@ static int NavTotalH(HWND hWnd) {
     int h = S(D_TITLEBAR_H + D_TOOLBAR_H, dpi);
     if (g_windows.count(hWnd)) {
         auto* tab = g_windows[hWnd].active();
-        if (tab) 
-            h += S(D_BOOKMARK_H, dpi); // bookmark bar সব page এ দেখাবে
+        if (tab && (tab->url == L"LOCAL_NTP" || tab->url == L"about:blank"))
+            h += S(D_BOOKMARK_H, dpi); // bookmark bar শুধু home page এ দেখাবে
     }
     return h;
 }
@@ -2633,8 +2633,8 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
             DrawRightBtn(wd.hMenu, L"\uE712", rx); // ⋮ Menu
         }
 
-        // Bookmark Bar — সব page এ দেখাবে
-        if (wd.active())
+        // Bookmark Bar — শুধু home page (NTP) এ দেখাবে
+        if (wd.active() && (wd.active()->url == L"LOCAL_NTP" || wd.active()->url == L"about:blank"))
         {
             int bmkY = titleH + toolH;
             int bmkH = S(D_BOOKMARK_H, dpi);
@@ -4080,8 +4080,8 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
             if (closed) { CloseFindBar(); InvalidateRect(hWnd, NULL, FALSE); return 0; }
         }
 
-        // ── Bookmark Bar Click — সব page এ কাজ করবে ──
-        if (wd.active())
+        // ── Bookmark Bar Click — শুধু home page (NTP) এ কাজ করবে ──
+        if (wd.active() && (wd.active()->url == L"LOCAL_NTP" || wd.active()->url == L"about:blank"))
         {
             int bmkY = TitleBarH(dpi) + ToolbarH(dpi);
             int bmkH = S(D_BOOKMARK_H, dpi);
@@ -4811,8 +4811,8 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
         int mx = GET_X_LPARAM(lParam), my = GET_Y_LPARAM(lParam);
         RECT crR; GetClientRect(hWnd, &crR); int WR = crR.right;
 
-        // ── Bookmark bar right-click → native delete menu — সব page এ ──
-        if (wdR.active())
+        // ── Bookmark bar right-click → শুধু home page (NTP) এ ──
+        if (wdR.active() && (wdR.active()->url == L"LOCAL_NTP" || wdR.active()->url == L"about:blank"))
         {
             int bmkYR = TitleBarH(dpiR) + ToolbarH(dpiR);
             int bmkHR = S(D_BOOKMARK_H, dpiR);
