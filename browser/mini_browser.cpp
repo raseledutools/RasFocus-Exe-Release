@@ -23,6 +23,7 @@
 #include "extensions.h"
 #include "advanced_feature.h"   // SetupAdvancedFeatures, SaveToHistory, g_downloads
 #include "feature_browser.h"    // DrawFeatureBrowser
+#include "browser_profiles.h"    // Chrome-style profile manager
 
 #include <windows.h>
 #include <windowsx.h>
@@ -67,7 +68,16 @@ extern float g_scaleFactor;
 bool g_youtubeDesktopMode    = false; // false = mobile mode (default)
 bool g_youtubeAdBlockEnabled = true;  // true  = ads blocked (default)
 bool g_profilePanelOpen      = false; // Profile floating dropdown
-static int g_profilePanelHover = -1; // hovered item index (-1 = none)
+
+// ── Profile Panel extended state ──────────────────────────────────────────
+// Panel has 3 sub-views: MAIN, ACCOUNTS, ADD_PROFILE
+enum class ProfilePanelView { MAIN, ACCOUNTS, ADD_PROFILE };
+static ProfilePanelView g_profileView   = ProfilePanelView::MAIN;
+static int  g_profilePanelHover         = -1;  // hovered action item
+static int  g_profileAccountHover       = -1;  // hovered account row
+static int  g_profileCardHover          = -1;  // hovered profile card (profile switcher)
+static bool g_profileAddNameActive      = false; // typing new profile name
+static std::wstring g_profileAddName    = L"";   // new profile name being typed
 
 // ─────────────────────────────────────────────────────────────────────────────
 // RESOURCE IDs
@@ -1533,137 +1543,494 @@ static const int kMenuTypes[] = { 2, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0
 static const int kMenuTypeCount = 16;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PROFILE PANEL — Chrome-style floating dropdown
+// PROFILE PANEL — Chrome-style Multi-Profile + Google Account Manager
+//
+//  MAIN view:
+//    [ Avatar  Name  Email ]
+//    [ Manage Google Account ]  → opens myaccount.google.com
+//    [ Add Google Account   ]  → navigates to accounts.google.com/AddSession
+//    ─ separator ─
+//    [ + Add Profile        ]  → MAIN → ADD_PROFILE sub-view
+//    [ All profiles → ]        → MAIN → ACCOUNTS sub-view (profile switcher)
+//
+//  ACCOUNTS view (profile list):
+//    Each profile card: avatar + name + email
+//    [ + Add new profile ]
+//    [ ← Back ]
+//
+//  ADD_PROFILE view:
+//    Text input for name
+//    [ Create ] button
+//    [ ← Back ]
 // ─────────────────────────────────────────────────────────────────────────────
-struct ProfileItem { const wchar_t* ico; const wchar_t* label; const wchar_t* url; };
-static const ProfileItem kProfileItems[] = {
-    { L"\uE8D4", L"Passwords and autofill",   L"https://passwords.google.com" },
-    { L"\uE77B", L"Manage Google Account",    L"https://myaccount.google.com" },
-    { L"\uE70F", L"Customise profile",        L"https://myaccount.google.com/personal-info" },
-    { L"\uE713", L"Your account in RasBrowser", nullptr },
-    { L"\uE8FB", L"Sign out of Google",       L"https://accounts.google.com/Logout" },
-};
-static const int kProfileItemCount = 5;
 
-static void DrawProfilePanel(Gdiplus::Graphics& g, int W, int dpi,
-                              bool isDark, int mouseX, int mouseY)
+// ── Geometry constants ────────────────────────────────────────────────────
+static const int kProfPanelW   = 300; // panel width (logical px)
+static const int kProfHeaderH  = 110; // header area (avatar+name+email) height
+static const int kProfItemH    =  44; // each menu item row height
+static const int kProfCardH    =  60; // profile switcher card height
+
+// ── GDI+ color helper ─────────────────────────────────────────────────────
+static Gdiplus::Color CRtoGP(COLORREF cr, BYTE alpha = 255) {
+    return Gdiplus::Color(alpha, GetRValue(cr), GetGValue(cr), GetBValue(cr));
+}
+
+// ── Draw a filled rounded rectangle ──────────────────────────────────────
+static void FillRoundRect(Gdiplus::Graphics& g, Gdiplus::Brush& br,
+                           float x, float y, float w, float h, float r)
 {
     using namespace Gdiplus;
-    auto S = [&](int v) { return v * dpi / 96; };
+    GraphicsPath path;
+    path.AddArc(x,       y,       r*2, r*2, 180, 90);
+    path.AddArc(x+w-r*2, y,       r*2, r*2, 270, 90);
+    path.AddArc(x+w-r*2, y+h-r*2, r*2, r*2,   0, 90);
+    path.AddArc(x,       y+h-r*2, r*2, r*2,  90, 90);
+    path.CloseFigure();
+    g.FillPath(&br, &path);
+}
 
-    // Panel size
-    int pw = S(300);
-    int ph = S(56) + S(20) + S(1) + kProfileItemCount * S(40) + S(8); // header+sep+items+padding
-    // Right-align under profile button — profile button is 3rd from right (index 1 of right buttons)
-    // right buttons start at W - S(36*3+8), each S(36) wide → profile at W-S(36*2+8)
+// ── Draw avatar circle with letter ────────────────────────────────────────
+static void DrawAvatarCircle(Gdiplus::Graphics& g, float x, float y, float r,
+                              COLORREF bgColor, wchar_t letter, float fontSize,
+                              bool isDark)
+{
+    using namespace Gdiplus;
+    (void)isDark;
+    SolidBrush avBr(CRtoGP(bgColor));
+    g.FillEllipse(&avBr, x, y, r, r);
+
+    Font fLetter(L"Segoe UI", fontSize, FontStyleBold, UnitPixel);
+    StringFormat sf;
+    sf.SetAlignment(StringAlignmentCenter);
+    sf.SetLineAlignment(StringAlignmentCenter);
+    SolidBrush wBr(Color(255,255,255,255));
+    wchar_t str[2] = { letter, 0 };
+    g.DrawString(str, -1, &fLetter, RectF(x, y, r, r), &sf, &wBr);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PROFILE PANEL — MAIN VIEW
+// ─────────────────────────────────────────────────────────────────────────────
+static void DrawProfilePanel_Main(Gdiplus::Graphics& g, int W, int dpi,
+                                   bool isDark, int mouseX, int mouseY)
+{
+    using namespace Gdiplus;
+    auto S = [&](int v){ return v * dpi / 96; };
+
+    // ── Panel geometry ──
+    int pw     = S(kProfPanelW);
     int panelX = W - pw - S(8);
-    int panelY = S(36 + 36); // titleBar(36) + toolbar(36)
+    int panelY = S(36 + 36);   // titleBar + toolbar
+
+    // Main view items: 0=ManageAccount 1=AddAccount 2=sep 3=AddProfile 4=AllProfiles
+    static const struct { const wchar_t* ico; const wchar_t* label; } kMainItems[] = {
+        { L"\uE77B", L"Manage Google Account"   },
+        { L"\uE8D4", L"Add Google Account"      },
+        { L"\uE894", L"Sign out of Google"      },
+    };
+    static const int kMainItemCount = 3;
+
+    int itemsH = kMainItemCount * S(kProfItemH);
+    int sepH   = S(1) + S(12); // separator + padding
+    int extraH = S(kProfItemH) * 2; // "Add Profile" + "All Profiles"
+    int ph     = S(kProfHeaderH) + S(8) + sepH + itemsH + sepH + extraH + S(8);
 
     // ── Drop shadow ──
     for (int i = 3; i >= 1; i--) {
-        SolidBrush sh(Color((BYTE)(15*i), 0, 0, 0));
+        SolidBrush sh(Color((BYTE)(12*i), 0,0,0));
         g.FillRectangle(&sh, (float)(panelX+i), (float)(panelY+i), (float)pw, (float)ph);
     }
 
-    // ── Background ──
-    Color bgCol  = isDark ? Color(255, 32, 33, 36)  : Color(255, 255, 255, 255);
-    Color sepCol = isDark ? Color(255, 60, 61, 65)  : Color(255, 218, 220, 224);
-    Color txtCol = isDark ? Color(255, 232, 234, 237): Color(255, 32, 33, 36);
-    Color dimCol = isDark ? Color(255, 154,160, 166): Color(255, 95, 99, 104);
-    Color hovCol = isDark ? Color(40, 255,255,255)  : Color(30, 0, 0, 0);
+    // ── Background + border ──
+    Color bgCol  = isDark ? Color(255,32,33,36)   : Color(255,255,255,255);
+    Color sepCol = isDark ? Color(255,60,61,65)   : Color(255,218,220,224);
+    Color txtCol = isDark ? Color(255,232,234,237): Color(255,32,33,36);
+    Color dimCol = isDark ? Color(255,154,160,166): Color(255,95,99,104);
+    Color hovCol = isDark ? Color(30,255,255,255) : Color(20,0,0,0);
+    Color accCol = Color(255,26,115,232);  // Google blue
 
     SolidBrush bgBr(bgCol);
     g.FillRectangle(&bgBr, (float)panelX, (float)panelY, (float)pw, (float)ph);
-    Pen borderPen(sepCol, 1.0f);
-    g.DrawRectangle(&borderPen, (float)panelX, (float)panelY, (float)(pw-1), (float)(ph-1));
+    Pen bPen(sepCol, 1.0f);
+    g.DrawRectangle(&bPen, (float)panelX, (float)panelY, (float)(pw-1), (float)(ph-1));
 
-    // ── Header: big avatar + name + email ──
-    int headerH = S(100);
-    int avR = S(56);
-    int avX = panelX + (pw - avR) / 2;
-    int avY = panelY + S(16);
+    // ── Header: avatar + name + email ──
+    BrowserProfile* prof = GetActiveProfile();
+    wchar_t letter    = prof ? prof->avatarLetter : L'P';
+    COLORREF avColor  = prof ? prof->avatarColor  : RGB(26,115,232);
+    std::wstring name  = prof ? prof->displayLabel() : L"Guest";
+    std::wstring email = prof ? prof->primaryEmail()  : L"";
 
-    // Avatar circle (Google blue)
-    SolidBrush avBr(Color(255, 26, 115, 232));
-    g.FillEllipse(&avBr, (float)avX, (float)avY, (float)avR, (float)avR);
+    int avR    = S(48);
+    int avX    = panelX + (pw - avR) / 2;
+    int avY    = panelY + S(16);
+    DrawAvatarCircle(g, (float)avX, (float)avY, (float)avR, avColor, letter, (float)S(22), isDark);
 
-    Font fAvLetter(L"Segoe UI", (REAL)S(26), FontStyleBold, UnitPixel);
-    StringFormat sfC;
-    sfC.SetAlignment(StringAlignmentCenter);
-    sfC.SetLineAlignment(StringAlignmentCenter);
-    SolidBrush wBr(Color(255,255,255,255));
-    g.DrawString(L"R", -1, &fAvLetter,
-        RectF((float)avX, (float)avY, (float)avR, (float)avR), &sfC, &wBr);
-
-    // Name
-    Font fName(L"Segoe UI Semibold", (REAL)S(14), FontStyleBold, UnitPixel);
+    Font fName (L"Segoe UI Semibold", (REAL)S(14), FontStyleBold,    UnitPixel);
     Font fEmail(L"Segoe UI",          (REAL)S(11), FontStyleRegular, UnitPixel);
     SolidBrush txtBr(txtCol), dimBr(dimCol);
-    StringFormat sfCC; sfCC.SetAlignment(StringAlignmentCenter); sfCC.SetLineAlignment(StringAlignmentNear);
-    StringFormat sfCE; sfCE.SetAlignment(StringAlignmentCenter); sfCE.SetLineAlignment(StringAlignmentNear);
-    int nameY  = avY + avR + S(8);
+    StringFormat sfC; sfC.SetAlignment(StringAlignmentCenter); sfC.SetLineAlignment(StringAlignmentNear);
+    int nameY  = avY + avR + S(6);
     int emailY = nameY + S(20);
-    RectF nameRect ((float)panelX, (float)nameY,  (float)pw, (float)S(22));
-    RectF emailRect((float)panelX, (float)emailY, (float)pw, (float)S(18));
-    g.DrawString(L"Ras User", -1, &fName,  nameRect,  &sfCC, &txtBr);
-    g.DrawString(L"raseledutools@gmail.com", -1, &fEmail, emailRect, &sfCE, &dimBr);
+    g.DrawString(name.c_str(),  -1, &fName,  RectF((float)panelX, (float)nameY,  (float)pw, (float)S(22)), &sfC, &txtBr);
+    g.DrawString(email.empty() ? L"Not signed in" : email.c_str(),
+                 -1, &fEmail, RectF((float)panelX, (float)emailY, (float)pw, (float)S(18)), &sfC, &dimBr);
 
-    // ── Separator ──
-    int sepY = panelY + S(56) + S(20) + S(56) + S(8); // header area bottom
-    // recalc: avY + avR + name + email + padding
-    sepY = emailY + S(18) + S(10);
+    // ── Separator 1 ──
+    int sepY1 = emailY + S(18) + S(10);
     Pen sepPen(sepCol, 1.0f);
-    g.DrawLine(&sepPen, (float)(panelX + S(0)), (float)sepY,
-                        (float)(panelX + pw),   (float)sepY);
+    g.DrawLine(&sepPen, (float)(panelX+S(8)), (float)sepY1, (float)(panelX+pw-S(8)), (float)sepY1);
 
-    // ── Menu Items ──
-    Font fIco (L"Segoe MDL2 Assets", (REAL)S(15), FontStyleRegular, UnitPixel);
+    // ── Main action items ──
+    Font fIco (L"Segoe MDL2 Assets", (REAL)S(14), FontStyleRegular, UnitPixel);
     Font fItem(L"Segoe UI",          (REAL)S(13), FontStyleRegular, UnitPixel);
     StringFormat sfL; sfL.SetAlignment(StringAlignmentNear); sfL.SetLineAlignment(StringAlignmentCenter);
 
-    int itemStartY = sepY + S(4);
+    int itemStartY = sepY1 + S(6);
     g_profilePanelHover = -1;
 
-    for (int i = 0; i < kProfileItemCount; i++) {
-        int iy = itemStartY + i * S(40);
-        RECT ir = { panelX, iy, panelX + pw, iy + S(40) };
-        bool hover = mouseX >= ir.left && mouseX < ir.right &&
-                     mouseY >= ir.top  && mouseY < ir.bottom;
-        if (hover) {
+    for (int i = 0; i < kMainItemCount; i++) {
+        int iy = itemStartY + i * S(kProfItemH);
+        bool hov = (mouseX >= panelX && mouseX < panelX+pw &&
+                    mouseY >= iy     && mouseY < iy+S(kProfItemH));
+        if (hov) {
             g_profilePanelHover = i;
             SolidBrush hBr(hovCol);
-            g.FillRectangle(&hBr, (float)ir.left, (float)ir.top,
-                            (float)(ir.right-ir.left), (float)(ir.bottom-ir.top));
+            g.FillRectangle(&hBr, (float)panelX, (float)iy, (float)pw, (float)S(kProfItemH));
         }
-        // icon
-        g.DrawString(kProfileItems[i].ico, -1, &fIco,
-            RectF((float)(panelX+S(16)), (float)iy, (float)S(28), (float)S(40)),
-            &sfL, &dimBr);
-        // label
-        g.DrawString(kProfileItems[i].label, -1, &fItem,
-            RectF((float)(panelX+S(52)), (float)iy, (float)(pw-S(60)), (float)S(40)),
-            &sfL, &txtBr);
+        // Sign out in red
+        Color icoColor = (i == 2) ? Color(255,220,50,50) : dimCol;
+        SolidBrush icoBr(icoColor);
+        g.DrawString(kMainItems[i].ico, -1, &fIco,
+            RectF((float)(panelX+S(16)), (float)iy, (float)S(24), (float)S(kProfItemH)), &sfL, &icoBr);
+        SolidBrush lblBr((i == 2) ? Color(255,220,50,50) : txtCol);
+        g.DrawString(kMainItems[i].label, -1, &fItem,
+            RectF((float)(panelX+S(48)), (float)iy, (float)(pw-S(56)), (float)S(kProfItemH)), &sfL, &lblBr);
     }
 
-    // store geometry for click detection (static so click handler can read it)
-    // packed into g_profilePanelHover; click handler uses same math
-    (void)panelX; (void)panelY; (void)sepY; (void)itemStartY;
+    // ── Separator 2 ──
+    int sepY2 = itemStartY + kMainItemCount * S(kProfItemH) + S(4);
+    g.DrawLine(&sepPen, (float)(panelX+S(8)), (float)sepY2, (float)(panelX+pw-S(8)), (float)sepY2);
+
+    // ── "Add Profile" button ──
+    int addProfY = sepY2 + S(6);
+    bool hovAdd = (mouseX >= panelX && mouseX < panelX+pw &&
+                   mouseY >= addProfY && mouseY < addProfY + S(kProfItemH));
+    if (hovAdd) {
+        g_profilePanelHover = 10; // sentinel
+        SolidBrush hBr(hovCol);
+        g.FillRectangle(&hBr, (float)panelX, (float)addProfY, (float)pw, (float)S(kProfItemH));
+    }
+    SolidBrush accBr(accCol);
+    g.DrawString(L"\uE8FA", -1, &fIco,
+        RectF((float)(panelX+S(16)), (float)addProfY, (float)S(24), (float)S(kProfItemH)), &sfL, &accBr);
+    g.DrawString(L"Add new profile", -1, &fItem,
+        RectF((float)(panelX+S(48)), (float)addProfY, (float)(pw-S(56)), (float)S(kProfItemH)), &sfL, &accBr);
+
+    // ── "All Profiles →" button ──
+    int allProfY = addProfY + S(kProfItemH);
+    bool hovAll = (mouseX >= panelX && mouseX < panelX+pw &&
+                   mouseY >= allProfY && mouseY < allProfY + S(kProfItemH));
+    if (hovAll) {
+        g_profilePanelHover = 11; // sentinel
+        SolidBrush hBr(hovCol);
+        g.FillRectangle(&hBr, (float)panelX, (float)allProfY, (float)pw, (float)S(kProfItemH));
+    }
+    SolidBrush dimBr2(dimCol);
+    // Show profile count hint
+    int profCount = (int)g_profiles.size();
+    std::wstring profLabel = L"All profiles  (" + std::to_wstring(profCount) + L")  \u203A";
+    g.DrawString(L"\uE716", -1, &fIco,
+        RectF((float)(panelX+S(16)), (float)allProfY, (float)S(24), (float)S(kProfItemH)), &sfL, &dimBr2);
+    g.DrawString(profLabel.c_str(), -1, &fItem,
+        RectF((float)(panelX+S(48)), (float)allProfY, (float)(pw-S(56)), (float)S(kProfItemH)), &sfL, &txtBr);
 }
 
-// helper: profile panel rect for click detection
-static void GetProfilePanelItemRect(int W, int dpi, int idx,
+// ─────────────────────────────────────────────────────────────────────────────
+// PROFILE PANEL — ACCOUNTS/SWITCHER VIEW
+// ─────────────────────────────────────────────────────────────────────────────
+static void DrawProfilePanel_Accounts(Gdiplus::Graphics& g, int W, int dpi,
+                                       bool isDark, int mouseX, int mouseY)
+{
+    using namespace Gdiplus;
+    auto S = [&](int v){ return v * dpi / 96; };
+
+    int pw     = S(kProfPanelW);
+    int panelX = W - pw - S(8);
+    int panelY = S(36 + 36);
+
+    int nProf = (int)g_profiles.size();
+    int backH = S(kProfItemH);
+    int ph    = S(44) + nProf * S(kProfCardH) + S(8) + S(kProfItemH) + S(4) + backH + S(8);
+
+    // Shadow + bg + border
+    for (int i = 3; i >= 1; i--) {
+        SolidBrush sh(Color((BYTE)(12*i), 0,0,0));
+        g.FillRectangle(&sh, (float)(panelX+i), (float)(panelY+i), (float)pw, (float)ph);
+    }
+    Color bgCol  = isDark ? Color(255,32,33,36)   : Color(255,255,255,255);
+    Color sepCol = isDark ? Color(255,60,61,65)   : Color(255,218,220,224);
+    Color txtCol = isDark ? Color(255,232,234,237): Color(255,32,33,36);
+    Color dimCol = isDark ? Color(255,154,160,166): Color(255,95,99,104);
+    Color hovCol = isDark ? Color(30,255,255,255) : Color(20,0,0,0);
+    Color accCol = Color(255,26,115,232);
+    Color chkCol = Color(255,26,115,232);
+
+    SolidBrush bgBr(bgCol);
+    g.FillRectangle(&bgBr, (float)panelX, (float)panelY, (float)pw, (float)ph);
+    Pen bPen(sepCol, 1.0f);
+    g.DrawRectangle(&bPen, (float)panelX, (float)panelY, (float)(pw-1), (float)(ph-1));
+
+    // Title
+    Font fTitle(L"Segoe UI Semibold", (REAL)S(13), FontStyleBold, UnitPixel);
+    Font fIco  (L"Segoe MDL2 Assets", (REAL)S(13), FontStyleRegular, UnitPixel);
+    Font fName (L"Segoe UI",          (REAL)S(13), FontStyleRegular, UnitPixel);
+    Font fSub  (L"Segoe UI",          (REAL)S(11), FontStyleRegular, UnitPixel);
+    StringFormat sfL; sfL.SetAlignment(StringAlignmentNear); sfL.SetLineAlignment(StringAlignmentCenter);
+    SolidBrush txtBr(txtCol), dimBr(dimCol), accBr(accCol);
+
+    int titleY = panelY + S(12);
+    g.DrawString(L"Profiles", -1, &fTitle,
+        RectF((float)(panelX+S(16)), (float)titleY, (float)(pw-S(32)), (float)S(24)), &sfL, &txtBr);
+
+    // Profile cards
+    g_profileCardHover = -1;
+    int cardStartY = titleY + S(28);
+
+    for (int i = 0; i < nProf; i++) {
+        auto& p   = g_profiles[i];
+        int   cy  = cardStartY + i * S(kProfCardH);
+        bool  hov = (mouseX >= panelX && mouseX < panelX+pw &&
+                     mouseY >= cy     && mouseY < cy+S(kProfCardH));
+        bool  active = (i == g_activeProfileIdx);
+
+        if (hov) {
+            g_profileCardHover = i;
+            SolidBrush hBr(hovCol);
+            g.FillRectangle(&hBr, (float)panelX, (float)cy, (float)pw, (float)S(kProfCardH));
+        }
+        if (active) {
+            // active profile subtle highlight
+            Color actHigh = isDark ? Color(18,26,115,232) : Color(15,26,115,232);
+            SolidBrush aBr(actHigh);
+            g.FillRectangle(&aBr, (float)panelX, (float)cy, (float)pw, (float)S(kProfCardH));
+        }
+
+        // Avatar
+        int avR = S(36);
+        int avX = panelX + S(12);
+        int avY = cy + (S(kProfCardH) - avR) / 2;
+        DrawAvatarCircle(g, (float)avX, (float)avY, (float)avR,
+                         p.avatarColor, p.avatarLetter, (float)S(17), isDark);
+
+        // Name + email
+        int textX = avX + avR + S(10);
+        int textW = pw - (textX - panelX) - S(32);
+        g.DrawString(p.name.c_str(), -1, &fName,
+            RectF((float)textX, (float)cy+S(10), (float)textW, (float)S(20)), &sfL, &txtBr);
+        std::wstring sub = p.primaryEmail().empty() ? L"No account" : p.primaryEmail();
+        g.DrawString(sub.c_str(), -1, &fSub,
+            RectF((float)textX, (float)(cy+S(30)), (float)textW, (float)S(18)), &sfL, &dimBr);
+
+        // Checkmark for active
+        if (active) {
+            SolidBrush chkBr(chkCol);
+            g.DrawString(L"\uE73E", -1, &fIco,
+                RectF((float)(panelX+pw-S(32)), (float)cy,
+                      (float)S(24), (float)S(kProfCardH)), &sfL, &chkBr);
+        }
+    }
+
+    // "Add profile" row
+    Pen sepPen(sepCol, 1.0f);
+    int sepY2 = cardStartY + nProf * S(kProfCardH) + S(4);
+    g.DrawLine(&sepPen, (float)(panelX+S(8)), (float)sepY2,
+                        (float)(panelX+pw-S(8)), (float)sepY2);
+
+    int addY = sepY2 + S(4);
+    bool hovAddNew = (mouseX >= panelX && mouseX < panelX+pw &&
+                      mouseY >= addY   && mouseY < addY+S(kProfItemH));
+    if (hovAddNew) {
+        g_profileCardHover = 100; // sentinel: "add new"
+        SolidBrush hBr(hovCol);
+        g.FillRectangle(&hBr, (float)panelX, (float)addY, (float)pw, (float)S(kProfItemH));
+    }
+    Font fItem(L"Segoe UI", (REAL)S(13), FontStyleRegular, UnitPixel);
+    g.DrawString(L"\uE8FA", -1, &fIco,
+        RectF((float)(panelX+S(16)), (float)addY, (float)S(24), (float)S(kProfItemH)), &sfL, &accBr);
+    g.DrawString(L"Add new profile", -1, &fItem,
+        RectF((float)(panelX+S(48)), (float)addY, (float)(pw-S(56)), (float)S(kProfItemH)), &sfL, &accBr);
+
+    // "← Back" row
+    int backY = addY + S(kProfItemH);
+    bool hovBack = (mouseX >= panelX && mouseX < panelX+pw &&
+                    mouseY >= backY  && mouseY < backY+S(kProfItemH));
+    if (hovBack) {
+        g_profileCardHover = 101; // sentinel: back
+        SolidBrush hBr(hovCol);
+        g.FillRectangle(&hBr, (float)panelX, (float)backY, (float)pw, (float)S(kProfItemH));
+    }
+    g.DrawString(L"\uE76B", -1, &fIco,
+        RectF((float)(panelX+S(16)), (float)backY, (float)S(24), (float)S(kProfItemH)), &sfL, &dimBr);
+    g.DrawString(L"Back", -1, &fItem,
+        RectF((float)(panelX+S(48)), (float)backY, (float)(pw-S(56)), (float)S(kProfItemH)), &sfL, &dimBr);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PROFILE PANEL — ADD PROFILE VIEW
+// ─────────────────────────────────────────────────────────────────────────────
+static void DrawProfilePanel_AddProfile(Gdiplus::Graphics& g, int W, int dpi,
+                                         bool isDark, int mouseX, int mouseY)
+{
+    using namespace Gdiplus;
+    auto S = [&](int v){ return v * dpi / 96; };
+
+    int pw     = S(kProfPanelW);
+    int panelX = W - pw - S(8);
+    int panelY = S(36 + 36);
+    int ph     = S(220);
+
+    // Shadow + bg + border
+    for (int i = 3; i >= 1; i--) {
+        SolidBrush sh(Color((BYTE)(12*i), 0,0,0));
+        g.FillRectangle(&sh, (float)(panelX+i), (float)(panelY+i), (float)pw, (float)ph);
+    }
+    Color bgCol  = isDark ? Color(255,32,33,36)   : Color(255,255,255,255);
+    Color sepCol = isDark ? Color(255,60,61,65)   : Color(255,218,220,224);
+    Color txtCol = isDark ? Color(255,232,234,237): Color(255,32,33,36);
+    Color dimCol = isDark ? Color(255,154,160,166): Color(255,95,99,104);
+    Color hovCol = isDark ? Color(30,255,255,255) : Color(20,0,0,0);
+    Color accCol = Color(255,26,115,232);
+    Color inpBg  = isDark ? Color(255,48,49,52)   : Color(255,241,243,244);
+
+    SolidBrush bgBr(bgCol);
+    g.FillRectangle(&bgBr, (float)panelX, (float)panelY, (float)pw, (float)ph);
+    Pen bPen(sepCol, 1.0f);
+    g.DrawRectangle(&bPen, (float)panelX, (float)panelY, (float)(pw-1), (float)(ph-1));
+
+    Font fTitle(L"Segoe UI Semibold", (REAL)S(13), FontStyleBold,    UnitPixel);
+    Font fItem (L"Segoe UI",          (REAL)S(12), FontStyleRegular, UnitPixel);
+    Font fPlh  (L"Segoe UI",          (REAL)S(12), FontStyleItalic,  UnitPixel);
+    Font fIco  (L"Segoe MDL2 Assets", (REAL)S(13), FontStyleRegular, UnitPixel);
+    StringFormat sfL; sfL.SetAlignment(StringAlignmentNear); sfL.SetLineAlignment(StringAlignmentCenter);
+    SolidBrush txtBr(txtCol), dimBr(dimCol), accBr(accCol);
+
+    // Title
+    int titleY = panelY + S(16);
+    g.DrawString(L"Add new profile", -1, &fTitle,
+        RectF((float)(panelX+S(16)), (float)titleY, (float)(pw-S(32)), (float)S(24)), &sfL, &txtBr);
+
+    // Preview avatar (uses first letter of typed name)
+    wchar_t prevLetter = g_profileAddName.empty() ? L'?' : towupper(g_profileAddName[0]);
+    int nextId = g_profiles.empty() ? 1 : g_profiles.back().id + 1;
+    COLORREF prevColor = ProfileAvatarColor(nextId);
+    int avR = S(44);
+    int avX = panelX + (pw - avR) / 2;
+    int avY = titleY + S(32);
+    DrawAvatarCircle(g, (float)avX, (float)avY, (float)avR, prevColor, prevLetter, (float)S(20), isDark);
+
+    // Name input box
+    int inpY = avY + avR + S(12);
+    int inpH = S(36);
+    SolidBrush inpBr(inpBg);
+    g.FillRectangle(&inpBr, (float)(panelX+S(12)), (float)inpY, (float)(pw-S(24)), (float)inpH);
+    Pen inpPen(g_profileAddNameActive ? accCol : sepCol, g_profileAddNameActive ? 2.0f : 1.0f);
+    g.DrawRectangle(&inpPen, (float)(panelX+S(12)), (float)inpY, (float)(pw-S(24)-1), (float)(inpH-1));
+
+    // Input text or placeholder
+    if (g_profileAddName.empty()) {
+        g.DrawString(L"Profile name", -1, &fPlh,
+            RectF((float)(panelX+S(20)), (float)inpY, (float)(pw-S(32)), (float)inpH), &sfL, &dimBr);
+    } else {
+        std::wstring displayed = g_profileAddName;
+        if (g_profileAddNameActive) displayed += L"|"; // cursor
+        g.DrawString(displayed.c_str(), -1, &fItem,
+            RectF((float)(panelX+S(20)), (float)inpY, (float)(pw-S(32)), (float)inpH), &sfL, &txtBr);
+    }
+
+    // "Create" button
+    int btnY   = inpY + inpH + S(12);
+    int btnW   = pw - S(24);
+    int btnH   = S(36);
+    bool hovCreate = (mouseX >= panelX+S(12) && mouseX < panelX+S(12)+btnW &&
+                      mouseY >= btnY && mouseY < btnY+btnH);
+    bool canCreate = !g_profileAddName.empty();
+    Color btnBg = canCreate ? (hovCreate ? Color(255,20,100,210) : accCol) : Color(255,160,160,160);
+    SolidBrush btnBr(btnBg);
+    FillRoundRect(g, btnBr, (float)(panelX+S(12)), (float)btnY, (float)btnW, (float)btnH, (float)S(6));
+    SolidBrush wBr(Color(255,255,255,255));
+    StringFormat sfC; sfC.SetAlignment(StringAlignmentCenter); sfC.SetLineAlignment(StringAlignmentCenter);
+    g.DrawString(L"Create", -1, &fTitle,
+        RectF((float)(panelX+S(12)), (float)btnY, (float)btnW, (float)btnH), &sfC, &wBr);
+    if (hovCreate && canCreate) g_profileCardHover = 200; // sentinel: create
+
+    // "← Back" row
+    int backY = btnY + btnH + S(4);
+    bool hovBack = (mouseX >= panelX && mouseX < panelX+pw &&
+                    mouseY >= backY  && mouseY < backY+S(kProfItemH));
+    if (hovBack) {
+        g_profileCardHover = 101;
+        SolidBrush hBr(hovCol);
+        g.FillRectangle(&hBr, (float)panelX, (float)backY, (float)pw, (float)S(kProfItemH));
+    }
+    g.DrawString(L"\uE76B", -1, &fIco,
+        RectF((float)(panelX+S(16)), (float)backY, (float)S(24), (float)S(kProfItemH)), &sfL, &dimBr);
+    g.DrawString(L"Back", -1, &fItem,
+        RectF((float)(panelX+S(48)), (float)backY, (float)(pw-S(56)), (float)S(kProfItemH)), &sfL, &dimBr);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DISPATCH: draws the correct sub-view
+// ─────────────────────────────────────────────────────────────────────────────
+static void DrawProfilePanel(Gdiplus::Graphics& g, int W, int dpi,
+                              bool isDark, int mouseX, int mouseY)
+{
+    // Reset hover sentinels
+    g_profilePanelHover  = -1;
+    g_profileAccountHover= -1;
+    g_profileCardHover   = -1;
+
+    switch (g_profileView) {
+    case ProfilePanelView::MAIN:
+        DrawProfilePanel_Main(g, W, dpi, isDark, mouseX, mouseY);
+        break;
+    case ProfilePanelView::ACCOUNTS:
+        DrawProfilePanel_Accounts(g, W, dpi, isDark, mouseX, mouseY);
+        break;
+    case ProfilePanelView::ADD_PROFILE:
+        DrawProfilePanel_AddProfile(g, W, dpi, isDark, mouseX, mouseY);
+        break;
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PROFILE PANEL TOTAL HEIGHT  (for click-outside detection)
+// ─────────────────────────────────────────────────────────────────────────────
+static int GetProfilePanelHeight(int dpi) {
+    auto S = [&](int v){ return v * dpi / 96; };
+    switch (g_profileView) {
+    case ProfilePanelView::ACCOUNTS:
+        return S(44) + (int)g_profiles.size()*S(kProfCardH)
+               + S(8) + S(kProfItemH) + S(4) + S(kProfItemH) + S(8);
+    case ProfilePanelView::ADD_PROFILE:
+        return S(220);
+    default: { // MAIN
+        int nMain = 3;
+        return S(kProfHeaderH) + S(8) + S(1)+S(12) + nMain*S(kProfItemH)
+               + S(1)+S(12) + S(kProfItemH)*2 + S(8);
+    }
+    }
+}
+
+// helper kept for any code that still calls it (click handler below replaces it)
+static void GetProfilePanelItemRect(int W, int dpi, int /*idx*/,
                                      int& panelX, int& itemStartY, int& itemH)
 {
     auto S = [&](int v){ return v * dpi / 96; };
-    int pw = S(300);
+    int pw = S(kProfPanelW);
     panelX     = W - pw - S(8);
-    int avY    = S(36+36) + S(16);
-    int avR    = S(56);
-    int nameY  = avY + avR + S(8);
-    int emailY = nameY + S(20);
-    int sepY   = emailY + S(18) + S(10);
-    itemStartY = sepY + S(4) + idx * S(40);
-    itemH      = S(40);
+    itemStartY = S(36+36) + S(kProfHeaderH) + S(8) + S(1)+S(12);
+    itemH      = S(kProfItemH);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3134,9 +3501,16 @@ static void CreateWebViewForTab(HWND hWnd, int tabIdx) {
             L"--autoplay-policy=no-user-gesture-required"
         );
 
-        wchar_t appDataPath[MAX_PATH];
-        SHGetFolderPathW(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, appDataPath);
-        std::wstring udDir = std::wstring(appDataPath) + L"\\RasBrowserData";
+        // Use active profile's user data folder (Chrome-style isolation)
+        BrowserProfile* prof = GetActiveProfile();
+        std::wstring udDir;
+        if (prof) {
+            udDir = prof->userDataFolder();
+        } else {
+            wchar_t appDataPath[MAX_PATH];
+            SHGetFolderPathW(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, appDataPath);
+            udDir = std::wstring(appDataPath) + L"\\RasBrowserData\\Profile_1";
+        }
         CreateDirectoryW(udDir.c_str(), NULL);
 
         HRESULT hr = CreateCoreWebView2EnvironmentWithOptions(
@@ -3558,32 +3932,105 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
         // ── Profile Panel Click ──
         if (g_profilePanelOpen) {
             auto S = [&](int v){ return v * dpi / 96; };
-            int pw = S(300);
+            int pw     = S(kProfPanelW);
             int panelX = W - pw - S(8);
             int panelY = S(36 + 36);
-            int avY    = panelY + S(16);
-            int avR    = S(56);
-            int nameY  = avY + avR + S(8);
-            int emailY = nameY + S(20);
-            int sepY   = emailY + S(18) + S(10);
-            int itemStartY = sepY + S(4);
-            int ph = itemStartY - panelY + kProfileItemCount * S(40) + S(8);
-            // panel বাইরে click → close
-            if (x < panelX || x >= panelX + pw || y < panelY || y >= panelY + ph) {
+            int ph     = GetProfilePanelHeight((int)dpi);
+
+            auto ClosePanel = [&]() {
                 g_profilePanelOpen = false;
-                // WebView full width restore করো
-                { RECT wvr = GetWebViewRect(hWnd); if (g_windows[hWnd].active() && g_windows[hWnd].active()->controller) g_windows[hWnd].active()->controller->put_Bounds(wvr); }
+                g_profileView      = ProfilePanelView::MAIN;
+                g_profileAddName   = L"";
+                g_profileAddNameActive = false;
+                RECT wvr = GetWebViewRect(hWnd);
+                if (g_windows[hWnd].active() && g_windows[hWnd].active()->controller)
+                    g_windows[hWnd].active()->controller->put_Bounds(wvr);
                 InvalidateRect(hWnd, NULL, TRUE);
+            };
+
+            // Outside panel → close
+            if (x < panelX || x >= panelX + pw || y < panelY || y >= panelY + ph) {
+                ClosePanel();
                 return 0;
             }
-            // item click
-            if (g_profilePanelHover >= 0 && g_profilePanelHover < kProfileItemCount) {
-                const wchar_t* url = kProfileItems[g_profilePanelHover].url;
-                g_profilePanelOpen = false;
-                // WebView full width restore করো
-                { RECT wvr = GetWebViewRect(hWnd); if (g_windows[hWnd].active() && g_windows[hWnd].active()->controller) g_windows[hWnd].active()->controller->put_Bounds(wvr); }
-                InvalidateRect(hWnd, NULL, TRUE);
-                if (url) AddTab(hWnd, url);
+
+            // ── MAIN view clicks ──────────────────────────────────────────
+            if (g_profileView == ProfilePanelView::MAIN) {
+                if (g_profilePanelHover == 0) {
+                    // Manage Google Account
+                    ClosePanel();
+                    AddTab(hWnd, L"https://myaccount.google.com");
+                } else if (g_profilePanelHover == 1) {
+                    // Add Google Account (multi-account sign-in)
+                    ClosePanel();
+                    AddTab(hWnd, L"https://accounts.google.com/AddSession");
+                } else if (g_profilePanelHover == 2) {
+                    // Sign out
+                    ClosePanel();
+                    AddTab(hWnd, L"https://accounts.google.com/Logout");
+                } else if (g_profilePanelHover == 10) {
+                    // "Add new profile" → switch to ADD_PROFILE view
+                    g_profileView      = ProfilePanelView::ADD_PROFILE;
+                    g_profileAddName   = L"";
+                    g_profileAddNameActive = true;
+                    InvalidateRect(hWnd, NULL, TRUE);
+                } else if (g_profilePanelHover == 11) {
+                    // "All profiles" → switch to ACCOUNTS view
+                    g_profileView = ProfilePanelView::ACCOUNTS;
+                    InvalidateRect(hWnd, NULL, TRUE);
+                }
+            }
+            // ── ACCOUNTS view clicks ──────────────────────────────────────
+            else if (g_profileView == ProfilePanelView::ACCOUNTS) {
+                if (g_profileCardHover >= 0 && g_profileCardHover < (int)g_profiles.size()) {
+                    // Switch to clicked profile
+                    std::wstring newUd = SwitchProfile(g_profileCardHover);
+                    // Relaunch browser with new profile's user data folder
+                    // (simplest approach: open new window — same as Chrome opening new window for profile)
+                    ClosePanel();
+                    // Navigate current tabs to NTP so user sees the change
+                    if (g_windows[hWnd].active() && g_windows[hWnd].active()->webview)
+                        g_windows[hWnd].active()->webview->Navigate(L"about:blank");
+                    InvalidateRect(hWnd, NULL, TRUE);
+                } else if (g_profileCardHover == 100) {
+                    // Add new profile from accounts view
+                    g_profileView    = ProfilePanelView::ADD_PROFILE;
+                    g_profileAddName = L"";
+                    g_profileAddNameActive = true;
+                    InvalidateRect(hWnd, NULL, TRUE);
+                } else if (g_profileCardHover == 101) {
+                    // Back to main
+                    g_profileView = ProfilePanelView::MAIN;
+                    InvalidateRect(hWnd, NULL, TRUE);
+                }
+            }
+            // ── ADD_PROFILE view clicks ───────────────────────────────────
+            else if (g_profileView == ProfilePanelView::ADD_PROFILE) {
+                auto S2 = [&](int v){ return v * (int)dpi / 96; };
+                // Click on input box → activate text input
+                int inpY = panelY + S2(16) + S2(32) + S2(44) + S2(12);
+                int inpH = S2(36);
+                if (y >= inpY && y < inpY + inpH &&
+                    x >= panelX + S2(12) && x < panelX + S2(12) + (pw - S2(24))) {
+                    g_profileAddNameActive = true;
+                    InvalidateRect(hWnd, NULL, TRUE);
+                }
+                if (g_profileCardHover == 200 && !g_profileAddName.empty()) {
+                    // Create profile
+                    AddProfile(g_profileAddName);
+                    g_activeProfileIdx = (int)g_profiles.size() - 1;
+                    SaveProfiles();
+                    g_profileView    = ProfilePanelView::ACCOUNTS;
+                    g_profileAddName = L"";
+                    g_profileAddNameActive = false;
+                    InvalidateRect(hWnd, NULL, TRUE);
+                } else if (g_profileCardHover == 101) {
+                    // Back
+                    g_profileView = ProfilePanelView::ACCOUNTS;
+                    g_profileAddName = L"";
+                    g_profileAddNameActive = false;
+                    InvalidateRect(hWnd, NULL, TRUE);
+                }
             }
             return 0;
         }
@@ -3941,6 +4388,23 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
         bool ctrl  = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
         bool shift = (GetKeyState(VK_SHIFT)   & 0x8000) != 0;
 
+        // Profile "Add Profile" name input — Backspace & Escape
+        if (g_profilePanelOpen && g_profileView == ProfilePanelView::ADD_PROFILE
+            && g_profileAddNameActive) {
+            if (wParam == VK_BACK) {
+                if (!g_profileAddName.empty()) g_profileAddName.pop_back();
+                InvalidateRect(hWnd, NULL, FALSE);
+                return 0;
+            }
+            if (wParam == VK_ESCAPE) {
+                g_profileView = ProfilePanelView::ACCOUNTS;
+                g_profileAddName = L"";
+                g_profileAddNameActive = false;
+                InvalidateRect(hWnd, NULL, FALSE);
+                return 0;
+            }
+        }
+
         // Find bar open থাকলে input handle করো
         if (g_findBarOpen) {
             if (wParam == VK_ESCAPE) { CloseFindBar(); InvalidateRect(hWnd, NULL, FALSE); return 0; }
@@ -4056,9 +4520,30 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
     }
 
     case WM_CHAR: {
+        wchar_t ch = (wchar_t)wParam;
+        // Profile "Add Profile" name input
+        if (g_profilePanelOpen && g_profileView == ProfilePanelView::ADD_PROFILE
+            && g_profileAddNameActive) {
+            if (ch >= L' ' && ch != 127) { // printable, not DEL
+                if (g_profileAddName.size() < 32)
+                    g_profileAddName += ch;
+                InvalidateRect(hWnd, NULL, FALSE);
+            } else if (ch == L'\r' || ch == L'\n') {
+                // Enter → create profile
+                if (!g_profileAddName.empty()) {
+                    AddProfile(g_profileAddName);
+                    g_activeProfileIdx = (int)g_profiles.size() - 1;
+                    SaveProfiles();
+                    g_profileView    = ProfilePanelView::ACCOUNTS;
+                    g_profileAddName = L"";
+                    g_profileAddNameActive = false;
+                    InvalidateRect(hWnd, NULL, TRUE);
+                }
+            }
+            break; // consume — don't pass to find bar
+        }
         // Find bar text input
         if (g_findBarOpen && !g_windows.empty()) {
-            wchar_t ch = (wchar_t)wParam;
             if (ch >= L' ' && ch != VK_BACK) {
                 FindBarAddChar(ch);
                 if (g_windows.count(hWnd)) {
@@ -4137,6 +4622,7 @@ void LaunchMiniBrowser(std::wstring url, std::wstring /*title*/) {
     if (!dataLoaded) {
         LoadBookmarks();
         LoadSettings();
+        LoadProfiles();   // Chrome-style multi-profile init
         dataLoaded = true;
     }
 

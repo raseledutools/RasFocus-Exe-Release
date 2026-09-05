@@ -16,6 +16,7 @@ set(WEBVIEW2_SDK_PATH "C:/path/to/WebView2" CACHE PATH "WebView2 SDK root")
 # ─────────────────────────────────────────────────────────────────────────────
 set(SOURCES
     mini_browser.cpp
+    browser_profiles.cpp
     advanced_feature.cpp
     feature_browser.cpp
     bookmarks.cpp
@@ -29,6 +30,7 @@ set(SOURCES
 
 set(HEADERS
     mini_browser.h
+    browser_profiles.h
     advanced_feature.h
     feature_browser.h
     html_tools.h
