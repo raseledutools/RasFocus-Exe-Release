@@ -2059,24 +2059,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             float scaledW = (r.right - r.left) / g_scaleFactor;
             float btnW = 42.0f;
             float controlsStartX = scaledW - (btnW * 3);
+
+            // min/max/close buttons
             if (x >= controlsStartX) return HTCLIENT;
-            if (isUpdateAvailable) {
-                float upgW = 150.0f;
-                float upgX = controlsStartX - upgW - 10.0f;
-                if (x >= upgX && x <= upgX + upgW) return HTCLIENT;
-            }
-            // Check for Update button (always present)
-            {
-                float chkW = 100.0f;
-                float chkX = controlsStartX - chkW - 10.0f;
-                if (x >= chkX && x <= chkX + chkW) return HTCLIENT;
-            }
-            // Debug Kill button
-            {
-                float dbW = 90.0f;
-                float dbX = controlsStartX - dbW - 10.0f;
-                if (x >= dbX && x <= dbX + dbW) return HTCLIENT;
-            }
+
+            // Debug Kill button — DrawTitleBar এর মতো exact same position
+            float dbW = 90.0f;
+            float dbX = controlsStartX - dbW - 10.0f;
+            if (x >= dbX && x <= dbX + dbW) return HTCLIENT;
+
+            // Check Update button — Kill Debug এর বামে (DrawTitleBar এর মতো)
+            float upW = 110.0f;
+            float upX = dbX - upW - 8.0f;
+            if (x >= upX && x <= upX + upW) return HTCLIENT;
+
             return HTCAPTION;
         }
         return HTCLIENT;
