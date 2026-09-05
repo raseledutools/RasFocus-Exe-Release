@@ -790,6 +790,9 @@ struct TabData {
     std::shared_ptr<Bitmap> favicon;
     // Loading spinner frame counter (0-7, incremented via timer)
     int          loadingFrame = 0;
+    // Dark mode script ID — AddScriptToExecuteOnDocumentCreated এর ID,
+    // toggle এর সময় remove + re-register করার জন্য
+    std::wstring darkScriptId;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3130,8 +3133,11 @@ public:
 
         // ── Force Dark Mode — নতুন page load এ সব website dark করো ──
         // Header dark button: সব site এ CSS invert, কোনো exception নেই।
-        if (wd.isDarkMode) {
-            tab.webview->AddScriptToExecuteOnDocumentCreated(
+        // Script ID capture করা হচ্ছে যাতে toggle এ remove + re-register করা যায়।
+        {
+            int tabIdx = m_tabIdx; // lambda capture এর জন্য
+            HWND capturedHwnd = m_hWnd;
+            const std::wstring darkCss =
                 L"(() => {"
                 L"  if (document.getElementById('ras-force-dark')) return;"
                 L"  const s = document.createElement('style');"
@@ -3140,8 +3146,20 @@ public:
                 L"    + 'img, video, iframe, canvas, picture, svg image, [style*=\"background-image\"] '"
                 L"    + '{ filter: invert(100%) hue-rotate(180deg) !important; }';"
                 L"  (document.head || document.documentElement).appendChild(s);"
-                L"})();",
-                nullptr);
+                L"})();";
+            if (wd.isDarkMode) {
+                tab.webview->AddScriptToExecuteOnDocumentCreated(
+                    darkCss.c_str(),
+                    Callback<ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler>(
+                        [capturedHwnd, tabIdx](HRESULT hr, LPCWSTR id) -> HRESULT {
+                            if (SUCCEEDED(hr) && id && g_windows.count(capturedHwnd)) {
+                                auto& w = g_windows[capturedHwnd];
+                                if (tabIdx >= 0 && tabIdx < (int)w.tabs.size())
+                                    w.tabs[tabIdx].darkScriptId = id;
+                            }
+                            return S_OK;
+                        }).Get());
+            }
         }
 
         // ── g_forceSiteDark — menu "Dark Theme" toggle ──
@@ -4494,8 +4512,20 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
         if (wd.hDark) {
             wd.isDarkMode = !wd.isDarkMode;
 
+            const std::wstring darkCss =
+                L"(() => {"
+                L"  if (document.getElementById('ras-force-dark')) return;"
+                L"  const s = document.createElement('style');"
+                L"  s.id = 'ras-force-dark';"
+                L"  s.textContent = 'html { filter: invert(90%) hue-rotate(180deg) !important; }'"
+                L"    + 'img, video, iframe, canvas, picture, svg image, [style*=\"background-image\"] '"
+                L"    + '{ filter: invert(100%) hue-rotate(180deg) !important; }';"
+                L"  (document.head || document.documentElement).appendChild(s);"
+                L"})();";
+
             // ── সব existing tabs এ dark/light apply করো ──
-            for (auto& tab : wd.tabs) {
+            for (int i = 0; i < (int)wd.tabs.size(); i++) {
+                auto& tab = wd.tabs[i];
                 if (!tab.webview || !tab.controller) continue;
 
                 // Background color update
@@ -4505,6 +4535,12 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                         ? COREWEBVIEW2_COLOR{255, 30, 30, 30}
                         : COREWEBVIEW2_COLOR{255, 255, 255, 255};
                     ctl2->put_DefaultBackgroundColor(bg);
+                }
+
+                // পুরনো dark script unregister করো (navigate করলেও আর চলবে না)
+                if (!tab.darkScriptId.empty()) {
+                    tab.webview->RemoveScriptToExecuteOnDocumentCreated(tab.darkScriptId.c_str());
+                    tab.darkScriptId.clear();
                 }
 
                 // Local pages reload করো
@@ -4517,23 +4553,36 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                     continue;
                 }
 
-                // Web pages এ dark/light CSS inject করো — সব site, কোনো exception নেই
                 if (wd.isDarkMode) {
+                    // Dark on: current page এ inject + নতুন navigations এর জন্য register
                     tab.webview->ExecuteScript(
                         L"(() => {"
-                        L"  try {"
-                        L"    if (!document.getElementById('ras-force-dark')) {"
-                        L"      const s = document.createElement('style');"
-                        L"      s.id = 'ras-force-dark';"
-                        L"      s.textContent = 'html { filter: invert(90%) hue-rotate(180deg) !important; }'"
-                        L"        + 'img, video, iframe, canvas, picture, svg image, [style*=\"background-image\"] '"
-                        L"        + '{ filter: invert(100%) hue-rotate(180deg) !important; }';"
-                        L"      (document.head || document.documentElement).appendChild(s);"
-                        L"    }"
-                        L"  } catch(e) {}"
+                        L"  if (document.getElementById('ras-force-dark')) return;"
+                        L"  const s = document.createElement('style');"
+                        L"  s.id = 'ras-force-dark';"
+                        L"  s.textContent = 'html { filter: invert(90%) hue-rotate(180deg) !important; }'"
+                        L"    + 'img, video, iframe, canvas, picture, svg image, [style*=\"background-image\"] '"
+                        L"    + '{ filter: invert(100%) hue-rotate(180deg) !important; }';"
+                        L"  (document.head || document.documentElement).appendChild(s);"
                         L"})();",
                         nullptr);
+
+                    // Re-register করো যাতে এই tab এ পরের navigate এও persist করে
+                    int capturedIdx = i;
+                    HWND capturedHwnd = hWnd;
+                    tab.webview->AddScriptToExecuteOnDocumentCreated(
+                        darkCss.c_str(),
+                        Callback<ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler>(
+                            [capturedHwnd, capturedIdx](HRESULT hr, LPCWSTR id) -> HRESULT {
+                                if (SUCCEEDED(hr) && id && g_windows.count(capturedHwnd)) {
+                                    auto& w = g_windows[capturedHwnd];
+                                    if (capturedIdx >= 0 && capturedIdx < (int)w.tabs.size())
+                                        w.tabs[capturedIdx].darkScriptId = id;
+                                }
+                                return S_OK;
+                            }).Get());
                 } else {
+                    // Light on: current page থেকে CSS সরাও (script unregister হয়ে গেছে উপরে)
                     tab.webview->ExecuteScript(
                         L"(() => {"
                         L"  try { const s = document.getElementById('ras-force-dark'); if (s) s.remove(); } catch(e) {}"
