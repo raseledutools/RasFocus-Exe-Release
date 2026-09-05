@@ -152,6 +152,21 @@ jobs:
         name: RasFocus-App-Signed
         path: RasFocus.exe
 
+    # ── version.txt: raw.githubusercontent থেকে পড়ার জন্য — no API rate-limit ──
+    - name: Commit version.txt to repo
+      if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+      shell: pwsh
+      run: |
+        $ver = "v1.0.${{ github.run_number }}"
+        Set-Content version.txt $ver -Encoding UTF8 -NoNewline
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add version.txt
+        git diff --cached --quiet || git commit -m "ci: bump version.txt to $ver [skip ci]"
+        git push origin HEAD:main
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
     # ── Release: tag = v1.0.<run_number>, name readable ──
     - name: Create GitHub Release with EXE
       if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'

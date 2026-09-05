@@ -578,34 +578,36 @@ void __cdecl SilentUpdateThread(void* p) {
         if (hw) InvalidateRect(hw, NULL, FALSE);
     }
 
-    string apiUrl = "https://api.github.com/repos/" + GITHUB_USER + "/" + GITHUB_REPO + "/releases/latest";
+    // ── raw.githubusercontent থেকে version.txt পড়া — কোনো rate-limit নেই ──
+    // GitHub API (api.github.com) unauthenticated হলে 60 req/hour limit এ পড়ে।
+    // raw.githubusercontent.com থেকে plain text file পড়লে কোনো limit নেই।
+    string versionUrl = "https://raw.githubusercontent.com/" + GITHUB_USER + "/" + GITHUB_REPO + "/main/version.txt";
 
-    // ── WinINet দিয়ে GitHub API call — User-Agent + Accept header সহ ─────
-    // URLDownloadToFileA custom header দেয় না; GitHub API তে User-Agent
-    // না থাকলে 403 আসে বা rate-limit এ পড়ে "tag_name" null আসে
     auto FetchJson = [&]() -> string {
         string result;
         HINTERNET hNet = InternetOpenA("RasFocusUpdater/1.0",
             INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
         if (!hNet) return result;
-        HINTERNET hUrl = InternetOpenUrlA(hNet, apiUrl.c_str(),
-            "Accept: application/vnd.github.v3+json\r\n",
-            (DWORD)-1,
+        HINTERNET hUrl = InternetOpenUrlA(hNet, versionUrl.c_str(),
+            NULL, 0,
             INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_SECURE, 0);
         if (!hUrl) { InternetCloseHandle(hNet); return result; }
-        // HTTP 200 check — 403/rate-limit → return empty
+        // HTTP 200 check
         DWORD statusCode = 0, statusSize = sizeof(statusCode);
         HttpQueryInfoA(hUrl, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER,
                        &statusCode, &statusSize, NULL);
         if (statusCode != 200) {
             InternetCloseHandle(hUrl); InternetCloseHandle(hNet); return result;
         }
-        char buf[4096]; DWORD rd = 0;
+        char buf[256]; DWORD rd = 0;
         while (InternetReadFile(hUrl, buf, sizeof(buf)-1, &rd) && rd > 0) {
             buf[rd] = 0; result += buf;
         }
         InternetCloseHandle(hUrl);
         InternetCloseHandle(hNet);
+        // trim whitespace/newline
+        while (!result.empty() && (result.back() == '\n' || result.back() == '\r' || result.back() == ' '))
+            result.pop_back();
         return result;
     };
 
@@ -618,52 +620,39 @@ void __cdecl SilentUpdateThread(void* p) {
     };
 
     bool foundResult = false;
-    string json = FetchJson();
+    // FetchJson() এখন version.txt এর plain text return করে, যেমন "v1.0.513"
+    string latestVer = FetchJson();
 
-    if (!json.empty()) {
-        string searchKey = "\"tag_name\":";
-        size_t tagPos = json.find(searchKey);
-        if (tagPos != string::npos) {
-            size_t q1 = json.find("\"", tagPos + searchKey.size());
-            if (q1 != string::npos) {
-                size_t q2 = json.find("\"", q1 + 1);
-                if (q2 != string::npos) {
-                    string latestVer = json.substr(q1 + 1, q2 - q1 - 1);
-                    foundResult = true;
-                    int lb = BuildNum(latestVer), cb = BuildNum(CURRENT_VERSION);
-                    bool newer = (lb > 0 && cb >= 0) ? (lb > cb) : (latestVer != CURRENT_VERSION);
-                    if (newer && latestVer.rfind("v", 0) == 0) {
-                        newVersionStr        = latestVer;
-                        g_updateDownloadUrl  = "https://github.com/" + GITHUB_USER + "/" + GITHUB_REPO
-                                             + "/releases/download/" + latestVer + "/RasFocus.exe";
-                        isUpdateAvailable    = true;   // version আছে, download হয়নি
-                        isUpdateReady        = false;  // download এখনো হয়নি
-                        g_showUpdatePopup    = true;   // ← in-app update popup দেখাও (real update)
-                        g_updateDismissedAt  = 0;      // fresh — no dismiss yet
-                        g_checkResultText    = "";     // update popup দেখাচ্ছে, result text দরকার নেই
-                        // check popup শুধু manual check-এ দেখাও
-                        g_checkPopupIsLatest = false;
-                        if (g_isManualCheck) g_showCheckPopup = true;
+    if (!latestVer.empty() && latestVer.rfind("v", 0) == 0) {
+        foundResult = true;
+        int lb = BuildNum(latestVer), cb = BuildNum(CURRENT_VERSION);
+        bool newer = (lb > 0 && cb >= 0) ? (lb > cb) : (latestVer != CURRENT_VERSION);
+        if (newer) {
+            newVersionStr        = latestVer;
+            g_updateDownloadUrl  = "https://github.com/" + GITHUB_USER + "/" + GITHUB_REPO
+                                 + "/releases/download/" + latestVer + "/RasFocus.exe";
+            isUpdateAvailable    = true;
+            isUpdateReady        = false;
+            g_showUpdatePopup    = true;
+            g_updateDismissedAt  = 0;
+            g_checkResultText    = "";
+            g_checkPopupIsLatest = false;
+            if (g_isManualCheck) g_showCheckPopup = true;
 
-                        // ── Windows tray balloon notification ──
-                        ShowUpdateBalloonNotification(latestVer);
+            ShowUpdateBalloonNotification(latestVer);
 
-                        HWND hw = FindWindowA("RasFocusCore", "RasFocus+");
-                        if (hw) InvalidateRect(hw, NULL, FALSE);
-                    } else {
-                        // Already on latest version — header এ "✓ Latest" দেখাও 4 সেকেন্ড
-                        g_checkResultText     = "v Latest";
-                        g_checkResultShowUntil = GetTickCount() + 4000;
-                        // শুধু manual check-এ popup দেখাও, auto timer-এ না
-                        if (g_isManualCheck) {
-                            g_checkPopupIsLatest = true;
-                            g_showCheckPopup     = true;
-                        }
-                        HWND hw = FindWindowA("RasFocusCore", "RasFocus+");
-                        if (hw) InvalidateRect(hw, NULL, FALSE);
-                    }
-                }
+            HWND hw = FindWindowA("RasFocusCore", "RasFocus+");
+            if (hw) InvalidateRect(hw, NULL, FALSE);
+        } else {
+            // Already on latest version
+            g_checkResultText     = "v Latest";
+            g_checkResultShowUntil = GetTickCount() + 4000;
+            if (g_isManualCheck) {
+                g_checkPopupIsLatest = true;
+                g_showCheckPopup     = true;
             }
+            HWND hw = FindWindowA("RasFocusCore", "RasFocus+");
+            if (hw) InvalidateRect(hw, NULL, FALSE);
         }
     }
 
