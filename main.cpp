@@ -717,6 +717,84 @@ public:
     HRESULT STDMETHODCALLTYPE OnObjectAvailable(REFIID, IUnknown*) override { return S_OK; }
 };
 
+// ── WinINet download with redirect follow + progress ────────────────────────────────────
+// URLDownloadToFileA cannot follow GitHub's multi-hop 302 redirects reliably.
+// This replaces it with a manual WinINet loop that follows Location headers.
+static bool WinINetDownload(const string& startUrl, const string& savePath) {
+    InterlockedExchange(&g_dlBytesNow,   0);
+    InterlockedExchange(&g_dlBytesTotal, 0);
+
+    HINTERNET hNet = InternetOpenA("RasFocusUpdater/1.0",
+        INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
+    if (!hNet) return false;
+
+    string url = startUrl;
+    HINTERNET hUrl = nullptr;
+
+    // Follow up to 10 redirects manually
+    for (int hop = 0; hop < 10; ++hop) {
+        hUrl = InternetOpenUrlA(hNet, url.c_str(),
+            "Accept: application/octet-stream\r\nUser-Agent: RasFocusUpdater/1.0\r\n",
+            (DWORD)-1,
+            INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE |
+            INTERNET_FLAG_SECURE | INTERNET_FLAG_DONT_CACHE, 0);
+        if (!hUrl) { InternetCloseHandle(hNet); return false; }
+
+        DWORD status = 0, szStatus = sizeof(status);
+        HttpQueryInfoA(hUrl, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER,
+                       &status, &szStatus, NULL);
+
+        if (status == 301 || status == 302 || status == 303 || status == 307 || status == 308) {
+            char loc[2048] = {}; DWORD szLoc = sizeof(loc);
+            if (HttpQueryInfoA(hUrl, HTTP_QUERY_LOCATION, loc, &szLoc, NULL) && szLoc > 0) {
+                InternetCloseHandle(hUrl); hUrl = nullptr;
+                url = string(loc, szLoc);
+                continue;
+            }
+        }
+
+        if (status != 200) {
+            InternetCloseHandle(hUrl); InternetCloseHandle(hNet); return false;
+        }
+
+        // Read Content-Length for progress bar
+        char clBuf[64] = {}; DWORD szCl = sizeof(clBuf);
+        if (HttpQueryInfoA(hUrl, HTTP_QUERY_CONTENT_LENGTH, clBuf, &szCl, NULL) && szCl > 0)
+            InterlockedExchange(&g_dlBytesTotal, atol(clBuf));
+
+        // Stream to file
+        HANDLE hFile = CreateFileA(savePath.c_str(), GENERIC_WRITE, 0, NULL,
+                                   CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (hFile == INVALID_HANDLE_VALUE) {
+            InternetCloseHandle(hUrl); InternetCloseHandle(hNet); return false;
+        }
+
+        char buf[65536]; DWORD rd = 0; bool writeOk = true;
+        HWND hw2 = FindWindowA("RasFocusCore", "RasFocus+");
+        while (InternetReadFile(hUrl, buf, sizeof(buf), &rd) && rd > 0) {
+            DWORD written = 0;
+            if (!WriteFile(hFile, buf, rd, &written, NULL) || written != rd) {
+                writeOk = false; break;
+            }
+            InterlockedExchangeAdd(&g_dlBytesNow, (LONG)rd);
+            if (hw2) InvalidateRect(hw2, NULL, FALSE);
+        }
+        CloseHandle(hFile);
+        InternetCloseHandle(hUrl);
+        InternetCloseHandle(hNet);
+
+        if (!writeOk) { DeleteFileA(savePath.c_str()); return false; }
+        // Sanity check: file must be >64 KB (not an error HTML page)
+        WIN32_FILE_ATTRIBUTE_DATA fi = {};
+        GetFileAttributesExA(savePath.c_str(), GetFileExInfoStandard, &fi);
+        return (fi.nFileSizeLow > 65536);
+    }
+
+    if (hUrl) InternetCloseHandle(hUrl);
+    InternetCloseHandle(hNet);
+    return false; // too many redirects
+}
+
 // ── Download new exe and install ──
 void __cdecl DownloadAndInstallThread(void*) {
     HWND hw = FindWindowA("RasFocusCore", "RasFocus+");
@@ -724,25 +802,20 @@ void __cdecl DownloadAndInstallThread(void*) {
     string newExePath = secretDir + "RasFocus_New.exe";
     DeleteFileA(newExePath.c_str());
 
-    // Reset progress counters
-    InterlockedExchange(&g_dlBytesNow,   0);
-    InterlockedExchange(&g_dlBytesTotal, 0);
     g_updatePhase = UpdatePhase::Downloading;
     if (hw) InvalidateRect(hw, NULL, FALSE);
 
-    // Download with progress callback
-    DownloadCallback* cb = new DownloadCallback();
-    HRESULT hr = URLDownloadToFileA(NULL, g_updateDownloadUrl.c_str(), newExePath.c_str(), 0, cb);
-    cb->Release();
+    bool ok = WinINetDownload(g_updateDownloadUrl, newExePath);
 
-    if (hr != S_OK || GetFileAttributesA(newExePath.c_str()) == INVALID_FILE_ATTRIBUTES) {
-        // Download failed — reset state
+    if (!ok) {
         g_isDownloading = false;
         g_updatePhase   = UpdatePhase::None;
         if (hw) {
             KillTimer(hw, 1006);
             InvalidateRect(hw, NULL, FALSE);
-            MessageBoxA(hw, "Download failed. Check internet connection and try again.", "Update Error", MB_OK | MB_ICONERROR);
+            MessageBoxA(hw,
+                "Download failed. Check internet connection and try again.",
+                "Update Error", MB_OK | MB_ICONERROR);
         }
         _endthread(); return;
     }
@@ -750,10 +823,10 @@ void __cdecl DownloadAndInstallThread(void*) {
     // Download success — show "Installing..." phase
     g_updatePhase = UpdatePhase::Installing;
     if (hw) {
-        KillTimer(hw, 1006); // stop animation timer
+        KillTimer(hw, 1006);
         InvalidateRect(hw, NULL, FALSE);
     }
-    Sleep(800); // user sees "Installing..." state briefly
+    Sleep(800);
 
     isUpdateReady     = true;
     isUpdateAvailable = false;
