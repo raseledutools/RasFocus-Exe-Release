@@ -70,8 +70,10 @@ bool   isUpdateAvailable = false;
 bool   isUpdateReady     = false;
 bool   isCheckingUpdate  = false;
 string newVersionStr     = "";
-bool   hoverUpdateBtn    = false;
+bool   hoverUpdateBtn        = false;
 static RectF s_subhdrUpdateRect;   // subheader update chip hit-test rect
+bool   hoverTitleUpdateBtn   = false;
+static RectF s_titleUpdateRect;    // titlebar update chip hit-test rect
 string g_checkResultText = "";     // ← "Latest" বা "" — check শেষে header এ দেখায়
 DWORD  g_checkResultShowUntil = 0; // GetTickCount() পর্যন্ত দেখাবে
 
@@ -1562,6 +1564,56 @@ void DrawTitleBar(Graphics& g, int w) {
         // \xEBE8 = Bug icon in Segoe MDL2
         g.DrawString(L"\xEBE8 Kill Debug", -1, &fDb, RectF(dbX, dbY, dbW, dbH), &fmtC, &white);
     }
+
+    // ── TitleBar Update Chip (APK TopHeader green chip এর মতো) ──────────────
+    // শুধু update available হলেই দেখাও — subheader chip এর মতো same system
+    if (isUpdateAvailable && !newVersionStr.empty()) {
+        float upW  = 120.0f;
+        float upH  = (float)TITLEBAR_HEIGHT - 8.0f;
+        float dbW  = 90.0f;
+        float upX  = startX - dbW - 10.0f - upW - 8.0f;  // debug kill button এর আরও বামে
+        float upY  = 4.0f;
+
+        GraphicsPath upPath;
+        float ru = 5.0f, du = ru * 2.0f;
+        upPath.AddArc(upX,          upY,          du, du, 180, 90);
+        upPath.AddArc(upX+upW-du,   upY,          du, du, 270, 90);
+        upPath.AddArc(upX+upW-du,   upY+upH-du,   du, du, 0,   90);
+        upPath.AddArc(upX,          upY+upH-du,   du, du, 90,  90);
+        upPath.CloseFigure();
+
+        // APK এর মতো green chip — hover এ darker green
+        SolidBrush upBg(hoverTitleUpdateBtn
+            ? Color(255, 0, 170, 80)     // hover: darker green
+            : Color(255, 0, 200, 100));  // normal: bright green
+        g.FillPath(&upBg, &upPath);
+        Pen upBorder(Color(120, 255, 255, 255), 1.0f);
+        g.DrawPath(&upBorder, &upPath);
+
+        // Update icon (SystemUpdateAlt equivalent in Segoe MDL2: \xEBE8 = refresh/update)
+        Font fUpIcon(&ffIcons, 10, FontStyleRegular, UnitPixel);
+        Font fUpTxt(&ff, 8, FontStyleBold, UnitPixel);
+        SolidBrush upWhite(ColWhite);
+        StringFormat fmtUpL;
+        fmtUpL.SetAlignment(StringAlignmentNear);
+        fmtUpL.SetLineAlignment(StringAlignmentCenter);
+
+        // Icon
+        g.DrawString(L"\xEBD3", -1, &fUpIcon,
+            RectF(upX + 6.0f, upY, 16.0f, upH), &fmtC, &upWhite);
+
+        // "Update v1.0.7" label
+        wstring upLabel = L"Update ";
+        upLabel += wstring(newVersionStr.begin(), newVersionStr.end());
+        g.DrawString(upLabel.c_str(), -1, &fUpTxt,
+            RectF(upX + 24.0f, upY, upW - 26.0f, upH),
+            &fmtUpL, &upWhite);
+
+        // hit-test rect save করো
+        s_titleUpdateRect = RectF(upX, upY, upW, upH);
+    } else {
+        s_titleUpdateRect = RectF(0, 0, 0, 0);
+    }
 }
 
 // ------------------------------------------
@@ -2147,6 +2199,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
         if (oldDbKill != hoverDebugKill) redraw = true;
 
+        // ── TitleBar Update chip hover ──
+        bool oldTitleUpd = hoverTitleUpdateBtn; hoverTitleUpdateBtn = false;
+        if (isUpdateAvailable && s_titleUpdateRect.Width > 0.0f) {
+            if (x >= s_titleUpdateRect.X && x <= s_titleUpdateRect.X + s_titleUpdateRect.Width &&
+                y >= s_titleUpdateRect.Y && y <= s_titleUpdateRect.Y + s_titleUpdateRect.Height)
+                hoverTitleUpdateBtn = true;
+        }
+        if (oldTitleUpd != hoverTitleUpdateBtn) redraw = true;
+
         bool oldFb = hoverFeedback,  oldAc = hoverMyAccount;
         hoverFeedback  = HitFeedbackIcon(x, y, scaledW);
         hoverMyAccount = HitMyAccount   (x, y, scaledW);
@@ -2267,6 +2328,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
                 x <= s_subhdrUpdateRect.X + s_subhdrUpdateRect.Width &&
                 y >= s_subhdrUpdateRect.Y &&
                 y <= s_subhdrUpdateRect.Y + s_subhdrUpdateRect.Height) {
+                g_showUpdatePopup = true;
+                InvalidateRect(hWnd, NULL, FALSE);
+                return 0;
+            }
+        }
+
+        // ── TitleBar Update chip click → same popup খোলে ──
+        if (isUpdateAvailable && s_titleUpdateRect.Width > 0.0f) {
+            if (x >= s_titleUpdateRect.X &&
+                x <= s_titleUpdateRect.X + s_titleUpdateRect.Width &&
+                y >= s_titleUpdateRect.Y &&
+                y <= s_titleUpdateRect.Y + s_titleUpdateRect.Height) {
                 g_showUpdatePopup = true;
                 InvalidateRect(hWnd, NULL, FALSE);
                 return 0;
