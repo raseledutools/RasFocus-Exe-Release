@@ -578,21 +578,42 @@ void __cdecl SilentUpdateThread(void* p) {
         if (hw) InvalidateRect(hw, NULL, FALSE);
     }
 
-    string secretDir = GetSecretDir();
-    string apiFile   = secretDir + "api_response.json";
-    string apiUrl    = "https://api.github.com/repos/" + GITHUB_USER + "/" + GITHUB_REPO + "/releases/latest";
-    DeleteUrlCacheEntryA(apiUrl.c_str());
+    string apiUrl = "https://api.github.com/repos/" + GITHUB_USER + "/" + GITHUB_REPO + "/releases/latest";
 
-    // ── Default: assume "latest" unless we find a newer version ──
+    // ── WinINet দিয়ে GitHub API call — User-Agent + Accept header সহ ─────
+    // URLDownloadToFileA custom header দেয় না; GitHub API তে User-Agent
+    // না থাকলে 403 আসে বা rate-limit এ পড়ে "tag_name" null আসে
+    auto FetchJson = [&]() -> string {
+        string result;
+        HINTERNET hNet = InternetOpenA("RasFocusUpdater/1.0",
+            INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
+        if (!hNet) return result;
+        HINTERNET hUrl = InternetOpenUrlA(hNet, apiUrl.c_str(),
+            "Accept: application/vnd.github.v3+json\r\n",
+            (DWORD)-1,
+            INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_SECURE, 0);
+        if (!hUrl) { InternetCloseHandle(hNet); return result; }
+        char buf[4096]; DWORD rd = 0;
+        while (InternetReadFile(hUrl, buf, sizeof(buf)-1, &rd) && rd > 0) {
+            buf[rd] = 0; result += buf;
+        }
+        InternetCloseHandle(hUrl);
+        InternetCloseHandle(hNet);
+        return result;
+    };
+
+    // ── Numeric build compare: "v1.0.507" > "v1.0.6" ─────────────────────
+    // String compare ভুল দেয় — "507" < "6" lexicographically
+    auto BuildNum = [](const string& ver) -> int {
+        size_t p = ver.rfind('.');
+        if (p == string::npos) return -1;
+        try { return stoi(ver.substr(p + 1)); } catch (...) { return -1; }
+    };
+
     bool foundResult = false;
+    string json = FetchJson();
 
-    HRESULT hrApi = URLDownloadToFileA(NULL, apiUrl.c_str(), apiFile.c_str(), 0, NULL);
-    if (hrApi == S_OK) {
-        ifstream vf(apiFile);
-        string json((istreambuf_iterator<char>(vf)), istreambuf_iterator<char>());
-        vf.close(); remove(apiFile.c_str());
-
-        // Extract "tag_name"
+    if (!json.empty()) {
         string searchKey = "\"tag_name\":";
         size_t tagPos = json.find(searchKey);
         if (tagPos != string::npos) {
@@ -602,8 +623,9 @@ void __cdecl SilentUpdateThread(void* p) {
                 if (q2 != string::npos) {
                     string latestVer = json.substr(q1 + 1, q2 - q1 - 1);
                     foundResult = true;
-                    // Only treat v1.0.NNN style tags as valid releases
-                    if (latestVer != CURRENT_VERSION && latestVer.rfind("v", 0) == 0) {
+                    int lb = BuildNum(latestVer), cb = BuildNum(CURRENT_VERSION);
+                    bool newer = (lb > 0 && cb >= 0) ? (lb > cb) : (latestVer != CURRENT_VERSION);
+                    if (newer && latestVer.rfind("v", 0) == 0) {
                         newVersionStr        = latestVer;
                         g_updateDownloadUrl  = "https://github.com/" + GITHUB_USER + "/" + GITHUB_REPO
                                              + "/releases/download/" + latestVer + "/RasFocus.exe";
