@@ -34,6 +34,8 @@
 #include <wrl.h>
 #include <shlobj.h>   
 #include <shlwapi.h>  
+#include <wininet.h>  // HINTERNET, InternetOpenA, InternetOpenUrlA
+#include <process.h>  // _beginthread, _endthread
 
 #include <vector>
 #include <map>
