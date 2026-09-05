@@ -1430,11 +1430,91 @@ public:
         COREWEBVIEW2_KEY_EVENT_KIND kind; args->get_KeyEventKind(&kind);
         if (kind == COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN || kind == COREWEBVIEW2_KEY_EVENT_KIND_SYSTEM_KEY_DOWN) {
             UINT vk; args->get_VirtualKey(&vk);
-            if (vk == VK_F11) { ToggleFullScreen(m_hWnd); args->put_Handled(TRUE); }
+            bool ctrl  = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+            bool shift = (GetKeyState(VK_SHIFT)   & 0x8000) != 0;
+
+            if (vk == VK_F11) { ToggleFullScreen(m_hWnd); args->put_Handled(TRUE); return S_OK; }
+            if (vk == VK_F5 && g_windows.count(m_hWnd)) {
+                auto* tab = g_windows[m_hWnd].active();
+                if (tab && tab->webview) { tab->webview->Reload(); args->put_Handled(TRUE); return S_OK; }
+            }
             if (vk == VK_ESCAPE && g_windows.count(m_hWnd)) {
                 auto& wdEsc = g_windows[m_hWnd];
-                if (wdEsc.isFocusMode) { ToggleFocusMode(m_hWnd); args->put_Handled(TRUE); }
-                else if (wdEsc.isFullScreen) { ToggleFullScreen(m_hWnd); args->put_Handled(TRUE); }
+                if (wdEsc.isFocusMode) { ToggleFocusMode(m_hWnd); args->put_Handled(TRUE); return S_OK; }
+                if (wdEsc.isFullScreen) { ToggleFullScreen(m_hWnd); args->put_Handled(TRUE); return S_OK; }
+                bool any = g_bookmarkPanelOpen || g_historyPanelOpen ||
+                           g_downloadsPanelOpen || g_findBarOpen ||
+                           g_contextMenuOpen   || g_extensionPanelOpen;
+                if (any) {
+                    g_bookmarkPanelOpen = g_historyPanelOpen = g_downloadsPanelOpen = false;
+                    g_extensionPanelOpen = false; g_findBarOpen = false; g_contextMenuOpen = false;
+                    InvalidateRect(m_hWnd, NULL, FALSE);
+                    args->put_Handled(TRUE); return S_OK;
+                }
+            }
+            if (ctrl && g_windows.count(m_hWnd)) {
+                auto& wd = g_windows[m_hWnd];
+                switch (vk) {
+                case 'D': // Ctrl+D — Bookmark current page
+                    if (auto* tab = wd.active()) {
+                        ToggleBookmark(tab->url, tab->title);
+                        InvalidateRect(m_hWnd, NULL, FALSE);
+                    }
+                    args->put_Handled(TRUE); return S_OK;
+                case 'B': // Ctrl+B — Bookmarks panel
+                    g_bookmarkPanelOpen  = !g_bookmarkPanelOpen;
+                    g_historyPanelOpen   = false;
+                    g_downloadsPanelOpen = false;
+                    g_extensionPanelOpen = false;
+                    if (g_bookmarkPanelOpen) LoadBookmarks();
+                    InvalidateRect(m_hWnd, NULL, FALSE);
+                    args->put_Handled(TRUE); return S_OK;
+                case 'T': // Ctrl+T — New tab
+                    AddTab(m_hWnd, L"LOCAL_NTP");
+                    args->put_Handled(TRUE); return S_OK;
+                case 'W': // Ctrl+W — Close tab
+                    if (wd.tabs.size() > 1) CloseTab(m_hWnd, wd.activeTab);
+                    else DestroyWindow(m_hWnd);
+                    args->put_Handled(TRUE); return S_OK;
+                case 'N': // Ctrl+N — New window
+                    LaunchMiniBrowser(L"LOCAL_NTP", L"New Window");
+                    args->put_Handled(TRUE); return S_OK;
+                case 'H': // Ctrl+H — History tab
+                    g_historyPanelOpen = false; g_bookmarkPanelOpen = false; g_downloadsPanelOpen = false;
+                    AddTab(m_hWnd, L"LOCAL_HISTORY");
+                    args->put_Handled(TRUE); return S_OK;
+                case 'J': // Ctrl+J — Downloads tab
+                    g_downloadsPanelOpen = false; g_historyPanelOpen = false; g_bookmarkPanelOpen = false;
+                    AddTab(m_hWnd, L"LOCAL_DOWNLOADS");
+                    args->put_Handled(TRUE); return S_OK;
+                case 'F': // Ctrl+F — Find in page
+                    if (g_findBarOpen) CloseFindBar(); else OpenFindBar();
+                    InvalidateRect(m_hWnd, NULL, FALSE);
+                    args->put_Handled(TRUE); return S_OK;
+                case 'R': // Ctrl+R — Reload
+                    if (auto* tab = wd.active()) if (tab->webview) tab->webview->Reload();
+                    args->put_Handled(TRUE); return S_OK;
+                case 'E': // Ctrl+E — Extensions panel
+                    g_extensionPanelOpen = !g_extensionPanelOpen;
+                    g_historyPanelOpen = false; g_bookmarkPanelOpen = false; g_downloadsPanelOpen = false;
+                    if (g_extensionPanelOpen) ScanExtensionsFolderPublic();
+                    { RECT wvr = GetWebViewRect(m_hWnd); if (wd.active() && wd.active()->controller) wd.active()->controller->put_Bounds(wvr); }
+                    InvalidateRect(m_hWnd, NULL, TRUE);
+                    args->put_Handled(TRUE); return S_OK;
+                case VK_TAB: // Ctrl+Tab — switch tab
+                    if (!wd.tabs.empty()) {
+                        int next = (wd.activeTab + (shift ? -1 : 1) + (int)wd.tabs.size()) % (int)wd.tabs.size();
+                        SwitchToTab(m_hWnd, next);
+                    }
+                    args->put_Handled(TRUE); return S_OK;
+                default:
+                    if (vk >= '1' && vk <= '9') {
+                        int idx = (int)(vk - '1');
+                        if (idx < (int)wd.tabs.size()) SwitchToTab(m_hWnd, idx);
+                        args->put_Handled(TRUE); return S_OK;
+                    }
+                    break;
+                }
             }
         }
         return S_OK;
@@ -4591,7 +4671,53 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 
     case WM_RBUTTONDOWN: {
         if (!g_windows.count(hWnd)) break;
+        auto& wdR = g_windows[hWnd];
+        UINT dpiR = GetWndDpi(hWnd);
         int mx = GET_X_LPARAM(lParam), my = GET_Y_LPARAM(lParam);
+        RECT crR; GetClientRect(hWnd, &crR); int WR = crR.right;
+
+        // ── Bookmark bar right-click → native delete menu ──────────────
+        if (wdR.active() && (wdR.active()->url == L"LOCAL_NTP" ||
+            wdR.active()->url == L"about:blank" ||
+            wdR.active()->url.find(L"blocked by rasfocus") != std::wstring::npos))
+        {
+            int bmkYR = TitleBarH(dpiR) + ToolbarH(dpiR);
+            int bmkHR = S(D_BOOKMARK_H, dpiR);
+            if (my >= bmkYR && my < bmkYR + bmkHR) {
+                // কোন bookmark item এ right-click হয়েছে বের করো
+                int curXR = S(8, dpiR), itemPadXR = S(10, dpiR);
+                int iconWR = S(14, dpiR), gapR = S(4, dpiR);
+                int hitIdx = -1;
+                for (int i = 0; i < (int)g_bookmarks.size(); i++) {
+                    std::wstring lbl = g_bookmarks[i].title;
+                    if (lbl.size() > 16) lbl = lbl.substr(0, 14) + L"..";
+                    int lblW  = (int)(lbl.size() * S(7, dpiR));
+                    int itemW = iconWR + gapR + lblW + itemPadXR * 2;
+                    if (curXR + itemW > WR - S(80, dpiR)) break;
+                    if (mx >= curXR && mx < curXR + itemW) { hitIdx = i; break; }
+                    curXR += itemW + S(2, dpiR);
+                }
+                if (hitIdx >= 0) {
+                    // Native Win32 popup menu
+                    HMENU hMenu = CreatePopupMenu();
+                    AppendMenuW(hMenu, MF_STRING, 1, L"Delete bookmark");
+                    AppendMenuW(hMenu, MF_SEPARATOR, 0, NULL);
+                    AppendMenuW(hMenu, MF_STRING, 2, L"Open");
+                    POINT pt; GetCursorPos(&pt);
+                    int cmd = TrackPopupMenu(hMenu, TPM_RETURNCMD | TPM_RIGHTBUTTON, pt.x, pt.y, 0, hWnd, NULL);
+                    DestroyMenu(hMenu);
+                    if (cmd == 1) {
+                        RemoveBookmark(hitIdx);
+                        InvalidateRect(hWnd, NULL, FALSE);
+                    } else if (cmd == 2 && hitIdx < (int)g_bookmarks.size()) {
+                        if (wdR.active() && wdR.active()->webview)
+                            wdR.active()->webview->Navigate(g_bookmarks[hitIdx].url.c_str());
+                    }
+                    return 0;
+                }
+                break; // bookmark bar area কিন্তু কোনো item এ না — ignore
+            }
+        }
         // WebView এর উপরে right-click হলে context menu খোলো
         if (my > NavTotalH(hWnd)) {
             OpenContextMenu(mx, my, false, false, false, L"");
