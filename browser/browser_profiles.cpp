@@ -8,6 +8,7 @@
 #include <fstream>
 #include <sstream>
 #include <algorithm>
+#include <map>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GLOBALS
