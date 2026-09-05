@@ -2354,11 +2354,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             y >= s_titleUpdateRect.Y &&
             y <= s_titleUpdateRect.Y + s_titleUpdateRect.Height) {
             if (isUpdateAvailable) {
-                // update আছে → popup খোলো
+                // update আছে → update download popup খোলো
                 g_showUpdatePopup = true;
-            } else if (!isCheckingUpdate) {
-                // checking নেই → manual check শুরু করো
+            } else if (isCheckingUpdate) {
+                // check চলছে — কিছু করার নেই, শেষে popup আসবে
+                // g_isManualCheck true করে দাও যাতে check শেষে popup দেখায়
                 g_isManualCheck = true;
+            } else {
+                // check নেই → এখনই manual check শুরু করো
+                // check শেষে সবসময় popup দেখাবে (latest হোক বা update হোক)
+                g_isManualCheck   = true;
+                g_showCheckPopup  = false; // পুরনো popup সরাও
                 StartSilentUpdateCheck();
             }
             InvalidateRect(hWnd, NULL, FALSE);
