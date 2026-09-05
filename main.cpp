@@ -1565,31 +1565,14 @@ void DrawTitleBar(Graphics& g, int w) {
         g.DrawString(L"\xEBE8 Kill Debug", -1, &fDb, RectF(dbX, dbY, dbW, dbH), &fmtC, &white);
     }
 
-    // ── TitleBar Update Button — সবসময় দেখা যাবে, 3 টা state ──────────────
-    // State 1: isCheckingUpdate  → grey   "↻ Checking..."
-    // State 2: isUpdateAvailable → green  "↑ Update v1.x.x"
-    // State 3: otherwise         → teal   "↻ Check Update"
+    // ── Check Update Button — fixed, সবসময় একই label ──────────────────────
     {
-        float dbW  = 90.0f;
-        float dbX  = startX - dbW - 10.0f;   // Kill Debug button এর X
-        float upW  = 125.0f;
-        float upH  = (float)TITLEBAR_HEIGHT - 8.0f;
-        float upX  = dbX - upW - 8.0f;       // Kill Debug এর ঠিক বামে
-        float upY  = 4.0f;
-
-        // — background color: state অনুযায়ী —
-        Color upCol;
-        if (isCheckingUpdate) {
-            upCol = Color(255, 100, 110, 115);          // grey — checking
-        } else if (isUpdateAvailable) {
-            upCol = hoverTitleUpdateBtn
-                ? Color(255, 0, 170, 80)                // hover green
-                : Color(255, 0, 200, 100);              // normal green
-        } else {
-            upCol = hoverTitleUpdateBtn
-                ? Color(255, 0, 130, 140)               // hover teal
-                : Color(255, 0, 150, 160);              // normal teal (subheader রঙ)
-        }
+        float dbW = 90.0f;
+        float dbX = startX - dbW - 10.0f;
+        float upW = 110.0f;
+        float upH = (float)TITLEBAR_HEIGHT - 8.0f;
+        float upX = dbX - upW - 8.0f;
+        float upY = 4.0f;
 
         GraphicsPath upPath;
         float ru = 5.0f, du = ru * 2.0f;
@@ -1598,32 +1581,22 @@ void DrawTitleBar(Graphics& g, int w) {
         upPath.AddArc(upX+upW-du, upY+upH-du, du, du, 0,   90);
         upPath.AddArc(upX,        upY+upH-du, du, du, 90,  90);
         upPath.CloseFigure();
-        SolidBrush upBg(upCol);
+
+        SolidBrush upBg(hoverTitleUpdateBtn
+            ? Color(255, 0, 130, 140)
+            : Color(255, 0, 150, 160));
         g.FillPath(&upBg, &upPath);
         Pen upBorder(Color(80, 255, 255, 255), 1.0f);
         g.DrawPath(&upBorder, &upPath);
 
-        // — icon + label —
         Font fUpTxt(&ff, 8, FontStyleBold, UnitPixel);
         SolidBrush upWhite(ColWhite);
         StringFormat fmtUpC;
         fmtUpC.SetAlignment(StringAlignmentCenter);
         fmtUpC.SetLineAlignment(StringAlignmentCenter);
 
-        wstring upLabel;
-        if (isCheckingUpdate) {
-            upLabel = L"\u21BB Checking...";
-        } else if (isUpdateAvailable && !newVersionStr.empty()) {
-            upLabel = L"\u2191 Update ";
-            upLabel += wstring(newVersionStr.begin(), newVersionStr.end());
-        } else if (!g_checkResultText.empty()) {
-            // "v Latest" 4 সেকেন্ড দেখাও
-            upLabel = L"\u2713 Latest";
-        } else {
-            upLabel = L"\u21BB Check Update";
-        }
-        g.DrawString(upLabel.c_str(), -1, &fUpTxt,
-            RectF(upX, upY, upW, upH), &fmtUpC, &upWhite);
+        const wchar_t* upLabel = isCheckingUpdate ? L"\u21BB Checking..." : L"\u21BB Check Update";
+        g.DrawString(upLabel, -1, &fUpTxt, RectF(upX, upY, upW, upH), &fmtUpC, &upWhite);
 
         s_titleUpdateRect = RectF(upX, upY, upW, upH);
     }
@@ -2347,27 +2320,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             }
         }
 
-        // ── TitleBar Update Button click ──
+        // ── Check Update Button click ──
         if (s_titleUpdateRect.Width > 0.0f &&
             x >= s_titleUpdateRect.X &&
             x <= s_titleUpdateRect.X + s_titleUpdateRect.Width &&
             y >= s_titleUpdateRect.Y &&
             y <= s_titleUpdateRect.Y + s_titleUpdateRect.Height) {
-            if (isUpdateAvailable) {
-                // update আছে → update download popup খোলো
-                g_showUpdatePopup = true;
-            } else if (isCheckingUpdate) {
-                // check চলছে — কিছু করার নেই, শেষে popup আসবে
-                // g_isManualCheck true করে দাও যাতে check শেষে popup দেখায়
-                g_isManualCheck = true;
-            } else {
-                // check নেই → এখনই manual check শুরু করো
-                // check শেষে সবসময় popup দেখাবে (latest হোক বা update হোক)
-                g_isManualCheck   = true;
-                g_showCheckPopup  = false; // পুরনো popup সরাও
+            if (!isCheckingUpdate) {
+                g_isManualCheck  = true;   // check শেষে সবসময় popup দেখাবে
+                g_showCheckPopup = false;  // পুরনো popup সরাও
                 StartSilentUpdateCheck();
+                InvalidateRect(hWnd, NULL, FALSE);
             }
-            InvalidateRect(hWnd, NULL, FALSE);
             return 0;
         }
 
