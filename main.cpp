@@ -1565,54 +1565,67 @@ void DrawTitleBar(Graphics& g, int w) {
         g.DrawString(L"\xEBE8 Kill Debug", -1, &fDb, RectF(dbX, dbY, dbW, dbH), &fmtC, &white);
     }
 
-    // ── TitleBar Update Chip (APK TopHeader green chip এর মতো) ──────────────
-    // শুধু update available হলেই দেখাও — subheader chip এর মতো same system
-    if (isUpdateAvailable && !newVersionStr.empty()) {
-        float upW  = 120.0f;
-        float upH  = (float)TITLEBAR_HEIGHT - 8.0f;
+    // ── TitleBar Update Button — সবসময় দেখা যাবে, 3 টা state ──────────────
+    // State 1: isCheckingUpdate  → grey   "↻ Checking..."
+    // State 2: isUpdateAvailable → green  "↑ Update v1.x.x"
+    // State 3: otherwise         → teal   "↻ Check Update"
+    {
         float dbW  = 90.0f;
-        float upX  = startX - dbW - 10.0f - upW - 8.0f;  // debug kill button এর আরও বামে
+        float dbX  = startX - dbW - 10.0f;   // Kill Debug button এর X
+        float upW  = 125.0f;
+        float upH  = (float)TITLEBAR_HEIGHT - 8.0f;
+        float upX  = dbX - upW - 8.0f;       // Kill Debug এর ঠিক বামে
         float upY  = 4.0f;
+
+        // — background color: state অনুযায়ী —
+        Color upCol;
+        if (isCheckingUpdate) {
+            upCol = Color(255, 100, 110, 115);          // grey — checking
+        } else if (isUpdateAvailable) {
+            upCol = hoverTitleUpdateBtn
+                ? Color(255, 0, 170, 80)                // hover green
+                : Color(255, 0, 200, 100);              // normal green
+        } else {
+            upCol = hoverTitleUpdateBtn
+                ? Color(255, 0, 130, 140)               // hover teal
+                : Color(255, 0, 150, 160);              // normal teal (subheader রঙ)
+        }
 
         GraphicsPath upPath;
         float ru = 5.0f, du = ru * 2.0f;
-        upPath.AddArc(upX,          upY,          du, du, 180, 90);
-        upPath.AddArc(upX+upW-du,   upY,          du, du, 270, 90);
-        upPath.AddArc(upX+upW-du,   upY+upH-du,   du, du, 0,   90);
-        upPath.AddArc(upX,          upY+upH-du,   du, du, 90,  90);
+        upPath.AddArc(upX,        upY,        du, du, 180, 90);
+        upPath.AddArc(upX+upW-du, upY,        du, du, 270, 90);
+        upPath.AddArc(upX+upW-du, upY+upH-du, du, du, 0,   90);
+        upPath.AddArc(upX,        upY+upH-du, du, du, 90,  90);
         upPath.CloseFigure();
-
-        // APK এর মতো green chip — hover এ darker green
-        SolidBrush upBg(hoverTitleUpdateBtn
-            ? Color(255, 0, 170, 80)     // hover: darker green
-            : Color(255, 0, 200, 100));  // normal: bright green
+        SolidBrush upBg(upCol);
         g.FillPath(&upBg, &upPath);
-        Pen upBorder(Color(120, 255, 255, 255), 1.0f);
+        Pen upBorder(Color(80, 255, 255, 255), 1.0f);
         g.DrawPath(&upBorder, &upPath);
 
-        // Update icon (SystemUpdateAlt equivalent in Segoe MDL2: \xEBE8 = refresh/update)
-        Font fUpIcon(&ffIcons, 10, FontStyleRegular, UnitPixel);
+        // — icon + label —
         Font fUpTxt(&ff, 8, FontStyleBold, UnitPixel);
         SolidBrush upWhite(ColWhite);
-        StringFormat fmtUpL;
-        fmtUpL.SetAlignment(StringAlignmentNear);
-        fmtUpL.SetLineAlignment(StringAlignmentCenter);
+        StringFormat fmtUpC;
+        fmtUpC.SetAlignment(StringAlignmentCenter);
+        fmtUpC.SetLineAlignment(StringAlignmentCenter);
 
-        // Icon
-        g.DrawString(L"\xEBD3", -1, &fUpIcon,
-            RectF(upX + 6.0f, upY, 16.0f, upH), &fmtC, &upWhite);
-
-        // "Update v1.0.7" label
-        wstring upLabel = L"Update ";
-        upLabel += wstring(newVersionStr.begin(), newVersionStr.end());
+        wstring upLabel;
+        if (isCheckingUpdate) {
+            upLabel = L"\u21BB Checking...";
+        } else if (isUpdateAvailable && !newVersionStr.empty()) {
+            upLabel = L"\u2191 Update ";
+            upLabel += wstring(newVersionStr.begin(), newVersionStr.end());
+        } else if (!g_checkResultText.empty()) {
+            // "v Latest" 4 সেকেন্ড দেখাও
+            upLabel = L"\u2713 Latest";
+        } else {
+            upLabel = L"\u21BB Check Update";
+        }
         g.DrawString(upLabel.c_str(), -1, &fUpTxt,
-            RectF(upX + 24.0f, upY, upW - 26.0f, upH),
-            &fmtUpL, &upWhite);
+            RectF(upX, upY, upW, upH), &fmtUpC, &upWhite);
 
-        // hit-test rect save করো
         s_titleUpdateRect = RectF(upX, upY, upW, upH);
-    } else {
-        s_titleUpdateRect = RectF(0, 0, 0, 0);
     }
 }
 
@@ -2024,6 +2037,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (wp == 1005) {
             g_isManualCheck = false;  // auto timer — popup দেখাবে না (শুধু real update হলে দেখাবে)
             StartSilentUpdateCheck();
+            InvalidateRect(hWnd, NULL, FALSE); // titlebar update button label refresh
         }
 
         // ── Check result text expire (4 সেকেন্ড পর "✓ Latest" সরাও) ──
@@ -2199,13 +2213,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         }
         if (oldDbKill != hoverDebugKill) redraw = true;
 
-        // ── TitleBar Update chip hover ──
+        // ── TitleBar Update Button hover — always visible ──
         bool oldTitleUpd = hoverTitleUpdateBtn; hoverTitleUpdateBtn = false;
-        if (isUpdateAvailable && s_titleUpdateRect.Width > 0.0f) {
-            if (x >= s_titleUpdateRect.X && x <= s_titleUpdateRect.X + s_titleUpdateRect.Width &&
-                y >= s_titleUpdateRect.Y && y <= s_titleUpdateRect.Y + s_titleUpdateRect.Height)
-                hoverTitleUpdateBtn = true;
-        }
+        if (s_titleUpdateRect.Width > 0.0f &&
+            x >= s_titleUpdateRect.X && x <= s_titleUpdateRect.X + s_titleUpdateRect.Width &&
+            y >= s_titleUpdateRect.Y && y <= s_titleUpdateRect.Y + s_titleUpdateRect.Height)
+            hoverTitleUpdateBtn = true;
         if (oldTitleUpd != hoverTitleUpdateBtn) redraw = true;
 
         bool oldFb = hoverFeedback,  oldAc = hoverMyAccount;
@@ -2334,16 +2347,22 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             }
         }
 
-        // ── TitleBar Update chip click → same popup খোলে ──
-        if (isUpdateAvailable && s_titleUpdateRect.Width > 0.0f) {
-            if (x >= s_titleUpdateRect.X &&
-                x <= s_titleUpdateRect.X + s_titleUpdateRect.Width &&
-                y >= s_titleUpdateRect.Y &&
-                y <= s_titleUpdateRect.Y + s_titleUpdateRect.Height) {
+        // ── TitleBar Update Button click ──
+        if (s_titleUpdateRect.Width > 0.0f &&
+            x >= s_titleUpdateRect.X &&
+            x <= s_titleUpdateRect.X + s_titleUpdateRect.Width &&
+            y >= s_titleUpdateRect.Y &&
+            y <= s_titleUpdateRect.Y + s_titleUpdateRect.Height) {
+            if (isUpdateAvailable) {
+                // update আছে → popup খোলো
                 g_showUpdatePopup = true;
-                InvalidateRect(hWnd, NULL, FALSE);
-                return 0;
+            } else if (!isCheckingUpdate) {
+                // checking নেই → manual check শুরু করো
+                g_isManualCheck = true;
+                StartSilentUpdateCheck();
             }
+            InvalidateRect(hWnd, NULL, FALSE);
+            return 0;
         }
 
         // ── Debug Kill Button click ──
