@@ -1723,7 +1723,10 @@ public:
                     }
                     CoTaskMemFree(src);
                 }
-                if (m_tabIdx==w.activeTab) {
+                if (m_tabIdx==w.activeTab && w.tabs[m_tabIdx].controller) {
+                    // IMPORTANT: url এখন update হয়েছে, তাই NavTotalH() সঠিক value দেবে।
+                    // Bookmark bar hide/show হলে WebView bounds পাল্টায় —
+                    // তাই url update এর পরে bounds আবার set করতে হবে।
                     RECT wvr=GetWebViewRect(m_hWnd);
                     w.tabs[m_tabIdx].controller->put_Bounds(wvr);
                     InvalidateRect(m_hWnd,NULL,TRUE);
@@ -1740,9 +1743,20 @@ public:
                 if (m_tabIdx>=(int)w.tabs.size()) return S_OK;
                 // bookmark bar bounds
                 if (m_tabIdx==w.activeTab && w.tabs[m_tabIdx].controller) {
+                    // NavigationCompleted এ url পড়ে নিই — SourceChanged আসার আগেই
+                    // bounds set হওয়া দরকার। url টা এখানেই update করা নিরাপদ।
+                    ICoreWebView2* wv = w.tabs[m_tabIdx].webview.Get();
+                    if (wv) {
+                        LPWSTR curSrc = nullptr;
+                        wv->get_Source(&curSrc);
+                        if (curSrc) {
+                            w.tabs[m_tabIdx].url = std::wstring(curSrc);
+                            CoTaskMemFree(curSrc);
+                        }
+                    }
                     RECT wvr=GetWebViewRect(m_hWnd);
                     w.tabs[m_tabIdx].controller->put_Bounds(wvr);
-                    InvalidateRect(m_hWnd,NULL,FALSE);
+                    InvalidateRect(m_hWnd,NULL,TRUE);
                 }
                 // Re-prime __RAS_DARK__ after navigation (window var is reset per page)
                 // then re-run the inject/remove logic so persistent dark mode works.
