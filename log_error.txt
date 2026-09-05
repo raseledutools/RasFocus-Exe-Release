@@ -1,6 +1,6 @@
 BUILD STATUS: SUCCESS
-Time: 2026-09-05 07:57:41 UTC
-Run: https://github.com/raseledutools/RasFocus-Exe-Release/actions/runs/33953885462
+Time: 2026-09-05 08:08:56 UTC
+Run: https://github.com/raseledutools/RasFocus-Exe-Release/actions/runs/33954398998
 
 === Compiler Output ===
 Microsoft (R) C/C++ Optimizing Compiler Version 19.51.36256 for x64
@@ -16,9 +16,9 @@ main.cpp(217): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', p
 main.cpp(217): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
 main.cpp(853): warning C4996: 'fopen': This function or variable may be unsafe. Consider using fopen_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
 main.cpp(877): warning C4996: 'fopen': This function or variable may be unsafe. Consider using fopen_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
-main.cpp(1885): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
-main.cpp(2225): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data
-main.cpp(2225): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data
+main.cpp(1933): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+main.cpp(2273): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data
+main.cpp(2273): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data
 tab_family_link.cpp(362): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\codecvt(34): note: see declaration of 'std::codecvt_utf8' (compiling source file tab_family_link.cpp)
 tab_family_link.cpp(362): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>::codecvt_utf8': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
@@ -88,12 +88,12 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
 context_menu.cpp
 downloads_panel.cpp
 find_in_page.cpp
+history_panel.cpp
 browser/advanced_feature.cpp(23): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\codecvt(34): note: see declaration of 'std::codecvt_utf8' (compiling source file browser/advanced_feature.cpp)
 browser/advanced_feature.cpp(23): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>::codecvt_utf8': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
 browser/advanced_feature.cpp(26): warning C4996: 'localtime': This function or variable may be unsafe. Consider using localtime_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
 browser/advanced_feature.cpp(116): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
-history_panel.cpp
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xlocale(251): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning. (compiling source file browser/advanced_feature.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\codecvt(34): note: see declaration of 'std::codecvt_utf8' (compiling source file browser/advanced_feature.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xlocale(251): note: the template instantiation context (the oldest one first) is (compiling source file browser/advanced_feature.cpp)
@@ -114,6 +114,9 @@ tab_adult.cpp
 tab_blocks.cpp(706): warning C4244: 'argument': conversion from 'LONG' to 'Gdiplus::REAL', possible loss of data
 tab_blocks.cpp(706): warning C4244: 'argument': conversion from 'LONG' to 'Gdiplus::REAL', possible loss of data
 tab_blocks.cpp(1533): warning C4244: 'initializing': conversion from 'time_t' to 'int', possible loss of data
+tab_blocks.cpp(2634): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data
+tab_blocks.cpp(2802): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data
+tab_blocks.cpp(2820): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): warning C4244: '=': conversion from 'wchar_t' to 'char', possible loss of data (compiling source file browser/mini_browser.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): note: the template instantiation context (the oldest one first) is (compiling source file browser/mini_browser.cpp)
 browser/mini_browser.cpp(3298): note: see reference to function template instantiation 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string<std::_String_iterator<std::_String_val<std::_Simple_types<_Elem>>>,0>(_Iter,_Iter,const _Alloc &)' being compiled
@@ -140,9 +143,6 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
             _InIt=wchar_t *,
             _SizeTy=std::+::_Size_type
         ] (compiling source file browser/mini_browser.cpp)
-tab_blocks.cpp(2634): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data
-tab_blocks.cpp(2802): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data
-tab_blocks.cpp(2820): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): warning C4244: '=': conversion from 'wchar_t' to 'char', possible loss of data (compiling source file tab_blocks.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): note: the template instantiation context (the oldest one first) is (compiling source file tab_blocks.cpp)
 tab_blocks.cpp(412): note: see reference to function template instantiation 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string<std::_String_iterator<std::_String_val<std::_Simple_types<_Elem>>>,0>(_Iter,_Iter,const _Alloc &)' being compiled
