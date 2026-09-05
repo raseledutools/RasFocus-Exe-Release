@@ -1946,11 +1946,43 @@ public:
                 return S_OK;
             }).Get(),nullptr);
 
-        // ── YouTube Ad Block: AddScriptToExecuteOnDocumentCreated ────────────
+        // ── YouTube Ad Block + Desktop Force: AddScriptToExecuteOnDocumentCreated ──
         // Fires before page renders — earliest possible injection point.
-        // Guards itself with hostname check so it only activates on youtube.com.
         tab.webview->AddScriptToExecuteOnDocumentCreated(
             GetYouTubeAdBlockScript().c_str(),
+            nullptr);
+
+        // ── YouTube Desktop View Force ────────────────────────────────────────
+        // YouTube তিনটা জিনিস দেখে mobile/desktop decide করে:
+        // 1. User-Agent string (WebResourceRequested এ already fixed)
+        // 2. Sec-CH-UA-Mobile header (WebResourceRequested এ already fixed)
+        // 3. PREF cookie এবং window.innerWidth — এটা JS দিয়ে fix করতে হবে
+        tab.webview->AddScriptToExecuteOnDocumentCreated(
+            L"(function(){"
+            L"  if(location.hostname.indexOf('youtube.com')===-1)return;"
+            // PREF cookie: f6=400 মানে desktop layout force
+            L"  var c=document.cookie;"
+            L"  if(c.indexOf('PREF=')===-1||c.indexOf('f6=400')===-1){"
+            L"    document.cookie='PREF=f6=400;domain=.youtube.com;path=/;max-age=31536000';"
+            L"  }"
+            // window.outerWidth spoof — YouTube checks this for responsive layout
+            // যদি 768 এর নিচে হয় তাহলে mobile layout দেয়
+            L"  try{"
+            L"    Object.defineProperty(window,'outerWidth',{get:()=>1280,configurable:true});"
+            L"    Object.defineProperty(window,'innerWidth',{get:()=>1280,configurable:true});"
+            L"    Object.defineProperty(screen,'width',{get:()=>1920,configurable:true});"
+            L"    Object.defineProperty(screen,'availWidth',{get:()=>1920,configurable:true});"
+            L"  }catch(e){}"
+            // navigator.userAgent ensure desktop
+            L"  try{"
+            L"    Object.defineProperty(navigator,'userAgent',{get:()=>"
+            L"      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',"
+            L"      configurable:true"
+            L"    });"
+            L"  }catch(e){}"
+            // maxTouchPoints=0 → desktop (mobile devices have >0)
+            L"  try{Object.defineProperty(navigator,'maxTouchPoints',{get:()=>0,configurable:true});}catch(e){}"
+            L"})();",
             nullptr);
 
         // F11 accelerator
@@ -2019,20 +2051,21 @@ static void CreateWebViewForTab(HWND hWnd, int tabIdx) {
     } else {
         auto options=Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
         options->put_AdditionalBrowserArguments(
-            L"--enable-features=msWebView2EnableExtensions "
+            // enable-features: একটাই flag এ সব merge — দুটো আলাদা দিলে Chrome দ্বিতীয়টা ignore করে
+            L"--enable-features=msWebView2EnableExtensions,CookiesWithoutSameSiteMustBeSecure "
             L"--enable-gpu-rasterization "
             L"--enable-zero-copy "
             L"--disable-features=Translate "
             // Cloudflare + anti-bot: automation flag সম্পূর্ণ বন্ধ
             L"--disable-blink-features=AutomationControlled "
-            // Cookie & storage fix
-            L"--enable-features=CookiesWithoutSameSiteMustBeSecure "
             L"--no-proxy-server "
-            // Chrome-এর মতো দেখানোর জন্য
+            // Chrome desktop-এর মতো দেখানোর জন্য
             L"--lang=en-US "
             L"--no-first-run "
             L"--no-default-browser-check "
             L"--force-color-profile=srgb "
+            // YouTube সহ সব সাইটে desktop view force করতে
+            L"--disable-mobile-layout "
             // Cloudflare TLS fingerprint-এর জন্য: QUIC/H3 সক্রিয়
             L"--enable-quic "
             L"--quic-version=h3 "
