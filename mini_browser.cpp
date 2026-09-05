@@ -742,9 +742,25 @@ static void ShowExtensionsMenu(HWND hWnd) {
     DestroyMenu(hMenu);
 }
 
+static void ApplyTheme(HWND hWnd, bool dark);  // forward decl
+
 static void ShowMainMenu(HWND hWnd) {
     if (!g_windows.count(hWnd)) return;
     auto& wd = g_windows[hWnd];
+
+    // ── Appearance submenu (Chrome-style theme picker) ────────────────────
+    HMENU hAppear = CreatePopupMenu();
+    // System default
+    AppendMenuW(hAppear, MF_STRING, 4001, L"Use system default");
+    AppendMenuW(hAppear, MF_SEPARATOR, 0, NULL);
+    // Light
+    AppendMenuW(hAppear, MF_STRING, 4002, L"Light");
+    // Dark
+    AppendMenuW(hAppear, MF_STRING, 4003, L"Dark");
+    // Check the active one
+    if (!wd.isDarkMode) CheckMenuItem(hAppear, 4002, MF_BYCOMMAND|MF_CHECKED);
+    else                CheckMenuItem(hAppear, 4003, MF_BYCOMMAND|MF_CHECKED);
+
     HMENU hMenu = CreatePopupMenu();
     AppendMenuW(hMenu, MF_STRING, 3001, L"New Tab\tCtrl+T");
     AppendMenuW(hMenu, MF_STRING, 3002, L"New Window");
@@ -752,6 +768,9 @@ static void ShowMainMenu(HWND hWnd) {
     AppendMenuW(hMenu, MF_STRING, 3003, L"History");
     AppendMenuW(hMenu, MF_STRING, 3004, L"Downloads\tCtrl+J");
     AppendMenuW(hMenu, MF_STRING, 3005, L"Bookmarks");
+    AppendMenuW(hMenu, MF_SEPARATOR, 0, NULL);
+    // Appearance submenu
+    AppendMenuW(hMenu, MF_POPUP, (UINT_PTR)hAppear, L"Appearance");
     AppendMenuW(hMenu, MF_SEPARATOR, 0, NULL);
     // Gemini Developer Mode toggle
     AppendMenuW(hMenu, MF_STRING, 3010, L"Open Gemini (Developer Mode)");
@@ -769,6 +788,7 @@ static void ShowMainMenu(HWND hWnd) {
 
     int cmd = TrackPopupMenu(hMenu, TPM_RETURNCMD|TPM_RIGHTBUTTON, pt.x, pt.y, 0, hWnd, NULL);
     DestroyMenu(hMenu);
+    DestroyMenu(hAppear);
 
     if (!g_windows.count(hWnd)) return;
     auto* tab = wd.active();
@@ -776,10 +796,6 @@ static void ShowMainMenu(HWND hWnd) {
     switch (cmd) {
     case 3001: AddTab(hWnd, L"LOCAL_NTP"); break;
     case 3002: {
-        // Open new browser window
-        std::wstring newUrl = L"LOCAL_NTP";
-        // We call LaunchMiniBrowser via a simple new window approach
-        // (just add a tab in this window for now)
         AddTab(hWnd, L"LOCAL_NTP");
         break;
     }
@@ -788,7 +804,7 @@ static void ShowMainMenu(HWND hWnd) {
     case 3006:
         MessageBoxW(hWnd,
             L"RasBrowser Settings\n\n"
-            L"Dark Mode: Toggle with Moon/Sun icon\n"
+            L"Dark Mode: Toggle with Moon/Sun icon or Menu > Appearance\n"
             L"Always on Top: Toggle with Pin icon\n"
             L"Fullscreen: Press F11\n"
             L"New Tab: Double-click titlebar or Ctrl+T\n"
@@ -799,7 +815,6 @@ static void ShowMainMenu(HWND hWnd) {
     case 3010:
         // Gemini Developer Mode: open with special user agent for full API access
         if (tab && tab->webview) {
-            // Set developer-grade UA then navigate to Gemini
             ComPtr<ICoreWebView2Settings> s;
             if (SUCCEEDED(tab->webview->get_Settings(&s)) && s) {
                 ComPtr<ICoreWebView2Settings2> s2;
@@ -813,8 +828,81 @@ static void ShowMainMenu(HWND hWnd) {
             tab->webview->Navigate(L"https://gemini.google.com/app");
         }
         break;
+    // ── Appearance theme choices ─────────────────────────────────────────
+    case 4001: {
+        // System default: check Windows dark mode setting
+        HKEY hk; bool sysDark = false;
+        if (RegOpenKeyExW(HKEY_CURRENT_USER,
+            L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+            0, KEY_READ, &hk) == ERROR_SUCCESS) {
+            DWORD val = 1, sz = sizeof(val);
+            RegQueryValueExW(hk, L"AppsUseLightTheme", NULL, NULL, (LPBYTE)&val, &sz);
+            RegCloseKey(hk);
+            sysDark = (val == 0);
+        }
+        ApplyTheme(hWnd, sysDark);
+        break;
+    }
+    case 4002: ApplyTheme(hWnd, false); break;  // Light
+    case 4003: ApplyTheme(hWnd, true);  break;  // Dark
     case 3008: DestroyWindow(hWnd); break;
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// APPLY THEME — shared by dark button + Appearance menu
+// ─────────────────────────────────────────────────────────────────────────────
+static void ApplyTheme(HWND hWnd, bool dark) {
+    if (!g_windows.count(hWnd)) return;
+    auto& wd = g_windows[hWnd];
+    if (wd.isDarkMode == dark) return;  // no change needed
+    wd.isDarkMode = dark;
+
+    const std::wstring darkInjectScript =
+        L"window.__RAS_DARK__=true;"
+        L"(function(){"
+        L"  var s=document.getElementById('__ras_dark_mode__');"
+        L"  if(!s){"
+        L"    s=document.createElement('style');"
+        L"    s.id='__ras_dark_mode__';"
+        L"    (document.head||document.documentElement).appendChild(s);"
+        L"  }"
+        L"  s.textContent='"
+        L"    html{filter:invert(1) hue-rotate(180deg)!important;background:#1e1e1e!important;}"
+        L"    img,video,canvas,picture,svg,iframe{"
+        L"      filter:invert(1) hue-rotate(180deg)!important;"
+        L"    }"
+        L"  ';"
+        L"})();";
+
+    const std::wstring lightRemoveScript =
+        L"window.__RAS_DARK__=false;"
+        L"(function(){"
+        L"  var s=document.getElementById('__ras_dark_mode__');"
+        L"  if(s) s.remove();"
+        L"})();";
+
+    for (auto& t : wd.tabs) {
+        if (!t.controller || !t.webview) continue;
+        ComPtr<ICoreWebView2Controller2> c2;
+        if (SUCCEEDED(t.controller->QueryInterface(IID_PPV_ARGS(&c2)))) {
+            COREWEBVIEW2_COLOR bg = wd.isDarkMode
+                ? COREWEBVIEW2_COLOR{255,30,30,30}
+                : COREWEBVIEW2_COLOR{255,255,255,255};
+            c2->put_DefaultBackgroundColor(bg);
+        }
+        if (t.url == L"LOCAL_NTP" || t.url == L"about:blank") {
+            t.webview->NavigateToString(GetLocalNTP_HTML(wd.isDarkMode).c_str());
+        } else if (t.url.find(L"blocked by rasfocus") != std::wstring::npos) {
+            t.webview->NavigateToString(GetBlocked_HTML(wd.isDarkMode).c_str());
+        } else {
+            t.webview->ExecuteScript(
+                wd.isDarkMode ? darkInjectScript.c_str() : lightRemoveScript.c_str(),
+                nullptr);
+        }
+    }
+    InvalidateRect(hWnd, NULL, TRUE);
+    if (wd.hAddressBar) InvalidateRect(wd.hAddressBar, NULL, TRUE);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1148,22 +1236,30 @@ public:
         // ── AddScriptToExecuteOnDocumentCreated: checks window.__RAS_DARK__ at runtime ──
         // This way toggle always works even after tab was created.
         {
+            // AddScriptToExecuteOnDocumentCreated fires before page renders.
+            // It reads window.__RAS_DARK__ (set by ExecuteScript below) so it
+            // correctly injects or removes dark CSS on every navigation.
             tab.webview->AddScriptToExecuteOnDocumentCreated(
                 L"(function(){"
-                L"  if(!window.__RAS_DARK__) return;"
-                L"  if(document.getElementById('__ras_dark_mode__')) return;"
-                L"  var s=document.createElement('style');"
-                L"  s.id='__ras_dark_mode__';"
-                L"  s.textContent='"
-                L"    html{filter:invert(1) hue-rotate(180deg)!important;background:#1e1e1e!important;}"
-                L"    img,video,canvas,picture,svg,iframe{"
-                L"      filter:invert(1) hue-rotate(180deg)!important;"
-                L"    }"
-                L"  ';"
-                L"  (document.head||document.documentElement).appendChild(s);"
+                L"  var id='__ras_dark_mode__';"
+                L"  var existing=document.getElementById(id);"
+                L"  if(window.__RAS_DARK__){"
+                L"    if(existing) return;"
+                L"    var s=document.createElement('style');"
+                L"    s.id=id;"
+                L"    s.textContent='"
+                L"      html{filter:invert(1) hue-rotate(180deg)!important;background:#1e1e1e!important;}"
+                L"      img,video,canvas,picture,svg,iframe{"
+                L"        filter:invert(1) hue-rotate(180deg)!important;"
+                L"      }"
+                L"    ';"
+                L"    (document.head||document.documentElement).appendChild(s);"
+                L"  } else {"
+                L"    if(existing) existing.remove();"
+                L"  }"
                 L"})();",
                 nullptr);
-            // Set the runtime dark flag so the injected script above reads the correct value
+            // Prime the flag for this tab's first load
             std::wstring setVar = std::wstring(L"window.__RAS_DARK__=")
                                 + (wd.isDarkMode ? L"true;" : L"false;");
             tab.webview->ExecuteScript(setVar.c_str(), nullptr);
@@ -1508,19 +1604,46 @@ public:
                 return S_OK;
             }).Get(),nullptr);
 
-        // NavigationCompleted — inject AI filter CSS + update bounds for bookmark bar show/hide
+        // NavigationCompleted — re-apply dark flag + AI filter + bounds
         tab.webview->add_NavigationCompleted(
             Callback<ICoreWebView2NavigationCompletedEventHandler>(
             [this](ICoreWebView2* sender,ICoreWebView2NavigationCompletedEventArgs*)->HRESULT{
                 if (!g_windows.count(m_hWnd)) return S_OK;
                 auto& w=g_windows[m_hWnd];
                 if (m_tabIdx>=(int)w.tabs.size()) return S_OK;
-                // bookmark bar show/hide এর জন্য bounds আপডেট করা
+                // bookmark bar bounds
                 if (m_tabIdx==w.activeTab && w.tabs[m_tabIdx].controller) {
                     RECT wvr=GetWebViewRect(m_hWnd);
                     w.tabs[m_tabIdx].controller->put_Bounds(wvr);
                     InvalidateRect(m_hWnd,NULL,FALSE);
                 }
+                // Re-prime __RAS_DARK__ after navigation (window var is reset per page)
+                // then re-run the inject/remove logic so persistent dark mode works.
+                {
+                    std::wstring reapply =
+                        std::wstring(L"window.__RAS_DARK__=") +
+                        (w.isDarkMode ? L"true;" : L"false;") +
+                        L"(function(){"
+                        L"  var id='__ras_dark_mode__';"
+                        L"  var existing=document.getElementById(id);"
+                        L"  if(window.__RAS_DARK__){"
+                        L"    if(existing) return;"
+                        L"    var s=document.createElement('style');"
+                        L"    s.id=id;"
+                        L"    s.textContent='"
+                        L"      html{filter:invert(1) hue-rotate(180deg)!important;background:#1e1e1e!important;}"
+                        L"      img,video,canvas,picture,svg,iframe{"
+                        L"        filter:invert(1) hue-rotate(180deg)!important;"
+                        L"      }"
+                        L"    ';"
+                        L"    (document.head||document.documentElement).appendChild(s);"
+                        L"  } else {"
+                        L"    if(existing) existing.remove();"
+                        L"  }"
+                        L"})();";
+                    sender->ExecuteScript(reapply.c_str(), nullptr);
+                }
+                // AI inject
                 std::wstring script=GetAiInjectScript(w.tabs[m_tabIdx].url);
                 if (!script.empty()) sender->ExecuteScript(script.c_str(),nullptr);
                 return S_OK;
@@ -1898,63 +2021,8 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
         if (wd.hClose){DestroyWindow(hWnd);break;}
         if (wd.hPin)  {wd.isPinned=!wd.isPinned;SetWindowPos(hWnd,wd.isPinned?HWND_TOPMOST:HWND_NOTOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE);InvalidateRect(hWnd,NULL,TRUE);break;}
         if (wd.hDark) {
-            wd.isDarkMode = !wd.isDarkMode;
-
-            // Dark/Light CSS inject script for real websites
-            // invert(1) hue-rotate(180deg) gives a true dark look;
-            // images/videos get a second invert so they stay natural.
-            const std::wstring darkInjectScript =
-                L"window.__RAS_DARK__=true;"
-                L"(function(){"
-                L"  var s=document.getElementById('__ras_dark_mode__');"
-                L"  if(!s){"
-                L"    s=document.createElement('style');"
-                L"    s.id='__ras_dark_mode__';"
-                L"    (document.head||document.documentElement).appendChild(s);"
-                L"  }"
-                L"  s.textContent='"
-                L"    html{filter:invert(1) hue-rotate(180deg)!important;background:#1e1e1e!important;}"
-                L"    img,video,canvas,picture,svg,iframe{"
-                L"      filter:invert(1) hue-rotate(180deg)!important;"
-                L"    }"
-                L"  ';"
-                L"})();";
-
-            const std::wstring lightRemoveScript =
-                L"window.__RAS_DARK__=false;"
-                L"(function(){"
-                L"  var s=document.getElementById('__ras_dark_mode__');"
-                L"  if(s) s.remove();"
-                L"})();";
-
-            // Apply to ALL tabs
-            for (auto& t : wd.tabs) {
-                if (!t.controller || !t.webview) continue;
-
-                // Update WebView2 background color
-                ComPtr<ICoreWebView2Controller2> c2;
-                if (SUCCEEDED(t.controller->QueryInterface(IID_PPV_ARGS(&c2)))) {
-                    COREWEBVIEW2_COLOR bg = wd.isDarkMode
-                        ? COREWEBVIEW2_COLOR{255,30,30,30}
-                        : COREWEBVIEW2_COLOR{255,255,255,255};
-                    c2->put_DefaultBackgroundColor(bg);
-                }
-
-                // Reload internal pages, inject CSS into real sites
-                if (t.url == L"LOCAL_NTP" || t.url == L"about:blank") {
-                    t.webview->NavigateToString(GetLocalNTP_HTML(wd.isDarkMode).c_str());
-                } else if (t.url.find(L"blocked by rasfocus") != std::wstring::npos) {
-                    t.webview->NavigateToString(GetBlocked_HTML(wd.isDarkMode).c_str());
-                } else {
-                    // Inject or remove dark CSS on the live page
-                    t.webview->ExecuteScript(
-                        wd.isDarkMode ? darkInjectScript.c_str() : lightRemoveScript.c_str(),
-                        nullptr);
-                }
-            }
-
-            InvalidateRect(hWnd, NULL, TRUE);
-            if (wd.hAddressBar) InvalidateRect(wd.hAddressBar, NULL, TRUE);
+            // Toggle via shared ApplyTheme so button + menu stay in sync
+            ApplyTheme(hWnd, !wd.isDarkMode);
             break;
         }
 
