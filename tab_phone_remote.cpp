@@ -83,7 +83,7 @@ static const int  TARGET_BPS  = 4'000'000;
 
 static atomic<bool> s_active  { false };
 static SOCKET       s_listenSock = INVALID_SOCKET;
-static SOCKET       s_clientSock = INVALID_SOCKET;
+SOCKET              s_clientSock = INVALID_SOCKET;
 static mutex        s_sendMtx;
 
 // ── ID & Password (stable like RustDesk) ─────────────────────────
