@@ -162,6 +162,73 @@ std::wstring GetBlocked_HTML(bool isDark) {
 // uBlock Origin-এর মতো network-layer block + DOM manipulation দুটোই।
 // NavigationCompleted এ inject হয়, তারপর MutationObserver দিয়ে continuously চলে।
 // ─────────────────────────────────────────────────────────────────────────────
+
+// Early-stage script: ContentLoading এ inject হয়, page parse শুরুর আগেই।
+// ytInitialPlayerResponse.playerAds ও yt.setConfig() intercept করে silent pre-roll বন্ধ করে।
+std::wstring GetYouTubeEarlyAdBlockScript() {
+    return
+        L"(function(){"
+        L"if(location.hostname.indexOf('youtube.com')===-1)return;"
+        L"if(window.__RAS_EARLY_ADBLOCK__)return;"
+        L"window.__RAS_EARLY_ADBLOCK__=true;"
+
+        // ── ytInitialPlayerResponse wipe: page-embedded ad config মুছে দাও ─
+        // YouTube inline script এ window.ytInitialPlayerResponse set করে।
+        // defineProperty trap দিয়ে যখনই সেট হবে, playerAds মুছে দাও।
+        L"(function(){"
+        L"  var _ytIPR=undefined;"
+        L"  function wipeAds(v){"
+        L"    if(!v||typeof v!=='object')return v;"
+        L"    try{delete v.playerAds;}catch(e){}"
+        L"    try{delete v.adPlacements;}catch(e){}"
+        L"    try{if(v.playabilityStatus)delete v.playabilityStatus.liveStreamability;}catch(e){}"
+        L"    return v;"
+        L"  }"
+        L"  try{"
+        L"    Object.defineProperty(window,'ytInitialPlayerResponse',{"
+        L"      get:function(){return _ytIPR;},"
+        L"      set:function(v){_ytIPR=wipeAds(v);},"
+        L"      configurable:true"
+        L"    });"
+        L"  }catch(e){}"
+
+        // ── yt.setConfig intercept: runtime ad config injection বন্ধ করো ──
+        // YouTube player runtime এ yt.setConfig({PLAYER_VARS:{...}}) call করে।
+        // এই call intercept করে adformat, ad_tag ইত্যাদি মুছে দাও।
+        L"  var _ytObj=window.yt||{};"
+        L"  var _origSetConfig=_ytObj.setConfig;"
+        L"  function patchYtSetConfig(){"
+        L"    if(!window.yt||window.yt.__RAS_PATCHED__)return;"
+        L"    window.yt.__RAS_PATCHED__=true;"
+        L"    var orig=window.yt.setConfig||function(){};"
+        L"    window.yt.setConfig=function(cfg){"
+        L"      if(cfg&&typeof cfg==='object'){"
+        L"        try{delete cfg.PLAYER_VARS;}catch(e){}"
+        L"        try{"
+        L"          if(cfg.EXPERIMENT_FLAGS){"
+        L"            var f=cfg.EXPERIMENT_FLAGS;"
+        L"            var adKeys=Object.keys(f).filter(function(k){"
+        L"              return k.indexOf('ad')!==-1||k.indexOf('Ad')!==-1;"
+        L"            });"
+        L"            adKeys.forEach(function(k){try{delete f[k];}catch(e){}});"
+        L"          }"
+        L"        }catch(e){}"
+        L"      }"
+        L"      return orig.apply(this,arguments);"
+        L"    };"
+        L"  }"
+        // yt object later set হতে পারে, poll করো
+        L"  var _ytPatchTry=0;"
+        L"  var _ytPatchTimer=setInterval(function(){"
+        L"    _ytPatchTry++;"
+        L"    if(window.yt){patchYtSetConfig();clearInterval(_ytPatchTimer);}"
+        L"    if(_ytPatchTry>30)clearInterval(_ytPatchTimer);"
+        L"  },100);"
+        L"})();"
+
+        L"})();";
+}
+
 std::wstring GetYouTubeAdBlockScript() {
     return
         L"(function(){"
@@ -1734,6 +1801,23 @@ public:
                 return S_OK;
             }).Get(),nullptr);
 
+        // ContentLoading — YouTube early ad block injection (before page scripts run)
+        // ytInitialPlayerResponse এবং yt.setConfig() intercept এখানে হয়,
+        // তাই silent pre-roll ad গুলো player load হওয়ার আগেই বন্ধ হয়।
+        tab.webview->add_ContentLoading(
+            Callback<ICoreWebView2ContentLoadingEventHandler>(
+            [this](ICoreWebView2* sender, ICoreWebView2ContentLoadingEventArgs*)->HRESULT{
+                if (!g_windows.count(m_hWnd)) return S_OK;
+                auto& w = g_windows[m_hWnd];
+                if (m_tabIdx >= (int)w.tabs.size()) return S_OK;
+                const std::wstring& tabUrl = w.tabs[m_tabIdx].url;
+                if (tabUrl.find(L"youtube.com") != std::wstring::npos) {
+                    std::wstring earlyScript = GetYouTubeEarlyAdBlockScript();
+                    sender->ExecuteScript(earlyScript.c_str(), nullptr);
+                }
+                return S_OK;
+            }).Get(), nullptr);
+
         // NavigationCompleted — re-apply dark flag + AI filter + bounds
         tab.webview->add_NavigationCompleted(
             Callback<ICoreWebView2NavigationCompletedEventHandler>(
@@ -1948,6 +2032,11 @@ public:
 
         // ── YouTube Ad Block + Desktop Force: AddScriptToExecuteOnDocumentCreated ──
         // Fires before page renders — earliest possible injection point.
+        // Early script first: ytInitialPlayerResponse/yt.setConfig intercept করে silent pre-roll বন্ধ করে
+        tab.webview->AddScriptToExecuteOnDocumentCreated(
+            GetYouTubeEarlyAdBlockScript().c_str(),
+            nullptr);
+        // Main ad block script: DOM/skip/fetch intercept
         tab.webview->AddScriptToExecuteOnDocumentCreated(
             GetYouTubeAdBlockScript().c_str(),
             nullptr);
