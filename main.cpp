@@ -2653,6 +2653,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         break;
     }
 
+    case WM_USER + 50: {
+        // Google Drive API list response (posted from background thread)
+        std::string* pJson = reinterpret_cast<std::string*>(lp);
+        if (pJson) ProcessDriveApiResponse(*pJson);
+        break;
+    }
+
     case WM_DESTROY:
         extern void SaveDeepStudySettings();
         SaveDeepStudySettings();

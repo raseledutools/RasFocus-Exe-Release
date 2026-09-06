@@ -15,6 +15,12 @@
 #include <commdlg.h>
 #include <fstream>
 #include <algorithm>
+#include <thread>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <wininet.h>
+#pragma comment(lib, "ws2_32.lib")
+#pragma comment(lib, "wininet.lib")
 
 #pragma comment(lib, "Shlwapi.lib")
 #pragma comment(lib, "Shell32.lib")
@@ -32,15 +38,13 @@ static int fm_activeSubTab = 0;   // 0 = Local Files, 1 = Google Drive
 
 // --- Local File Explorer State ---
 static wstring fm_currentPath = L"C:\\";
-static vector<wstring> fm_breadcrumb;  // path segments for breadcrumb
-static vector<pair<wstring, bool>> fm_items; // (name, isDir)
+static vector<wstring> fm_breadcrumb;
+static vector<pair<wstring, bool>> fm_items;
 static int fm_selectedItem = -1;
 static int fm_scrollOffset = 0;
 static int fm_hovItem      = -1;
 static bool fm_hovUp       = false;
 static bool fm_hovSearch   = false;
-
-// --- Breadcrumb hover ---
 static int fm_hovBreadcrumb = -1;
 
 // --- Sub-tab hover ---
@@ -53,14 +57,386 @@ static bool fm_hovNewFolder= false;
 static bool fm_hovDelete   = false;
 static bool fm_hovOpen     = false;
 
-// --- Google Drive sub-state ---
-static bool fm_driveSignedIn = false;
-static bool fm_hovDriveSignIn = false;
-static bool fm_driveHovItem  = -1;
-static int  fm_driveScrollOff= 0;
-// Simulated Drive items (populated after "sign in")
-struct DriveItem { wstring name; wstring type; wstring modified; wstring size; };
+// ============================================================
+// GOOGLE DRIVE — Real OAuth2 + REST API
+// ============================================================
+// OAuth2 config (Google Cloud Console -> Desktop app)
+#define GD_CLIENT_ID     L"YOUR_CLIENT_ID.apps.googleusercontent.com"
+#define GD_CLIENT_SECRET L"YOUR_CLIENT_SECRET"
+#define GD_REDIRECT_URI  L"http://localhost:5050"
+#define GD_SCOPE         L"https://www.googleapis.com/auth/drive.readonly"
+
+// Drive item (populated via API)
+struct DriveItem {
+    wstring id;
+    wstring name;
+    wstring mimeType;
+    wstring modified;
+    wstring size;
+};
+
+// State
+static bool    fm_driveSignedIn   = false;
+static bool    fm_hovDriveSignIn  = false;
+static bool    fm_driveLoading    = false;   // API call in progress
+static int     fm_driveHovItem    = -1;
+static int     fm_driveScrollOff  = 0;
+static int     fm_driveSelectedItem = -1;
+static wstring fm_driveAccessToken;
+static wstring fm_driveRefreshToken;
+static wstring fm_driveUserEmail   = L"";
+static wstring fm_driveCurrentFolderId = L"root";
+static vector<wstring> fm_driveFolderStack;  // navigation stack
+static vector<wstring> fm_driveFolderNameStack;
 static vector<DriveItem> fm_driveItems;
+static wstring fm_driveStatusMsg;  // error/status text
+
+// OAuth local server state
+static SOCKET  fm_oauthSocket    = INVALID_SOCKET;
+static HWND    fm_oauthBrowserWnd = NULL;
+
+// ------------------------------------------------------------
+// Narrow/Wide helpers
+// ------------------------------------------------------------
+static string WstrToStr(const wstring& w) {
+    if (w.empty()) return {};
+    int sz = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    string s(sz - 1, 0);
+    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, &s[0], sz, nullptr, nullptr);
+    return s;
+}
+static wstring StrToWstr(const string& s) {
+    if (s.empty()) return {};
+    int sz = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0);
+    wstring w(sz - 1, 0);
+    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, &w[0], sz);
+    return w;
+}
+static string UrlEncode(const string& s) {
+    string out; out.reserve(s.size() * 3);
+    for (unsigned char c : s) {
+        if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
+            out += c;
+        } else {
+            char buf[4]; sprintf_s(buf, "%%%02X", c);
+            out += buf;
+        }
+    }
+    return out;
+}
+
+// ------------------------------------------------------------
+// Simple JSON field extractor (no dep)
+// ------------------------------------------------------------
+static string JsonField(const string& json, const string& key) {
+    string search = "\"" + key + "\"";
+    size_t pos = json.find(search);
+    if (pos == string::npos) return {};
+    pos = json.find(':', pos + search.size());
+    if (pos == string::npos) return {};
+    pos = json.find_first_not_of(" \t\r\n", pos + 1);
+    if (pos == string::npos) return {};
+    if (json[pos] == '"') {
+        size_t end = pos + 1;
+        while (end < json.size() && !(json[end] == '"' && json[end-1] != '\\')) end++;
+        return json.substr(pos + 1, end - pos - 1);
+    }
+    // number/bool
+    size_t end = json.find_first_of(",}]\n", pos);
+    return json.substr(pos, end == string::npos ? string::npos : end - pos);
+}
+
+// ------------------------------------------------------------
+// WinInet HTTPS GET/POST helper
+// ------------------------------------------------------------
+static string HttpsRequest(const wstring& host, const wstring& path,
+                           const string& method,
+                           const string& body,
+                           const vector<pair<string,string>>& headers)
+{
+    HINTERNET hInet = InternetOpenA("RasFocus/1.0", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
+    if (!hInet) return {};
+    HINTERNET hConn = InternetConnectW(hInet, host.c_str(), INTERNET_DEFAULT_HTTPS_PORT,
+                                       NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
+    if (!hConn) { InternetCloseHandle(hInet); return {}; }
+
+    DWORD flags = INTERNET_FLAG_SECURE | INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE;
+    HINTERNET hReq = HttpOpenRequestA(hConn, method.c_str(),
+                                      WstrToStr(path).c_str(),
+                                      NULL, NULL, NULL, flags, 0);
+    if (!hReq) { InternetCloseHandle(hConn); InternetCloseHandle(hInet); return {}; }
+
+    string hdrStr;
+    for (auto& h : headers) hdrStr += h.first + ": " + h.second + "\r\n";
+
+    BOOL ok = HttpSendRequestA(hReq,
+                               hdrStr.empty() ? NULL : hdrStr.c_str(),
+                               (DWORD)hdrStr.size(),
+                               body.empty() ? NULL : (LPVOID)body.c_str(),
+                               (DWORD)body.size());
+    string result;
+    if (ok) {
+        char buf[4096]; DWORD read;
+        while (InternetReadFile(hReq, buf, sizeof(buf)-1, &read) && read > 0) {
+            buf[read] = 0; result += buf;
+        }
+    }
+    InternetCloseHandle(hReq);
+    InternetCloseHandle(hConn);
+    InternetCloseHandle(hInet);
+    return result;
+}
+
+// ------------------------------------------------------------
+// Drive API: list files in folder
+// ------------------------------------------------------------
+static void DriveListFolder(const wstring& folderId) {
+    fm_driveItems.clear();
+    fm_driveLoading = true;
+    fm_driveStatusMsg = L"Loading...";
+    if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
+
+    // Run in background thread
+    wstring token = fm_driveAccessToken;
+    wstring fid   = folderId;
+
+    thread([token, fid]() {
+        // q='<id>' in parents and trashed=false
+        string qParam = UrlEncode("'" + WstrToStr(fid) + "' in parents and trashed=false");
+        string fields = UrlEncode("files(id,name,mimeType,modifiedTime,size),nextPageToken");
+        string pathStr = "/drive/v3/files?q=" + qParam +
+                         "&fields=" + fields +
+                         "&pageSize=100&orderBy=folder,name";
+
+        string resp = HttpsRequest(L"www.googleapis.com", StrToWstr(pathStr),
+            "GET", "",
+            {{"Authorization", "Bearer " + WstrToStr(token)}});
+
+        // Parse on UI thread via PostMessage
+        // Store in a shared buffer
+        static string s_resp;
+        s_resp = resp;
+
+        PostMessage(hParentWnd, WM_USER + 50, 0, (LPARAM)&s_resp);
+    }).detach();
+}
+
+// Call this from WM_USER+50 handler in main.cpp (see ProcessDriveApiResponse)
+void ProcessDriveApiResponse(const string& json) {
+    fm_driveItems.clear();
+    fm_driveLoading = false;
+
+    if (json.empty() || json.find("error") != string::npos) {
+        fm_driveStatusMsg = L"Failed to load. Check connection.";
+        if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
+        return;
+    }
+    fm_driveStatusMsg = L"";
+
+    // Parse files array
+    size_t arr = json.find("\"files\"");
+    if (arr == string::npos) { if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE); return; }
+    size_t start = json.find('[', arr);
+    size_t end   = json.rfind(']');
+    if (start == string::npos || end == string::npos) { if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE); return; }
+
+    // Split objects
+    string arrStr = json.substr(start + 1, end - start - 1);
+    int depth = 0;
+    size_t objStart = string::npos;
+    for (size_t i = 0; i <= arrStr.size(); i++) {
+        char c = i < arrStr.size() ? arrStr[i] : '}';
+        if (c == '{') { if (depth++ == 0) objStart = i; }
+        else if (c == '}') {
+            if (--depth == 0 && objStart != string::npos) {
+                string obj = arrStr.substr(objStart, i - objStart + 1);
+                DriveItem item;
+                item.id       = StrToWstr(JsonField(obj, "id"));
+                item.name     = StrToWstr(JsonField(obj, "name"));
+                string mime   = JsonField(obj, "mimeType");
+                item.mimeType = StrToWstr(mime);
+                // friendly type
+                if      (mime == "application/vnd.google-apps.folder")       item.mimeType = L"Folder";
+                else if (mime == "application/vnd.google-apps.document")      item.mimeType = L"Google Docs";
+                else if (mime == "application/vnd.google-apps.spreadsheet")   item.mimeType = L"Google Sheets";
+                else if (mime == "application/vnd.google-apps.presentation")  item.mimeType = L"Google Slides";
+                else if (mime == "application/pdf")                            item.mimeType = L"PDF";
+                else {
+                    size_t sl = mime.rfind('/');
+                    item.mimeType = StrToWstr(sl != string::npos ? mime.substr(sl+1) : mime);
+                }
+                string mod = JsonField(obj, "modifiedTime"); // 2026-09-05T12:34:00.000Z
+                if (mod.size() >= 10) item.modified = StrToWstr(mod.substr(0,10));
+                string sz = JsonField(obj, "size");
+                if (!sz.empty()) {
+                    long long bytes = atoll(sz.c_str());
+                    wchar_t buf[32];
+                    if      (bytes < 1024)             swprintf(buf,32,L"%lld B",   bytes);
+                    else if (bytes < 1024*1024)        swprintf(buf,32,L"%lld KB",  bytes/1024);
+                    else if (bytes < 1024LL*1024*1024) swprintf(buf,32,L"%lld MB",  bytes/(1024*1024));
+                    else                               swprintf(buf,32,L"%.1f GB",  bytes/(1024.0*1024*1024));
+                    item.size = buf;
+                } else {
+                    item.size = L"—";
+                }
+                fm_driveItems.push_back(item);
+                objStart = string::npos;
+            }
+        }
+    }
+    if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
+}
+
+// ------------------------------------------------------------
+// OAuth: exchange code for tokens
+// ------------------------------------------------------------
+static void DriveExchangeCode(const string& code) {
+    string body = "code=" + UrlEncode(code) +
+                  "&client_id=" + UrlEncode(WstrToStr(GD_CLIENT_ID)) +
+                  "&client_secret=" + UrlEncode(WstrToStr(GD_CLIENT_SECRET)) +
+                  "&redirect_uri=" + UrlEncode(WstrToStr(GD_REDIRECT_URI)) +
+                  "&grant_type=authorization_code";
+
+    string resp = HttpsRequest(L"oauth2.googleapis.com", L"/token",
+        "POST", body,
+        {{"Content-Type","application/x-www-form-urlencoded"}});
+
+    fm_driveAccessToken  = StrToWstr(JsonField(resp, "access_token"));
+    fm_driveRefreshToken = StrToWstr(JsonField(resp, "refresh_token"));
+
+    if (!fm_driveAccessToken.empty()) {
+        // Get user email
+        string me = HttpsRequest(L"www.googleapis.com",
+            L"/oauth2/v1/userinfo?alt=json", "GET", "",
+            {{"Authorization", "Bearer " + WstrToStr(fm_driveAccessToken)}});
+        fm_driveUserEmail = StrToWstr(JsonField(me, "email"));
+        fm_driveSignedIn  = true;
+        fm_driveFolderStack.clear();
+        fm_driveFolderNameStack.clear();
+        fm_driveCurrentFolderId = L"root";
+        DriveListFolder(L"root");
+    } else {
+        fm_driveStatusMsg = L"Sign-in failed. Please try again.";
+        fm_driveSignedIn  = false;
+        if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
+    }
+}
+
+// ------------------------------------------------------------
+// OAuth: start local HTTP server & open browser
+// ------------------------------------------------------------
+static void DriveStartOAuth() {
+    // 1. Listen on localhost:5050
+    WSADATA wsd; WSAStartup(MAKEWORD(2,2), &wsd);
+    fm_oauthSocket = socket(AF_INET, SOCK_STREAM, 0);
+    sockaddr_in sa = {};
+    sa.sin_family = AF_INET;
+    sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    sa.sin_port = htons(5050);
+    int reuse = 1;
+    setsockopt(fm_oauthSocket, SOL_SOCKET, SO_REUSEADDR, (char*)&reuse, sizeof(reuse));
+    bind(fm_oauthSocket, (sockaddr*)&sa, sizeof(sa));
+    listen(fm_oauthSocket, 1);
+
+    // 2. Build OAuth URL
+    string authUrl =
+        "https://accounts.google.com/o/oauth2/v2/auth"
+        "?client_id=" + UrlEncode(WstrToStr(GD_CLIENT_ID)) +
+        "&redirect_uri=" + UrlEncode(WstrToStr(GD_REDIRECT_URI)) +
+        "&response_type=code"
+        "&scope=" + UrlEncode(WstrToStr(GD_SCOPE)) +
+        "&access_type=offline"
+        "&prompt=consent";
+
+    // 3. Open in default browser (WebView2 popup would need more infra)
+    ShellExecuteA(NULL, "open", authUrl.c_str(), NULL, NULL, SW_SHOWNORMAL);
+
+    // 4. Wait for redirect in background thread
+    SOCKET srv = fm_oauthSocket;
+    thread([srv]() {
+        SOCKET client = accept(srv, nullptr, nullptr);
+        if (client == INVALID_SOCKET) return;
+        char buf[4096] = {}; int n = recv(client, buf, sizeof(buf)-1, 0);
+        // Send success page
+        const char* resp_html =
+            "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n"
+            "<html><body style=\'font-family:sans-serif;text-align:center;padding-top:80px\'>"
+            "<h2>&#9989; Signed in! You can close this tab.</h2>"
+            "<p>Return to RasFocus.</p></body></html>";
+        send(client, resp_html, (int)strlen(resp_html), 0);
+        closesocket(client);
+        closesocket(srv);
+
+        // Extract code from GET line
+        string req(buf, n);
+        size_t codePos = req.find("code=");
+        if (codePos == string::npos) return;
+        size_t codeEnd = req.find_first_of("& \r\n", codePos + 5);
+        string code = req.substr(codePos + 5, codeEnd == string::npos ? string::npos : codeEnd - codePos - 5);
+        // Exchange on a thread (posts WM_USER+51 when done)
+        DriveExchangeCode(code);
+    }).detach();
+}
+
+// Refresh token
+static void DriveRefreshAccessToken() {
+    if (fm_driveRefreshToken.empty()) { fm_driveSignedIn = false; return; }
+    string body = "refresh_token=" + UrlEncode(WstrToStr(fm_driveRefreshToken)) +
+                  "&client_id="    + UrlEncode(WstrToStr(GD_CLIENT_ID)) +
+                  "&client_secret="+ UrlEncode(WstrToStr(GD_CLIENT_SECRET)) +
+                  "&grant_type=refresh_token";
+    string resp = HttpsRequest(L"oauth2.googleapis.com", L"/token",
+        "POST", body, {{"Content-Type","application/x-www-form-urlencoded"}});
+    string tok = JsonField(resp, "access_token");
+    if (!tok.empty()) fm_driveAccessToken = StrToWstr(tok);
+}
+
+// Open a Drive file/folder in browser
+static void DriveOpenItem(const DriveItem& item) {
+    if (item.mimeType == L"Folder") {
+        // Navigate in-app
+        fm_driveFolderStack.push_back(fm_driveCurrentFolderId);
+        fm_driveFolderNameStack.push_back(item.name);
+        fm_driveCurrentFolderId = item.id;
+        fm_driveScrollOff = 0;
+        fm_driveSelectedItem = -1;
+        DriveListFolder(item.id);
+    } else {
+        // Open in browser (Google-hosted editor / download)
+        wstring url = L"https://drive.google.com/file/d/" + item.id + L"/view";
+        if (item.mimeType == L"Google Docs")
+            url = L"https://docs.google.com/document/d/" + item.id + L"/edit";
+        else if (item.mimeType == L"Google Sheets")
+            url = L"https://docs.google.com/spreadsheets/d/" + item.id + L"/edit";
+        else if (item.mimeType == L"Google Slides")
+            url = L"https://docs.google.com/presentation/d/" + item.id + L"/edit";
+        ShellExecuteW(NULL, L"open", url.c_str(), NULL, NULL, SW_SHOWNORMAL);
+    }
+}
+
+static void DriveGoBack() {
+    if (fm_driveFolderStack.empty()) return;
+    fm_driveCurrentFolderId = fm_driveFolderStack.back();
+    fm_driveFolderStack.pop_back();
+    fm_driveFolderNameStack.pop_back();
+    fm_driveScrollOff = 0;
+    fm_driveSelectedItem = -1;
+    DriveListFolder(fm_driveCurrentFolderId);
+}
+
+static void DriveSignOut() {
+    fm_driveSignedIn = false;
+    fm_driveAccessToken.clear();
+    fm_driveRefreshToken.clear();
+    fm_driveUserEmail.clear();
+    fm_driveItems.clear();
+    fm_driveFolderStack.clear();
+    fm_driveFolderNameStack.clear();
+    fm_driveCurrentFolderId = L"root";
+    fm_driveScrollOff = 0;
+    fm_driveSelectedItem = -1;
+    fm_driveStatusMsg.clear();
+}
 
 // --- Geometry cache ---
 static float g_fm_cx = 0, g_fm_cy = 0, g_fm_cw = 0, g_fm_ch = 0;
@@ -136,18 +512,7 @@ static void NavigateTo(const wstring& path) {
     RefreshLocalDir();
 }
 
-static void PopulateDriveItems() {
-    fm_driveItems = {
-        { L"My Documents",     L"Folder",       L"Sep 05, 2026", L"—"       },
-        { L"Photos",           L"Folder",       L"Sep 03, 2026", L"—"       },
-        { L"RasFocus Notes",   L"Google Docs",  L"Sep 06, 2026", L"12 KB"   },
-        { L"Budget 2026",      L"Google Sheets",L"Aug 30, 2026", L"45 KB"   },
-        { L"Project Slides",   L"Google Slides",L"Aug 28, 2026", L"2.1 MB"  },
-        { L"resume_final.pdf", L"PDF",          L"Aug 20, 2026", L"340 KB"  },
-        { L"Backup Archive",   L"Folder",       L"Jul 14, 2026", L"—"       },
-        { L"recordings",       L"Folder",       L"Jun 30, 2026", L"—"       },
-    };
-}
+// PopulateDriveItems() replaced by real DriveListFolder()
 
 // ============================================================
 // DRAW
@@ -488,68 +853,106 @@ void DrawFileManagerTab(Graphics& g, float cx, float cy, float cw, float ch) {
     else if (fm_activeSubTab == 1) {
 
         if (!fm_driveSignedIn) {
-            // Sign-in prompt
-            float cardW = 380.0f, cardH = 220.0f;
+            // ---- Sign-in card ----
+            float cardW = 400.0f, cardH = 240.0f;
             float cardX = cx + (cw - cardW) / 2.0f;
             float cardY = bodyY + (bodyH - cardH) / 2.0f;
 
             SolidBrush bCard(Color(255, 255, 255, 255));
             Pen pCard(Color(255, 218, 225, 232), 1.5f);
-            FillRect_(g, &bCard, &pCard, cardX, cardY, cardW, cardH, 8.0f);
+            FillRect_(g, &bCard, &pCard, cardX, cardY, cardW, cardH, 10.0f);
 
-            // Google Drive icon (colored circles)
-            float icY = cardY + 28.0f;
-            float icX = cardX + cardW / 2.0f - 24.0f;
+            // Google Drive 3-dot icon
+            float icY = cardY + 26.0f;
+            float icX = cardX + cardW / 2.0f - 28.0f;
             SolidBrush bDrBlue (Color(255,  66, 133, 244));
             SolidBrush bDrGreen(Color(255,  52, 168,  83));
             SolidBrush bDrYell (Color(255, 251, 188,   5));
-            g.FillEllipse(&bDrBlue,  icX,       icY, 22.0f, 22.0f);
-            g.FillEllipse(&bDrGreen, icX + 12.0f, icY, 22.0f, 22.0f);
-            g.FillEllipse(&bDrYell,  icX + 24.0f, icY, 22.0f, 22.0f);
+            g.FillEllipse(&bDrBlue,  icX,        icY, 24.0f, 24.0f);
+            g.FillEllipse(&bDrGreen, icX + 16.0f,icY, 24.0f, 24.0f);
+            g.FillEllipse(&bDrYell,  icX + 8.0f, icY + 12.0f, 24.0f, 24.0f);
 
-            FontFamily ffTitle(L"Segoe UI");
-            Font fDrTitle(&ffTitle, 17, FontStyleBold, UnitPixel);
-            Font fDrSub  (&ffTitle, 13, FontStyleRegular, UnitPixel);
-            Font fDrBtn  (&ffTitle, 13, FontStyleBold, UnitPixel);
+            FontFamily ffDr(L"Segoe UI");
+            Font fDrTitle(&ffDr, 17, FontStyleBold, UnitPixel);
+            Font fDrSub  (&ffDr, 13, FontStyleRegular, UnitPixel);
+            Font fDrBtn  (&ffDr, 13, FontStyleBold, UnitPixel);
 
             g.DrawString(L"Google Drive", -1, &fDrTitle,
-                RectF(cardX, cardY + 62.0f, cardW, 28.0f), &fmtC, &bDark);
-            g.DrawString(L"Sign in to browse and manage your\nGoogle Drive files directly here.",
-                -1, &fDrSub, RectF(cardX + 20.0f, cardY + 95.0f, cardW - 40.0f, 50.0f), &fmtC, &bGray);
+                RectF(cardX, cardY + 64.0f, cardW, 28.0f), &fmtC, &bDark);
+            g.DrawString(L"Sign in to browse your Drive files\ndirectly here — no browser needed.",
+                -1, &fDrSub, RectF(cardX + 20.0f, cardY + 98.0f, cardW - 40.0f, 48.0f), &fmtC, &bGray);
 
             // Sign-in button
-            float btnW2 = 200.0f, btnH2 = 38.0f;
+            float btnW2 = 220.0f, btnH2 = 40.0f;
             float btnX2 = cardX + (cardW - btnW2) / 2.0f;
-            float btnY2 = cardY + cardH - 55.0f;
-            SolidBrush bSignIn(fm_hovDriveSignIn ? Color(255, 50, 110, 220) : Color(255, 66, 133, 244));
+            float btnY2 = cardY + cardH - 58.0f;
+            SolidBrush bSignIn(fm_hovDriveSignIn ? Color(255, 46, 108, 210) : Color(255, 66, 133, 244));
             FillRect_(g, &bSignIn, nullptr, btnX2, btnY2, btnW2, btnH2, 6.0f);
             g.DrawString(L"\xE8A0  Sign in with Google", -1, &fDrBtn,
                 RectF(btnX2, btnY2, btnW2, btnH2), &fmtC, &bWhite);
 
         } else {
-            // Signed-in Drive view
-            // Storage bar (header, height 56)
-            float hdrH = 56.0f;
-            g.FillRectangle(&bWhite, cx, bodyY, cw, hdrH);
-            Pen pHdrBrd(Color(255, 218, 225, 232), 1.0f);
-            g.DrawLine(&pHdrBrd, cx, bodyY + hdrH, cx + cw, bodyY + hdrH);
+            // ---- Signed-in Drive view ----
 
-            // Avatar + name
-            SolidBrush bAvatar(Color(255, 66, 133, 244));
-            FillRect_(g, &bAvatar, nullptr, cx + 14.0f, bodyY + 14.0f, 28.0f, 28.0f, 14.0f);
-            g.DrawString(L"R", -1, &fBold, RectF(cx + 14.0f, bodyY + 14.0f, 28.0f, 28.0f), &fmtC, &bWhite);
-            g.DrawString(L"rasfocus@gmail.com", -1, &fSmall, RectF(cx + 48.0f, bodyY + 14.0f, 200.0f, 28.0f), &fmtL, &bDark);
+            // -- Toolbar (back, path, sign-out, refresh) --
+            float tbH = 44.0f;
+            g.FillRectangle(&bWhite, cx, bodyY, cw, tbH);
+            Pen pTbBrd2(Color(255, 218, 225, 232), 1.0f);
+            g.DrawLine(&pTbBrd2, cx, bodyY + tbH, cx + cw, bodyY + tbH);
 
-            // Storage bar
-            float stBarX = cx + cw - 260.0f, stBarY = bodyY + 20.0f, stBarW = 220.0f, stBarH = 10.0f;
-            SolidBrush bStBg(Color(255, 220, 225, 230));
-            FillRect_(g, &bStBg, nullptr, stBarX, stBarY, stBarW, stBarH, 5.0f);
-            SolidBrush bStFill(Color(255, 66, 133, 244));
-            FillRect_(g, &bStFill, nullptr, stBarX, stBarY, stBarW * 0.42f, stBarH, 5.0f);
-            g.DrawString(L"6.3 GB of 15 GB used", -1, &fSmall,
-                RectF(stBarX, stBarY + 14.0f, stBarW, 20.0f), &fmtL, &bGray);
+            float bx2 = cx + 10.0f;
+            float btnH2 = 28.0f, btnY2 = bodyY + (tbH - btnH2) / 2.0f;
 
-            // Column header
+            // Back button
+            bool canGoBack = !fm_driveFolderStack.empty();
+            {
+                SolidBrush bBk(canGoBack ? (Color(255, 230, 248, 252)) : Color(255, 245, 248, 250));
+                Pen pBk(Color(255, 218, 225, 232), 1.0f);
+                FillRect_(g, &bBk, &pBk, bx2, btnY2, 34.0f, btnH2, 4.0f);
+                SolidBrush* bkC = canGoBack ? &bTeal : &bGray;
+                g.DrawString(L"\xE74A", -1, &fIconSm, RectF(bx2, btnY2, 34.0f, btnH2), &fmtC, bkC);
+            }
+            bx2 += 40.0f;
+
+            // Refresh
+            {
+                SolidBrush bRef(Color(255, 245, 248, 250));
+                FillRect_(g, &bRef, &pBrd, bx2, btnY2, 34.0f, btnH2, 4.0f);
+                g.DrawString(L"\xE72C", -1, &fIconSm, RectF(bx2, btnY2, 34.0f, btnH2), &fmtC, &bGray);
+            }
+            bx2 += 40.0f;
+
+            // Breadcrumb path (My Drive > Folder > ...)
+            g.DrawString(L"\xE753", -1, &fIconSm, RectF(bx2, btnY2, 22.0f, btnH2), &fmtL, &bBlue);
+            bx2 += 26.0f;
+            g.DrawString(L"My Drive", -1, fm_driveFolderStack.empty() ? &fBold : &fSmall,
+                RectF(bx2, btnY2, 80.0f, btnH2), &fmtL, fm_driveFolderStack.empty() ? &bBlue : &bGray);
+            bx2 += 82.0f;
+            for (size_t pi = 0; pi < fm_driveFolderNameStack.size(); pi++) {
+                g.DrawString(L"\xE76C", -1, &fIconSm, RectF(bx2, btnY2, 14.0f, btnH2), &fmtL, &bGray);
+                bx2 += 15.0f;
+                bool isLast = (pi == fm_driveFolderNameStack.size()-1);
+                g.DrawString(fm_driveFolderNameStack[pi].c_str(), -1,
+                    isLast ? &fBold : &fSmall, RectF(bx2, btnY2, 160.0f, btnH2), &fmtL,
+                    isLast ? &bBlue : &bGray);
+                bx2 += 162.0f;
+            }
+
+            // Sign-out (right side)
+            float soW = 80.0f;
+            float soX = cx + cw - soW - 14.0f;
+            {
+                SolidBrush bSo(Color(255, 245, 248, 250));
+                FillRect_(g, &bSo, &pBrd, soX, btnY2, soW, btnH2, 4.0f);
+                g.DrawString(L"Sign out", -1, &fSmall, RectF(soX, btnY2, soW, btnH2), &fmtC, &bGray);
+            }
+
+            // Avatar + email (right side below)
+            g.DrawString(fm_driveUserEmail.c_str(), -1, &fSmall,
+                RectF(cx + cw - 260.0f, bodyY + 2.0f, 244.0f, 18.0f), &fmtR, &bGray);
+
+            // -- Column header --
+            float hdrH = tbH;
             float dvListY = bodyY + hdrH;
             float colHdrH = 28.0f;
             SolidBrush bDvColHdr(Color(255, 240, 244, 248));
@@ -558,51 +961,69 @@ void DrawFileManagerTab(Graphics& g, float cx, float cy, float cw, float ch) {
             g.DrawLine(&pDvCol, cx, dvListY + colHdrH, cx + cw, dvListY + colHdrH);
 
             float dc1 = cw * 0.45f, dc2 = cw * 0.20f, dc3 = cw * 0.20f, dc4 = cw * 0.15f;
-            g.DrawString(L"Name",     -1, &fSmall, RectF(cx + 10.0f,             dvListY, dc1, colHdrH), &fmtL, &bGray);
-            g.DrawString(L"Type",     -1, &fSmall, RectF(cx + dc1,               dvListY, dc2, colHdrH), &fmtL, &bGray);
-            g.DrawString(L"Modified", -1, &fSmall, RectF(cx + dc1 + dc2,         dvListY, dc3, colHdrH), &fmtL, &bGray);
-            g.DrawString(L"Size",     -1, &fSmall, RectF(cx + dc1 + dc2 + dc3,   dvListY, dc4, colHdrH), &fmtR, &bGray);
+            g.DrawString(L"Name",     -1, &fSmall, RectF(cx + 10.0f,           dvListY, dc1, colHdrH), &fmtL, &bGray);
+            g.DrawString(L"Type",     -1, &fSmall, RectF(cx + dc1,             dvListY, dc2, colHdrH), &fmtL, &bGray);
+            g.DrawString(L"Modified", -1, &fSmall, RectF(cx + dc1 + dc2,       dvListY, dc3, colHdrH), &fmtL, &bGray);
+            g.DrawString(L"Size",     -1, &fSmall, RectF(cx + dc1+dc2+dc3,     dvListY, dc4, colHdrH), &fmtR, &bGray);
 
-            float dvRowH = 38.0f;
+            float dvRowH  = 38.0f;
             float dvRowsY = dvListY + colHdrH;
             float dvRowsH = bodyH - hdrH - colHdrH;
-            int dvMaxVis  = (int)(dvRowsH / dvRowH);
+            int   dvMaxVis = (int)(dvRowsH / dvRowH);
 
-            Region dvClip(RectF(cx, dvRowsY, cw, dvRowsH));
-            g.SetClip(&dvClip);
+            // Loading spinner text
+            if (fm_driveLoading) {
+                g.DrawString(L"Loading Drive files...", -1, &fSub,
+                    RectF(cx, dvRowsY + dvRowsH/2.0f - 12.0f, cw, 28.0f), &fmtC, &bGray);
+            } else if (!fm_driveStatusMsg.empty()) {
+                g.DrawString(fm_driveStatusMsg.c_str(), -1, &fSub,
+                    RectF(cx, dvRowsY + dvRowsH/2.0f - 12.0f, cw, 28.0f), &fmtC, &bRed);
+            } else {
+                Region dvClip(RectF(cx, dvRowsY, cw, dvRowsH));
+                g.SetClip(&dvClip);
 
-            for (int i = fm_driveScrollOff; i < (int)fm_driveItems.size() && i < fm_driveScrollOff + dvMaxVis + 1; i++) {
-                float ry = dvRowsY + (i - fm_driveScrollOff) * dvRowH;
-                bool isHov = (fm_driveHovItem == i);
-                if (isHov) { SolidBrush bDvHov(Color(255, 245, 248, 252)); g.FillRectangle(&bDvHov, cx, ry, cw, dvRowH); }
-                Pen pDvRow(Color(255, 235, 240, 244), 1.0f);
-                g.DrawLine(&pDvRow, cx, ry + dvRowH, cx + cw, ry + dvRowH);
+                if (fm_driveItems.empty()) {
+                    g.DrawString(L"This folder is empty.", -1, &fSub,
+                        RectF(cx, dvRowsY + dvRowsH/2.0f - 12.0f, cw, 28.0f), &fmtC, &bGray);
+                } else {
+                    for (int i = fm_driveScrollOff;
+                         i < (int)fm_driveItems.size() && i < fm_driveScrollOff + dvMaxVis + 1; i++) {
+                        float ry = dvRowsY + (i - fm_driveScrollOff) * dvRowH;
+                        bool isHov = (fm_driveHovItem == i);
+                        bool isSel = (fm_driveSelectedItem == i);
+                        if (isSel)      { SolidBrush bSel(Color(255,210,235,255)); g.FillRectangle(&bSel,cx,ry,cw,dvRowH); }
+                        else if (isHov) { SolidBrush bDvHov(Color(255,245,248,252)); g.FillRectangle(&bDvHov,cx,ry,cw,dvRowH); }
+                        Pen pDvRow(Color(255,235,240,244),1.0f);
+                        g.DrawLine(&pDvRow,cx,ry+dvRowH,cx+cw,ry+dvRowH);
 
-                bool isFolder = (fm_driveItems[i].type == L"Folder");
-                const wchar_t* ico = isFolder ? L"\xED41" : L"\xE8A5";
-                SolidBrush bDvIco(isFolder ? Color(255, 66, 133, 244) : Color(255, 100, 130, 200));
-                if (fm_driveItems[i].type == L"Google Docs")   bDvIco.SetColor(Color(255, 66, 133, 244));
-                if (fm_driveItems[i].type == L"Google Sheets") bDvIco.SetColor(Color(255, 52, 168, 83));
-                if (fm_driveItems[i].type == L"Google Slides") bDvIco.SetColor(Color(255, 251, 188, 5));
-                if (fm_driveItems[i].type == L"PDF")           bDvIco.SetColor(Color(255, 220, 60, 60));
+                        bool isFolder = (fm_driveItems[i].mimeType == L"Folder");
+                        const wchar_t* ico = isFolder ? L"\xED41" : L"\xE8A5";
+                        SolidBrush bDvIco(isFolder ? Color(255,66,133,244) : Color(255,100,130,200));
+                        if (fm_driveItems[i].mimeType == L"Google Docs")   bDvIco.SetColor(Color(255,66,133,244));
+                        if (fm_driveItems[i].mimeType == L"Google Sheets") bDvIco.SetColor(Color(255,52,168,83));
+                        if (fm_driveItems[i].mimeType == L"Google Slides") bDvIco.SetColor(Color(255,251,188,5));
+                        if (fm_driveItems[i].mimeType == L"PDF")           bDvIco.SetColor(Color(255,220,60,60));
 
-                g.DrawString(ico, -1, &fIconSm, RectF(cx + 8.0f, ry, 22.0f, dvRowH), &fmtL, &bDvIco);
-                g.DrawString(fm_driveItems[i].name.c_str(),     -1, &fSmall, RectF(cx + 34.0f, ry, dc1 - 38.0f, dvRowH), &fmtL, &bDark);
-                g.DrawString(fm_driveItems[i].type.c_str(),     -1, &fSmall, RectF(cx + dc1,            ry, dc2, dvRowH), &fmtL, &bGray);
-                g.DrawString(fm_driveItems[i].modified.c_str(), -1, &fSmall, RectF(cx + dc1 + dc2,      ry, dc3, dvRowH), &fmtL, &bGray);
-                g.DrawString(fm_driveItems[i].size.c_str(),     -1, &fSmall, RectF(cx + dc1 + dc2 + dc3, ry, dc4 - 6.0f, dvRowH), &fmtR, &bGray);
-            }
+                        g.DrawString(ico,-1,&fIconSm,RectF(cx+8.0f,ry,22.0f,dvRowH),&fmtL,&bDvIco);
+                        g.DrawString(fm_driveItems[i].name.c_str(),-1,&fSmall,
+                            RectF(cx+34.0f,ry,dc1-38.0f,dvRowH),&fmtL,&bDark);
+                        g.DrawString(fm_driveItems[i].mimeType.c_str(),-1,&fSmall,
+                            RectF(cx+dc1,ry,dc2,dvRowH),&fmtL,&bGray);
+                        g.DrawString(fm_driveItems[i].modified.c_str(),-1,&fSmall,
+                            RectF(cx+dc1+dc2,ry,dc3,dvRowH),&fmtL,&bGray);
+                        g.DrawString(fm_driveItems[i].size.c_str(),-1,&fSmall,
+                            RectF(cx+dc1+dc2+dc3,ry,dc4-6.0f,dvRowH),&fmtR,&bGray);
+                    }
+                }
+                g.ResetClip();
 
-            g.ResetClip();
-
-            // Scrollbar
-            if ((int)fm_driveItems.size() > dvMaxVis) {
-                float sbW = 6.0f, sbX = cx + cw - sbW - 2.0f;
-                float sbTotalH = dvRowsH;
-                float thumbH = max(30.0f, sbTotalH * dvMaxVis / (float)fm_driveItems.size());
-                float thumbY2 = dvRowsY + sbTotalH * fm_driveScrollOff / (float)fm_driveItems.size();
-                SolidBrush bThumb2(Color(180, 66, 133, 244));
-                FillRect_(g, &bThumb2, nullptr, sbX, thumbY2, sbW, thumbH, 3.0f);
+                if ((int)fm_driveItems.size() > dvMaxVis) {
+                    float sbW=6.0f,sbX=cx+cw-sbW-2.0f,sbTotalH=dvRowsH;
+                    float thumbH=max(30.0f,sbTotalH*dvMaxVis/(float)fm_driveItems.size());
+                    float thumbY2=dvRowsY+sbTotalH*fm_driveScrollOff/(float)fm_driveItems.size();
+                    SolidBrush bThumb2(Color(180,66,133,244));
+                    FillRect_(g,&bThumb2,nullptr,sbX,thumbY2,sbW,thumbH,3.0f);
+                }
             }
         }
     }
@@ -626,6 +1047,8 @@ void ProcessFileManagerMouseMove(float x, float y) {
     bool old_hovDriveSignIn = fm_hovDriveSignIn;
     int  old_driveHovItem = fm_driveHovItem;
 
+    fm_hovDriveSignIn = false;
+    fm_driveHovItem = -1;
     fm_hovTabLocal = fm_hovTabDrive = false;
     fm_hovUp = fm_hovRefresh = fm_hovNewFolder = fm_hovDelete = fm_hovOpen = false;
     fm_hovItem = -1; fm_hovBreadcrumb = -1;
@@ -636,6 +1059,19 @@ void ProcessFileManagerMouseMove(float x, float y) {
     float stW = 200.0f;
     if (PtIn(x, y, cx + 10.0f, cy + 4.0f, stW, tabBarH - 8.0f)) fm_hovTabLocal = true;
     if (PtIn(x, y, cx + 10.0f + stW, cy + 4.0f, stW, tabBarH - 8.0f)) fm_hovTabDrive = true;
+
+    // Drive sign-in button hover
+    if (fm_activeSubTab == 1 && !fm_driveSignedIn) {
+        float bH = ch - tabBarH;
+        float cardW = 400.0f, cardH = 240.0f;
+        float cardX = cx + (cw - cardW) / 2.0f;
+        float cardY = cy + tabBarH + (bH - cardH) / 2.0f;
+        float btnW2 = 220.0f, btnH2 = 40.0f;
+        float btnX2 = cardX + (cardW - btnW2) / 2.0f;
+        float btnY2 = cardY + cardH - 58.0f;
+        bool newHovSI = PtIn(x, y, btnX2, btnY2, btnW2, btnH2);
+        if (newHovSI != fm_hovDriveSignIn) { fm_hovDriveSignIn = newHovSI; }
+    }
 
     float bodyY = cy + tabBarH;
     float bodyH = ch - tabBarH;
@@ -715,6 +1151,22 @@ void ProcessFileManagerMouseMove(float x, float y) {
                     old_hovOpen != fm_hovOpen || old_hovItem != fm_hovItem ||
                     old_hovBreadcrumb != fm_hovBreadcrumb || old_hovDriveSignIn != fm_hovDriveSignIn ||
                     old_driveHovItem != fm_driveHovItem);
+    // Drive row hover
+    if (fm_activeSubTab == 1 && fm_driveSignedIn) {
+        float tbH = 44.0f;
+        float tabBarH2 = 48.0f;
+        float dvListY = g_fm_cy + tabBarH2 + tbH;
+        float colHdrH = 28.0f, dvRowH = 38.0f;
+        float dvRowsY = dvListY + colHdrH;
+        float dvRowsH = g_fm_ch - 48.0f - tbH - colHdrH;
+        int newHov = -1;
+        if (x >= g_fm_cx && x <= g_fm_cx + g_fm_cw &&
+            y >= dvRowsY && y <= dvRowsY + dvRowsH) {
+            int idx = (int)((y - dvRowsY) / dvRowH) + fm_driveScrollOff;
+            if (idx >= 0 && idx < (int)fm_driveItems.size()) newHov = idx;
+        }
+        if (newHov != fm_driveHovItem) { fm_driveHovItem = newHov; changed = true; }
+    }
     if (changed && hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
 }
 
@@ -879,32 +1331,57 @@ void ProcessFileManagerMouseClick(float x, float y, HWND hWnd) {
 
     } else if (fm_activeSubTab == 1) {
         if (!fm_driveSignedIn) {
-            float cardW = 380.0f, cardH = 220.0f;
+            // Sign-in button
+            float cardW = 400.0f, cardH = 240.0f;
             float cardX = cx + (cw - cardW) / 2.0f;
             float cardY = bodyY + (bodyH - cardH) / 2.0f;
-            float btnW2 = 200.0f, btnH2 = 38.0f;
+            float btnW2 = 220.0f, btnH2 = 40.0f;
             float btnX2 = cardX + (cardW - btnW2) / 2.0f;
-            float btnY2 = cardY + cardH - 55.0f;
+            float btnY2 = cardY + cardH - 58.0f;
             if (PtIn(x, y, btnX2, btnY2, btnW2, btnH2)) {
-                // Open Google Drive OAuth in browser
-                ShellExecuteW(NULL, L"open", L"https://drive.google.com", NULL, NULL, SW_SHOWNORMAL);
-                // Simulate sign-in (in a real app: OAuth flow)
-                fm_driveSignedIn = true;
-                PopulateDriveItems();
-                if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
+                DriveStartOAuth();  // Opens browser for OAuth, listens on localhost:5050
+                if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
             }
         } else {
-            // Drive item double-click: open in browser
-            float hdrH = 56.0f;
-            float dvListY = bodyY + hdrH;
+            float tbH = 44.0f;
+            float btnH2 = 28.0f, btnY2 = bodyY + (tbH - btnH2) / 2.0f;
+
+            // Back button
+            if (PtIn(x, y, cx + 10.0f, btnY2, 34.0f, btnH2) && !fm_driveFolderStack.empty()) {
+                DriveGoBack();
+                if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
+                return;
+            }
+            // Refresh button
+            if (PtIn(x, y, cx + 50.0f, btnY2, 34.0f, btnH2)) {
+                DriveListFolder(fm_driveCurrentFolderId);
+                if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
+                return;
+            }
+            // Sign-out button
+            float soW = 80.0f, soX = cx + cw - soW - 14.0f;
+            if (PtIn(x, y, soX, btnY2, soW, btnH2)) {
+                DriveSignOut();
+                if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
+                return;
+            }
+
+            // Row click
+            float dvListY = bodyY + tbH;
             float colHdrH = 28.0f;
-            float dvRowH = 38.0f;
+            float dvRowH  = 38.0f;
             float dvRowsY = dvListY + colHdrH;
-            float dvRowsH = bodyH - hdrH - colHdrH;
+            float dvRowsH = bodyH - tbH - colHdrH;
             if (PtIn(x, y, cx, dvRowsY, cw, dvRowsH)) {
                 int idx = (int)((y - dvRowsY) / dvRowH) + fm_driveScrollOff;
                 if (idx >= 0 && idx < (int)fm_driveItems.size()) {
-                    ShellExecuteW(NULL, L"open", L"https://drive.google.com", NULL, NULL, SW_SHOWNORMAL);
+                    if (fm_driveSelectedItem == idx) {
+                        // Double-click: navigate folder or open file
+                        DriveOpenItem(fm_driveItems[idx]);
+                    } else {
+                        fm_driveSelectedItem = idx;
+                    }
+                    if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
                 }
             }
         }
