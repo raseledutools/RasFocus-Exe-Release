@@ -1186,7 +1186,7 @@ void ProcessFileManagerMouseClick(float x, float y, HWND hWnd) {
     }
     if (PtIn(x, y, cx + 10.0f + stW, cy + 4.0f, stW, tabBarH - 8.0f)) {
         fm_activeSubTab = 1;
-        if (fm_driveSignedIn && fm_driveItems.empty()) PopulateDriveItems();
+        if (fm_driveSignedIn && fm_driveItems.empty()) DriveListFolder(fm_driveCurrentFolderId);
         if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
         return;
     }
