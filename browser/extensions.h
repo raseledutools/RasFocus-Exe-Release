@@ -246,10 +246,96 @@ inline std::wstring GetExtensionInjectScript() {
 }
 
 // ─── Toggle extension ─────────────────────────────────────────────────────────
-inline void ToggleExtension(ICoreWebView2Controller*, int index) {
+// ─── Toggle extension + Live WebView inject/remove ────────────────────────────
+//
+// আগের সমস্যা:
+//   ToggleExtension() শুধু g_extensions[i].enabled flip করতো এবং state সেভ করতো।
+//   কিন্তু AddScriptToExecuteOnDocumentCreated() শুধু নতুন page load এ কাজ করে।
+//   ফলে toggle করার পর page reload না করলে পরিবর্তন দেখা যেত না।
+//
+// নতুন behavior:
+//   ToggleExtension(webview, idx) →
+//     enable হলে  → সাথে সাথে active page এ ExecuteScript() দিয়ে inject করো
+//     disable হলে → সাথে সাথে active page এ cleanup script inject করো (DOM elements remove)
+//   এরপর AddScriptToExecuteOnDocumentCreated() re-register করার জন্য
+//   caller (mini_browser.cpp) কে signal দেওয়া হয় (return value / flag)।
+//
+// এই function WebView2 pointer নেয় — nullptr হলে শুধু state toggle (fallback)।
+inline bool g_extensionScriptsDirty = false; // true = re-register scripts needed
+
+inline void ToggleExtension(ICoreWebView2* webview, int index) {
     if (index < 0 || index >= (int)g_extensions.size()) return;
-    g_extensions[index].enabled = !g_extensions[index].enabled;
+    auto& ext = g_extensions[index];
+    ext.enabled = !ext.enabled;
     SaveExtensionState();
+    g_extensionScriptsDirty = true;  // caller কে জানাও re-register দরকার
+
+    if (!webview) return;  // no live WebView — next page load এ কাজ করবে
+
+    if (ext.enabled) {
+        // ── Enable: সাথে সাথে inject করো ─────────────────────────────────────
+        std::wstring js;
+        if (ext.id == L"ras-ublock")     js = GetUBlockScript();
+        if (ext.id == L"ras-darkreader") js = GetDarkReaderScript();
+        if (ext.id == L"ras-vidspeed")   js = GetVideoSpeedScript();
+        if (!js.empty())
+            webview->ExecuteScript(js.c_str(), nullptr);
+    } else {
+        // ── Disable: DOM cleanup + flag reset (page reload না করেও কাজ করবে) ─
+        std::wstring cleanup;
+        if (ext.id == L"ras-ublock") {
+            // uBlock: fetch/XHR interceptor কে restore করা কঠিন (prototype override)
+            // তাই পেজের hidden ad elements আনহাইড করো এবং flag reset করো
+            cleanup = LR"js(
+                (() => {
+                    window.__rasUblockInstalled = false;
+                    // Restore fetch/XHR — page reload ছাড়া পুরোপুরি সম্ভব নয়,
+                    // কিন্তু DOM এ লুকানো elements দেখাও
+                    document.querySelectorAll('[style*="display: none"]').forEach(el => {
+                        const cls = (el.className || '') + (el.id || '');
+                        if (/ad|sponsor|outbrain|taboola/i.test(cls))
+                            el.style.display = '';
+                    });
+                })();
+            )js";
+        }
+        if (ext.id == L"ras-darkreader") {
+            cleanup = LR"js(
+                (() => {
+                    window.__rasDarkReaderInstalled = false;
+                    const s = document.getElementById('__ras_dark_reader__');
+                    if (s) s.remove();
+                    // html filter reset
+                    document.documentElement.style.filter = '';
+                    // image/video filter reset
+                    document.querySelectorAll('img,video,iframe,canvas,svg,picture').forEach(el => {
+                        el.style.filter = '';
+                    });
+                })();
+            )js";
+        }
+        if (ext.id == L"ras-vidspeed") {
+            cleanup = LR"js(
+                (() => {
+                    window.__rasVidSpeedInstalled = false;
+                    // Speed overlay সরাও
+                    document.querySelectorAll('[class*="ras"][style*="position:absolute"]').forEach(el => el.remove());
+                    // Video speed 1.0 এ রিসেট করো
+                    document.querySelectorAll('video').forEach(v => { v.playbackRate = 1.0; });
+                })();
+            )js";
+        }
+        if (!cleanup.empty())
+            webview->ExecuteScript(cleanup.c_str(), nullptr);
+    }
+}
+
+// Legacy overload — controller pointer (old call sites এর জন্য backward compatible)
+inline void ToggleExtension(ICoreWebView2Controller* ctrl, int index) {
+    ICoreWebView2* wv = nullptr;
+    if (ctrl) ctrl->get_CoreWebView2(&wv);
+    ToggleExtension(wv, index);
+    if (wv) wv->Release();
 }
 
 inline void UninstallExtension(int index) {
@@ -490,3 +576,4 @@ inline std::wstring HandleExtensionPanelClick(
 
     return L"";
 }
+
