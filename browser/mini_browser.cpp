@@ -4275,7 +4275,19 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
                 return 0;
             } else if (action.substr(0, 7) == L"toggle:") {
                 int idx = std::stoi(action.substr(7));
-                ToggleExtension(nullptr, idx);
+                // Live inject: active WebView pointer pass করো
+                // ToggleExtension() সাথে সাথে enable/disable JS inject করবে
+                ICoreWebView2* wv2 = nullptr;
+                if (wd.active() && wd.active()->controller)
+                    wd.active()->controller->get_CoreWebView2(&wv2);
+                ToggleExtension(wv2, idx);
+                if (wv2) {
+                    // g_extensionScriptsDirty = true → পরের NavigationStarting এ
+                    // AddScriptToExecuteOnDocumentCreated re-register হবে।
+                    // কিন্তু current page এ সাথে সাথে reload ছাড়াই কাজ করবে
+                    // কারণ ToggleExtension() নিজেই ExecuteScript() করে।
+                    wv2->Release();
+                }
                 InvalidateRect(hWnd, NULL, FALSE);
                 return 0;
             } else if (action.substr(0, 7) == L"remove:") {
