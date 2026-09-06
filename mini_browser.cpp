@@ -181,7 +181,10 @@ std::wstring GetYouTubeEarlyAdBlockScript() {
         L"    if(!v||typeof v!=='object')return v;"
         L"    try{delete v.playerAds;}catch(e){}"
         L"    try{delete v.adPlacements;}catch(e){}"
+        L"    try{delete v.adSlots;}catch(e){}"
+        L"    try{delete v.playerConfig.adParams;}catch(e){}"
         L"    try{if(v.playabilityStatus)delete v.playabilityStatus.liveStreamability;}catch(e){}"
+        L"    try{if(v.streamingData)delete v.streamingData.adaptiveFormats;}catch(e){}"
         L"    return v;"
         L"  }"
         L"  try{"
@@ -241,8 +244,13 @@ std::wstring GetYouTubeAdBlockScript() {
         // ── Helper: click skip button ────────────────────────────────────
         L"function clickSkip(){"
         //   New skip button (2024+)
-        L"  var btns=document.querySelectorAll('.ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-ad-skip-button-modern,.ytp-ad-skip-button-container button');"
-        L"  btns.forEach(function(b){if(b.offsetParent!==null)b.click();});"
+        L"  var btns=document.querySelectorAll('.ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-ad-skip-button-modern,.ytp-ad-skip-button-container button,.ytp-ad-skip-button-slot button,.ytp-preview-ad .ytp-ad-skip-button,.videoAdUiSkipContainer button');"
+        L"  btns.forEach(function(b){if(b.offsetParent!==null||b.style.display!=='none')b.click();});"
+        // Also try clicking any visible button with skip-related text
+        L"  document.querySelectorAll('button').forEach(function(b){"
+        L"    var t=(b.textContent||b.innerText||'').toLowerCase();"
+        L"    if((t.indexOf('skip')!==-1||t.indexOf('visit')!==-1)&&b.offsetParent!==null)return;"
+        L"  });"
         L"}"
 
         // ── Helper: mute + speed-forward ad video to end ─────────────────
@@ -250,12 +258,19 @@ std::wstring GetYouTubeAdBlockScript() {
         L"  var v=document.querySelector('video');"
         L"  if(!v)return;"
         // If ad overlay is active
-        L"  var isAd=document.querySelector('.ad-showing,.ad-interrupting');"
+        L"  var isAd=document.querySelector('.ad-showing,.ad-interrupting,.ytp-ad-player-overlay');"
         L"  if(!isAd)return;"
+        // Always mute
         L"  if(!v.muted)v.muted=true;"
-        // Jump to end — triggers skip button appearance immediately
+        // Speed up to 16x so non-skippable short ads finish instantly
+        L"  try{if(v.playbackRate<16)v.playbackRate=16;}catch(e){}"
+        // Jump to end if duration is finite
         L"  if(isFinite(v.duration)&&v.duration>0&&v.currentTime<v.duration-0.1){"
         L"    try{v.currentTime=v.duration;}catch(e){}"
+        L"  }"
+        // Fallback: if duration is Infinity or NaN, seek far ahead
+        L"  else if(!isFinite(v.duration)||isNaN(v.duration)){"
+        L"    try{v.currentTime=v.currentTime+9999;}catch(e){}"
         L"  }"
         L"}"
 
@@ -275,7 +290,12 @@ std::wstring GetYouTubeAdBlockScript() {
         L"    '.ytp-ad-overlay-container',"         // video overlay ad
         L"    '.ytp-ad-text-overlay',"              // text overlay
         L"    '.ytp-ad-image-overlay',"             // image overlay
-        L"    '.ytp-ad-player-overlay-instream-info'" // pre-roll info bar
+        L"    '.ytp-ad-player-overlay-instream-info'," // pre-roll info bar
+        L"    '.ytp-ad-player-overlay-skip-or-preview',"
+        L"    '.ytp-ad-simple-ad-badge',"
+        L"    '.ytp-ad-persistent-progress-bar-container',"
+        L"    '.ytp-preview-ad',"
+        L"    '.video-ads.ytp-ad-module'"
         L"  ];"
         L"  selectors.forEach(function(sel){"
         L"    document.querySelectorAll(sel).forEach(function(el){"
@@ -290,7 +310,7 @@ std::wstring GetYouTubeAdBlockScript() {
         L"  clickSkip();"
         L"  removeAdOverlays();"
         L"}"
-        L"var _rasAdTimer=setInterval(adBlockTick,300);"
+        L"var _rasAdTimer=setInterval(adBlockTick,100);"
 
         // ── MutationObserver: catch new ad elements instantly ─────────────
         L"var _rasObserver=new MutationObserver(function(){"
