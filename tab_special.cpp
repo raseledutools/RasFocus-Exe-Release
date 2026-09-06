@@ -16,7 +16,7 @@ using namespace Gdiplus;
 using namespace std;
 
 // --- Sub Tab State ---
-static int sf_activeSubTab = 0; // 0 = File Manager Plus, 1 = Diary, 2 = Utilities
+int sf_activeSubTab = 0; // 0 = File Manager Plus, 1 = Diary, 2 = Utilities
 
 // --- States ---
 static bool sf_isAdblockActive = false; 
