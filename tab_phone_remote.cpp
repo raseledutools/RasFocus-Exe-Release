@@ -351,7 +351,8 @@ static void HandlePhone(SOCKET sock, string phoneIp) {
     WsSendText(sock, "{\"type\":\"ready\",\"width\":"+to_string(vw)+
                      ",\"height\":"+to_string(vh)+
                      ",\"fps\":"+to_string(TARGET_FPS)+
-                     ",\"mode\":\"h264\"}");
+                     ",\"mode\":\"h264\""+
+                     ",\"video_port\":9225}");
 
     g_rdPhoneName=deviceName;
     g_rdPhoneIp=phoneIp;

@@ -90,6 +90,12 @@ static string PcSha1B64(const string& s){
     return PcB64Enc(vector<BYTE>(hash,hash+20));
 }
 
+// ── extern: auth socket from tab_phone_remote.cpp ────────────────
+// H264 frames go to this socket (port 9224 auth connection) AND
+// to any 9225 clients — single connection handles everything.
+extern SOCKET s_clientSock;
+static mutex  s_mainSockMtx;
+
 // ── WebSocket send binary (server — no masking needed) ───────────
 static void WsBroadcastBin(const BYTE* data, size_t len) {
     vector<BYTE> frame;
@@ -98,6 +104,15 @@ static void WsBroadcastBin(const BYTE* data, size_t len) {
     else if(len<65536){frame.push_back(126);frame.push_back((BYTE)(len>>8));frame.push_back((BYTE)(len&0xFF));}
     else{frame.push_back(127);for(int i=7;i>=0;i--)frame.push_back((BYTE)((len>>(8*i))&0xFF));}
     frame.insert(frame.end(),data,data+len);
+
+    // Send to main auth socket (port 9224) — this is where Android is listening
+    {
+        lock_guard<mutex> lk(s_mainSockMtx);
+        if(s_clientSock != INVALID_SOCKET) {
+            send(s_clientSock, (char*)frame.data(), (int)frame.size(), 0);
+        }
+    }
+    // Also send to any dedicated 9225 clients
     lock_guard<mutex> lk(s_mtx);
     for(SOCKET c : s_clients){
         send(c,(char*)frame.data(),(int)frame.size(),0);
