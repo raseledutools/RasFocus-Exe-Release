@@ -169,8 +169,6 @@ std::wstring GetYouTubeEarlyAdBlockScript() {
     return
         L"(function(){"
         L"if(location.hostname.indexOf('youtube.com')===-1)return;"
-        L"if(window.__RAS_EARLY_ADBLOCK__)return;"
-        L"window.__RAS_EARLY_ADBLOCK__=true;"
 
         // ── ytInitialPlayerResponse wipe: page-embedded ad config মুছে দাও ─
         // YouTube inline script এ window.ytInitialPlayerResponse set করে।
@@ -229,144 +227,145 @@ std::wstring GetYouTubeEarlyAdBlockScript() {
         L"  },100);"
         L"})();"
 
+        L"if(!window.__RAS_SPA_HOOKED__){"
+        L"  window.__RAS_SPA_HOOKED__=true;"
+        L"  document.addEventListener('yt-navigate-finish',function(){"
+        L"    if(window.__RAS_ADBLOCK_TIMER__)clearInterval(window.__RAS_ADBLOCK_TIMER__);"
+        L"    if(window.__RAS_OBS__)try{window.__RAS_OBS__.disconnect();}catch(e){}"
+        L"    window.__RAS_FETCH_PATCHED__=false;"
+        L"  },true);"
+        L"}"
+
         L"})();";
 }
 
 std::wstring GetYouTubeAdBlockScript() {
     return
         L"(function(){"
-        // Guard: শুধু youtube.com এ চলবে
         L"if(location.hostname.indexOf('youtube.com')===-1)return;"
-        // Already running? skip
-        L"if(window.__RAS_ADBLOCK_RUNNING__)return;"
-        L"window.__RAS_ADBLOCK_RUNNING__=true;"
+        // No singleton guard — allow re-run on SPA navigation
+        // Instead guard per-timer so we don't double-stack intervals
+        L"if(window.__RAS_ADBLOCK_TIMER__)clearInterval(window.__RAS_ADBLOCK_TIMER__);"
+        L"if(window.__RAS_OBS__)try{window.__RAS_OBS__.disconnect();}catch(e){}"
 
         // ── Helper: click skip button ────────────────────────────────────
         L"function clickSkip(){"
-        //   New skip button (2024+)
-        L"  var btns=document.querySelectorAll('.ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-ad-skip-button-modern,.ytp-ad-skip-button-container button,.ytp-ad-skip-button-slot button,.ytp-preview-ad .ytp-ad-skip-button,.videoAdUiSkipContainer button');"
-        L"  btns.forEach(function(b){if(b.offsetParent!==null||b.style.display!=='none')b.click();});"
-        // Also try clicking any visible button with skip-related text
-        L"  document.querySelectorAll('button').forEach(function(b){"
-        L"    var t=(b.textContent||b.innerText||'').toLowerCase();"
-        L"    if((t.indexOf('skip')!==-1||t.indexOf('visit')!==-1)&&b.offsetParent!==null)return;"
-        L"  });"
+        //   All known skip selectors incl. 2025 bumper/non-skippable
+        L"  var btns=document.querySelectorAll("
+        L"    '.ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-ad-skip-button-modern"
+        L"    ,.ytp-ad-skip-button-container button,.ytp-ad-skip-button-slot button"
+        L"    ,.ytp-preview-ad .ytp-ad-skip-button,.videoAdUiSkipContainer button'"
+        L"  );"
+        L"  btns.forEach(function(b){try{b.click();}catch(e){}});"
         L"}"
 
-        // ── Helper: mute + speed-forward ad video to end ─────────────────
+        // ── Helper: mute + speed 16x + seek to end ───────────────────────
         L"function skipAdVideo(){"
         L"  var v=document.querySelector('video');"
         L"  if(!v)return;"
-        // If ad overlay is active
         L"  var isAd=document.querySelector('.ad-showing,.ad-interrupting,.ytp-ad-player-overlay');"
         L"  if(!isAd)return;"
-        // Always mute
         L"  if(!v.muted)v.muted=true;"
-        // Speed up to 16x so non-skippable short ads finish instantly
         L"  try{if(v.playbackRate<16)v.playbackRate=16;}catch(e){}"
-        // Jump to end if duration is finite
         L"  if(isFinite(v.duration)&&v.duration>0&&v.currentTime<v.duration-0.1){"
         L"    try{v.currentTime=v.duration;}catch(e){}"
-        L"  }"
-        // Fallback: if duration is Infinity or NaN, seek far ahead
-        L"  else if(!isFinite(v.duration)||isNaN(v.duration)){"
+        L"  }else if(!isFinite(v.duration)||isNaN(v.duration)){"
         L"    try{v.currentTime=v.currentTime+9999;}catch(e){}"
         L"  }"
         L"}"
 
-        // ── Helper: remove ad overlay elements from DOM ──────────────────
+        // ── Helper: hide ad overlay elements ─────────────────────────────
         L"function removeAdOverlays(){"
-        //   Banner ads above video list
-        L"  var selectors=["
-        L"    'ytd-banner-promo-renderer',"        // homepage banner
-        L"    'ytd-statement-banner-renderer',"     // statement banner
-        L"    'ytd-ad-slot-renderer',"              // sidebar/below-player ads
-        L"    'ytd-in-feed-ad-layout-renderer',"    // in-feed ads (home/search)
-        L"    'ytd-promoted-sparkles-web-renderer',"// search promoted
-        L"    'ytd-promoted-video-renderer',"       // promoted video
-        L"    'ytd-display-ad-renderer',"           // display ads
-        L"    '.ytd-action-companion-ad-renderer'," // companion ads
-        L"    '#masthead-ad',"                      // masthead ad
-        L"    '.ytp-ad-overlay-container',"         // video overlay ad
-        L"    '.ytp-ad-text-overlay',"              // text overlay
-        L"    '.ytp-ad-image-overlay',"             // image overlay
-        L"    '.ytp-ad-player-overlay-instream-info'," // pre-roll info bar
-        L"    '.ytp-ad-player-overlay-skip-or-preview',"
-        L"    '.ytp-ad-simple-ad-badge',"
+        L"  var sel=["
+        L"    'ytd-banner-promo-renderer','ytd-statement-banner-renderer',"
+        L"    'ytd-ad-slot-renderer','ytd-in-feed-ad-layout-renderer',"
+        L"    'ytd-promoted-sparkles-web-renderer','ytd-promoted-video-renderer',"
+        L"    'ytd-display-ad-renderer','.ytd-action-companion-ad-renderer',"
+        L"    '#masthead-ad',"
+        L"    '.ytp-ad-overlay-container','.ytp-ad-text-overlay',"
+        L"    '.ytp-ad-image-overlay','.ytp-ad-player-overlay-instream-info',"
+        L"    '.ytp-ad-player-overlay-skip-or-preview','.ytp-ad-simple-ad-badge',"
         L"    '.ytp-ad-persistent-progress-bar-container',"
-        L"    '.ytp-preview-ad',"
-        L"    '.video-ads.ytp-ad-module'"
+        L"    '.ytp-preview-ad','.video-ads.ytp-ad-module',"
+        // 2025 bumper / companion overlay
+        L"    '.ytp-ad-overlay-close-container','.ytp-ad-overlay-slot',"
+        L"    'ytd-player-legacy-desktop-watch-ads-renderer',"
+        L"    '.ytp-paid-content-overlay'"
         L"  ];"
-        L"  selectors.forEach(function(sel){"
-        L"    document.querySelectorAll(sel).forEach(function(el){"
+        L"  sel.forEach(function(s){"
+        L"    document.querySelectorAll(s).forEach(function(el){"
         L"      if(el&&el.parentNode)el.parentNode.removeChild(el);"
         L"    });"
         L"  });"
+        // Also hide via CSS so even mid-render ads don't flash
+        L"  var sid='__ras_adcss__';"
+        L"  if(!document.getElementById(sid)){"
+        L"    var st=document.createElement('style');st.id=sid;"
+        L"    st.textContent="
+        L"      '.ad-showing .ytp-ad-player-overlay{display:none!important;}'"
+        L"      '.ytp-ad-module{display:none!important;}'"
+        L"      '.ytp-paid-content-overlay{display:none!important;}';"
+        L"    (document.head||document.documentElement).appendChild(st);"
+        L"  }"
         L"}"
 
-        // ── Main poll loop: runs every 300ms ─────────────────────────────
+        // ── Tick ─────────────────────────────────────────────────────────
         L"function adBlockTick(){"
         L"  skipAdVideo();"
         L"  clickSkip();"
         L"  removeAdOverlays();"
         L"}"
-        L"var _rasAdTimer=setInterval(adBlockTick,100);"
+        L"window.__RAS_ADBLOCK_TIMER__=setInterval(adBlockTick,100);"
 
-        // ── MutationObserver: catch new ad elements instantly ─────────────
-        L"var _rasObserver=new MutationObserver(function(){"
+        // ── MutationObserver ─────────────────────────────────────────────
+        L"window.__RAS_OBS__=new MutationObserver(function(){"
         L"  skipAdVideo();"
         L"  clickSkip();"
         L"  removeAdOverlays();"
         L"});"
-        L"_rasObserver.observe(document.body||document.documentElement,{"
-        L"  childList:true,subtree:true"
+        L"window.__RAS_OBS__.observe(document.documentElement,{"
+        L"  childList:true,subtree:true,attributes:true,"
+        L"  attributeFilter:['class']"   // catch .ad-showing class change on player
         L"});"
 
-        // ── XHR/Fetch intercept: block ad API calls from JS ───────────────
-        // YouTube calls these endpoints via fetch/XHR — intercept and drop them
+        // ── XHR/Fetch intercept ───────────────────────────────────────────
         L"(function(){"
-        L"  var AD_URL_PATTERNS=["
+        L"  var PAT=["
         L"    '/pagead/','/ptracking','/api/stats/ads','/api/stats/atr',"
         L"    'adsid=','adformat=','get_midroll_info','ad_survey',"
-        L"    'doubleclick.net','googlesyndication.com','googleadservices.com'"
+        L"    '/get_video_info?','doubleclick.net','googlesyndication.com',"
+        L"    'googleadservices.com','/api/stats/watchtime?adformat'"
         L"  ];"
-        L"  function isAdUrl(url){"
+        L"  function isAd(url){"
         L"    if(!url)return false;"
         L"    var u=url.toString().toLowerCase();"
-        L"    for(var i=0;i<AD_URL_PATTERNS.length;i++){"
-        L"      if(u.indexOf(AD_URL_PATTERNS[i])!==-1)return true;"
-        L"    }"
+        L"    for(var i=0;i<PAT.length;i++)if(u.indexOf(PAT[i])!==-1)return true;"
         L"    return false;"
         L"  }"
-        // Intercept fetch
-        L"  var _origFetch=window.fetch;"
-        L"  window.fetch=function(input,init){"
-        L"    var url=typeof input==='string'?input:(input&&input.url?input.url:'');"
-        L"    if(isAdUrl(url))return Promise.resolve(new Response('',{status:204}));"
-        L"    return _origFetch.apply(this,arguments);"
-        L"  };"
-        // Intercept XHR
-        L"  var _origXHROpen=XMLHttpRequest.prototype.open;"
-        L"  XMLHttpRequest.prototype.open=function(method,url){"
-        L"    if(isAdUrl(url)){"
-        L"      this._rasBlocked=true;"
-        L"      return;"
-        L"    }"
-        L"    return _origXHROpen.apply(this,arguments);"
-        L"  };"
-        L"  var _origXHRSend=XMLHttpRequest.prototype.send;"
-        L"  XMLHttpRequest.prototype.send=function(){"
-        L"    if(this._rasBlocked)return;"
-        L"    return _origXHRSend.apply(this,arguments);"
-        L"  };"
+        L"  if(!window.__RAS_FETCH_PATCHED__){"
+        L"    window.__RAS_FETCH_PATCHED__=true;"
+        L"    var _f=window.fetch;"
+        L"    window.fetch=function(input,init){"
+        L"      var url=typeof input==='string'?input:(input&&input.url?input.url:'');"
+        L"      if(isAd(url))return Promise.resolve(new Response('',{status:204}));"
+        L"      return _f.apply(this,arguments);"
+        L"    };"
+        L"    var _xo=XMLHttpRequest.prototype.open;"
+        L"    XMLHttpRequest.prototype.open=function(m,url){"
+        L"      if(isAd(url)){this._rasBlocked=true;return;}"
+        L"      return _xo.apply(this,arguments);"
+        L"    };"
+        L"    var _xs=XMLHttpRequest.prototype.send;"
+        L"    XMLHttpRequest.prototype.send=function(){"
+        L"      if(this._rasBlocked)return;"
+        L"      return _xs.apply(this,arguments);"
+        L"    };"
+        L"  }"
         L"})();"
 
         L"})();";
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 4. AI INJECT SCRIPT
-// ─────────────────────────────────────────────────────────────────────────────
 std::wstring GetAiInjectScript(const std::wstring& currentUrl) {
     std::wifstream in(L"rasfocus_ai_data.txt");
     if (!in.is_open()) return L"";
