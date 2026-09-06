@@ -897,137 +897,306 @@ void DrawFileManagerTab(Graphics& g, float cx, float cy, float cw, float ch) {
                 RectF(btnX2, btnY2, btnW2, btnH2), &fmtC, &bWhite);
 
         } else {
-            // ---- Signed-in Drive view ----
+            // ========================================
+            // GOOGLE DRIVE — Signed-in Beautiful UI
+            // ========================================
 
-            // -- Toolbar (back, path, sign-out, refresh) --
-            float tbH = 44.0f;
-            g.FillRectangle(&bWhite, cx, bodyY, cw, tbH);
-            Pen pTbBrd2(Color(255, 218, 225, 232), 1.0f);
-            g.DrawLine(&pTbBrd2, cx, bodyY + tbH, cx + cw, bodyY + tbH);
+            // ── TOOLBAR (height 52) ──────────────────
+            float tbH = 52.0f;
+            SolidBrush bTbBg(Color(255, 255, 255, 255));
+            g.FillRectangle(&bTbBg, cx, bodyY, cw, tbH);
+            Pen pTbLine(Color(255, 226, 232, 240), 1.0f);
+            g.DrawLine(&pTbLine, cx, bodyY + tbH, cx + cw, bodyY + tbH);
 
-            float bx2 = cx + 10.0f;
-            float btnH2 = 28.0f, btnY2 = bodyY + (tbH - btnH2) / 2.0f;
+            float btnH3 = 32.0f;
+            float btnY3 = bodyY + (tbH - btnH3) / 2.0f;
+            float bx3   = cx + 12.0f;
 
-            // Back button
             bool canGoBack = !fm_driveFolderStack.empty();
+
+            // Back button — pill style
             {
-                SolidBrush bBk(canGoBack ? (Color(255, 230, 248, 252)) : Color(255, 245, 248, 250));
-                Pen pBk(Color(255, 218, 225, 232), 1.0f);
-                FillRect_(g, &bBk, &pBk, bx2, btnY2, 34.0f, btnH2, 4.0f);
-                SolidBrush* bkC = canGoBack ? &bTeal : &bGray;
-                g.DrawString(L"\xE74A", -1, &fIconSm, RectF(bx2, btnY2, 34.0f, btnH2), &fmtC, bkC);
+                Color cBack = canGoBack
+                    ? Color(255, 235, 245, 255)
+                    : Color(255, 246, 248, 250);
+                SolidBrush bBack(cBack);
+                Pen pBack(canGoBack ? Color(255, 66, 133, 244) : Color(255, 218, 225, 232), 1.0f);
+                FillRect_(g, &bBack, &pBack, bx3, btnY3, 36.0f, btnH3, 8.0f);
+                SolidBrush bBackIco(canGoBack ? Color(255, 66, 133, 244) : Color(255, 180, 188, 200));
+                g.DrawString(L"\xE76B", -1, &fIconSm, RectF(bx3, btnY3, 36.0f, btnH3), &fmtC, &bBackIco);
             }
-            bx2 += 40.0f;
+            bx3 += 42.0f;
 
-            // Refresh
+            // Refresh button — pill style
             {
-                SolidBrush bRef(Color(255, 245, 248, 250));
-                FillRect_(g, &bRef, &pBrd, bx2, btnY2, 34.0f, btnH2, 4.0f);
-                g.DrawString(L"\xE72C", -1, &fIconSm, RectF(bx2, btnY2, 34.0f, btnH2), &fmtC, &bGray);
+                SolidBrush bRef2(Color(255, 246, 248, 250));
+                Pen pRef2(Color(255, 218, 225, 232), 1.0f);
+                FillRect_(g, &bRef2, &pRef2, bx3, btnY3, 36.0f, btnH3, 8.0f);
+                SolidBrush bRefIco(Color(255, 100, 116, 139));
+                g.DrawString(L"\xE72C", -1, &fIconSm, RectF(bx3, btnY3, 36.0f, btnH3), &fmtC, &bRefIco);
             }
-            bx2 += 40.0f;
+            bx3 += 46.0f;
 
-            // Breadcrumb path (My Drive > Folder > ...)
-            g.DrawString(L"\xE753", -1, &fIconSm, RectF(bx2, btnY2, 22.0f, btnH2), &fmtL, &bBlue);
-            bx2 += 26.0f;
-            g.DrawString(L"My Drive", -1, fm_driveFolderStack.empty() ? &fBold : &fSmall,
-                RectF(bx2, btnY2, 80.0f, btnH2), &fmtL, fm_driveFolderStack.empty() ? &bBlue : &bGray);
-            bx2 += 82.0f;
-            for (size_t pi = 0; pi < fm_driveFolderNameStack.size(); pi++) {
-                g.DrawString(L"\xE76C", -1, &fIconSm, RectF(bx2, btnY2, 14.0f, btnH2), &fmtL, &bGray);
-                bx2 += 15.0f;
-                bool isLast = (pi == fm_driveFolderNameStack.size()-1);
-                g.DrawString(fm_driveFolderNameStack[pi].c_str(), -1,
-                    isLast ? &fBold : &fSmall, RectF(bx2, btnY2, 160.0f, btnH2), &fmtL,
-                    isLast ? &bBlue : &bGray);
-                bx2 += 162.0f;
-            }
-
-            // Sign-out (right side)
-            float soW = 80.0f;
-            float soX = cx + cw - soW - 14.0f;
+            // Separator
             {
-                SolidBrush bSo(Color(255, 245, 248, 250));
-                FillRect_(g, &bSo, &pBrd, soX, btnY2, soW, btnH2, 4.0f);
-                g.DrawString(L"Sign out", -1, &fSmall, RectF(soX, btnY2, soW, btnH2), &fmtC, &bGray);
+                Pen pSep(Color(255, 226, 232, 240), 1.0f);
+                g.DrawLine(&pSep, bx3, btnY3 + 4.0f, bx3, btnY3 + btnH3 - 4.0f);
+            }
+            bx3 += 10.0f;
+
+            // Drive icon + breadcrumb pill
+            {
+                // Drive logo dots (mini)
+                float dx = bx3, dy = btnY3 + (btnH3 - 14.0f) / 2.0f;
+                SolidBrush bDB(Color(255, 66, 133, 244));
+                SolidBrush bDG(Color(255, 52, 168, 83));
+                SolidBrush bDY(Color(255, 251, 188, 5));
+                g.FillEllipse(&bDB, dx,       dy,       8.0f, 8.0f);
+                g.FillEllipse(&bDG, dx + 5.0f,dy,       8.0f, 8.0f);
+                g.FillEllipse(&bDY, dx + 2.5f,dy + 5.0f,8.0f, 8.0f);
+                bx3 += 20.0f;
+
+                // "My Drive" text
+                bool atRoot = fm_driveFolderStack.empty();
+                SolidBrush bRootClr(atRoot ? Color(255, 30, 64, 175) : Color(255, 100, 116, 139));
+                g.DrawString(L"My Drive", -1, atRoot ? &fBold : &fSmall,
+                    RectF(bx3, btnY3, 72.0f, btnH3), &fmtL, &bRootClr);
+                bx3 += 74.0f;
+
+                for (size_t pi = 0; pi < fm_driveFolderNameStack.size(); pi++) {
+                    SolidBrush bChevron(Color(255, 148, 163, 184));
+                    g.DrawString(L"\xE76C", -1, &fIconSm, RectF(bx3, btnY3, 14.0f, btnH3), &fmtL, &bChevron);
+                    bx3 += 15.0f;
+                    bool isLast2 = (pi == fm_driveFolderNameStack.size() - 1);
+                    SolidBrush bSegClr(isLast2 ? Color(255, 30, 64, 175) : Color(255, 100, 116, 139));
+                    g.DrawString(fm_driveFolderNameStack[pi].c_str(), -1,
+                        isLast2 ? &fBold : &fSmall,
+                        RectF(bx3, btnY3, 180.0f, btnH3), &fmtL, &bSegClr);
+                    bx3 += 182.0f;
+                }
             }
 
-            // Avatar + email (right side below)
-            g.DrawString(fm_driveUserEmail.c_str(), -1, &fSmall,
-                RectF(cx + cw - 260.0f, bodyY + 2.0f, 244.0f, 18.0f), &fmtR, &bGray);
+            // Right side: avatar chip + sign-out
+            {
+                // Avatar circle
+                float avR = 16.0f;
+                float avX = cx + cw - 130.0f;
+                float avY = bodyY + (tbH - avR * 2.0f) / 2.0f;
+                SolidBrush bAvBg(Color(255, 66, 133, 244));
+                FillRect_(g, &bAvBg, nullptr, avX, avY, avR * 2.0f, avR * 2.0f, avR);
+                wstring initials = L"?";
+                if (!fm_driveUserEmail.empty()) {
+                    initials.clear();
+                    initials += (wchar_t)towupper(fm_driveUserEmail[0]);
+                }
+                SolidBrush bAvTxt(Color(255, 255, 255, 255));
+                g.DrawString(initials.c_str(), -1, &fBold,
+                    RectF(avX, avY, avR * 2.0f, avR * 2.0f), &fmtC, &bAvTxt);
 
-            // -- Column header --
-            float hdrH = tbH;
-            float dvListY = bodyY + hdrH;
-            float colHdrH = 28.0f;
-            SolidBrush bDvColHdr(Color(255, 240, 244, 248));
-            g.FillRectangle(&bDvColHdr, cx, dvListY, cw, colHdrH);
-            Pen pDvCol(Color(255, 218, 225, 232), 1.0f);
-            g.DrawLine(&pDvCol, cx, dvListY + colHdrH, cx + cw, dvListY + colHdrH);
+                // Email (truncated)
+                wstring emailShow = fm_driveUserEmail;
+                if (emailShow.size() > 18) emailShow = emailShow.substr(0, 16) + L"..";
+                SolidBrush bEmailClr(Color(255, 100, 116, 139));
+                g.DrawString(emailShow.c_str(), -1, &fSmall,
+                    RectF(avX + avR * 2.0f + 4.0f, bodyY + 4.0f, 90.0f, tbH / 2.0f), &fmtL, &bEmailClr);
 
-            float dc1 = cw * 0.45f, dc2 = cw * 0.20f, dc3 = cw * 0.20f, dc4 = cw * 0.15f;
-            g.DrawString(L"Name",     -1, &fSmall, RectF(cx + 10.0f,           dvListY, dc1, colHdrH), &fmtL, &bGray);
-            g.DrawString(L"Type",     -1, &fSmall, RectF(cx + dc1,             dvListY, dc2, colHdrH), &fmtL, &bGray);
-            g.DrawString(L"Modified", -1, &fSmall, RectF(cx + dc1 + dc2,       dvListY, dc3, colHdrH), &fmtL, &bGray);
-            g.DrawString(L"Size",     -1, &fSmall, RectF(cx + dc1+dc2+dc3,     dvListY, dc4, colHdrH), &fmtR, &bGray);
+                // Sign-out pill button
+                float soW2 = 76.0f;
+                float soX2 = cx + cw - soW2 - 10.0f;
+                float soY2 = bodyY + tbH - btnH3 - 8.0f;
+                SolidBrush bSoHov(Color(255, 254, 242, 242));
+                Pen pSoBrd(Color(255, 252, 165, 165), 1.0f);
+                FillRect_(g, &bSoHov, &pSoBrd, soX2, soY2, soW2, 24.0f, 6.0f);
+                SolidBrush bSoTxt(Color(255, 185, 28, 28));
+                g.DrawString(L"\xE8BB  Sign out", -1, &fSmall,
+                    RectF(soX2, soY2, soW2, 24.0f), &fmtC, &bSoTxt);
+            }
 
-            float dvRowH  = 38.0f;
+            // ── COLUMN HEADER (height 34) ────────────
+            float hdrH3 = tbH;
+            float dvListY = bodyY + hdrH3;
+            float colHdrH = 34.0f;
+
+            SolidBrush bColHdrBg(Color(255, 248, 250, 252));
+            g.FillRectangle(&bColHdrBg, cx, dvListY, cw, colHdrH);
+            Pen pColHdrLine(Color(255, 226, 232, 240), 1.0f);
+            g.DrawLine(&pColHdrLine, cx, dvListY + colHdrH, cx + cw, dvListY + colHdrH);
+
+            // Column widths
+            float dc1 = cw * 0.44f;
+            float dc2 = cw * 0.18f;
+            float dc3 = cw * 0.22f;
+            float dc4 = cw * 0.16f;
+
+            SolidBrush bColHdrTxt(Color(255, 100, 116, 139));
+            Font fColHdr(&ff, 11, FontStyleBold, UnitPixel);
+            g.DrawString(L"NAME",     -1, &fColHdr, RectF(cx + 50.0f,           dvListY, dc1, colHdrH), &fmtL, &bColHdrTxt);
+            g.DrawString(L"TYPE",     -1, &fColHdr, RectF(cx + dc1,             dvListY, dc2, colHdrH), &fmtL, &bColHdrTxt);
+            g.DrawString(L"MODIFIED", -1, &fColHdr, RectF(cx + dc1 + dc2,       dvListY, dc3, colHdrH), &fmtL, &bColHdrTxt);
+            g.DrawString(L"SIZE",     -1, &fColHdr, RectF(cx + dc1+dc2+dc3,     dvListY, dc4 - 16.0f, colHdrH), &fmtR, &bColHdrTxt);
+
+            // ── FILE ROWS ────────────────────────────
+            float dvRowH  = 44.0f;
             float dvRowsY = dvListY + colHdrH;
-            float dvRowsH = bodyH - hdrH - colHdrH;
+            float dvRowsH = bodyH - hdrH3 - colHdrH;
             int   dvMaxVis = (int)(dvRowsH / dvRowH);
 
-            // Loading spinner text
             if (fm_driveLoading) {
-                g.DrawString(L"Loading Drive files...", -1, &fSub,
-                    RectF(cx, dvRowsY + dvRowsH/2.0f - 12.0f, cw, 28.0f), &fmtC, &bGray);
+                // Animated loading dots (static for now — 3 dots)
+                SolidBrush bLd1(Color(255, 66, 133, 244));
+                SolidBrush bLd2(Color(180, 66, 133, 244));
+                SolidBrush bLd3(Color(100, 66, 133, 244));
+                float ldY = dvRowsY + dvRowsH / 2.0f - 6.0f;
+                float ldX = cx + cw / 2.0f - 24.0f;
+                g.FillEllipse(&bLd1, ldX,        ldY, 12.0f, 12.0f);
+                g.FillEllipse(&bLd2, ldX + 16.0f,ldY, 12.0f, 12.0f);
+                g.FillEllipse(&bLd3, ldX + 32.0f,ldY, 12.0f, 12.0f);
+                SolidBrush bLdTxt(Color(255, 100, 116, 139));
+                g.DrawString(L"Loading Google Drive...", -1, &fSub,
+                    RectF(cx, ldY + 18.0f, cw, 24.0f), &fmtC, &bLdTxt);
+
             } else if (!fm_driveStatusMsg.empty()) {
+                // Error state with icon
+                SolidBrush bErrIco(Color(255, 220, 38, 38));
+                g.DrawString(L"\xE7BA", -1, &fIcon,
+                    RectF(cx, dvRowsY + dvRowsH / 2.0f - 28.0f, cw, 28.0f), &fmtC, &bErrIco);
+                SolidBrush bErrTxt(Color(255, 185, 28, 28));
                 g.DrawString(fm_driveStatusMsg.c_str(), -1, &fSub,
-                    RectF(cx, dvRowsY + dvRowsH/2.0f - 12.0f, cw, 28.0f), &fmtC, &bRed);
+                    RectF(cx, dvRowsY + dvRowsH / 2.0f, cw, 24.0f), &fmtC, &bErrTxt);
+
             } else {
-                Region dvClip(RectF(cx, dvRowsY, cw, dvRowsH));
+                Region dvClip(RectF(cx, dvRowsY, cw - 14.0f, dvRowsH));
                 g.SetClip(&dvClip);
 
                 if (fm_driveItems.empty()) {
-                    g.DrawString(L"This folder is empty.", -1, &fSub,
-                        RectF(cx, dvRowsY + dvRowsH/2.0f - 12.0f, cw, 28.0f), &fmtC, &bGray);
+                    // Empty folder state
+                    SolidBrush bEmptyIco(Color(200, 148, 163, 184));
+                    g.DrawString(L"\xED41", -1, &fTitle,
+                        RectF(cx, dvRowsY + dvRowsH / 2.0f - 40.0f, cw, 34.0f), &fmtC, &bEmptyIco);
+                    SolidBrush bEmptyTxt(Color(255, 148, 163, 184));
+                    g.DrawString(L"This folder is empty", -1, &fSub,
+                        RectF(cx, dvRowsY + dvRowsH / 2.0f - 4.0f, cw, 24.0f), &fmtC, &bEmptyTxt);
                 } else {
                     for (int i = fm_driveScrollOff;
-                         i < (int)fm_driveItems.size() && i < fm_driveScrollOff + dvMaxVis + 1; i++) {
+                         i < (int)fm_driveItems.size() && i < fm_driveScrollOff + dvMaxVis + 2; i++) {
                         float ry = dvRowsY + (i - fm_driveScrollOff) * dvRowH;
+                        if (ry > dvRowsY + dvRowsH) break;
+
                         bool isHov = (fm_driveHovItem == i);
                         bool isSel = (fm_driveSelectedItem == i);
-                        if (isSel)      { SolidBrush bSel(Color(255,210,235,255)); g.FillRectangle(&bSel,cx,ry,cw,dvRowH); }
-                        else if (isHov) { SolidBrush bDvHov(Color(255,245,248,252)); g.FillRectangle(&bDvHov,cx,ry,cw,dvRowH); }
-                        Pen pDvRow(Color(255,235,240,244),1.0f);
-                        g.DrawLine(&pDvRow,cx,ry+dvRowH,cx+cw,ry+dvRowH);
+
+                        // Row background
+                        if (isSel) {
+                            SolidBrush bSelRow(Color(255, 235, 245, 255));
+                            g.FillRectangle(&bSelRow, cx, ry, cw - 14.0f, dvRowH);
+                            // Left accent bar
+                            SolidBrush bAccent(Color(255, 66, 133, 244));
+                            g.FillRectangle(&bAccent, cx, ry, 3.0f, dvRowH);
+                        } else if (isHov) {
+                            SolidBrush bHovRow(Color(255, 248, 250, 255));
+                            g.FillRectangle(&bHovRow, cx, ry, cw - 14.0f, dvRowH);
+                        }
+
+                        // Row divider
+                        Pen pDivider(Color(255, 241, 245, 249), 1.0f);
+                        g.DrawLine(&pDivider, cx + 12.0f, ry + dvRowH, cx + cw - 14.0f, ry + dvRowH);
 
                         bool isFolder = (fm_driveItems[i].mimeType == L"Folder");
-                        const wchar_t* ico = isFolder ? L"\xED41" : L"\xE8A5";
-                        SolidBrush bDvIco(isFolder ? Color(255,66,133,244) : Color(255,100,130,200));
-                        if (fm_driveItems[i].mimeType == L"Google Docs")   bDvIco.SetColor(Color(255,66,133,244));
-                        if (fm_driveItems[i].mimeType == L"Google Sheets") bDvIco.SetColor(Color(255,52,168,83));
-                        if (fm_driveItems[i].mimeType == L"Google Slides") bDvIco.SetColor(Color(255,251,188,5));
-                        if (fm_driveItems[i].mimeType == L"PDF")           bDvIco.SetColor(Color(255,220,60,60));
 
-                        g.DrawString(ico,-1,&fIconSm,RectF(cx+8.0f,ry,22.0f,dvRowH),&fmtL,&bDvIco);
-                        g.DrawString(fm_driveItems[i].name.c_str(),-1,&fSmall,
-                            RectF(cx+34.0f,ry,dc1-38.0f,dvRowH),&fmtL,&bDark);
-                        g.DrawString(fm_driveItems[i].mimeType.c_str(),-1,&fSmall,
-                            RectF(cx+dc1,ry,dc2,dvRowH),&fmtL,&bGray);
-                        g.DrawString(fm_driveItems[i].modified.c_str(),-1,&fSmall,
-                            RectF(cx+dc1+dc2,ry,dc3,dvRowH),&fmtL,&bGray);
-                        g.DrawString(fm_driveItems[i].size.c_str(),-1,&fSmall,
-                            RectF(cx+dc1+dc2+dc3,ry,dc4-6.0f,dvRowH),&fmtR,&bGray);
+                        // ── File type icon pill ──────────────
+                        // Determine color + icon by type
+                        Color icoColor(255, 100, 116, 139);
+                        const wchar_t* icoGlyph = L"\xE8A5";
+                        wstring mt = fm_driveItems[i].mimeType;
+                        if (isFolder) {
+                            icoColor = Color(255, 59, 130, 246);
+                            icoGlyph = L"\xED41";
+                        } else if (mt == L"Google Docs") {
+                            icoColor = Color(255, 66, 133, 244);
+                            icoGlyph = L"\xE8A5";
+                        } else if (mt == L"Google Sheets") {
+                            icoColor = Color(255, 52, 168, 83);
+                            icoGlyph = L"\xE9F9";
+                        } else if (mt == L"Google Slides") {
+                            icoColor = Color(255, 234, 88, 12);
+                            icoGlyph = L"\xE8D1";
+                        } else if (mt == L"PDF") {
+                            icoColor = Color(255, 220, 38, 38);
+                            icoGlyph = L"\xEA90";
+                        } else if (mt == L"jpg" || mt == L"jpeg" || mt == L"png" || mt == L"gif" || mt == L"webp") {
+                            icoColor = Color(255, 168, 85, 247);
+                            icoGlyph = L"\xEB9F";
+                        } else if (mt == L"mp4" || mt == L"mov" || mt == L"avi" || mt == L"mkv") {
+                            icoColor = Color(255, 236, 72, 153);
+                            icoGlyph = L"\xE8B2";
+                        } else if (mt == L"mp3" || mt == L"wav" || mt == L"flac" || mt == L"aac") {
+                            icoColor = Color(255, 20, 184, 166);
+                            icoGlyph = L"\xEC4F";
+                        } else if (mt == L"zip" || mt == L"rar" || mt == L"7z") {
+                            icoColor = Color(255, 245, 158, 11);
+                            icoGlyph = L"\xE7B8";
+                        }
+
+                        // Icon background pill (28x28 rounded)
+                        float icoPillX = cx + 10.0f;
+                        float icoPillY = ry + (dvRowH - 28.0f) / 2.0f;
+                        Color icoLightBg(40, icoColor.GetR(), icoColor.GetG(), icoColor.GetB());
+                        SolidBrush bIcoPill(icoLightBg);
+                        FillRect_(g, &bIcoPill, nullptr, icoPillX, icoPillY, 28.0f, 28.0f, 6.0f);
+                        SolidBrush bIcoGlyph(icoColor);
+                        g.DrawString(icoGlyph, -1, &fIconSm,
+                            RectF(icoPillX, icoPillY, 28.0f, 28.0f), &fmtC, &bIcoGlyph);
+
+                        // ── Name ────────────────────────────
+                        SolidBrush bNameClr(isSel ? Color(255, 30, 64, 175) : Color(255, 30, 41, 59));
+                        g.DrawString(fm_driveItems[i].name.c_str(), -1,
+                            isSel ? &fBold : &fSmall,
+                            RectF(cx + 46.0f, ry, dc1 - 50.0f, dvRowH), &fmtL, &bNameClr);
+
+                        // ── Type pill ───────────────────────
+                        // Draw a tiny colored pill label
+                        wstring dispType = fm_driveItems[i].mimeType;
+                        Color pillBg(30, icoColor.GetR(), icoColor.GetG(), icoColor.GetB());
+                        SolidBrush bPillBg(pillBg);
+                        SolidBrush bPillTxt(icoColor);
+                        Font fTiny(&ff, 10, FontStyleRegular, UnitPixel);
+                        float typeX = cx + dc1 + 4.0f;
+                        float typeH = 20.0f;
+                        float typeY = ry + (dvRowH - typeH) / 2.0f;
+                        // Measure text width
+                        RectF typeRect(typeX, typeY, dc2 - 8.0f, typeH);
+                        FillRect_(g, &bPillBg, nullptr, typeRect.X, typeRect.Y, typeRect.Width, typeRect.Height, 4.0f);
+                        g.DrawString(dispType.c_str(), -1, &fTiny, typeRect, &fmtC, &bPillTxt);
+
+                        // ── Modified date ────────────────────
+                        SolidBrush bModTxt(Color(255, 100, 116, 139));
+                        g.DrawString(fm_driveItems[i].modified.c_str(), -1, &fSmall,
+                            RectF(cx + dc1 + dc2, ry, dc3, dvRowH), &fmtL, &bModTxt);
+
+                        // ── Size ────────────────────────────
+                        SolidBrush bSizeTxt(Color(255, 100, 116, 139));
+                        g.DrawString(fm_driveItems[i].size.c_str(), -1, &fSmall,
+                            RectF(cx + dc1 + dc2 + dc3, ry, dc4 - 20.0f, dvRowH), &fmtR, &bSizeTxt);
                     }
                 }
                 g.ResetClip();
 
+                // ── SCROLLBAR (wide, pretty) ──────────────
                 if ((int)fm_driveItems.size() > dvMaxVis) {
-                    float sbW=6.0f,sbX=cx+cw-sbW-2.0f,sbTotalH=dvRowsH;
-                    float thumbH=max(30.0f,sbTotalH*dvMaxVis/(float)fm_driveItems.size());
-                    float thumbY2=dvRowsY+sbTotalH*fm_driveScrollOff/(float)fm_driveItems.size();
-                    SolidBrush bThumb2(Color(180,66,133,244));
-                    FillRect_(g,&bThumb2,nullptr,sbX,thumbY2,sbW,thumbH,3.0f);
+                    float sbW   = 8.0f;
+                    float sbX   = cx + cw - sbW - 4.0f;
+                    float sbTH  = dvRowsH;
+                    float ratio = (float)dvMaxVis / (float)fm_driveItems.size();
+                    float thumbH = max(36.0f, sbTH * ratio);
+                    float thumbY = dvRowsY + sbTH * ((float)fm_driveScrollOff / (float)fm_driveItems.size());
+                    thumbY = min(thumbY, dvRowsY + sbTH - thumbH);
+
+                    // Track
+                    SolidBrush bTrack(Color(60, 100, 116, 139));
+                    FillRect_(g, &bTrack, nullptr, sbX, dvRowsY, sbW, sbTH, 4.0f);
+                    // Thumb
+                    SolidBrush bThumb3(Color(200, 66, 133, 244));
+                    FillRect_(g, &bThumb3, nullptr, sbX, thumbY, sbW, thumbH, 4.0f);
                 }
             }
         }
