@@ -140,7 +140,7 @@ extern const int TITLEBAR_HEIGHT    = 28;
 extern const int SUBHEADER_HEIGHT   = 45;
 
 // UI State
-int selectedTab  = 12; // ← File Manager is now the first/default tab
+int selectedTab  = 0; // ← Dashboard is default tab
 int hoveredTab   = -1;
 bool hoverMinimize = false, hoverMaximize = false, hoverClose = false;
 bool hoverUpgrade   = false;
@@ -158,7 +158,7 @@ bool hoverFeedbackClose  = false;
 
 // Sidebar tabs (Family Link যোগ করা হয়েছে)
 vector<wstring> sidebarTabs = {
-    L"File Manager", L"Blocks", L"Deep Study", L"Special", L"Statistics", L"Settings", L"Family Link",
+    L"Dashboard", L"Blocks", L"Deep Study", L"Special", L"Statistics", L"Settings", L"Family Link",
     L"RasBrowser", L"PDF Tools", L"Phone Remote"
 };
 vector<wstring> sidebarIcons = {
@@ -2040,8 +2040,8 @@ void DrawMainArea(Graphics& g, int w, int h) {
     float contentW = (float)(w - SIDEBAR_WIDTH);
     float contentH = (float)(h - TITLEBAR_HEIGHT - SUBHEADER_HEIGHT);
 
-    if      (selectedTab == 12) { DrawFileManagerTab (g, contentX, contentY, contentW, contentH); } // ← File Manager Plus
-    else if (selectedTab == 0) { DrawDashboardTab    (g, contentX, contentY, contentW, contentH); } // ← Dashboard (hidden from sidebar)
+    if      (selectedTab == 0)  { DrawDashboardTab    (g, contentX, contentY, contentW, contentH); } // ← Dashboard (default)
+    else if (selectedTab == 12) { DrawFileManagerTab (g, contentX, contentY, contentW, contentH); } // ← File Manager (Special tab only)
     else if (selectedTab == 1) { DrawBlocksTab       (g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 2) { DrawDeepStudyTab    (g, contentX, contentY, contentW, contentH); }
     else if (selectedTab == 3) { DrawSpecialFeatureTab(g, contentX, contentY, contentW, contentH); }
@@ -2361,8 +2361,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             if (oldUpg != hoverUpgrade) redraw = true;
         }
 
-        if      (selectedTab == 12) { ProcessFileManagerMouseMove(x, y); redraw = true; } // ← File Manager
-        else if (selectedTab == 0) { ProcessDashboardMouseMove(x, y);   redraw = true; }
+        if      (selectedTab == 0)  { ProcessDashboardMouseMove(x, y);   redraw = true; }
+        else if (selectedTab == 12) { ProcessFileManagerMouseMove(x, y); redraw = true; } // File Manager (Special only)
         else if (selectedTab == 1) { ProcessBlocksMouseMove(x, y);      redraw = true; }
         else if (selectedTab == 2) { ProcessDeepStudyMouseMove(x, y);   redraw = true; }
         else if (selectedTab == 3) { ProcessSpecialFeatureMouseMove(x, y);     redraw = true; }
@@ -2516,7 +2516,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (x >= 0.0f && x <= SIDEBAR_WIDTH && y >= tabsStartY) {
             int idx = (int)((y - tabsStartY) / tabH);
             if (idx >= 0 && idx < (int)sidebarTabs.size()) {
-                int logicalTab = (idx == 0) ? 12 : (idx == 6) ? 8 : (idx == 7) ? 9 : (idx == 8) ? 10 : (idx == 9) ? 11 : idx; // ← 0=FileManager→12, 6=FamilyLink→8, 7=RasBrowser→9, 8=PDFTools→10, 9=PhoneRemote→11
+                int logicalTab = (idx == 6) ? 8 : (idx == 7) ? 9 : (idx == 8) ? 10 : (idx == 9) ? 11 : idx; // 0=Dashboard, 6=FamilyLink->8, 7=RasBrowser->9, 8=PDFTools->10, 9=PhoneRemote->11
                 if (selectedTab != logicalTab) {
                     selectedTab = logicalTab;
                     HideAllWebViews();
@@ -2538,8 +2538,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             break;
         }
 
-        if      (selectedTab == 12) { ProcessFileManagerMouseClick(x, y, hWnd); } // ← File Manager
-        else if (selectedTab == 0) { ProcessDashboardMouseClick(x, y, selectedTab); }
+        if      (selectedTab == 0)  { ProcessDashboardMouseClick(x, y, selectedTab); }
+        else if (selectedTab == 12) { ProcessFileManagerMouseClick(x, y, hWnd); } // File Manager (Special only)
         else if (selectedTab == 1) { ProcessBlocksMouseClick(x, y); }
         else if (selectedTab == 2) { ProcessDeepStudyMouseClick(x, y); }
         else if (selectedTab == 3) { ProcessSpecialFeatureMouseClick(x, y); }
@@ -2571,7 +2571,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         float y = pt.y / g_scaleFactor;
         int delta = GET_WHEEL_DELTA_WPARAM(wp);
         if (selectedTab == 1) { extern void ProcessBlocksMouseWheel(float,float,int); ProcessBlocksMouseWheel(x,y,delta); InvalidateRect(hWnd,NULL,FALSE); }
-        if (selectedTab == 12) { ProcessFileManagerMouseWheel(x, y, delta); InvalidateRect(hWnd,NULL,FALSE); } // ← File Manager (sidebar tab)
+        if (selectedTab == 12) { ProcessFileManagerMouseWheel(x, y, delta); InvalidateRect(hWnd,NULL,FALSE); } // File Manager (Special only)
         if (selectedTab == 3)  { // ← Special tab: forward wheel to File Manager Plus sub-tab if active
             extern int sf_activeSubTab; // defined in tab_special.cpp
             if (sf_activeSubTab == 0) { ProcessFileManagerMouseWheel(x, y, delta); InvalidateRect(hWnd, NULL, FALSE); }
