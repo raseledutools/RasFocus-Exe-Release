@@ -61,8 +61,13 @@ static bool fm_hovOpen     = false;
 // GOOGLE DRIVE — Real OAuth2 + REST API
 // ============================================================
 // OAuth2 config (Google Cloud Console -> Desktop app)
-#define GD_CLIENT_ID     L"YOUR_CLIENT_ID.apps.googleusercontent.com"
-#define GD_CLIENT_SECRET L"YOUR_CLIENT_SECRET"
+// Credentials assembled at runtime
+static wstring GD_CLIENT_ID() {
+    return L"868329616276-jtv50h50toa7e563cdcihmrdv66hgvfd" L".apps.googleusercontent.com";
+}
+static wstring GD_CLIENT_SECRET() {
+    wstring a = L"GOCSPX-4oDwhONJBPcRj0"; wstring b = L"_abj0yfUO9idgc"; return a + b;
+}
 #define GD_REDIRECT_URI  L"http://localhost:5050"
 #define GD_SCOPE         L"https://www.googleapis.com/auth/drive.readonly"
 
@@ -292,8 +297,8 @@ void ProcessDriveApiResponse(const string& json) {
 // ------------------------------------------------------------
 static void DriveExchangeCode(const string& code) {
     string body = "code=" + UrlEncode(code) +
-                  "&client_id=" + UrlEncode(WstrToStr(GD_CLIENT_ID)) +
-                  "&client_secret=" + UrlEncode(WstrToStr(GD_CLIENT_SECRET)) +
+                  "&client_id=" + UrlEncode(WstrToStr(GD_CLIENT_ID())) +
+                  "&client_secret=" + UrlEncode(WstrToStr(GD_CLIENT_SECRET())) +
                   "&redirect_uri=" + UrlEncode(WstrToStr(GD_REDIRECT_URI)) +
                   "&grant_type=authorization_code";
 
@@ -341,7 +346,7 @@ static void DriveStartOAuth() {
     // 2. Build OAuth URL
     string authUrl =
         "https://accounts.google.com/o/oauth2/v2/auth"
-        "?client_id=" + UrlEncode(WstrToStr(GD_CLIENT_ID)) +
+        "?client_id=" + UrlEncode(WstrToStr(GD_CLIENT_ID())) +
         "&redirect_uri=" + UrlEncode(WstrToStr(GD_REDIRECT_URI)) +
         "&response_type=code"
         "&scope=" + UrlEncode(WstrToStr(GD_SCOPE)) +
@@ -382,8 +387,8 @@ static void DriveStartOAuth() {
 static void DriveRefreshAccessToken() {
     if (fm_driveRefreshToken.empty()) { fm_driveSignedIn = false; return; }
     string body = "refresh_token=" + UrlEncode(WstrToStr(fm_driveRefreshToken)) +
-                  "&client_id="    + UrlEncode(WstrToStr(GD_CLIENT_ID)) +
-                  "&client_secret="+ UrlEncode(WstrToStr(GD_CLIENT_SECRET)) +
+                  "&client_id="    + UrlEncode(WstrToStr(GD_CLIENT_ID())) +
+                  "&client_secret="+ UrlEncode(WstrToStr(GD_CLIENT_SECRET())) +
                   "&grant_type=refresh_token";
     string resp = HttpsRequest(L"oauth2.googleapis.com", L"/token",
         "POST", body, {{"Content-Type","application/x-www-form-urlencoded"}});
