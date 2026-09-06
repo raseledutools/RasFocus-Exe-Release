@@ -159,19 +159,35 @@ static wstring FormatId(const string& id) {
     return ToWStr(id);
 }
 
-// ── Generate stable 9-digit ID from hostname ─────────────────────
+// ── Generate stable 9-digit ID from hostname + IP ────────────────
+// Must be deterministic: same PC → same ID across every restart.
+// GetTickCount() was here before — that made ID change every launch. Removed.
 static string MakeStableId() {
+    // 1. Hostname
     char host[256] = {};
     DWORD len = sizeof(host);
     GetComputerNameA(host, &len);
 
-    // Simple hash → 9 digits (100000000..999999999)
     unsigned long long h = 5381;
     for(char* p=host; *p; p++) h = h*31 + (unsigned char)*p;
-    // Also mix in MAC address for uniqueness
+
+    // 2. Mix in local IP for uniqueness across PCs with same hostname
     WSADATA wd; WSAStartup(MAKEWORD(2,2),&wd);
-    h ^= (unsigned long long)GetTickCount(); // just for first run
+    char myHost[256] = {};
+    gethostname(myHost, sizeof(myHost));
+    addrinfo hints = {}, *res = nullptr;
+    hints.ai_family   = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    if (getaddrinfo(myHost, nullptr, &hints, &res) == 0 && res) {
+        sockaddr_in* sa = reinterpret_cast<sockaddr_in*>(res->ai_addr);
+        unsigned long ip = sa->sin_addr.s_addr;
+        h = h * 31 + ip;
+        freeaddrinfo(res);
+    }
     WSACleanup();
+
+    // NOTE: do NOT mix in GetTickCount(), time(), or any runtime-variable.
+    // The ID must be identical every time this function is called on the same PC.
 
     unsigned long long id = (h % 900000000ULL) + 100000000ULL;
     char buf[16]; sprintf(buf, "%llu", id);
