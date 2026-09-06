@@ -22,6 +22,9 @@
 using namespace Gdiplus;
 using namespace std;
 
+// Forward declaration of global window handle
+extern HWND hParentWnd;
+
 // ============================================================
 // STATE
 // ============================================================
@@ -305,7 +308,7 @@ void DrawFileManagerTab(Graphics& g, float cx, float cy, float cw, float ch) {
             g.DrawString(seg.c_str(), -1, hov ? &fBold : &fSmall, tr, &fmtL, c);
             // measure width
             SizeF sz;
-            g.MeasureString(seg.c_str(), -1, hov ? &fBold : &fSmall, SizeF(500,bcH), &sz);
+            { RectF layoutRect(0,0,500.0f,bcH); g.MeasureString(seg.c_str(), -1, hov ? &fBold : &fSmall, layoutRect, &sz); }
             bcX += sz.Width;
             if (i < (int)fm_breadcrumb.size() - 1) {
                 g.DrawString(L"\xE76C", -1, &fIconSm, RectF(bcX, bcY, 16.0f, bcH), &fmtL, &bGray);
@@ -578,10 +581,10 @@ void DrawFileManagerTab(Graphics& g, float cx, float cy, float cw, float ch) {
                 bool isFolder = (fm_driveItems[i].type == L"Folder");
                 const wchar_t* ico = isFolder ? L"\xED41" : L"\xE8A5";
                 SolidBrush bDvIco(isFolder ? Color(255, 66, 133, 244) : Color(255, 100, 130, 200));
-                if (fm_driveItems[i].type == L"Google Docs")   bDvIco = SolidBrush(Color(255, 66, 133, 244));
-                if (fm_driveItems[i].type == L"Google Sheets") bDvIco = SolidBrush(Color(255, 52, 168, 83));
-                if (fm_driveItems[i].type == L"Google Slides") bDvIco = SolidBrush(Color(255, 251, 188, 5));
-                if (fm_driveItems[i].type == L"PDF")           bDvIco = SolidBrush(Color(255, 220, 60, 60));
+                if (fm_driveItems[i].type == L"Google Docs")   bDvIco.SetColor(Color(255, 66, 133, 244));
+                if (fm_driveItems[i].type == L"Google Sheets") bDvIco.SetColor(Color(255, 52, 168, 83));
+                if (fm_driveItems[i].type == L"Google Slides") bDvIco.SetColor(Color(255, 251, 188, 5));
+                if (fm_driveItems[i].type == L"PDF")           bDvIco.SetColor(Color(255, 220, 60, 60));
 
                 g.DrawString(ico, -1, &fIconSm, RectF(cx + 8.0f, ry, 22.0f, dvRowH), &fmtL, &bDvIco);
                 g.DrawString(fm_driveItems[i].name.c_str(),     -1, &fSmall, RectF(cx + 34.0f, ry, dc1 - 38.0f, dvRowH), &fmtL, &bDark);
