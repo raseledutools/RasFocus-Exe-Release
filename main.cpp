@@ -2571,7 +2571,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         float y = pt.y / g_scaleFactor;
         int delta = GET_WHEEL_DELTA_WPARAM(wp);
         if (selectedTab == 1) { extern void ProcessBlocksMouseWheel(float,float,int); ProcessBlocksMouseWheel(x,y,delta); InvalidateRect(hWnd,NULL,FALSE); }
-        if (selectedTab == 12) { ProcessFileManagerMouseWheel(x, y, delta); InvalidateRect(hWnd,NULL,FALSE); } // ← File Manager
+        if (selectedTab == 12) { ProcessFileManagerMouseWheel(x, y, delta); InvalidateRect(hWnd,NULL,FALSE); } // ← File Manager (sidebar tab)
+        if (selectedTab == 3)  { // ← Special tab: forward wheel to File Manager Plus sub-tab if active
+            extern int sf_activeSubTab; // defined in tab_special.cpp
+            if (sf_activeSubTab == 0) { ProcessFileManagerMouseWheel(x, y, delta); InvalidateRect(hWnd, NULL, FALSE); }
+        }
         if (selectedTab == 0) { ProcessDashboardMouseWheel(delta); }
         if (selectedTab == 11) {
             extern void PhoneRemoteMouseWheel(float, float, int);

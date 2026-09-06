@@ -1,8 +1,9 @@
 // tab_special.cpp
 
 #include "tab_special.h"
-#include "tab_gemini.h"     // Diary Tab Header
-#include "tab_utilities.h"  // Utilities Tab Header
+#include "tab_gemini.h"        // Diary Tab Header
+#include "tab_utilities.h"     // Utilities Tab Header
+#include "tab_file_manager.h"  // File Manager Plus Sub-Tab
 #include <string>
 #include <vector>
 #include <tlhelp32.h>
@@ -15,7 +16,7 @@ using namespace Gdiplus;
 using namespace std;
 
 // --- Sub Tab State ---
-static int sf_activeSubTab = 0; // 0 = Tools, 1 = Diary, 2 = Utilities
+static int sf_activeSubTab = 0; // 0 = File Manager Plus, 1 = Diary, 2 = Utilities
 
 // --- States ---
 static bool sf_isAdblockActive = false; 
@@ -36,7 +37,7 @@ static bool sf_hovScratchpad = false;
 static bool sf_hovTodo = false;
 
 // Sub-Tab Hover States
-static bool sf_hovTabTools = false;
+static bool sf_hovTabFM    = false;  // File Manager Plus
 static bool sf_hovTabDiary = false;
 static bool sf_hovTabUtils = false;
 
@@ -330,7 +331,7 @@ void DrawSpecialFeatureTab(Graphics& g, float cx, float cy, float cw, float ch) 
     float tabW = 200.0f, tabH = 40.0f;
     float tab1X = cx + 20.0f, tab2X = tab1X + tabW + 10.0f, tab3X = tab2X + tabW + 10.0f, tabY = cy + 10.0f;
 
-    SolidBrush bTab1(sf_activeSubTab == 0 ? Color(255, 12, 168, 176) : (sf_hovTabTools ? Color(255, 230, 230, 230) : Color(255, 245, 245, 245)));
+    SolidBrush bTab1(sf_activeSubTab == 0 ? Color(255, 0, 150, 160)  : (sf_hovTabFM    ? Color(255, 230, 230, 230) : Color(255, 245, 245, 245)));
     SolidBrush bTab2(sf_activeSubTab == 1 ? Color(255, 35, 137, 215) : (sf_hovTabDiary ? Color(255, 230, 230, 230) : Color(255, 245, 245, 245)));
     SolidBrush bTab3(sf_activeSubTab == 2 ? Color(255, 155, 89, 182) : (sf_hovTabUtils ? Color(255, 230, 230, 230) : Color(255, 245, 245, 245)));
     
@@ -338,14 +339,29 @@ void DrawSpecialFeatureTab(Graphics& g, float cx, float cy, float cw, float ch) 
     SolidBrush bT2(sf_activeSubTab == 1 ? Color(255, 255, 255, 255) : Color(255, 100, 100, 100));
     SolidBrush bT3(sf_activeSubTab == 2 ? Color(255, 255, 255, 255) : Color(255, 100, 100, 100));
 
-    FillSimpleRectSpecial(g, &bTab1, NULL, tab1X, tabY, tabW, tabH); g.DrawString(L"Tools & Blockers", -1, &fH2, RectF(tab1X, tabY, tabW, tabH), &fC, &bT1);
-    FillSimpleRectSpecial(g, &bTab2, NULL, tab2X, tabY, tabW, tabH); g.DrawString(L"Professional Diary", -1, &fH2, RectF(tab2X, tabY, tabW, tabH), &fC, &bT2);
-    FillSimpleRectSpecial(g, &bTab3, NULL, tab3X, tabY, tabW, tabH); g.DrawString(L"Student Utilities", -1, &fH2, RectF(tab3X, tabY, tabW, tabH), &fC, &bT3);
+    // File Manager Plus icon (folder icon from Segoe MDL2 Assets)
+    FontFamily ffTabIc(L"Segoe MDL2 Assets"); Font fTabIc(&ffTabIc, 14, FontStyleRegular, UnitPixel);
+    // Tab 1: File Manager Plus
+    FillSimpleRectSpecial(g, &bTab1, NULL, tab1X, tabY, tabW, tabH);
+    g.DrawString(L"\xEC50 ", -1, &fTabIc, RectF(tab1X + 8.0f, tabY, 20.0f, tabH), &fC, &bT1);
+    g.DrawString(L"File Manager Plus", -1, &fH2, RectF(tab1X + 24.0f, tabY, tabW - 28.0f, tabH), &fC, &bT1);
+    // Tab 2: Professional Diary
+    FillSimpleRectSpecial(g, &bTab2, NULL, tab2X, tabY, tabW, tabH);
+    g.DrawString(L"Professional Diary", -1, &fH2, RectF(tab2X, tabY, tabW, tabH), &fC, &bT2);
+    // Tab 3: Student Utilities
+    FillSimpleRectSpecial(g, &bTab3, NULL, tab3X, tabY, tabW, tabH);
+    g.DrawString(L"Student Utilities", -1, &fH2, RectF(tab3X, tabY, tabW, tabH), &fC, &bT3);
 
     float cY = cy + 60.0f; float cH = ch - 60.0f;
     float cardX = cx + 30.0f; float cardW = cw - 60.0f; float cardH = 65.0f; float gapY = 10.0f;
 
     if (sf_activeSubTab == 0) {
+        // File Manager Plus — delegate entirely to tab_file_manager
+        ShowGeminiControls(false);
+        DrawFileManagerTab(g, cx, cY, cw, cH);
+    }
+    else if (sf_activeSubTab == 99) {
+        // [legacy Tools & Blockers — kept unreachable for reference]
         ShowGeminiControls(false); // Hide Diary WIN32 controls
         g.FillRectangle(&bBg, cx, cY, cw, cH);
 
@@ -421,43 +437,23 @@ void DrawSpecialFeatureTab(Graphics& g, float cx, float cy, float cw, float ch) 
 }
 
 void ProcessSpecialFeatureMouseMove(float x, float y) {
-    bool old_hovTabTools = sf_hovTabTools;
+    bool old_hovTabFM    = sf_hovTabFM;
     bool old_hovTabDiary = sf_hovTabDiary;
     bool old_hovTabUtils = sf_hovTabUtils;
-    bool old_hovAdblock = sf_hovAdblock;
-    bool old_hovEyeCare = sf_hovEyeCare;
-    bool old_hovZenMode = sf_hovZenMode;
-    bool old_hovMotivation = sf_hovMotivation;
-    bool old_hovLangDrop = sf_hovLangDrop;
-    bool old_hovScratchpad = sf_hovScratchpad;
-    bool old_hovTodo = sf_hovTodo;
 
-    sf_hovTabTools = false; sf_hovTabDiary = false; sf_hovTabUtils = false;
-    sf_hovAdblock = false; sf_hovEyeCare = false; sf_hovZenMode = false; sf_hovMotivation = false; sf_hovLangDrop = false;
-    sf_hovScratchpad = false; sf_hovTodo = false;
+    sf_hovTabFM    = false;
+    sf_hovTabDiary = false;
+    sf_hovTabUtils = false;
 
     float tab1X = g_cx + 20.0f, tab2X = tab1X + 210.0f, tab3X = tab2X + 210.0f, tabY = g_cy + 10.0f;
-    if(x>=tab1X && x<=tab1X+200.0f && y>=tabY && y<=tabY+40.0f) sf_hovTabTools = true;
-    if(x>=tab2X && x<=tab2X+200.0f && y>=tabY && y<=tabY+40.0f) sf_hovTabDiary = true;
-    if(x>=tab3X && x<=tab3X+200.0f && y>=tabY && y<=tabY+40.0f) sf_hovTabUtils = true;
-    
+    if (x >= tab1X && x <= tab1X + 200.0f && y >= tabY && y <= tabY + 40.0f) sf_hovTabFM    = true;
+    if (x >= tab2X && x <= tab2X + 200.0f && y >= tabY && y <= tabY + 40.0f) sf_hovTabDiary = true;
+    if (x >= tab3X && x <= tab3X + 200.0f && y >= tabY && y <= tabY + 40.0f) sf_hovTabUtils = true;
+
     if (sf_activeSubTab == 0) {
-        float cardX = g_cx + 30.0f; float cardW = 804.0f - 60.0f; 
-        float actionW = 130.0f, actionH = 30.0f; float actionX = cardX + cardW - actionW;
-        float cY = g_cy + 65.0f; float cardH = 65.0f; float gapY = 10.0f;
-
-        auto CheckHitbox = [&](float rY) { return (x >= actionX && x <= actionX + actionW && y >= rY + (cardH - actionH) / 2.0f && y <= rY + (cardH - actionH) / 2.0f + actionH); };
-
-        if (CheckHitbox(cY + 10.0f)) sf_hovAdblock = true;
-        if (CheckHitbox(cY + 10.0f + (cardH + gapY) * 1)) sf_hovEyeCare = true;
-        if (CheckHitbox(cY + 10.0f + (cardH + gapY) * 2)) sf_hovZenMode = true;
-        if (CheckHitbox(cY + 10.0f + (cardH + gapY) * 3)) sf_hovMotivation = true;
-        if (CheckHitbox(cY + 10.0f + (cardH + gapY) * 4)) sf_hovScratchpad = true;
-        if (CheckHitbox(cY + 10.0f + (cardH + gapY) * 5)) sf_hovTodo = true;
-        
-        float mY = cY + 10.0f + (cardH + gapY) * 3;
-        float dW = 100.0f, dH = 30.0f, dX = cardX + cardW - 130.0f - dW - 15.0f, dY = mY + (cardH - dH) / 2.0f;
-        if (x >= dX && x <= dX + dW && y >= dY && y <= dY + dH) sf_hovLangDrop = true;
+        // Delegate to File Manager Plus mouse move
+        float cY = g_cy + 60.0f;
+        ProcessFileManagerMouseMove(x, y);
     }
     else if (sf_activeSubTab == 1) {
         ProcessGeminiMouseMove(x, y);
@@ -466,11 +462,9 @@ void ProcessSpecialFeatureMouseMove(float x, float y) {
         ProcessUtilitiesMouseMove(x, y);
     }
 
-    bool needsRefresh = (old_hovTabTools != sf_hovTabTools || old_hovTabDiary != sf_hovTabDiary ||
-                         old_hovTabUtils != sf_hovTabUtils || old_hovAdblock != sf_hovAdblock ||
-                         old_hovEyeCare != sf_hovEyeCare || old_hovZenMode != sf_hovZenMode ||
-                         old_hovMotivation != sf_hovMotivation || old_hovLangDrop != sf_hovLangDrop ||
-                         old_hovScratchpad != sf_hovScratchpad || old_hovTodo != sf_hovTodo);
+    bool needsRefresh = (old_hovTabFM    != sf_hovTabFM    ||
+                         old_hovTabDiary != sf_hovTabDiary ||
+                         old_hovTabUtils != sf_hovTabUtils);
 
     if (needsRefresh && hParentWnd != NULL) {
         InvalidateRect(hParentWnd, NULL, TRUE);
@@ -479,43 +473,30 @@ void ProcessSpecialFeatureMouseMove(float x, float y) {
 
 void ProcessSpecialFeatureMouseClick(float x, float y) {
     float tab1X = g_cx + 20.0f, tab2X = tab1X + 210.0f, tab3X = tab2X + 210.0f, tabY = g_cy + 10.0f;
-    
-    if(x>=tab1X && x<=tab1X+200.0f && y>=tabY && y<=tabY+40.0f) { sf_activeSubTab = 0; if(hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE); return; }
-    if(x>=tab2X && x<=tab2X+200.0f && y>=tabY && y<=tabY+40.0f) { sf_activeSubTab = 1; if(hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE); return; }
-    if(x>=tab3X && x<=tab3X+200.0f && y>=tabY && y<=tabY+40.0f) { sf_activeSubTab = 2; if(hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE); return; }
+
+    // Sub-tab header clicks
+    if (x >= tab1X && x <= tab1X + 200.0f && y >= tabY && y <= tabY + 40.0f) {
+        sf_activeSubTab = 0;
+        if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
+        return;
+    }
+    if (x >= tab2X && x <= tab2X + 200.0f && y >= tabY && y <= tabY + 40.0f) {
+        sf_activeSubTab = 1;
+        if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
+        return;
+    }
+    if (x >= tab3X && x <= tab3X + 200.0f && y >= tabY && y <= tabY + 40.0f) {
+        sf_activeSubTab = 2;
+        if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
+        return;
+    }
+
+    // Content area clicks — guard: only if below header (y > cy + 60)
+    if (y <= g_cy + 60.0f) return;
 
     if (sf_activeSubTab == 0) {
-        float cardX = g_cx + 30.0f; float cardW = 804.0f - 60.0f; 
-        float cY = g_cy + 65.0f; float cardH = 65.0f; float gapY = 10.0f;
-        float actionW = 130.0f, actionH = 30.0f; float actionX = cardX + cardW - actionW;
-        
-        auto CheckHitbox = [&](float rY) { return (x >= actionX && x <= actionX + actionW && y >= rY + (cardH - actionH) / 2.0f && y <= rY + (cardH - actionH) / 2.0f + actionH); };
-
-        float mY = cY + 10.0f + (cardH + gapY) * 3;
-        float dW = 100.0f, dH = 30.0f, dX = cardX + cardW - 130.0f - dW - 15.0f, dY = mY + (cardH - dH) / 2.0f;
-
-        if (sf_isLangDropOpen) {
-            if (x >= dX && x <= dX + dW && y >= dY + dH && y <= dY + dH * 2.0f) sf_langSel = 0; 
-            else if (x >= dX && x <= dX + dW && y >= dY + dH * 2.0f && y <= dY + dH * 3.0f) sf_langSel = 1; 
-            
-            sf_isLangDropOpen = false; 
-            if(hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
-            return;
-        }
-
-        if (x >= dX && x <= dX + dW && y >= dY && y <= dY + dH) { sf_isLangDropOpen = true; if(hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE); return; }
-
-        if (CheckHitbox(cY + 10.0f)) { sf_isAdblockActive = !sf_isAdblockActive; ToggleAdBlock(sf_isAdblockActive); if(hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE); return; }
-        if (CheckHitbox(cY + 10.0f + (cardH + gapY) * 1)) { sf_chkEyeCare = !sf_chkEyeCare; if(hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE); if (sf_chkEyeCare) MessageBoxW(NULL, L"Eye Care enabled!", L"Eye Care", MB_OK | MB_ICONINFORMATION); return; }
-        if (CheckHitbox(cY + 10.0f + (cardH + gapY) * 2)) { ActivateZenMode(); return; }
-        if (CheckHitbox(cY + 10.0f + (cardH + gapY) * 3)) { 
-            sf_chkMotivation = !sf_chkMotivation; 
-            if(hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
-            if (sf_chkMotivation) MessageBoxW(NULL, L"Motivational Popups enabled! You'll see quotes every 15 minutes.", L"Motivation", MB_OK | MB_ICONINFORMATION); 
-            return; 
-        }
-        if (CheckHitbox(cY + 10.0f + (cardH + gapY) * 4)) { OpenScratchpad(); return; }
-        if (CheckHitbox(cY + 10.0f + (cardH + gapY) * 5)) { OpenTodo(); return; }
+        // Delegate to File Manager Plus click handler
+        ProcessFileManagerMouseClick(x, y, hParentWnd);
     }
     else if (sf_activeSubTab == 1) {
         ProcessGeminiMouseClick(x, y);
