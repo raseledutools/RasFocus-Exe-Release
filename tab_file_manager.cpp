@@ -307,7 +307,7 @@ void DrawFileManagerTab(Graphics& g, float cx, float cy, float cw, float ch) {
             RectF tr(bcX, bcY, 200.0f, bcH);
             g.DrawString(seg.c_str(), -1, hov ? &fBold : &fSmall, tr, &fmtL, c);
             // measure width
-            SizeF sz;
+            RectF sz;
             { RectF layoutRect(0,0,500.0f,bcH); g.MeasureString(seg.c_str(), -1, hov ? &fBold : &fSmall, layoutRect, &sz); }
             bcX += sz.Width;
             if (i < (int)fm_breadcrumb.size() - 1) {
