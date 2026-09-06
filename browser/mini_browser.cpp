@@ -1739,23 +1739,22 @@ static void DrawProfilePanel_Main(Gdiplus::Graphics& g, int W, int dpi,
     using namespace Gdiplus;
     auto S = [&](int v){ return v * dpi / 96; };
 
-    // ── Panel geometry ──
+    BrowserProfile* prof = GetActiveProfile();
+    int nAccounts = prof ? (int)prof->accounts.size() : 0;
+
+    // ── Panel geometry — Chrome-style: header + accounts list + actions + footer ──
     int pw     = S(kProfPanelW);
     int panelX = W - pw - S(8);
     int panelY = S(36 + 36);   // titleBar + toolbar
 
-    // Main view items: 0=ManageAccount 1=AddAccount 2=sep 3=AddProfile 4=AllProfiles
-    static const struct { const wchar_t* ico; const wchar_t* label; } kMainItems[] = {
-        { L"\uE77B", L"Manage Google Account"   },
-        { L"\uE8D4", L"Add Google Account"      },
-        { L"\uE894", L"Sign out of Google"      },
-    };
-    static const int kMainItemCount = 3;
-
-    int itemsH = kMainItemCount * S(kProfItemH);
-    int sepH   = S(1) + S(12); // separator + padding
-    int extraH = S(kProfItemH) * 2; // "Add Profile" + "All Profiles"
-    int ph     = S(kProfHeaderH) + S(8) + sepH + itemsH + sepH + extraH + S(8);
+    // Dynamic height: header(big avatar) + accounts + sep + 3 actions + sep + 2 footer
+    int headerH   = S(130);                           // big avatar + name + email
+    int acctRowH  = S(52);                            // each signed-in account row
+    int acctsH    = nAccounts * acctRowH;
+    int sepH      = S(1) + S(8);
+    int actionH   = S(kProfItemH) * 3;               // Manage / Add account / Sign out
+    int footerH   = S(kProfItemH) * 2 + S(8);        // Add profile + All profiles
+    int ph        = headerH + acctsH + sepH + actionH + sepH + footerH;
 
     // ── Drop shadow ──
     for (int i = 3; i >= 1; i--) {
@@ -1763,105 +1762,180 @@ static void DrawProfilePanel_Main(Gdiplus::Graphics& g, int W, int dpi,
         g.FillRectangle(&sh, (float)(panelX+i), (float)(panelY+i), (float)pw, (float)ph);
     }
 
-    // ── Background + border ──
+    // ── Background + rounded top corners ──
     Color bgCol  = isDark ? Color(255,32,33,36)   : Color(255,255,255,255);
     Color sepCol = isDark ? Color(255,60,61,65)   : Color(255,218,220,224);
     Color txtCol = isDark ? Color(255,232,234,237): Color(255,32,33,36);
     Color dimCol = isDark ? Color(255,154,160,166): Color(255,95,99,104);
-    Color hovCol = isDark ? Color(30,255,255,255) : Color(20,0,0,0);
-    Color accCol = Color(255,26,115,232);  // Google blue
+    Color hovCol = isDark ? Color(40,255,255,255) : Color(25,0,0,0);
+    Color accCol = Color(255,26,115,232);   // Google blue
+    Color grnCol = Color(255,52,168,83);    // Google green (active indicator)
 
     SolidBrush bgBr(bgCol);
     g.FillRectangle(&bgBr, (float)panelX, (float)panelY, (float)pw, (float)ph);
     Pen bPen(sepCol, 1.0f);
     g.DrawRectangle(&bPen, (float)panelX, (float)panelY, (float)(pw-1), (float)(ph-1));
 
-    // ── Header: avatar + name + email ──
-    BrowserProfile* prof = GetActiveProfile();
-    wchar_t letter    = prof ? prof->avatarLetter : L'P';
-    COLORREF avColor  = prof ? prof->avatarColor  : RGB(26,115,232);
-    std::wstring name  = prof ? prof->displayLabel() : L"Guest";
-    std::wstring email = prof ? prof->primaryEmail()  : L"";
-
-    int avR    = S(48);
-    int avX    = panelX + (pw - avR) / 2;
-    int avY    = panelY + S(16);
-    DrawAvatarCircle(g, (float)avX, (float)avY, (float)avR, avColor, letter, (float)S(22), isDark);
-
-    Font fName (L"Segoe UI Semibold", (REAL)S(14), FontStyleBold,    UnitPixel);
-    Font fEmail(L"Segoe UI",          (REAL)S(11), FontStyleRegular, UnitPixel);
-    SolidBrush txtBr(txtCol), dimBr(dimCol);
+    Font fIco  (L"Segoe MDL2 Assets",  (REAL)S(14), FontStyleRegular, UnitPixel);
+    Font fName (L"Segoe UI Semibold",   (REAL)S(14), FontStyleBold,    UnitPixel);
+    Font fSub  (L"Segoe UI",            (REAL)S(11), FontStyleRegular, UnitPixel);
+    Font fItem (L"Segoe UI",            (REAL)S(13), FontStyleRegular, UnitPixel);
+    SolidBrush txtBr(txtCol), dimBr(dimCol), accBr(accCol), grnBr(grnCol);
     StringFormat sfC; sfC.SetAlignment(StringAlignmentCenter); sfC.SetLineAlignment(StringAlignmentNear);
-    int nameY  = avY + avR + S(6);
-    int emailY = nameY + S(20);
-    g.DrawString(name.c_str(),  -1, &fName,  RectF((float)panelX, (float)nameY,  (float)pw, (float)S(22)), &sfC, &txtBr);
-    g.DrawString(email.empty() ? L"Not signed in" : email.c_str(),
-                 -1, &fEmail, RectF((float)panelX, (float)emailY, (float)pw, (float)S(18)), &sfC, &dimBr);
-
-    // ── Separator 1 ──
-    int sepY1 = emailY + S(18) + S(10);
-    Pen sepPen(sepCol, 1.0f);
-    g.DrawLine(&sepPen, (float)(panelX+S(8)), (float)sepY1, (float)(panelX+pw-S(8)), (float)sepY1);
-
-    // ── Main action items ──
-    Font fIco (L"Segoe MDL2 Assets", (REAL)S(14), FontStyleRegular, UnitPixel);
-    Font fItem(L"Segoe UI",          (REAL)S(13), FontStyleRegular, UnitPixel);
+    StringFormat sfCM; sfCM.SetAlignment(StringAlignmentCenter); sfCM.SetLineAlignment(StringAlignmentCenter);
     StringFormat sfL; sfL.SetAlignment(StringAlignmentNear); sfL.SetLineAlignment(StringAlignmentCenter);
+    Pen sepPen(sepCol, 1.0f);
 
-    int itemStartY = sepY1 + S(6);
-    g_profilePanelHover = -1;
+    // ── HEADER: large avatar + active account name + email ──
+    wchar_t letter   = prof ? prof->avatarLetter : L'R';
+    COLORREF avColor = prof ? prof->avatarColor  : RGB(26,115,232);
+    std::wstring dispName  = prof ? prof->displayLabel() : L"Guest";
+    std::wstring dispEmail = prof ? prof->primaryEmail()  : L"";
 
-    for (int i = 0; i < kMainItemCount; i++) {
-        int iy = itemStartY + i * S(kProfItemH);
+    int avR = S(50);
+    int avX = panelX + (pw - avR) / 2;
+    int avY = panelY + S(18);
+    DrawAvatarCircle(g, (float)avX, (float)avY, (float)avR, avColor, letter, (float)S(23), isDark);
+
+    // Small "Google" badge on avatar if signed in
+    if (!dispEmail.empty()) {
+        int gR = S(10);
+        SolidBrush gBg(Color(255,255,255,255));
+        g.FillEllipse(&gBg, (float)(avX+avR-gR*2+2), (float)(avY+avR-gR*2+2), (float)(gR*2-4), (float)(gR*2-4));
+        SolidBrush gDot(grnCol);
+        g.FillEllipse(&gDot, (float)(avX+avR-gR+2), (float)(avY+avR-gR+2), (float)(gR*2-4), (float)(gR*2-4));
+    }
+
+    int nameY  = avY + avR + S(8);
+    int emailY = nameY + S(20);
+    g.DrawString(dispName.c_str(), -1, &fName,
+        RectF((float)panelX, (float)nameY, (float)pw, (float)S(22)), &sfC, &txtBr);
+    g.DrawString(dispEmail.empty() ? L"Not signed in" : dispEmail.c_str(),
+        -1, &fSub, RectF((float)panelX, (float)emailY, (float)pw, (float)S(18)), &sfC, &dimBr);
+
+    // ── "Manage your Google Account" pill button ──
+    int manageY = emailY + S(20);
+    int pillW = pw - S(40), pillH = S(26);
+    int pillX = panelX + S(20);
+    FillRoundRect(g, bgBr, (float)pillX, (float)manageY, (float)pillW, (float)pillH, (float)S(13));
+    bool hovManage = (mouseX >= pillX && mouseX < pillX+pillW &&
+                      mouseY >= manageY && mouseY < manageY+pillH);
+    Color pillBrd = hovManage ? accCol : sepCol;
+    Pen pillPen(pillBrd, 1.0f);
+    g.DrawRectangle(&pillPen, (float)pillX, (float)manageY, (float)(pillW-1), (float)(pillH-1));
+    Font fPill(L"Segoe UI", (REAL)S(11), FontStyleRegular, UnitPixel);
+    g.DrawString(L"Manage your Google Account", -1, &fPill,
+        RectF((float)pillX, (float)manageY, (float)pillW, (float)pillH), &sfCM,
+        hovManage ? &accBr : &txtBr);
+    if (hovManage) g_profilePanelHover = 0;
+
+    // ── SEPARATOR ──
+    int curY = panelY + headerH;
+    g.DrawLine(&sepPen, (float)(panelX+S(8)), (float)curY,
+                         (float)(panelX+pw-S(8)), (float)curY);
+    curY += S(4);
+
+    // ── SIGNED-IN ACCOUNTS LIST (Chrome-style rows) ──
+    g_profileAccountHover = -1;
+    for (int ai = 0; ai < nAccounts; ai++) {
+        auto& acc = prof->accounts[ai];
+        bool isActive = (ai == prof->activeAccount);
+        bool hovA = (mouseX >= panelX && mouseX < panelX+pw &&
+                     mouseY >= curY   && mouseY < curY+acctRowH);
+        if (hovA) {
+            g_profileAccountHover = ai;
+            SolidBrush hBr(hovCol);
+            g.FillRectangle(&hBr, (float)panelX, (float)curY, (float)pw, (float)acctRowH);
+        }
+
+        // Mini avatar for each account
+        int maR = S(32);
+        int maX = panelX + S(12);
+        int maY = curY + (acctRowH - maR) / 2;
+        COLORREF maColor = ProfileAvatarColor(ai + 1);
+        wchar_t maLetter = acc.email.empty() ? L'?' : towupper(acc.email[0]);
+        DrawAvatarCircle(g, (float)maX, (float)maY, (float)maR, maColor, maLetter, (float)S(15), isDark);
+
+        // Email + display name
+        int txX = maX + maR + S(10);
+        int txW = pw - (txX - panelX) - S(36);
+        Font fAcctN(L"Segoe UI", (REAL)S(12), FontStyleBold,    UnitPixel);
+        Font fAcctE(L"Segoe UI", (REAL)S(10), FontStyleRegular, UnitPixel);
+        g.DrawString(acc.displayName.empty() ? acc.email.c_str() : acc.displayName.c_str(),
+            -1, &fAcctN, RectF((float)txX, (float)(curY+S(8)), (float)txW, (float)S(18)), &sfL, &txtBr);
+        g.DrawString(acc.email.c_str(), -1, &fAcctE,
+            RectF((float)txX, (float)(curY+S(27)), (float)txW, (float)S(16)), &sfL, &dimBr);
+
+        // Active checkmark (Google blue tick)
+        if (isActive) {
+            SolidBrush chkBr(accCol);
+            g.DrawString(L"\uE73E", -1, &fIco,
+                RectF((float)(panelX+pw-S(30)), (float)curY,
+                      (float)S(22), (float)acctRowH), &sfL, &chkBr);
+        }
+        curY += acctRowH;
+    }
+
+    // ── SEPARATOR before actions ──
+    g.DrawLine(&sepPen, (float)(panelX+S(8)), (float)curY,
+                         (float)(panelX+pw-S(8)), (float)curY);
+    int actionStartY = curY + S(4);
+
+    // ── ACTION ITEMS: Add account / Sign out ──
+    struct ActionItem { const wchar_t* ico; const wchar_t* label; int id; bool danger; };
+    static const ActionItem kActions[] = {
+        { L"\uE8D4", L"Add Google Account",       20, false },
+        { L"\uE894", L"Sign out of all accounts", 21, true  },
+    };
+    static const int kActionCount = 2;
+
+    g_profilePanelHover = hovManage ? 0 : -1;
+    for (int i = 0; i < kActionCount; i++) {
+        int iy = actionStartY + i * S(kProfItemH);
         bool hov = (mouseX >= panelX && mouseX < panelX+pw &&
                     mouseY >= iy     && mouseY < iy+S(kProfItemH));
         if (hov) {
-            g_profilePanelHover = i;
+            g_profilePanelHover = kActions[i].id;
             SolidBrush hBr(hovCol);
             g.FillRectangle(&hBr, (float)panelX, (float)iy, (float)pw, (float)S(kProfItemH));
         }
-        // Sign out in red
-        Color icoColor = (i == 2) ? Color(255,220,50,50) : dimCol;
-        SolidBrush icoBr(icoColor);
-        g.DrawString(kMainItems[i].ico, -1, &fIco,
+        Color icoC = kActions[i].danger ? Color(255,220,50,50) : dimCol;
+        SolidBrush icoBr(icoC), lblBr(kActions[i].danger ? Color(255,220,50,50) : txtCol);
+        g.DrawString(kActions[i].ico, -1, &fIco,
             RectF((float)(panelX+S(16)), (float)iy, (float)S(24), (float)S(kProfItemH)), &sfL, &icoBr);
-        SolidBrush lblBr((i == 2) ? Color(255,220,50,50) : txtCol);
-        g.DrawString(kMainItems[i].label, -1, &fItem,
+        g.DrawString(kActions[i].label, -1, &fItem,
             RectF((float)(panelX+S(48)), (float)iy, (float)(pw-S(56)), (float)S(kProfItemH)), &sfL, &lblBr);
     }
 
-    // ── Separator 2 ──
-    int sepY2 = itemStartY + kMainItemCount * S(kProfItemH) + S(4);
-    g.DrawLine(&sepPen, (float)(panelX+S(8)), (float)sepY2, (float)(panelX+pw-S(8)), (float)sepY2);
+    // ── SEPARATOR before footer ──
+    int sep2Y = actionStartY + kActionCount * S(kProfItemH) + S(4);
+    g.DrawLine(&sepPen, (float)(panelX+S(8)), (float)sep2Y,
+                         (float)(panelX+pw-S(8)), (float)sep2Y);
 
-    // ── "Add Profile" button ──
-    int addProfY = sepY2 + S(6);
+    // ── FOOTER: Add new profile + All profiles ──
+    int addProfY = sep2Y + S(6);
     bool hovAdd = (mouseX >= panelX && mouseX < panelX+pw &&
                    mouseY >= addProfY && mouseY < addProfY + S(kProfItemH));
     if (hovAdd) {
-        g_profilePanelHover = 10; // sentinel
+        g_profilePanelHover = 10;
         SolidBrush hBr(hovCol);
         g.FillRectangle(&hBr, (float)panelX, (float)addProfY, (float)pw, (float)S(kProfItemH));
     }
-    SolidBrush accBr(accCol);
     g.DrawString(L"\uE8FA", -1, &fIco,
         RectF((float)(panelX+S(16)), (float)addProfY, (float)S(24), (float)S(kProfItemH)), &sfL, &accBr);
     g.DrawString(L"Add new profile", -1, &fItem,
         RectF((float)(panelX+S(48)), (float)addProfY, (float)(pw-S(56)), (float)S(kProfItemH)), &sfL, &accBr);
 
-    // ── "All Profiles →" button ──
     int allProfY = addProfY + S(kProfItemH);
     bool hovAll = (mouseX >= panelX && mouseX < panelX+pw &&
                    mouseY >= allProfY && mouseY < allProfY + S(kProfItemH));
     if (hovAll) {
-        g_profilePanelHover = 11; // sentinel
+        g_profilePanelHover = 11;
         SolidBrush hBr(hovCol);
         g.FillRectangle(&hBr, (float)panelX, (float)allProfY, (float)pw, (float)S(kProfItemH));
     }
     SolidBrush dimBr2(dimCol);
-    // Show profile count hint
-    int profCount = (int)g_profiles.size();
-    std::wstring profLabel = L"All profiles  (" + std::to_wstring(profCount) + L")  \u203A";
+    std::wstring profLabel = L"All profiles  (" + std::to_wstring((int)g_profiles.size()) + L")  \u203A";
     g.DrawString(L"\uE716", -1, &fIco,
         RectF((float)(panelX+S(16)), (float)allProfY, (float)S(24), (float)S(kProfItemH)), &sfL, &dimBr2);
     g.DrawString(profLabel.c_str(), -1, &fItem,
@@ -2136,10 +2210,15 @@ static int GetProfilePanelHeight(int dpi) {
                + S(8) + S(kProfItemH) + S(4) + S(kProfItemH) + S(8);
     case ProfilePanelView::ADD_PROFILE:
         return S(220);
-    default: { // MAIN
-        int nMain = 3;
-        return S(kProfHeaderH) + S(8) + S(1)+S(12) + nMain*S(kProfItemH)
-               + S(1)+S(12) + S(kProfItemH)*2 + S(8);
+    default: { // MAIN — dynamic: header + accounts + sep + 2 actions + sep + 2 footer
+        BrowserProfile* p = GetActiveProfile();
+        int nAccounts = p ? (int)p->accounts.size() : 0;
+        int headerH  = S(130);
+        int acctsH   = nAccounts * S(52);
+        int sepH     = S(1) + S(8);
+        int actionH  = S(kProfItemH) * 2;
+        int footerH  = S(kProfItemH) * 2 + S(8);
+        return headerH + acctsH + sepH + actionH + sepH + footerH;
     }
     }
 }
@@ -3517,15 +3596,78 @@ public:
                     }
                 }
 
-                // ── Google Profile Photo extract ──
+                // ── Google Account Email/Name + Photo extract ──
                 // accounts.google.com বা myaccount.google.com এ গেলে
-                // signed-in user এর photo URL JS দিয়ে বের করো।
+                // signed-in user এর email, name, photo URL JS দিয়ে বের করো।
                 {
                     const std::wstring& curUrl = w.tabs[m_tabIdx].url;
                     bool isGoogleAcct = (curUrl.find(L"accounts.google.com") != std::wstring::npos ||
                                          curUrl.find(L"myaccount.google.com") != std::wstring::npos ||
                                          curUrl.find(L"mail.google.com") != std::wstring::npos ||
                                          curUrl.find(L"google.com") != std::wstring::npos);
+                    // ── Extract email + display name ──
+                    if (isGoogleAcct) {
+                        HWND captureWnd = m_hWnd;
+                        sender->ExecuteScript(
+                            L"(() => {"
+                            // Try multiple Google DOM sources for email
+                            L"  let email = '';"
+                            L"  let name  = '';"
+                            // a[href*='SignOutOptions'] data-email
+                            L"  const eEl = document.querySelector('[data-email]');"
+                            L"  if (eEl) email = eEl.getAttribute('data-email') || '';"
+                            // aria-label on profile img
+                            L"  if (!email) {"
+                            L"    const imgEl = document.querySelector('img[aria-label*=\"@\"]');"
+                            L"    if (imgEl) {"
+                            L"      const lbl = imgEl.getAttribute('aria-label') || '';"
+                            L"      const m = lbl.match(/[\\w.+-]+@[\\w-]+\\.[\\w.]+/);"
+                            L"      if (m) email = m[0];"
+                            L"    }"
+                            L"  }"
+                            // header profile button aria-label
+                            L"  if (!email) {"
+                            L"    const hdr = document.querySelector('[aria-label*=\"Google Account\"]');"
+                            L"    if (hdr) {"
+                            L"      const lbl = hdr.getAttribute('aria-label') || '';"
+                            L"      const m = lbl.match(/[\\w.+-]+@[\\w-]+\\.[\\w.]+/);"
+                            L"      if (m) email = m[0];"
+                            L"      const nm = lbl.match(/^([^(]+)/);"
+                            L"      if (nm) name = nm[1].trim();"
+                            L"    }"
+                            L"  }"
+                            // myaccount page h1/h2 for name
+                            L"  if (!name) {"
+                            L"    const h = document.querySelector('h1,h2,[data-name]');"
+                            L"    if (h) name = h.innerText || h.getAttribute('data-name') || '';"
+                            L"    name = name.trim();"
+                            L"  }"
+                            L"  return JSON.stringify({email, name});"
+                            L"})()",
+                            Callback<ICoreWebView2ExecuteScriptCompletedHandler>(
+                            [captureWnd](HRESULT, LPCWSTR resultJson) -> HRESULT {
+                                if (!resultJson) return S_OK;
+                                std::wstring s(resultJson);
+                                // Parse {"email":"...","name":"..."}
+                                auto extractField = [&](const std::wstring& key) -> std::wstring {
+                                    std::wstring search = L"\"" + key + L"\":\"";
+                                    auto pos = s.find(search);
+                                    if (pos == std::wstring::npos) return L"";
+                                    pos += search.size();
+                                    auto end = s.find(L'"', pos);
+                                    if (end == std::wstring::npos) return L"";
+                                    return s.substr(pos, end - pos);
+                                };
+                                std::wstring email = extractField(L"email");
+                                std::wstring name  = extractField(L"name");
+                                if (!email.empty()) {
+                                    // AddGoogleAccount deduplicates automatically
+                                    AddGoogleAccount(email, name);
+                                    InvalidateRect(captureWnd, NULL, FALSE);
+                                }
+                                return S_OK;
+                            }).Get());
+                    }
                     if (isGoogleAcct) {
                         HWND captureWnd = m_hWnd;
                         sender->ExecuteScript(
@@ -4177,16 +4319,26 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 
             // ── MAIN view clicks ──────────────────────────────────────────
             if (g_profileView == ProfilePanelView::MAIN) {
-                if (g_profilePanelHover == 0) {
-                    // Manage Google Account
+                if (g_profileAccountHover >= 0) {
+                    // Switch active Google account within this profile
+                    SwitchGoogleAccount(g_profileAccountHover);
+                    ClosePanel();
+                } else if (g_profilePanelHover == 0) {
+                    // "Manage your Google Account" pill
                     ClosePanel();
                     AddTab(hWnd, L"https://myaccount.google.com");
-                } else if (g_profilePanelHover == 1) {
-                    // Add Google Account (multi-account sign-in)
+                } else if (g_profilePanelHover == 20) {
+                    // "Add Google Account" → open Google AddSession in new tab
+                    // When user signs in, NavigationCompleted will detect the new account
                     ClosePanel();
                     AddTab(hWnd, L"https://accounts.google.com/AddSession");
-                } else if (g_profilePanelHover == 2) {
-                    // Sign out
+                } else if (g_profilePanelHover == 21) {
+                    // "Sign out of all accounts"
+                    if (auto* prof = GetActiveProfile()) {
+                        prof->accounts.clear();
+                        prof->activeAccount = -1;
+                        SaveProfiles();
+                    }
                     ClosePanel();
                     AddTab(hWnd, L"https://accounts.google.com/Logout");
                 } else if (g_profilePanelHover == 10) {
@@ -4204,14 +4356,21 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
             // ── ACCOUNTS view clicks ──────────────────────────────────────
             else if (g_profileView == ProfilePanelView::ACCOUNTS) {
                 if (g_profileCardHover >= 0 && g_profileCardHover < (int)g_profiles.size()) {
-                    // Switch to clicked profile
-                    std::wstring newUd = SwitchProfile(g_profileCardHover);
-                    // Relaunch browser with new profile's user data folder
-                    // (simplest approach: open new window — same as Chrome opening new window for profile)
+                    // Switch to clicked profile — Chrome-style: new browser window for each profile
+                    if (g_profileCardHover != g_activeProfileIdx) {
+                        std::wstring newUd = SwitchProfile(g_profileCardHover);
+                        // Open new RasBrowser window with new profile's user data folder
+                        // Pass the profile user-data-dir as a command-line argument
+                        wchar_t exePath[MAX_PATH] = {};
+                        GetModuleFileNameW(NULL, exePath, MAX_PATH);
+                        std::wstring args = L"\"" + std::wstring(exePath) + L"\" -profile \"" + newUd + L"\"";
+                        STARTUPINFOW si = {}; si.cb = sizeof(si);
+                        PROCESS_INFORMATION pi = {};
+                        CreateProcessW(NULL, (LPWSTR)args.c_str(), NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi);
+                        if (pi.hProcess) CloseHandle(pi.hProcess);
+                        if (pi.hThread)  CloseHandle(pi.hThread);
+                    }
                     ClosePanel();
-                    // Navigate current tabs to NTP so user sees the change
-                    if (g_windows[hWnd].active() && g_windows[hWnd].active()->webview)
-                        g_windows[hWnd].active()->webview->Navigate(L"about:blank");
                     InvalidateRect(hWnd, NULL, TRUE);
                 } else if (g_profileCardHover == 100) {
                     // Add new profile from accounts view
