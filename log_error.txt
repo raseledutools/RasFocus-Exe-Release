@@ -1,6 +1,6 @@
 BUILD STATUS: FAILED (exit code 2)
-Time: 2026-09-06 09:32:36 UTC
-Run: https://github.com/raseledutools/RasFocus-Exe-Release/actions/runs/34024887243
+Time: 2026-09-06 11:26:07 UTC
+Run: https://github.com/raseledutools/RasFocus-Exe-Release/actions/runs/34030180781
 
 === Compiler Output ===
 Microsoft (R) C/C++ Optimizing Compiler Version 19.51.36256 for x64
@@ -11,17 +11,20 @@ prewindow.cpp
 tab_dashboard.cpp
 tab_family_link.cpp
 prewindow.cpp(59): warning C4996: 'localtime': This function or variable may be unsafe. Consider using localtime_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
-main.cpp(199): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
-main.cpp(217): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
-main.cpp(217): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
-main.cpp(842): warning C4996: 'fopen': This function or variable may be unsafe. Consider using fopen_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
-main.cpp(866): warning C4996: 'fopen': This function or variable may be unsafe. Consider using fopen_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
-main.cpp(1922): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
-main.cpp(2262): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data
-main.cpp(2262): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data
+main.cpp(200): warning C4996: 'sprintf': This function or variable may be unsafe. Consider using sprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+main.cpp(218): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
+main.cpp(218): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
+main.cpp(843): warning C4996: 'fopen': This function or variable may be unsafe. Consider using fopen_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+main.cpp(867): warning C4996: 'fopen': This function or variable may be unsafe. Consider using fopen_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+main.cpp(1923): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+main.cpp(2264): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data
+main.cpp(2264): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data
 tab_family_link.cpp(362): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\codecvt(34): note: see declaration of 'std::codecvt_utf8' (compiling source file tab_family_link.cpp)
 tab_family_link.cpp(362): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>::codecvt_utf8': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
+advanced_feature.cpp
+feature_browser.cpp
+bookmarks.cpp
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xlocale(251): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning. (compiling source file tab_family_link.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\codecvt(34): note: see declaration of 'std::codecvt_utf8' (compiling source file tab_family_link.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xlocale(251): note: the template instantiation context (the oldest one first) is (compiling source file tab_family_link.cpp)
@@ -82,9 +85,6 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
             _InIt=const wchar_t *,
             _SizeTy=std::+::_Size_type
         ] (compiling source file tab_family_link.cpp)
-advanced_feature.cpp
-feature_browser.cpp
-bookmarks.cpp
 context_menu.cpp
 downloads_panel.cpp
 find_in_page.cpp
@@ -93,6 +93,7 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
 browser/advanced_feature.cpp(23): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>::codecvt_utf8': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
 browser/advanced_feature.cpp(26): warning C4996: 'localtime': This function or variable may be unsafe. Consider using localtime_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
 browser/advanced_feature.cpp(116): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+history_panel.cpp
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xlocale(251): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning. (compiling source file browser/advanced_feature.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\codecvt(34): note: see declaration of 'std::codecvt_utf8' (compiling source file browser/advanced_feature.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xlocale(251): note: the template instantiation context (the oldest one first) is (compiling source file browser/advanced_feature.cpp)
@@ -101,7 +102,6 @@ browser/advanced_feature.cpp(23): note: see reference to function template insta
         [
             _Facet=std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>
         ]
-history_panel.cpp
 settings.cpp
 keyboard_shortcuts.cpp
 browser_profiles.cpp
@@ -169,7 +169,6 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
             _InIt=wchar_t *,
             _SizeTy=std::+::_Size_type
         ] (compiling source file tab_blocks.cpp)
-tab_deep_study.cpp
 tab_adult.cpp(219): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\codecvt(34): note: see declaration of 'std::codecvt_utf8' (compiling source file tab_adult.cpp)
 tab_adult.cpp(219): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>::codecvt_utf8': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
@@ -190,7 +189,6 @@ tab_adult.cpp(406): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::code
 tab_adult.cpp(518): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\codecvt(34): note: see declaration of 'std::codecvt_utf8' (compiling source file tab_adult.cpp)
 tab_adult.cpp(518): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>::codecvt_utf8': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
-tab_special.cpp
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xlocale(251): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning. (compiling source file tab_adult.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\codecvt(34): note: see declaration of 'std::codecvt_utf8' (compiling source file tab_adult.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xlocale(251): note: the template instantiation context (the oldest one first) is (compiling source file tab_adult.cpp)
@@ -199,10 +197,13 @@ tab_adult.cpp(219): note: see reference to function template instantiation 'std:
         [
             _Facet=std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>
         ]
+tab_deep_study.cpp
+tab_special.cpp
+tab_file_manager.cpp
 tab_statistics.cpp
-tab_settings.cpp
 tab_special.cpp(115): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
 tab_special.cpp(118): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
+tab_settings.cpp
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): warning C4244: '=': conversion from 'wchar_t' to 'char', possible loss of data (compiling source file tab_deep_study.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): note: the template instantiation context (the oldest one first) is (compiling source file tab_deep_study.cpp)
 tab_deep_study.cpp(690): note: see reference to function template instantiation 'std::basic_string<char,std::char_traits<char>,std::allocator<char>>::basic_string<std::_String_iterator<std::_String_val<std::_Simple_types<_Elem>>>,0>(_Iter,_Iter,const _Alloc &)' being compiled
@@ -231,13 +232,64 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
         ] (compiling source file tab_deep_study.cpp)
 tab_utilities.cpp
 tab_device_block.cpp
+tab_file_manager.cpp(56): warning C4305: 'initializing': truncation from 'int' to 'bool'
+tab_file_manager.cpp(308): error C2665: 'Gdiplus::Graphics::MeasureString': no overloaded function could convert all the argument types
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusGraphics.h(1384): note: could be 'Gdiplus::Status Gdiplus::Graphics::MeasureString(const WCHAR *,INT,const Gdiplus::Font *,const Gdiplus::PointF &,Gdiplus::RectF *) const' (compiling source file tab_file_manager.cpp)
+tab_file_manager.cpp(308): note: 'Gdiplus::Status Gdiplus::Graphics::MeasureString(const WCHAR *,INT,const Gdiplus::Font *,const Gdiplus::PointF &,Gdiplus::RectF *) const': cannot convert argument 5 from 'Gdiplus::SizeF *' to 'Gdiplus::RectF *'
+tab_file_manager.cpp(308): note: Types pointed to are unrelated; conversion requires reinterpret_cast, C-style cast or parenthesized function-style cast
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusGraphics.h(1362): note: or       'Gdiplus::Status Gdiplus::Graphics::MeasureString(const WCHAR *,INT,const Gdiplus::Font *,const Gdiplus::RectF &,Gdiplus::RectF *) const' (compiling source file tab_file_manager.cpp)
+tab_file_manager.cpp(308): note: 'Gdiplus::Status Gdiplus::Graphics::MeasureString(const WCHAR *,INT,const Gdiplus::Font *,const Gdiplus::RectF &,Gdiplus::RectF *) const': cannot convert argument 4 from 'Gdiplus::SizeF' to 'const Gdiplus::RectF &'
+tab_file_manager.cpp(308): note: Reason: cannot convert from 'Gdiplus::SizeF' to 'const Gdiplus::RectF'
+tab_file_manager.cpp(308): note: No user-defined-conversion operator available that can perform this conversion, or the operator cannot be called
+tab_file_manager.cpp(308): note: while trying to match the argument list '(const _Elem *, int, Gdiplus::Font *, Gdiplus::SizeF, Gdiplus::SizeF *)'
+        with
+        [
+            _Elem=wchar_t
+        ]
+tab_file_manager.cpp(573): warning C4805: '==': unsafe mix of type 'bool' and type 'int' in operation
+tab_file_manager.cpp(581): error C2248: 'Gdiplus::SolidBrush::operator =': cannot access private member declared in class 'Gdiplus::SolidBrush'
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusBrush.h(155): note: see declaration of 'Gdiplus::SolidBrush::operator =' (compiling source file tab_file_manager.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusBrush.h(116): note: see declaration of 'Gdiplus::SolidBrush' (compiling source file tab_file_manager.cpp)
+tab_file_manager.cpp(582): error C2248: 'Gdiplus::SolidBrush::operator =': cannot access private member declared in class 'Gdiplus::SolidBrush'
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusBrush.h(155): note: see declaration of 'Gdiplus::SolidBrush::operator =' (compiling source file tab_file_manager.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusBrush.h(116): note: see declaration of 'Gdiplus::SolidBrush' (compiling source file tab_file_manager.cpp)
+tab_file_manager.cpp(583): error C2248: 'Gdiplus::SolidBrush::operator =': cannot access private member declared in class 'Gdiplus::SolidBrush'
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusBrush.h(155): note: see declaration of 'Gdiplus::SolidBrush::operator =' (compiling source file tab_file_manager.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusBrush.h(116): note: see declaration of 'Gdiplus::SolidBrush' (compiling source file tab_file_manager.cpp)
+tab_file_manager.cpp(584): error C2248: 'Gdiplus::SolidBrush::operator =': cannot access private member declared in class 'Gdiplus::SolidBrush'
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusBrush.h(155): note: see declaration of 'Gdiplus::SolidBrush::operator =' (compiling source file tab_file_manager.cpp)
+C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\GdiplusBrush.h(116): note: see declaration of 'Gdiplus::SolidBrush' (compiling source file tab_file_manager.cpp)
+tab_file_manager.cpp(629): warning C4305: '=': truncation from 'int' to 'bool'
+tab_file_manager.cpp(714): warning C4805: '!=': unsafe mix of type 'int' and type 'bool' in operation
+tab_file_manager.cpp(729): error C2065: 'hParentWnd': undeclared identifier
+tab_file_manager.cpp(729): error C2065: 'hParentWnd': undeclared identifier
+tab_file_manager.cpp(735): error C2065: 'hParentWnd': undeclared identifier
+tab_file_manager.cpp(735): error C2065: 'hParentWnd': undeclared identifier
+tab_file_manager.cpp(754): error C2065: 'hParentWnd': undeclared identifier
+tab_file_manager.cpp(754): error C2065: 'hParentWnd': undeclared identifier
+tab_file_manager.cpp(762): error C2065: 'hParentWnd': undeclared identifier
+tab_file_manager.cpp(762): error C2065: 'hParentWnd': undeclared identifier
+tab_file_manager.cpp(775): error C2065: 'hParentWnd': undeclared identifier
+tab_file_manager.cpp(775): error C2065: 'hParentWnd': undeclared identifier
+tab_file_manager.cpp(792): error C2065: 'hParentWnd': undeclared identifier
+tab_file_manager.cpp(792): error C2065: 'hParentWnd': undeclared identifier
+tab_file_manager.cpp(822): error C2065: 'hParentWnd': undeclared identifier
+tab_file_manager.cpp(822): error C2065: 'hParentWnd': undeclared identifier
+tab_file_manager.cpp(846): error C2065: 'hParentWnd': undeclared identifier
+tab_file_manager.cpp(846): error C2065: 'hParentWnd': undeclared identifier
+tab_file_manager.cpp(850): error C2065: 'hParentWnd': undeclared identifier
+tab_file_manager.cpp(850): error C2065: 'hParentWnd': undeclared identifier
+tab_file_manager.cpp(872): error C2065: 'hParentWnd': undeclared identifier
+tab_file_manager.cpp(872): error C2065: 'hParentWnd': undeclared identifier
+tab_file_manager.cpp(891): error C2065: 'hParentWnd': undeclared identifier
+tab_file_manager.cpp(891): error C2065: 'hParentWnd': undeclared identifier
 tab_diary.cpp
 accounts.cpp
 tab_utilities.cpp(72): warning C4244: '=': conversion from 'LRESULT' to 'int', possible loss of data
 tab_utilities.cpp(184): warning C4244: 'initializing': conversion from 'LRESULT' to 'int', possible loss of data
 tab_phone_remote.cpp
-tab_diary.cpp(461): warning C4996: '_wgetenv': This function or variable may be unsafe. Consider using _wdupenv_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
 tab_phone_remote_relay.cpp
+tab_diary.cpp(461): warning C4996: '_wgetenv': This function or variable may be unsafe. Consider using _wdupenv_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
 pc_screen_streamer.cpp
 accounts.cpp(512): warning C4267: 'argument': conversion from 'size_t' to 'DWORD', possible loss of data
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): warning C4244: '=': conversion from 'wchar_t' to 'char', possible loss of data (compiling source file accounts.cpp)
@@ -266,80 +318,4 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
             _InIt=wchar_t *,
             _SizeTy=std::+::_Size_type
         ] (compiling source file accounts.cpp)
-Microsoft (R) Incremental Linker Version 14.51.36256.0
-Copyright (C) Microsoft Corporation.  All rights reserved.
-
-/out:main.exe 
-/ltcg 
-/LTCG 
-/OPT:REF 
-/OPT:ICF 
-/SUBSYSTEM:WINDOWS 
-/OUT:RasFocus.exe 
-user32.lib 
-gdi32.lib 
-gdiplus.lib 
-comctl32.lib 
-ole32.lib 
-oleaut32.lib 
-uiautomationcore.lib 
-uuid.lib 
-psapi.lib 
-shlwapi.lib 
-winmm.lib 
-shell32.lib 
-urlmon.lib 
-wininet.lib 
-comdlg32.lib 
-advapi32.lib 
-crypt32.lib 
-ws2_32.lib 
-mfplat.lib 
-mfuuid.lib 
-mf.lib 
-mfreadwrite.lib 
-wmcodecdspuuid.lib 
-rpcrt4.lib 
-secur32.lib 
-bcrypt.lib 
-dbghelp.lib 
-./packages/Microsoft.Web.WebView2.1.0.2420.47/build/native/x64/WebView2LoaderStatic.lib 
-D:\a\RasFocus-Exe-Release\RasFocus-Exe-Release\firebase_cpp_sdk\libs\windows\VS2019\MT\x64\Release\firebase_app.lib 
-D:\a\RasFocus-Exe-Release\RasFocus-Exe-Release\firebase_cpp_sdk\libs\windows\VS2019\MT\x64\Release\firebase_firestore.lib 
-D:\a\RasFocus-Exe-Release\RasFocus-Exe-Release\firebase_cpp_sdk\libs\windows\VS2019\MT\x64\Release\firebase_auth.lib 
-main.obj 
-prewindow.obj 
-tab_dashboard.obj 
-tab_family_link.obj 
-advanced_feature.obj 
-feature_browser.obj 
-bookmarks.obj 
-context_menu.obj 
-downloads_panel.obj 
-find_in_page.obj 
-history_panel.obj 
-settings.obj 
-keyboard_shortcuts.obj 
-browser_profiles.obj 
-tab_pdf_workspace.obj 
-upgrade.obj 
-mini_browser.obj 
-tab_blocks.obj 
-tab_schedule_blocks.obj 
-tab_adult.obj 
-tab_deep_study.obj 
-tab_special.obj 
-tab_statistics.obj 
-tab_settings.obj 
-tab_utilities.obj 
-tab_device_block.obj 
-tab_diary.obj 
-accounts.obj 
-tab_phone_remote.obj 
-tab_phone_remote_relay.obj 
-pc_screen_streamer.obj 
-resources.res 
-libcpmt.lib(xlock.obj) : warning LNK4078: multiple '.voltbl' sections found with different attributes (00101A00)
-pc_screen_streamer.obj : error LNK2001: unresolved external symbol "unsigned __int64 s_clientSock" (?s_clientSock@@3_KA)
-RasFocus.exe : fatal error LNK1120: 1 unresolved externals
 
