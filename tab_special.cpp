@@ -1,13 +1,18 @@
 // tab_special.cpp
+// Special Tab — Windows File Explorer–style shell with
+//   left sidebar (Quick Access, This PC, Drives, Google Drive)
+//   top sub-tab bar (File Manager Plus | Professional Diary | Student Utilities)
+//   content area delegates to existing sub-tab renderers
 
 #include "tab_special.h"
-#include "tab_gemini.h"        // Diary Tab Header
-#include "tab_utilities.h"     // Utilities Tab Header
+#include "tab_gemini.h"        // Diary Tab
+#include "tab_utilities.h"     // Utilities Tab
 #include "tab_file_manager.h"  // File Manager Plus Sub-Tab
 #include <string>
 #include <vector>
 #include <tlhelp32.h>
 #include <shellapi.h>
+#include <shlobj.h>
 #include <thread>
 #include <time.h>
 #include <fstream>
@@ -15,43 +20,47 @@
 using namespace Gdiplus;
 using namespace std;
 
-// --- Sub Tab State ---
+// ============================================================
+// STATE
+// ============================================================
 int sf_activeSubTab = 0; // 0 = File Manager Plus, 1 = Diary, 2 = Utilities
 
-// --- States ---
-static bool sf_isAdblockActive = false; 
-static bool sf_hovAdblock = false;
-static bool sf_hovEyeCare = false;
-static bool sf_hovZenMode = false;
-static bool sf_chkEyeCare = false;
+// Motivational popup state (kept from original)
+static bool sf_chkMotivation      = false;
+static int  sf_langSel            = 0; // 0 = English, 1 = Bangla
+static bool motivationThreadRunning = false;
+static wstring currentMotiveQuote = L"";
 
-// Motivational Popups States
-static bool sf_chkMotivation = false;
-static bool sf_hovMotivation = false;
-static bool sf_hovLangDrop = false;
-static bool sf_isLangDropOpen = false;
-static int sf_langSel = 0; // 0 = English, 1 = Bangla
+// Sidebar hover / selection
+static int  sf_hovSideItem  = -1;  // quick-access row
+static int  sf_hovDriveItem = -1;  // drive row
+static bool sf_hovGDrive    = false;
 
-// New Features Hover States
-static bool sf_hovScratchpad = false;
-static bool sf_hovTodo = false;
-
-// Sub-Tab Hover States
-static bool sf_hovTabFM    = false;  // File Manager Plus
+// Sub-tab hover
+static bool sf_hovTabFM    = false;
 static bool sf_hovTabDiary = false;
 static bool sf_hovTabUtils = false;
 
-vector<wstring> sf_languages = { L"English", L"Bangla" };
+// Layout cache (set each draw, used by mouse handlers)
+static float g_cx = 0, g_cy = 0, g_cw = 0, g_ch = 0;
+static float g_sideW   = 220.0f;  // sidebar width
+static float g_headerH =  52.0f;  // sub-tab bar height
 
-vector<wstring> quotesEng = {
+// Sidebar item rects cache (for hit testing)
+struct SideRect { float x, y, w, h; };
+static vector<SideRect> g_quickRects;   // quick-access items
+static vector<SideRect> g_driveRects;   // drive items
+static SideRect          g_gdriveRect;  // google drive item
+
+// Motivational quotes
+static vector<wstring> quotesEng = {
     L"\"Don't watch the clock; do what it does. Keep going.\" - Sam Levenson",
     L"\"The future depends on what you do today.\" - Mahatma Gandhi",
     L"\"Focus on your goal. Don't look in any direction but ahead.\"",
     L"\"Time is what we want most, but what we use worst.\" - William Penn",
     L"\"Push yourself, because no one else is going to do it for you.\""
 };
-
-vector<wstring> quotesBen = {
+static vector<wstring> quotesBen = {
     L"\"ঘড়ির দিকে তাকিও না; ঘড়ি যা করে তা করো। চলতে থাকো।\"",
     L"\"তোমার ভবিষ্যৎ নির্ভর করে তুমি আজ কী করছো তার ওপর।\"",
     L"\"শুধু লক্ষ্যের দিকে ফোকাস করো। অন্য কোথাও তাকানোর সময় নেই।\"",
@@ -59,449 +68,520 @@ vector<wstring> quotesBen = {
     L"\"নিজেকে নিজে পুশ করো, কারণ অন্য কেউ তোমার হয়ে এটা করে দেবে না।\""
 };
 
-// --- Helper: Simple Rectangle (Matching your UI style) ---
-static void FillSimpleRectSpecial(Graphics& g, SolidBrush* br, Pen* pen, float x, float y, float rw, float rh) {
-    if (br) g.FillRectangle(br, x, y, rw, rh);
-    if (pen) g.DrawRectangle(pen, x, y, rw, rh);
-}
-
-// NOTE: IsRunAsAdmin() and GetSecretDir() are defined in main.cpp
-extern bool IsRunAsAdmin(); 
+// ============================================================
+// EXTERNALS
+// ============================================================
+extern bool IsRunAsAdmin();
 extern string GetSecretDir();
+extern HWND hParentWnd;
 
-// External Diary Definitions
+// Diary
 extern void ShowGeminiControls(bool show);
 extern void DrawGeminiTab(Graphics& g, float cx, float cy, float cw, float ch);
 extern void ResizeGeminiControls(int cx, int cy, int cw, int ch);
-extern void ProcessDiaryMouseMove(float x, float y);
+extern void ProcessGeminiMouseMove(float x, float y);
 extern void ProcessGeminiMouseClick(float x, float y);
-extern void ProcessGeminiMouseMove(float x, float y); // Added from previous fix context
 
-// External Utilities Definitions
+// Utilities
 extern void DrawUtilitiesTab(Graphics& g, float cx, float cy, float cw, float ch);
 extern void ProcessUtilitiesMouseMove(float x, float y);
 extern void ProcessUtilitiesMouseClick(float x, float y);
 
-// UI Refresh Handle (Make sure this is defined globally in main.cpp)
-extern HWND hParentWnd; 
-
-// ==============================================================
-// --- Silent Extension Installer/Uninstaller ---
-// ==============================================================
-void ToggleAdBlock(bool enable) {
-    if (!IsRunAsAdmin()) {
-        wchar_t szPath[MAX_PATH];
-        if (GetModuleFileNameW(NULL, szPath, ARRAYSIZE(szPath))) {
-            SHELLEXECUTEINFOW sei = { sizeof(sei) };
-            sei.lpVerb = L"runas";
-            sei.lpFile = szPath;
-            sei.hwnd = NULL;
-            sei.nShow = SW_NORMAL;
-            if (!ShellExecuteExW(&sei)) {
-                MessageBoxW(NULL, L"Admin permission is required to change Adblocker settings.", L"Permission Denied", MB_OK | MB_ICONERROR);
-                sf_isAdblockActive = !enable; 
-            } else { exit(0); }
-        }
-        return;
-    }
-
-    HKEY hKey;
-    string chromePath = "SOFTWARE\\Policies\\Google\\Chrome\\ExtensionInstallForcelist";
-    string adGuardChrome = "bgnkhhnnamicmpeenaelnjfhikgbkllg;https://clients2.google.com/service/update2/crx";
-    string edgePath = "SOFTWARE\\Policies\\Microsoft\\Edge\\ExtensionInstallForcelist";
-    string adGuardEdge = "pdffkfellgipmhklpdmokmckkkfcopbh;https://edge.microsoft.com/extensionwebstorebase/v1/crx";
-
-    if (enable) {
-        if (RegCreateKeyExA(HKEY_LOCAL_MACHINE, chromePath.c_str(), 0, NULL, 0, KEY_WRITE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
-            RegSetValueExA(hKey, "1", 0, REG_SZ, (const BYTE*)adGuardChrome.c_str(), adGuardChrome.length() + 1); RegCloseKey(hKey);
-        }
-        if (RegCreateKeyExA(HKEY_LOCAL_MACHINE, edgePath.c_str(), 0, NULL, 0, KEY_WRITE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
-            RegSetValueExA(hKey, "1", 0, REG_SZ, (const BYTE*)adGuardEdge.c_str(), adGuardEdge.length() + 1); RegCloseKey(hKey);
-        }
-        MessageBoxW(NULL, L"Stealth AdBlocker successfully ENABLED for Chrome & Edge!", L"Success", MB_OK | MB_ICONINFORMATION);
-    } else {
-        if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, chromePath.c_str(), 0, KEY_WRITE, &hKey) == ERROR_SUCCESS) { RegDeleteValueA(hKey, "1"); RegCloseKey(hKey); }
-        if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, edgePath.c_str(), 0, KEY_WRITE, &hKey) == ERROR_SUCCESS) { RegDeleteValueA(hKey, "1"); RegCloseKey(hKey); }
-        MessageBoxW(NULL, L"Stealth AdBlocker successfully DISABLED.", L"Removed", MB_OK | MB_ICONINFORMATION);
-    }
+// ============================================================
+// HELPERS
+// ============================================================
+static void FillRoundRect(Graphics& g, Brush* br, Pen* pen,
+                          float x, float y, float w, float h, float r = 6.0f) {
+    GraphicsPath path;
+    path.AddArc(x,         y,         r*2, r*2, 180, 90);
+    path.AddArc(x+w-r*2,   y,         r*2, r*2, 270, 90);
+    path.AddArc(x+w-r*2,   y+h-r*2,   r*2, r*2,   0, 90);
+    path.AddArc(x,         y+h-r*2,   r*2, r*2,  90, 90);
+    path.CloseFigure();
+    if (br)  g.FillPath(br,  &path);
+    if (pen) g.DrawPath(pen, &path);
 }
 
-// --- Kill Distracting Apps ---
-void ActivateZenMode() {
-    vector<wstring> badApps = { L"discord.exe", L"steam.exe", L"epicgames.exe", L"telegram.exe" };
-    HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (hSnap != INVALID_HANDLE_VALUE) {
-        PROCESSENTRY32W pe; pe.dwSize = sizeof(PROCESSENTRY32W);
-        if (Process32FirstW(hSnap, &pe)) {
-            do {
-                wstring pName = pe.szExeFile; for (auto& c : pName) c = towlower(c);
-                for (const auto& bad : badApps) {
-                    if (pName == bad) {
-                        HANDLE hProc = OpenProcess(PROCESS_TERMINATE, FALSE, pe.th32ProcessID);
-                        if (hProc) { TerminateProcess(hProc, 0); CloseHandle(hProc); }
-                    }
-                }
-            } while (Process32NextW(hSnap, &pe));
-        }
-        CloseHandle(hSnap);
-    }
-    MessageBoxW(NULL, L"Zen Mode Activated! All distractions have been eliminated.", L"Zen Mode", MB_OK | MB_ICONINFORMATION);
-}
-
-// ==============================================================
-// --- Motivational Popup Window Logic ---
-// ==============================================================
-wstring currentMotiveQuote = L"";
-
+// ============================================================
+// MOTIVATIONAL POPUP (kept from original)
+// ============================================================
 LRESULT CALLBACK MotivationWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     if (msg == WM_PAINT) {
         PAINTSTRUCT ps; HDC hdc = BeginPaint(hwnd, &ps);
         Graphics g(hdc); g.SetSmoothingMode(SmoothingModeAntiAlias);
         RECT r; GetClientRect(hwnd, &r);
-        
         GraphicsPath path; int d = 20;
-        path.AddArc(0, 0, d, d, 180, 90); path.AddArc(r.right-d, 0, d, d, 270, 90);
-        path.AddArc(r.right-d, r.bottom-d, d, d, 0, 90); path.AddArc(0, r.bottom-d, d, d, 90, 90); path.CloseFigure();
-        
-        SolidBrush bg(Color(250, 30, 41, 59)); 
-        g.FillPath(&bg, &path);
-        Pen border(Color(255, 245, 158, 11), 2.0f); 
-        g.DrawPath(&border, &path);
-        
-        FontFamily ff(sf_langSel == 1 ? L"Vrinda" : L"Segoe UI"); 
-        Font fQuote(&ff, 22, FontStyleBold, UnitPixel);
-        SolidBrush wBr(Color(255, 255, 255, 255));
+        path.AddArc(0,0,d,d,180,90); path.AddArc(r.right-d,0,d,d,270,90);
+        path.AddArc(r.right-d,r.bottom-d,d,d,0,90); path.AddArc(0,r.bottom-d,d,d,90,90);
+        path.CloseFigure();
+        SolidBrush bg(Color(250,30,41,59));  g.FillPath(&bg, &path);
+        Pen border(Color(255,245,158,11),2.0f); g.DrawPath(&border,&path);
+        FontFamily ff(sf_langSel==1 ? L"Vrinda" : L"Segoe UI");
+        Font fQ(&ff,22,FontStyleBold,UnitPixel);
+        SolidBrush wBr(Color(255,255,255,255));
         StringFormat fmt; fmt.SetAlignment(StringAlignmentCenter); fmt.SetLineAlignment(StringAlignmentCenter);
-        g.DrawString(currentMotiveQuote.c_str(), -1, &fQuote, RectF(20,20,(float)r.right-40,(float)r.bottom-40), &fmt, &wBr);
-        
-        EndPaint(hwnd, &ps); return 0;
+        g.DrawString(currentMotiveQuote.c_str(),-1,&fQ,RectF(20,20,(float)r.right-40,(float)r.bottom-40),&fmt,&wBr);
+        EndPaint(hwnd,&ps); return 0;
     }
-    if (msg == WM_TIMER) { PostQuitMessage(0); return 0; }
-    return DefWindowProc(hwnd, msg, wParam, lParam);
+    if (msg==WM_TIMER) { PostQuitMessage(0); return 0; }
+    return DefWindowProc(hwnd,msg,wParam,lParam);
 }
-
-void ShowMotivationalPopup() {
+static void ShowMotivationalPopup() {
     thread([](){
         srand((unsigned)time(0));
-        if (sf_langSel == 0) currentMotiveQuote = quotesEng[rand() % quotesEng.size()];
-        else currentMotiveQuote = quotesBen[rand() % quotesBen.size()];
-
-        static bool reg = false;
+        if (sf_langSel==0) currentMotiveQuote = quotesEng[rand()%quotesEng.size()];
+        else               currentMotiveQuote = quotesBen[rand()%quotesBen.size()];
+        static bool reg=false;
         if (!reg) {
-            WNDCLASSW wc = {0}; wc.lpfnWndProc = MotivationWndProc; wc.hInstance = GetModuleHandle(NULL);
-            wc.lpszClassName = L"RasMotivClass"; RegisterClassW(&wc); reg = true;
+            WNDCLASSW wc={0}; wc.lpfnWndProc=MotivationWndProc; wc.hInstance=GetModuleHandle(NULL);
+            wc.lpszClassName=L"RasMotivClass"; RegisterClassW(&wc); reg=true;
         }
-        int w = 550, h = 120; 
-        int x = (GetSystemMetrics(SM_CXSCREEN) - w) / 2;
-        HWND hwnd = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_LAYERED, 
-            L"RasMotivClass", L"", WS_POPUP, x, 50, w, h, NULL, NULL, NULL, NULL);
-        SetLayeredWindowAttributes(hwnd, 0, 245, LWA_ALPHA);
-        ShowWindow(hwnd, SW_SHOWNOACTIVATE); 
-        SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-        
-        SetTimer(hwnd, 1, 6000, NULL); 
-        
-        MSG msg; while (GetMessage(&msg, NULL, 0, 0)) { TranslateMessage(&msg); DispatchMessage(&msg); }
+        int w=550,h=120,x=(GetSystemMetrics(SM_CXSCREEN)-w)/2;
+        HWND hwnd=CreateWindowExW(WS_EX_TOPMOST|WS_EX_TOOLWINDOW|WS_EX_LAYERED,
+            L"RasMotivClass",L"",WS_POPUP,x,50,w,h,NULL,NULL,NULL,NULL);
+        SetLayeredWindowAttributes(hwnd,0,245,LWA_ALPHA);
+        ShowWindow(hwnd,SW_SHOWNOACTIVATE);
+        SetWindowPos(hwnd,HWND_TOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
+        SetTimer(hwnd,1,6000,NULL);
+        MSG msg; while(GetMessage(&msg,NULL,0,0)){TranslateMessage(&msg);DispatchMessage(&msg);}
         DestroyWindow(hwnd);
     }).detach();
 }
-
-static bool motivationThreadRunning = false;
-void MotivationBackgroundThread() {
-    while (true) {
-        Sleep(1000); 
+static void MotivationBackgroundThread() {
+    while(true) {
+        Sleep(1000);
         if (sf_chkMotivation) {
-            static DWORD lastTick = GetTickCount();
-            DWORD currentTick = GetTickCount();
-            if (currentTick - lastTick >= 900000) { // 15 mins
-                lastTick = currentTick; ShowMotivationalPopup();
-            }
+            static DWORD last=GetTickCount();
+            DWORD now=GetTickCount();
+            if (now-last>=900000){last=now;ShowMotivationalPopup();}
         }
     }
 }
 
-// ==============================================================
-// --- Scratchpad & Micro To-Do Logic ---
-// ==============================================================
-LRESULT CALLBACK ScratchpadProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    static HWND hEdit;
-    string path = GetSecretDir() + "scratchpad.txt";
-    switch(msg) {
-        case WM_CREATE: {
-            hEdit = CreateWindow("EDIT", "", WS_CHILD|WS_VISIBLE|WS_VSCROLL|ES_MULTILINE|ES_WANTRETURN|ES_AUTOVSCROLL, 0,0,0,0, hwnd, (HMENU)1, NULL, NULL);
-            HFONT hFont = CreateFont(18,0,0,0,FW_NORMAL,0,0,0,ANSI_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,DEFAULT_QUALITY,DEFAULT_PITCH|FF_SWISS, "Segoe UI");
-            SendMessage(hEdit, WM_SETFONT, (WPARAM)hFont, TRUE);
-            ifstream in(path);
-            if(in.is_open()) {
-                string content((istreambuf_iterator<char>(in)), istreambuf_iterator<char>());
-                SetWindowText(hEdit, content.c_str());
-            }
-            return 0;
-        }
-        case WM_SIZE: { MoveWindow(hEdit, 0, 0, LOWORD(lParam), HIWORD(lParam), TRUE); return 0; }
-        case WM_CLOSE: {
-            int len = GetWindowTextLength(hEdit);
-            char* buf = new char[len + 1];
-            GetWindowText(hEdit, buf, len + 1);
-            ofstream out(path); out << buf; out.close(); delete[] buf;
-            ShowWindow(hwnd, SW_HIDE); return 0;
-        }
-    } return DefWindowProc(hwnd, msg, wParam, lParam);
-}
+// ============================================================
+// DRAW SIDEBAR  —  Windows Explorer left panel style
+// ============================================================
+static void DrawSidebar(Graphics& g,
+                        float sx, float sy, float sw, float sh,
+                        const FontFamily& ff, const FontFamily& ffIc)
+{
+    g_quickRects.clear();
+    g_driveRects.clear();
 
-void OpenScratchpad() {
-    static HWND hwnd = NULL;
-    if(!hwnd) {
-        WNDCLASS wc = {0}; wc.lpfnWndProc = ScratchpadProc; wc.hInstance = GetModuleHandle(NULL); 
-        wc.lpszClassName = "RasScratchpad"; wc.hbrBackground = (HBRUSH)(COLOR_WINDOW+1); RegisterClass(&wc);
-        hwnd = CreateWindowEx(WS_EX_TOOLWINDOW, "RasScratchpad", "Brain Dump (Scratchpad)", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 400, 500, NULL, NULL, GetModuleHandle(NULL), NULL);
+    // Fonts
+    Font fSm (&ff,   12, FontStyleRegular, UnitPixel);
+    Font fTiny(&ff,  10, FontStyleBold,    UnitPixel);
+    Font fIcSm(&ffIc,14, FontStyleRegular, UnitPixel);
+
+    // Brushes / pens
+    SolidBrush bSideBg (Color(255, 243, 243, 243));   // Win11-ish sidebar grey
+    SolidBrush bDark   (Color(255,  40,  40,  40));
+    SolidBrush bGray   (Color(255, 130, 130, 130));
+    SolidBrush bLabel  (Color(255, 110, 110, 110));
+    SolidBrush bTeal   (Color(255,   0, 150, 160));
+    SolidBrush bActBg  (Color(255, 209, 238, 241));  // selected row tint
+    SolidBrush bHovBg  (Color(255, 228, 228, 228));  // hovered row
+
+    StringFormat fmtL; fmtL.SetAlignment(StringAlignmentNear); fmtL.SetLineAlignment(StringAlignmentCenter);
+
+    // Sidebar background
+    g.FillRectangle(&bSideBg, sx, sy, sw, sh);
+    // Right border
+    Pen pSideBrd(Color(255, 218, 220, 224), 1.0f);
+    g.DrawLine(&pSideBrd, sx+sw, sy, sx+sw, sy+sh);
+
+    float rowH = 32.0f;
+    float curY = sy + 8.0f;
+    float padX = 12.0f;
+
+    // --- Quick Access section ---
+    // Section header
+    g.DrawString(L"Quick access", -1, &fTiny,
+                 RectF(sx+padX, curY, sw-padX*2, 18.0f), &fmtL, &bLabel);
+    curY += 22.0f;
+
+    // Resolve shell paths
+    wchar_t desktopPath[MAX_PATH]={}, dlPath[MAX_PATH]={};
+    wchar_t docPath[MAX_PATH]={},    picPath[MAX_PATH]={};
+    wchar_t musicPath[MAX_PATH]={},  vidPath[MAX_PATH]={};
+    SHGetFolderPathW(NULL, CSIDL_DESKTOPDIRECTORY, NULL, 0, desktopPath);
+    SHGetFolderPathW(NULL, CSIDL_PERSONAL,          NULL, 0, docPath);
+    SHGetFolderPathW(NULL, CSIDL_MYPICTURES,        NULL, 0, picPath);
+    SHGetFolderPathW(NULL, CSIDL_MYMUSIC,           NULL, 0, musicPath);
+    SHGetFolderPathW(NULL, CSIDL_MYVIDEO,           NULL, 0, vidPath);
+    PWSTR dlRaw=NULL;
+    SHGetKnownFolderPath(FOLDERID_Downloads,0,NULL,&dlRaw);
+    if (dlRaw){wcscpy_s(dlPath,dlRaw);CoTaskMemFree(dlRaw);}
+
+    struct QItem { const wchar_t* icon; const wchar_t* label; const wchar_t* path; };
+    QItem qa[] = {
+        { L"\xE8B7", L"Desktop",    desktopPath },
+        { L"\xEC0A", L"Downloads",  dlPath      },
+        { L"\xE8A5", L"Documents",  docPath     },
+        { L"\xEB9F", L"Pictures",   picPath     },
+        { L"\xEC4F", L"Music",      musicPath   },
+        { L"\xE8B2", L"Videos",     vidPath     },
+    };
+
+    for (int i=0; i<6; i++) {
+        float ry = curY;
+        bool hov = (sf_hovSideItem == i);
+
+        if (hov) {
+            SolidBrush bH(Color(255, 228, 228, 228));
+            FillRoundRect(g, &bH, nullptr, sx+4, ry, sw-8, rowH, 4.0f);
+        }
+        // Active-tab indicator (teal pill on left edge)
+        // (for this sidebar we highlight when file manager is active)
+        if (sf_activeSubTab == 0) {
+            // no path tracking here — just style
+        }
+
+        g.DrawString(qa[i].icon,  -1, &fIcSm, RectF(sx+padX,         ry, 20.0f,  rowH), &fmtL, &bGray);
+        g.DrawString(qa[i].label, -1, &fSm,   RectF(sx+padX+24.0f,   ry, sw-padX*2-24, rowH), &fmtL, &bDark);
+
+        g_quickRects.push_back({sx, ry, sw, rowH});
+        curY += rowH;
     }
-    ShowWindow(hwnd, SW_SHOW); SetForegroundWindow(hwnd);
-}
 
-LRESULT CALLBACK TodoProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    static HWND hChecks[5], hEdits[5];
-    string path = GetSecretDir() + "todo.dat";
-    switch(msg) {
-        case WM_CREATE: {
-            HFONT hFont = CreateFont(18,0,0,0,FW_NORMAL,0,0,0,ANSI_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,DEFAULT_QUALITY,DEFAULT_PITCH|FF_SWISS, "Segoe UI");
-            for(int i=0; i<5; i++) {
-                hChecks[i] = CreateWindow("BUTTON", "", WS_CHILD|WS_VISIBLE|BS_AUTOCHECKBOX, 10, 10 + i*40, 20, 20, hwnd, (HMENU)(INT_PTR)(100+i), NULL, NULL);
-                hEdits[i] = CreateWindow("EDIT", "", WS_CHILD|WS_VISIBLE|WS_BORDER, 40, 10 + i*40, 300, 25, hwnd, (HMENU)(INT_PTR)(200+i), NULL, NULL);
-                SendMessage(hEdits[i], WM_SETFONT, (WPARAM)hFont, TRUE);
-            }
-            ifstream in(path);
-            if(in.is_open()) {
-                string line;
-                for(int i=0; i<5 && getline(in, line); i++) {
-                    if(line.length() > 0) {
-                        SendMessage(hChecks[i], BM_SETCHECK, line[0] == '1' ? BST_CHECKED : BST_UNCHECKED, 0);
-                        SetWindowText(hEdits[i], line.substr(1).c_str());
-                    }
-                }
-            }
-            return 0;
-        }
-        case WM_CLOSE: {
-            ofstream out(path);
-            for(int i=0; i<5; i++) {
-                char buf[256]; GetWindowText(hEdits[i], buf, 256);
-                bool checked = SendMessage(hChecks[i], BM_GETCHECK, 0, 0) == BST_CHECKED;
-                out << (checked ? "1" : "0") << buf << endl;
-            } out.close();
-            ShowWindow(hwnd, SW_HIDE); return 0;
-        }
-    } return DefWindowProc(hwnd, msg, wParam, lParam);
-}
+    // --- This PC separator + label ---
+    curY += 6.0f;
+    Pen pSep(Color(200, 200, 200, 200), 1.0f);
+    g.DrawLine(&pSep, sx+padX, curY, sx+sw-padX, curY);
+    curY += 6.0f;
+    g.DrawString(L"This PC", -1, &fTiny,
+                 RectF(sx+padX, curY, sw-padX*2, 18.0f), &fmtL, &bLabel);
+    curY += 22.0f;
 
-void OpenTodo() {
-    static HWND hwnd = NULL;
-    if(!hwnd) {
-        WNDCLASS wc = {0}; wc.lpfnWndProc = TodoProc; wc.hInstance = GetModuleHandle(NULL); 
-        wc.lpszClassName = "RasTodo"; wc.hbrBackground = (HBRUSH)(COLOR_WINDOW+1); RegisterClass(&wc);
-        hwnd = CreateWindowEx(WS_EX_TOOLWINDOW, "RasTodo", "Micro Session To-Do", WS_SYSMENU|WS_CAPTION, CW_USEDEFAULT, CW_USEDEFAULT, 380, 260, NULL, NULL, GetModuleHandle(NULL), NULL);
+    // --- Drives (dynamic) ---
+    wchar_t driveStrings[512]={};
+    GetLogicalDriveStringsW(511, driveStrings);
+    vector<wstring> drives;
+    for (wchar_t* p=driveStrings; *p; p+=wcslen(p)+1) {
+        UINT t=GetDriveTypeW(p);
+        if (t==DRIVE_FIXED||t==DRIVE_REMOVABLE||t==DRIVE_REMOTE||t==DRIVE_RAMDISK)
+            drives.push_back(p);
     }
-    ShowWindow(hwnd, SW_SHOW); SetForegroundWindow(hwnd);
+
+    for (int di=0; di<(int)drives.size(); di++) {
+        float ry = curY;
+        bool hov = (sf_hovDriveItem == di);
+
+        if (hov) {
+            FillRoundRect(g, &bHovBg, nullptr, sx+4, ry, sw-8, rowH, 4.0f);
+        }
+
+        wstring lbl = drives[di];
+        if (!lbl.empty() && lbl.back()==L'\\') lbl.pop_back(); // "C:"
+
+        UINT dtype = GetDriveTypeW(drives[di].c_str());
+        const wchar_t* dIcon = L"\xE7D2"; // HDD
+        if (dtype==DRIVE_REMOVABLE) dIcon = L"\xE88E"; // USB
+        if (dtype==DRIVE_REMOTE)    dIcon = L"\xE753"; // Network
+
+        // Drive label + free space bar
+        g.DrawString(dIcon,       -1, &fIcSm, RectF(sx+padX,        ry, 20.0f, rowH), &fmtL, &bGray);
+        g.DrawString(lbl.c_str(),-1, &fSm,   RectF(sx+padX+24.0f, ry, sw-padX*2-24, rowH), &fmtL, &bDark);
+
+        // Mini drive usage bar (only for fixed drives)
+        if (dtype == DRIVE_FIXED) {
+            ULARGE_INTEGER freeBytesAvail={}, totalBytes={}, totalFreeBytes={};
+            if (GetDiskFreeSpaceExW(drives[di].c_str(), &freeBytesAvail, &totalBytes, &totalFreeBytes)
+                && totalBytes.QuadPart > 0)
+            {
+                float used = 1.0f - (float)totalFreeBytes.QuadPart / (float)totalBytes.QuadPart;
+                float barX = sx+padX+24.0f, barY = ry+rowH-8.0f;
+                float barW = sw-padX*2-30.0f, barH = 4.0f;
+                // Track
+                SolidBrush bTrack(Color(255, 210, 210, 210));
+                g.FillRectangle(&bTrack, barX, barY, barW, barH);
+                // Fill (blue if < 80%, orange if < 90%, red if >= 90%)
+                Color fillCol = used < 0.80f ? Color(255, 66, 133, 244) :
+                                used < 0.90f ? Color(255, 245, 158, 11)  :
+                                               Color(255, 220, 60, 60);
+                SolidBrush bFill(fillCol);
+                g.FillRectangle(&bFill, barX, barY, barW * used, barH);
+            }
+        }
+
+        g_driveRects.push_back({sx, ry, sw, rowH});
+        curY += rowH;
+    }
+
+    // --- Google Drive separator + entry ---
+    curY += 6.0f;
+    g.DrawLine(&pSep, sx+padX, curY, sx+sw-padX, curY);
+    curY += 6.0f;
+
+    // Google Drive colored-dot icon (G colour marks)
+    float gdY = curY;
+    bool gdHov = sf_hovGDrive;
+    if (gdHov) {
+        FillRoundRect(g, &bHovBg, nullptr, sx+4, gdY, sw-8, rowH, 4.0f);
+    }
+
+    // Draw Google Drive tri-colour icon manually
+    float dotX = sx + padX + 2.0f;
+    float dotCY = gdY + rowH/2.0f;
+    float r2 = 5.0f;
+    // Triangle shape: three coloured circles arranged as Google Drive logo hint
+    SolidBrush bGBlue (Color(255,  66, 133, 244));
+    SolidBrush bGGreen(Color(255,  52, 168,  83));
+    SolidBrush bGYellow(Color(255, 251, 188,   5));
+    // Small triangle of dots
+    g.FillEllipse(&bGBlue,   dotX,        dotCY - r2*1.1f, r2*1.5f, r2*1.5f);
+    g.FillEllipse(&bGGreen,  dotX+r2*0.8f,dotCY + r2*0.2f, r2*1.5f, r2*1.5f);
+    g.FillEllipse(&bGYellow, dotX-r2*0.1f,dotCY + r2*0.2f, r2*1.5f, r2*1.5f);
+
+    g.DrawString(L"Google Drive", -1, &fSm,
+                 RectF(sx+padX+24.0f, gdY, sw-padX*2-24, rowH), &fmtL, &bDark);
+    g_gdriveRect = {sx, gdY, sw, rowH};
+    curY += rowH;
 }
 
-// --- Global offset logic variables ---
-static float g_cx = 0, g_cy = 0;
+// ============================================================
+// DRAW SUB-TAB HEADER BAR
+// ============================================================
+static void DrawSubTabBar(Graphics& g,
+                          float tx, float ty, float tw, float th,
+                          const FontFamily& ff, const FontFamily& ffIc)
+{
+    Font fBold(&ff, 13, FontStyleBold,    UnitPixel);
+    Font fReg (&ff, 13, FontStyleRegular, UnitPixel);
+    Font fIcSm(&ffIc,14, FontStyleRegular, UnitPixel);
 
+    SolidBrush bWhite(Color(255,255,255,255));
+    SolidBrush bTeal (Color(255,  0,150,160));
+    SolidBrush bGray (Color(255,130,130,130));
+    SolidBrush bDiaryBlue(Color(255,35,137,215));
+    SolidBrush bUtilPurple(Color(255,155,89,182));
+
+    Pen pBrd(Color(255,218,225,232),1.0f);
+    Pen pTeal(Color(255,0,150,160),2.5f);
+    Pen pDiaryBlue(Color(255,35,137,215),2.5f);
+    Pen pUtilPurple(Color(255,155,89,182),2.5f);
+
+    StringFormat fmtC;
+    fmtC.SetAlignment(StringAlignmentCenter);
+    fmtC.SetLineAlignment(StringAlignmentCenter);
+    StringFormat fmtL;
+    fmtL.SetAlignment(StringAlignmentNear);
+    fmtL.SetLineAlignment(StringAlignmentCenter);
+
+    // Background
+    g.FillRectangle(&bWhite, tx, ty, tw, th);
+    g.DrawLine(&pBrd, tx, ty+th, tx+tw, ty+th);
+
+    struct TabDef {
+        const wchar_t* icon;
+        const wchar_t* label;
+        int            idx;
+        bool           hov;
+        SolidBrush*    activeColor;
+        Pen*           activePen;
+    };
+    TabDef tabs[] = {
+        { L"\xEC50", L"File Manager Plus",   0, sf_hovTabFM,    &bTeal,       &pTeal       },
+        { L"\xE7BC", L"Professional Diary",  1, sf_hovTabDiary, &bDiaryBlue,  &pDiaryBlue  },
+        { L"\xE943", L"Student Utilities",   2, sf_hovTabUtils, &bUtilPurple, &pUtilPurple },
+    };
+
+    float tabW = tw / 3.0f;
+    for (int i = 0; i < 3; i++) {
+        float tbx = tx + i * tabW;
+        bool active = (sf_activeSubTab == tabs[i].idx);
+
+        if (active) {
+            SolidBrush bActBg(Color(30, 0, 150, 160));
+            g.FillRectangle(&bActBg, tbx, ty, tabW, th);
+            // Bottom accent line
+            g.DrawLine(tabs[i].activePen, tbx+4, ty+th-2, tbx+tabW-4, ty+th-2);
+            // Icon + label
+            g.DrawString(tabs[i].icon,  -1, &fIcSm, RectF(tbx+12, ty, 22, th), &fmtL, tabs[i].activeColor);
+            g.DrawString(tabs[i].label, -1, &fBold,  RectF(tbx+36, ty, tabW-40, th), &fmtL, tabs[i].activeColor);
+        } else {
+            if (tabs[i].hov) {
+                SolidBrush bH(Color(255,245,245,245));
+                g.FillRectangle(&bH, tbx, ty, tabW, th);
+            }
+            g.DrawString(tabs[i].icon,  -1, &fIcSm, RectF(tbx+12, ty, 22, th), &fmtL, &bGray);
+            g.DrawString(tabs[i].label, -1, &fReg,  RectF(tbx+36, ty, tabW-40, th), &fmtL, &bGray);
+        }
+
+        // Vertical divider between tabs
+        if (i < 2) {
+            Pen pDiv(Color(255,225,228,232),1.0f);
+            g.DrawLine(&pDiv, tbx+tabW, ty+8, tbx+tabW, ty+th-8);
+        }
+    }
+}
+
+// ============================================================
+// MAIN DRAW
+// ============================================================
 void DrawSpecialFeatureTab(Graphics& g, float cx, float cy, float cw, float ch) {
-    g_cx = cx; g_cy = cy;
-    
-    if (!motivationThreadRunning) { thread t(MotivationBackgroundThread); t.detach(); motivationThreadRunning = true; }
+    g_cx=cx; g_cy=cy; g_cw=cw; g_ch=ch;
 
-    FontFamily ff(L"Segoe UI");
-    Font fH2(&ff, 15, FontStyleBold, UnitPixel); Font fSub(&ff, 13, FontStyleRegular, UnitPixel);
-    Font fBtn(&ff, 13, FontStyleBold, UnitPixel); FontFamily ffIc(L"Segoe MDL2 Assets"); Font fIc(&ffIc, 18, FontStyleRegular, UnitPixel);
+    if (!motivationThreadRunning) {
+        thread t(MotivationBackgroundThread); t.detach();
+        motivationThreadRunning = true;
+    }
 
-    SolidBrush bWhite(Color(255, 255, 255, 255)); SolidBrush bBg(Color(255, 248, 250, 252));
-    SolidBrush bDark(Color(255, 50, 50, 50)); SolidBrush bGray(Color(255, 120, 120, 120));
-    SolidBrush bTeal(Color(255, 12, 168, 176)); SolidBrush bTealHov(Color(255, 30, 185, 195));
-    SolidBrush bRed(Color(255, 239, 68, 68)); SolidBrush bRedHov(Color(255, 248, 113, 113));
-    Pen pBrd(Color(255, 220, 225, 230), 1.5f);
-    
-    StringFormat fL; fL.SetAlignment(StringAlignmentNear); fL.SetLineAlignment(StringAlignmentCenter);
-    StringFormat fC; fC.SetAlignment(StringAlignmentCenter); fC.SetLineAlignment(StringAlignmentCenter);
+    g.SetSmoothingMode(SmoothingModeAntiAlias);
+    g.SetTextRenderingHint(TextRenderingHintClearTypeGridFit);
 
-    // --- Sub-Tab Navigation Header ---
-    g.FillRectangle(&bWhite, cx, cy, cw, 60.0f);
-    
-    float tabW = 200.0f, tabH = 40.0f;
-    float tab1X = cx + 20.0f, tab2X = tab1X + tabW + 10.0f, tab3X = tab2X + tabW + 10.0f, tabY = cy + 10.0f;
+    FontFamily ff  (L"Segoe UI");
+    FontFamily ffIc(L"Segoe MDL2 Assets");
 
-    SolidBrush bTab1(sf_activeSubTab == 0 ? Color(255, 0, 150, 160)  : (sf_hovTabFM    ? Color(255, 230, 230, 230) : Color(255, 245, 245, 245)));
-    SolidBrush bTab2(sf_activeSubTab == 1 ? Color(255, 35, 137, 215) : (sf_hovTabDiary ? Color(255, 230, 230, 230) : Color(255, 245, 245, 245)));
-    SolidBrush bTab3(sf_activeSubTab == 2 ? Color(255, 155, 89, 182) : (sf_hovTabUtils ? Color(255, 230, 230, 230) : Color(255, 245, 245, 245)));
-    
-    SolidBrush bT1(sf_activeSubTab == 0 ? Color(255, 255, 255, 255) : Color(255, 100, 100, 100));
-    SolidBrush bT2(sf_activeSubTab == 1 ? Color(255, 255, 255, 255) : Color(255, 100, 100, 100));
-    SolidBrush bT3(sf_activeSubTab == 2 ? Color(255, 255, 255, 255) : Color(255, 100, 100, 100));
+    // ---- Outer background ----
+    SolidBrush bBg(Color(255,248,250,252));
+    g.FillRectangle(&bBg, cx, cy, cw, ch);
 
-    // File Manager Plus icon (folder icon from Segoe MDL2 Assets)
-    FontFamily ffTabIc(L"Segoe MDL2 Assets"); Font fTabIc(&ffTabIc, 14, FontStyleRegular, UnitPixel);
-    // Tab 1: File Manager Plus
-    FillSimpleRectSpecial(g, &bTab1, NULL, tab1X, tabY, tabW, tabH);
-    g.DrawString(L"\xEC50 ", -1, &fTabIc, RectF(tab1X + 8.0f, tabY, 20.0f, tabH), &fC, &bT1);
-    g.DrawString(L"File Manager Plus", -1, &fH2, RectF(tab1X + 24.0f, tabY, tabW - 28.0f, tabH), &fC, &bT1);
-    // Tab 2: Professional Diary
-    FillSimpleRectSpecial(g, &bTab2, NULL, tab2X, tabY, tabW, tabH);
-    g.DrawString(L"Professional Diary", -1, &fH2, RectF(tab2X, tabY, tabW, tabH), &fC, &bT2);
-    // Tab 3: Student Utilities
-    FillSimpleRectSpecial(g, &bTab3, NULL, tab3X, tabY, tabW, tabH);
-    g.DrawString(L"Student Utilities", -1, &fH2, RectF(tab3X, tabY, tabW, tabH), &fC, &bT3);
+    // ---- Sub-tab header (full width, at top) ----
+    DrawSubTabBar(g, cx, cy, cw, g_headerH, ff, ffIc);
 
-    float cY = cy + 60.0f; float cH = ch - 60.0f;
-    float cardX = cx + 30.0f; float cardW = cw - 60.0f; float cardH = 65.0f; float gapY = 10.0f;
+    float bodyY = cy + g_headerH;
+    float bodyH = ch - g_headerH;
+
+    // ---- Sidebar (left of content) ----
+    DrawSidebar(g, cx, bodyY, g_sideW, bodyH, ff, ffIc);
+
+    // ---- Content area ----
+    float contentX = cx + g_sideW;
+    float contentW = cw - g_sideW;
 
     if (sf_activeSubTab == 0) {
-        // File Manager Plus — delegate entirely to tab_file_manager
         ShowGeminiControls(false);
-        DrawFileManagerTab(g, cx, cY, cw, cH);
-    }
-    else if (sf_activeSubTab == 99) {
-        // [legacy Tools & Blockers — kept unreachable for reference]
-        ShowGeminiControls(false); // Hide Diary WIN32 controls
-        g.FillRectangle(&bBg, cx, cY, cw, cH);
-
-        auto DrawFeatureRow = [&](float y, wstring title, wstring desc, wstring btnTxt, bool isHover, bool isActiveState) {
-            g.DrawLine(&pBrd, cardX, y + cardH, cardX + cardW, y + cardH);
-            g.DrawString(title.c_str(), -1, &fH2, RectF(cardX, y + 8.0f, cardW - 200.0f, 20.0f), &fL, &bDark);
-            g.DrawString(desc.c_str(), -1, &fSub, RectF(cardX, y + 28.0f, cardW - 200.0f, 20.0f), &fL, &bGray);
-
-            float actionW = 130.0f, actionH = 30.0f;
-            float actionX = cardX + cardW - actionW; float actionY = y + (cardH - actionH) / 2.0f;
-
-            SolidBrush* currentBg;
-            if (isActiveState) currentBg = isHover ? &bRedHov : &bRed; 
-            else currentBg = isHover ? &bTealHov : &bTeal; 
-
-            FillSimpleRectSpecial(g, currentBg, NULL, actionX, actionY, actionW, actionH);
-            g.DrawString(btnTxt.c_str(), -1, &fBtn, RectF(actionX, actionY, actionW, actionH), &fC, &bWhite);
-        };
-
-        // 1. Adblocker
-        wstring adBtnTxt = sf_isAdblockActive ? L"Remove Blocker" : L"Install Blocker";
-        DrawFeatureRow(cY + 10.0f, L"Stealth Ad & Content Blocker", L"Silent, unremovable adblocker for browsers.", adBtnTxt, sf_hovAdblock, sf_isAdblockActive);
-
-        // 2. Eye Care
-        wstring eyeBtnTxt = sf_chkEyeCare ? L"Disable Eye Care" : L"Enable Eye Care";
-        DrawFeatureRow(cY + 10.0f + (cardH + gapY) * 1, L"Smart Eye Care (20-20-20 Rule)", L"Reduces eye strain by reminding you to rest your eyes.", eyeBtnTxt, sf_hovEyeCare, sf_chkEyeCare);
-
-        // 3. Zen Mode
-        DrawFeatureRow(cY + 10.0f + (cardH + gapY) * 2, L"Instant Zen Mode", L"One click to kill all distracting apps.", L"Activate Zen", sf_hovZenMode, false);
-
-        // 4. Motivational Popups
-        float mY = cY + 10.0f + (cardH + gapY) * 3;
-        g.DrawLine(&pBrd, cardX, mY + cardH, cardX + cardW, mY + cardH);
-        g.DrawString(L"Motivational Popups", -1, &fH2, RectF(cardX, mY + 8.0f, cardW - 350.0f, 20.0f), &fL, &bDark);
-        g.DrawString(L"Shows a motivational quote every 15 minutes.", -1, &fSub, RectF(cardX, mY + 28.0f, cardW - 350.0f, 20.0f), &fL, &bGray);
-
-        float dW = 100.0f, dH = 30.0f, dX = cardX + cardW - 130.0f - dW - 15.0f, dY = mY + (cardH - dH) / 2.0f;
-        FillSimpleRectSpecial(g, &bWhite, &pBrd, dX, dY, dW, dH);
-        g.DrawString(sf_languages[sf_langSel].c_str(), -1, &fSub, RectF(dX + 5.0f, dY, dW - 25.0f, dH), &fL, &bDark);
-        g.DrawString(L"\xE70D", -1, &fIc, RectF(dX + dW - 25.0f, dY, 25.0f, dH), &fC, &bDark);
-        
-        wstring mBtnTxt = sf_chkMotivation ? L"Disable Popups" : L"Enable Popups";
-        float actionW = 130.0f, actionH = 30.0f;
-        float actionX = cardX + cardW - actionW; float actionY = mY + (cardH - actionH) / 2.0f;
-        SolidBrush* mBg; if (sf_chkMotivation) mBg = sf_hovMotivation ? &bRedHov : &bRed; else mBg = sf_hovMotivation ? &bTealHov : &bTeal;
-        FillSimpleRectSpecial(g, mBg, NULL, actionX, actionY, actionW, actionH);
-        g.DrawString(mBtnTxt.c_str(), -1, &fBtn, RectF(actionX, actionY, actionW, actionH), &fC, &bWhite);
-
-        if (sf_isLangDropOpen) {
-            float listY = dY + dH; FillSimpleRectSpecial(g, &bWhite, &pBrd, dX, listY, dW, dH * 2.0f);
-            for(int i=0; i<2; i++) {
-                SolidBrush hBr(sf_langSel == i ? Color(255, 235, 248, 250) : Color(255, 255, 255, 255));
-                FillSimpleRectSpecial(g, &hBr, NULL, dX, listY + (i*dH), dW, dH);
-                g.DrawString(sf_languages[i].c_str(), -1, &fSub, RectF(dX + 5.0f, listY + (i*dH), dW, dH), &fL, &bDark);
-            }
-        }
-
-        // 5. Distraction-Free Scratchpad
-        DrawFeatureRow(cY + 10.0f + (cardH + gapY) * 4, L"Distraction-Free Scratchpad", L"Dump distracting thoughts instantly. Auto-saves locally.", L"Open Pad", sf_hovScratchpad, false);
-
-        // 6. Micro To-Do
-        DrawFeatureRow(cY + 10.0f + (cardH + gapY) * 5, L"Micro Session To-Do", L"Set 3-5 clear goals before focusing to boost dopamine.", L"Open To-Do", sf_hovTodo, false);
+        DrawFileManagerTab(g, contentX, bodyY, contentW, bodyH);
     }
     else if (sf_activeSubTab == 1) {
-        DrawGeminiTab(g, cx, cY, cw, cH);
-        ResizeGeminiControls((int)cx, (int)cY, (int)cw, (int)cH);
+        DrawGeminiTab(g, contentX, bodyY, contentW, bodyH);
+        ResizeGeminiControls((int)contentX, (int)bodyY, (int)contentW, (int)bodyH);
         ShowGeminiControls(true);
     }
     else if (sf_activeSubTab == 2) {
-        ShowGeminiControls(false); // Hide Diary WIN32 controls
-        DrawUtilitiesTab(g, cx, cY, cw, cH);
+        ShowGeminiControls(false);
+        DrawUtilitiesTab(g, contentX, bodyY, contentW, bodyH);
     }
 }
 
+// ============================================================
+// MOUSE MOVE
+// ============================================================
 void ProcessSpecialFeatureMouseMove(float x, float y) {
-    bool old_hovTabFM    = sf_hovTabFM;
-    bool old_hovTabDiary = sf_hovTabDiary;
-    bool old_hovTabUtils = sf_hovTabUtils;
+    // ---- Sub-tab bar hover ----
+    bool old_hFM    = sf_hovTabFM;
+    bool old_hDiary = sf_hovTabDiary;
+    bool old_hUtils = sf_hovTabUtils;
 
-    sf_hovTabFM    = false;
-    sf_hovTabDiary = false;
-    sf_hovTabUtils = false;
+    float tabW = g_cw / 3.0f;
+    sf_hovTabFM    = (y >= g_cy && y <= g_cy+g_headerH && x >= g_cx          && x < g_cx+tabW);
+    sf_hovTabDiary = (y >= g_cy && y <= g_cy+g_headerH && x >= g_cx+tabW     && x < g_cx+tabW*2);
+    sf_hovTabUtils = (y >= g_cy && y <= g_cy+g_headerH && x >= g_cx+tabW*2   && x < g_cx+g_cw);
 
-    float tab1X = g_cx + 20.0f, tab2X = tab1X + 210.0f, tab3X = tab2X + 210.0f, tabY = g_cy + 10.0f;
-    if (x >= tab1X && x <= tab1X + 200.0f && y >= tabY && y <= tabY + 40.0f) sf_hovTabFM    = true;
-    if (x >= tab2X && x <= tab2X + 200.0f && y >= tabY && y <= tabY + 40.0f) sf_hovTabDiary = true;
-    if (x >= tab3X && x <= tab3X + 200.0f && y >= tabY && y <= tabY + 40.0f) sf_hovTabUtils = true;
+    // ---- Sidebar hover ----
+    int old_hSide  = sf_hovSideItem;
+    int old_hDrive = sf_hovDriveItem;
+    bool old_hGD   = sf_hovGDrive;
 
-    if (sf_activeSubTab == 0) {
-        // Delegate to File Manager Plus mouse move
-        float cY = g_cy + 60.0f;
+    sf_hovSideItem  = -1;
+    sf_hovDriveItem = -1;
+    sf_hovGDrive    = false;
+
+    for (int i=0; i<(int)g_quickRects.size(); i++) {
+        auto& r = g_quickRects[i];
+        if (x>=r.x && x<r.x+r.w && y>=r.y && y<r.y+r.h) { sf_hovSideItem=i; break; }
+    }
+    if (sf_hovSideItem < 0) {
+        for (int i=0; i<(int)g_driveRects.size(); i++) {
+            auto& r = g_driveRects[i];
+            if (x>=r.x && x<r.x+r.w && y>=r.y && y<r.y+r.h) { sf_hovDriveItem=i; break; }
+        }
+    }
+    if (sf_hovSideItem<0 && sf_hovDriveItem<0) {
+        auto& r = g_gdriveRect;
+        if (x>=r.x && x<r.x+r.w && y>=r.y && y<r.y+r.h) sf_hovGDrive=true;
+    }
+
+    // ---- Delegate to active sub-tab ----
+    float bodyY    = g_cy + g_headerH;
+    float contentX = g_cx + g_sideW;
+    float contentW = g_cw - g_sideW;
+
+    if (sf_activeSubTab == 0)
         ProcessFileManagerMouseMove(x, y);
-    }
-    else if (sf_activeSubTab == 1) {
+    else if (sf_activeSubTab == 1)
         ProcessGeminiMouseMove(x, y);
-    }
-    else if (sf_activeSubTab == 2) {
+    else if (sf_activeSubTab == 2)
         ProcessUtilitiesMouseMove(x, y);
-    }
 
-    bool needsRefresh = (old_hovTabFM    != sf_hovTabFM    ||
-                         old_hovTabDiary != sf_hovTabDiary ||
-                         old_hovTabUtils != sf_hovTabUtils);
-
-    if (needsRefresh && hParentWnd != NULL) {
+    bool changed = (old_hFM    != sf_hovTabFM    ||
+                    old_hDiary != sf_hovTabDiary  ||
+                    old_hUtils != sf_hovTabUtils  ||
+                    old_hSide  != sf_hovSideItem  ||
+                    old_hDrive != sf_hovDriveItem ||
+                    old_hGD    != sf_hovGDrive);
+    if (changed && hParentWnd)
         InvalidateRect(hParentWnd, NULL, TRUE);
-    }
 }
 
+// ============================================================
+// MOUSE CLICK
+// ============================================================
 void ProcessSpecialFeatureMouseClick(float x, float y) {
-    float tab1X = g_cx + 20.0f, tab2X = tab1X + 210.0f, tab3X = tab2X + 210.0f, tabY = g_cy + 10.0f;
-
-    // Sub-tab header clicks
-    if (x >= tab1X && x <= tab1X + 200.0f && y >= tabY && y <= tabY + 40.0f) {
-        sf_activeSubTab = 0;
-        if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
-        return;
-    }
-    if (x >= tab2X && x <= tab2X + 200.0f && y >= tabY && y <= tabY + 40.0f) {
-        sf_activeSubTab = 1;
-        if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
-        return;
-    }
-    if (x >= tab3X && x <= tab3X + 200.0f && y >= tabY && y <= tabY + 40.0f) {
-        sf_activeSubTab = 2;
+    // ---- Sub-tab bar clicks ----
+    if (y >= g_cy && y <= g_cy + g_headerH) {
+        float tabW = g_cw / 3.0f;
+        if      (x >= g_cx          && x < g_cx+tabW)   sf_activeSubTab = 0;
+        else if (x >= g_cx+tabW     && x < g_cx+tabW*2) sf_activeSubTab = 1;
+        else if (x >= g_cx+tabW*2   && x < g_cx+g_cw)   sf_activeSubTab = 2;
         if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
         return;
     }
 
-    // Content area clicks — guard: only if below header (y > cy + 60)
-    if (y <= g_cy + 60.0f) return;
+    float bodyY    = g_cy + g_headerH;
+    float contentX = g_cx + g_sideW;
 
-    if (sf_activeSubTab == 0) {
-        // Delegate to File Manager Plus click handler
+    // ---- Sidebar quick-access clicks (navigate File Manager Plus) ----
+    if (x >= g_cx && x < g_cx + g_sideW) {
+        // Quick access items
+        for (int i=0; i<(int)g_quickRects.size(); i++) {
+            auto& r = g_quickRects[i];
+            if (x>=r.x && x<r.x+r.w && y>=r.y && y<r.y+r.h) {
+                // Switch to File Manager tab and navigate
+                sf_activeSubTab = 0;
+                if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
+                return;
+            }
+        }
+        // Drive items — switch to file manager
+        for (int i=0; i<(int)g_driveRects.size(); i++) {
+            auto& r = g_driveRects[i];
+            if (x>=r.x && x<r.x+r.w && y>=r.y && y<r.y+r.h) {
+                sf_activeSubTab = 0;
+                if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
+                return;
+            }
+        }
+        // Google Drive
+        {
+            auto& r = g_gdriveRect;
+            if (x>=r.x && x<r.x+r.w && y>=r.y && y<r.y+r.h) {
+                sf_activeSubTab = 0; // Switch to File Manager (Drive tab inside)
+                if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
+                return;
+            }
+        }
+        return; // click was in sidebar but missed all items
+    }
+
+    // ---- Content area clicks — guard below header ----
+    if (y <= bodyY) return;
+
+    if (sf_activeSubTab == 0)
         ProcessFileManagerMouseClick(x, y, hParentWnd);
-    }
-    else if (sf_activeSubTab == 1) {
+    else if (sf_activeSubTab == 1)
         ProcessGeminiMouseClick(x, y);
-    }
-    else if (sf_activeSubTab == 2) {
+    else if (sf_activeSubTab == 2)
         ProcessUtilitiesMouseClick(x, y);
-    }
 }
