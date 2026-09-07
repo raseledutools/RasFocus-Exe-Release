@@ -25,6 +25,9 @@
 #pragma comment(lib, "Shlwapi.lib")
 #pragma comment(lib, "Shell32.lib")
 
+// Preview WebView2 embedded panel
+#include "browser/mini_browser.h"
+
 using namespace Gdiplus;
 using namespace std;
 
@@ -50,6 +53,126 @@ static int fm_hovBreadcrumb = -1;
 // --- Sub-tab hover ---
 static bool fm_hovTabLocal = false;
 static bool fm_hovTabDrive = false;
+
+// ============================================================
+// PREVIEW PANEL STATE
+// ============================================================
+static bool    fm_previewVisible   = false;   // panel shown?
+static wstring fm_previewPath      = L"";     // file being previewed
+static wstring fm_previewExt       = L"";     // lowercase extension
+
+// Preview type enum
+enum class PreviewType { None, Image, Text, WebView };
+static PreviewType fm_previewType = PreviewType::None;
+
+// GDI+ image cache (image preview)
+static Image* fm_previewImage = nullptr;
+
+// Text preview lines cache
+static vector<wstring> fm_previewLines;
+
+// WebView bounds (stored so we can update on resize)
+static RECT fm_webViewBounds = {};
+
+// Preview panel layout constant — fraction of file-list area taken by preview
+static const float PREVIEW_WIDTH_RATIO = 0.42f; // 42% of list area
+
+// Extension classification helpers
+static bool IsImageExt(const wstring& ext) {
+    return ext==L"jpg"||ext==L"jpeg"||ext==L"png"||ext==L"gif"||
+           ext==L"bmp"||ext==L"webp"||ext==L"ico"||ext==L"tiff"||ext==L"tif";
+}
+static bool IsTextExt(const wstring& ext) {
+    return ext==L"txt"||ext==L"log"||ext==L"ini"||ext==L"cfg"||
+           ext==L"md"||ext==L"csv"||ext==L"json"||ext==L"xml"||
+           ext==L"html"||ext==L"htm"||ext==L"css"||ext==L"js"||
+           ext==L"ts"||ext==L"py"||ext==L"cpp"||ext==L"h"||
+           ext==L"c"||ext==L"cs"||ext==L"java"||ext==L"kt"||
+           ext==L"bat"||ext==L"sh"||ext==L"yaml"||ext==L"yml"||
+           ext==L"toml"||ext==L"rs"||ext==L"go"||ext==L"php"||
+           ext==L"rb"||ext==L"sql"||ext==L"env"||ext==L"gitignore";
+}
+static bool IsWebViewExt(const wstring& ext) {
+    // PDF, video, audio → render via WebView2
+    return ext==L"pdf"||
+           ext==L"mp4"||ext==L"mkv"||ext==L"avi"||ext==L"mov"||ext==L"webm"||
+           ext==L"mp3"||ext==L"wav"||ext==L"flac"||ext==L"aac"||ext==L"ogg"||ext==L"m4a";
+}
+
+// Load/clear preview for a given file path
+static void LoadPreview(const wstring& fullPath, const wstring& ext) {
+    // Clear old state
+    if (fm_previewImage) { delete fm_previewImage; fm_previewImage = nullptr; }
+    fm_previewLines.clear();
+    fm_previewType    = PreviewType::None;
+    fm_previewPath    = fullPath;
+    fm_previewExt     = ext;
+
+    if (fullPath.empty()) {
+        DestroyEmbeddedPreview();
+        fm_previewVisible = false;
+        return;
+    }
+
+    fm_previewVisible = true;
+
+    if (IsImageExt(ext)) {
+        fm_previewType  = PreviewType::Image;
+        fm_previewImage = Image::FromFile(fullPath.c_str());
+        DestroyEmbeddedPreview();
+
+    } else if (IsTextExt(ext)) {
+        fm_previewType = PreviewType::Text;
+        DestroyEmbeddedPreview();
+
+        // Read first ~300 lines (UTF-8 or ANSI)
+        FILE* f = _wfopen(fullPath.c_str(), L"rb");
+        if (f) {
+            char buf[65536]; size_t n = fread(buf, 1, sizeof(buf)-1, f); fclose(f);
+            buf[n] = 0;
+            // Convert to wide (try UTF-8 first)
+            int wlen = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, buf, (int)n, nullptr, 0);
+            wstring ws;
+            if (wlen > 0) {
+                ws.resize(wlen);
+                MultiByteToWideChar(CP_UTF8, 0, buf, (int)n, &ws[0], wlen);
+            } else {
+                // Fallback ANSI
+                wlen = MultiByteToWideChar(CP_ACP, 0, buf, (int)n, nullptr, 0);
+                ws.resize(wlen);
+                MultiByteToWideChar(CP_ACP, 0, buf, (int)n, &ws[0], wlen);
+            }
+            // Split lines
+            wstring line;
+            for (wchar_t ch : ws) {
+                if (ch == L'\r') continue;
+                if (ch == L'\n') {
+                    fm_previewLines.push_back(line);
+                    line.clear();
+                    if ((int)fm_previewLines.size() >= 300) break;
+                } else {
+                    line += ch;
+                }
+            }
+            if (!line.empty() && (int)fm_previewLines.size() < 300)
+                fm_previewLines.push_back(line);
+        }
+
+    } else if (IsWebViewExt(ext)) {
+        fm_previewType = PreviewType::WebView;
+        // WebView bounds set in DrawFileManagerTab (needs panel geometry)
+        // Trigger deferred creation — bounds filled in draw pass
+        // We use a "file://" URL for local files; for video/audio a data URL html wrapper
+        // The actual CreateEmbeddedPreviewWebView() is called from DrawFileManagerTab
+        // when panel geometry is known. Here we just mark type & path.
+        // (DestroyEmbeddedPreview is NOT called here — DrawFileManagerTab will call Create)
+    } else {
+        // Unsupported: show icon + name only
+        fm_previewType  = PreviewType::None;
+        fm_previewVisible = true; // still show panel (name + "no preview")
+        DestroyEmbeddedPreview();
+    }
+}
 
 // --- Sidebar: Google Drive entry hover ---
 static bool fm_hovSideGDrive = false;
@@ -450,6 +573,195 @@ static void DriveSignOut() {
 static float g_fm_cx = 0, g_fm_cy = 0, g_fm_cw = 0, g_fm_ch = 0;
 
 // ============================================================
+// DRAW PREVIEW PANEL
+// ============================================================
+static void DrawPreviewPanel(Graphics& g, float px, float py, float pw, float ph)
+{
+    FontFamily ff(L"Segoe UI");
+    FontFamily ffIcons(L"Segoe MDL2 Assets");
+    Font fSmall(&ff, 12, FontStyleRegular, UnitPixel);
+    Font fBold (&ff, 13, FontStyleBold,    UnitPixel);
+    Font fTitle(&ff, 14, FontStyleBold,    UnitPixel);
+    Font fIcon (&ffIcons, 32, FontStyleRegular, UnitPixel);
+    Font fIconSm(&ffIcons, 16, FontStyleRegular, UnitPixel);
+    Font fCode (&FontFamily(L"Consolas"), 11, FontStyleRegular, UnitPixel);
+
+    SolidBrush bBg    (Color(255, 245, 248, 250));
+    SolidBrush bWhite (Color(255, 255, 255, 255));
+    SolidBrush bDark  (Color(255,  40,  40,  40));
+    SolidBrush bGray  (Color(255, 120, 120, 120));
+    SolidBrush bTeal  (Color(255,   0, 150, 160));
+    SolidBrush bCode  (Color(255,  30,  30,  30));
+    SolidBrush bLineNo(Color(255, 150, 160, 170));
+    SolidBrush bCodeBg(Color(255, 250, 250, 252));
+    Pen pBrd(Color(255, 218, 225, 232), 1.0f);
+    Pen pLeft(Color(255, 200, 210, 220), 1.5f);
+
+    StringFormat fmtL; fmtL.SetAlignment(StringAlignmentNear);  fmtL.SetLineAlignment(StringAlignmentCenter);
+    StringFormat fmtC; fmtC.SetAlignment(StringAlignmentCenter); fmtC.SetLineAlignment(StringAlignmentCenter);
+    fmtL.SetFormatFlags(StringFormatFlagsNoWrap);
+
+    // Panel background
+    g.FillRectangle(&bBg, px, py, pw, ph);
+    // Left border separator
+    g.DrawLine(&pLeft, px, py, px, py + ph);
+
+    // ── Header bar ──────────────────────────────────
+    float hdrH = 34.0f;
+    g.FillRectangle(&bWhite, px, py, pw, hdrH);
+    g.DrawLine(&pBrd, px, py + hdrH, px + pw, py + hdrH);
+
+    // File name in header
+    wstring fname = fm_previewPath;
+    size_t sl = fname.rfind(L'\\');
+    if (sl != wstring::npos) fname = fname.substr(sl + 1);
+    g.DrawString(L"\xE8A5 ", -1, &fIconSm, RectF(px + 8.0f, py, 22.0f, hdrH), &fmtL, &bTeal);
+    g.DrawString(fname.empty() ? L"Preview" : fname.c_str(), -1, &fBold,
+        RectF(px + 28.0f, py, pw - 36.0f, hdrH), &fmtL, &bDark);
+
+    float cY = py + hdrH;
+    float cH = ph - hdrH;
+
+    // ── Content area ────────────────────────────────
+    if (!fm_previewVisible || fm_previewPath.empty()) {
+        // Empty state
+        g.DrawString(L"\xEC50", -1, &fIcon,
+            RectF(px, cY + cH/2.0f - 48.0f, pw, 48.0f), &fmtC,
+            &SolidBrush(Color(160, 0, 150, 160)));
+        SolidBrush bHint(Color(255, 160, 170, 180));
+        g.DrawString(L"Select a file to preview", -1, &fSmall,
+            RectF(px, cY + cH/2.0f + 4.0f, pw, 24.0f), &fmtC, &bHint);
+        return;
+    }
+
+    switch (fm_previewType) {
+
+    // ────────────────────────────────────────────────
+    case PreviewType::Image: {
+        if (!fm_previewImage || fm_previewImage->GetLastStatus() != Ok) {
+            SolidBrush bErr(Color(255, 180, 60, 60));
+            g.DrawString(L"Cannot load image", -1, &fSmall,
+                RectF(px, cY, pw, cH), &fmtC, &bErr);
+            break;
+        }
+        // Fill background white for images
+        g.FillRectangle(&bWhite, px, cY, pw, cH);
+
+        float iw = (float)fm_previewImage->GetWidth();
+        float ih = (float)fm_previewImage->GetHeight();
+        float pad = 12.0f;
+        float maxW = pw - pad * 2.0f;
+        float maxH = cH - pad * 2.0f;
+
+        // Fit while keeping aspect ratio
+        float scale = min(maxW / iw, maxH / ih);
+        float dw = iw * scale;
+        float dh = ih * scale;
+        float dx = px + (pw - dw) / 2.0f;
+        float dy = cY + (cH - dh) / 2.0f;
+
+        // Checkerboard for transparency
+        for (int r = 0; r < (int)(dh / 8) + 1; r++) {
+            for (int c = 0; c < (int)(dw / 8) + 1; c++) {
+                bool odd = (r + c) % 2;
+                SolidBrush bChk(odd ? Color(255, 200, 200, 200) : Color(255, 220, 220, 220));
+                float tx = dx + c * 8.0f, ty = dy + r * 8.0f;
+                float tw = min(8.0f, dx + dw - tx), th = min(8.0f, dy + dh - ty);
+                if (tw > 0 && th > 0) g.FillRectangle(&bChk, tx, ty, tw, th);
+            }
+        }
+        g.DrawImage(fm_previewImage, RectF(dx, dy, dw, dh));
+
+        // Image info strip at bottom
+        wchar_t info[80];
+        swprintf(info, 80, L"%d × %d px", fm_previewImage->GetWidth(), fm_previewImage->GetHeight());
+        SolidBrush bInfoBg(Color(200, 30, 30, 30));
+        g.FillRectangle(&bInfoBg, px, cY + cH - 22.0f, pw, 22.0f);
+        SolidBrush bInfoTxt(Color(255, 230, 230, 230));
+        g.DrawString(info, -1, &fSmall, RectF(px + 4.0f, cY + cH - 22.0f, pw - 8.0f, 22.0f), &fmtL, &bInfoTxt);
+        break;
+    }
+
+    // ────────────────────────────────────────────────
+    case PreviewType::Text: {
+        g.FillRectangle(&bCodeBg, px, cY, pw, cH);
+
+        float lineH  = 16.0f;
+        float xNum   = px + 4.0f;
+        float xCode  = px + 42.0f;
+        float codeW  = pw - 46.0f;
+
+        // Line number gutter background
+        SolidBrush bGutter(Color(255, 238, 240, 242));
+        g.FillRectangle(&bGutter, px, cY, 38.0f, cH);
+        g.DrawLine(&pBrd, px + 38.0f, cY, px + 38.0f, cY + cH);
+
+        // Clip to code area
+        g.SetClip(RectF(px, cY, pw, cH));
+
+        int maxLines = (int)(cH / lineH);
+        for (int i = 0; i < (int)fm_previewLines.size() && i < maxLines; i++) {
+            float ly = cY + i * lineH;
+            // Line number
+            wchar_t numStr[8]; swprintf(numStr, 8, L"%d", i + 1);
+            g.DrawString(numStr, -1, &fCode, RectF(xNum, ly, 32.0f, lineH), &fmtL, &bLineNo);
+            // Code line (truncate long lines)
+            wstring codeLine = fm_previewLines[i];
+            if (codeLine.size() > 200) codeLine = codeLine.substr(0, 200) + L"…";
+            g.DrawString(codeLine.c_str(), -1, &fCode, RectF(xCode, ly, codeW, lineH), &fmtL, &bCode);
+        }
+        g.ResetClip();
+
+        // "Showing first N lines" footer when truncated
+        if ((int)fm_previewLines.size() > maxLines) {
+            SolidBrush bFtBg(Color(255, 230, 235, 240));
+            g.FillRectangle(&bFtBg, px, cY + cH - 18.0f, pw, 18.0f);
+            SolidBrush bFt(Color(255, 120, 130, 140));
+            wchar_t ftStr[48];
+            swprintf(ftStr, 48, L"Showing %d of %d lines", maxLines, (int)fm_previewLines.size());
+            g.DrawString(ftStr, -1, &fSmall, RectF(px + 4.0f, cY + cH - 18.0f, pw - 8.0f, 18.0f), &fmtL, &bFt);
+        }
+        break;
+    }
+
+    // ────────────────────────────────────────────────
+    case PreviewType::WebView: {
+        // WebView2 renders on top — we just draw a placeholder background
+        // The actual WebView2 is positioned via UpdateEmbeddedPreviewBounds()
+        // called from DrawFileManagerTab after computing panel geometry.
+        g.FillRectangle(&bWhite, px, cY, pw, cH);
+        // Subtle loading indicator (WebView2 will cover this)
+        SolidBrush bHint(Color(200, 0, 150, 160));
+        g.DrawString(fm_previewExt == L"pdf" ? L"\xEA90" :
+                     fm_previewExt == L"mp4" || fm_previewExt == L"mkv" || fm_previewExt == L"avi" ||
+                     fm_previewExt == L"mov" || fm_previewExt == L"webm" ? L"\xE8B2" : L"\xEC4F",
+                     -1, &fIcon, RectF(px, cY + 20.0f, pw, 48.0f), &fmtC, &bHint);
+        SolidBrush bHintTxt(Color(255, 150, 160, 170));
+        g.DrawString(L"Loading preview…", -1, &fSmall,
+            RectF(px, cY + 72.0f, pw, 24.0f), &fmtC, &bHintTxt);
+        break;
+    }
+
+    // ────────────────────────────────────────────────
+    default: {
+        // Unknown / unsupported — show file icon + name
+        SolidBrush bGrayIco(Color(255, 160, 170, 180));
+        g.DrawString(L"\xE8A5", -1, &fIcon,
+            RectF(px, cY + cH/2.0f - 52.0f, pw, 48.0f), &fmtC, &bGrayIco);
+        SolidBrush bHint(Color(255, 140, 150, 160));
+        g.DrawString(L"No preview available", -1, &fSmall,
+            RectF(px, cY + cH/2.0f + 2.0f, pw, 24.0f), &fmtC, &bHint);
+        // Show extension
+        wstring extUpper = fm_previewExt;
+        for (auto& ch : extUpper) ch = towupper(ch);
+        g.DrawString(extUpper.empty() ? L"FILE" : extUpper.c_str(), -1, &fBold,
+            RectF(px, cY + cH/2.0f + 24.0f, pw, 24.0f), &fmtC, &bGrayIco);
+        break;
+    }
+    }
+}
+
+// ============================================================
 // HELPERS
 // ============================================================
 static void FillRect_(Graphics& g, SolidBrush* br, Pen* pen, float x, float y, float w, float h, float r = 0.0f) {
@@ -692,10 +1004,83 @@ void DrawFileManagerTab(Graphics& g, float cx, float cy, float cw, float ch) {
             }
         }
 
-        // ---- LEFT SIDEBAR (quick access, width 160) ----
+        // ---- PREVIEW PANEL (right side) ----
+        // Compute geometry first so file list knows its available width
         float sideW = 160.0f;
         float listY = bcY + bcH;
         float listH = bodyH - tbH - bcH;
+
+        // Preview panel takes right PREVIEW_WIDTH_RATIO of the list area (right of sidebar)
+        float listAreaW = cw - sideW; // total width available for file list + preview
+        float previewW  = fm_previewVisible ? (listAreaW * PREVIEW_WIDTH_RATIO) : 0.0f;
+        float fileListW = listAreaW - previewW; // file list actual width
+        float previewX  = cx + sideW + fileListW;
+
+        // Draw preview panel if visible
+        if (fm_previewVisible) {
+            DrawPreviewPanel(g, previewX, listY, previewW, listH);
+        }
+
+        // Handle WebView2 positioning for WebView previews
+        if (fm_previewVisible && fm_previewType == PreviewType::WebView && hParentWnd) {
+            // Convert panel rect to screen/client coords for WebView2
+            float hdrH2 = 34.0f;
+            RECT wvRect;
+            wvRect.left   = (LONG)(previewX);
+            wvRect.top    = (LONG)(listY + hdrH2);
+            wvRect.right  = (LONG)(previewX + previewW);
+            wvRect.bottom = (LONG)(listY + listH);
+            if (wvRect.right > wvRect.left && wvRect.bottom > wvRect.top) {
+                if (memcmp(&wvRect, &fm_webViewBounds, sizeof(RECT)) != 0) {
+                    fm_webViewBounds = wvRect;
+                    // Build URL:
+                    // PDF → file:// URL (WebView2 renders PDFs natively)
+                    // Video/Audio → data: HTML with <video>/<audio> tag
+                    wstring wvUrl;
+                    if (fm_previewExt == L"pdf") {
+                        wvUrl = L"file:///" + fm_previewPath;
+                        // Replace backslashes
+                        for (auto& ch : wvUrl) if (ch == L'\\') ch = L'/';
+                    } else if (fm_previewExt==L"mp4"||fm_previewExt==L"mkv"||
+                               fm_previewExt==L"avi"||fm_previewExt==L"mov"||fm_previewExt==L"webm") {
+                        wstring furl = L"file:///" + fm_previewPath;
+                        for (auto& ch : furl) if (ch == L'\\') ch = L'/';
+                        wvUrl = L"data:text/html,<html><body style='margin:0;background:#111'>"
+                                L"<video controls autoplay style='width:100%;height:100%;max-height:100vh' src='"
+                                + furl + L"'></video></body></html>";
+                    } else {
+                        // Audio (mp3, wav, flac, aac, ogg, m4a)
+                        wstring furl = L"file:///" + fm_previewPath;
+                        for (auto& ch : furl) if (ch == L'\\') ch = L'/';
+                        // Get filename for display
+                        wstring dispName = fm_previewPath;
+                        size_t sl2 = dispName.rfind(L'\\');
+                        if (sl2 != wstring::npos) dispName = dispName.substr(sl2 + 1);
+                        wvUrl = L"data:text/html,<html><body style='margin:0;background:#1a1a2e;"
+                                L"display:flex;flex-direction:column;align-items:center;"
+                                L"justify-content:center;height:100vh;font-family:Segoe UI;color:#ccc'>"
+                                L"<div style='font-size:64px;margin-bottom:16px'>&#127925;</div>"
+                                L"<div style='font-size:14px;margin-bottom:20px;max-width:90%;text-align:center;word-break:break-all'>"
+                                + dispName + L"</div>"
+                                L"<audio controls autoplay style='width:85%' src='" + furl
+                                + L"'></audio></body></html>";
+                    }
+                    CreateEmbeddedPreviewWebView(hParentWnd, wvRect, wvUrl);
+                } else {
+                    UpdateEmbeddedPreviewBounds(wvRect);
+                }
+            }
+        } else if (!fm_previewVisible || fm_previewType != PreviewType::WebView) {
+            // Hide WebView if switching away
+            static PreviewType lastType = PreviewType::None;
+            if (lastType == PreviewType::WebView &&
+                (fm_previewType != PreviewType::WebView || !fm_previewVisible)) {
+                DestroyEmbeddedPreview();
+            }
+            lastType = fm_previewType;
+        }
+
+        // ---- LEFT SIDEBAR (quick access, width 160) ----
 
         SolidBrush bSide(Color(255, 248, 250, 252));
         g.FillRectangle(&bSide, cx, listY, sideW, listH);
@@ -823,9 +1208,9 @@ void DrawFileManagerTab(Graphics& g, float cx, float cy, float cw, float ch) {
         g.DrawString(L"Google Drive", -1, isGDActive ? &fBold : &fSmall,
             RectF(cx + 26.0f, gdY, sideW - 30.0f, qH), &fmtL, &bGDLabel);
 
-        // ---- FILE LIST (right of sidebar) ----
+        // ---- FILE LIST (right of sidebar, left of preview panel) ----
         float flX = cx + sideW;
-        float flW = cw - sideW;
+        float flW = fileListW;  // narrowed when preview panel is visible
 
         // Column header — Windows Explorer style (flat, white, border separators)
         float colHdrH = 26.0f;
@@ -1476,13 +1861,15 @@ void ProcessFileManagerMouseMove(float x, float y) {
             bcX += 100.0f; // rough estimate
         }
 
-        // File rows
+        // File rows — account for preview panel width
         float sideW = 160.0f;
         float listY = bcY + bcH;
         float listH = bodyH - tbH - bcH;
         float colHdrH = 28.0f;
         float flX = cx + sideW;
-        float flW = cw - sideW;
+        float listAreaWM = cw - sideW;
+        float previewWM  = fm_previewVisible ? (listAreaWM * PREVIEW_WIDTH_RATIO) : 0.0f;
+        float flW = listAreaWM - previewWM;
         float rowH = 24.0f; // match draw rowH
         float rowsY = listY + colHdrH;
         float rowsH = listH - colHdrH;
@@ -1557,6 +1944,8 @@ void ProcessFileManagerMouseClick(float x, float y, HWND hWnd) {
     }
     if (PtIn(x, y, cx + 10.0f + stW, cy + 4.0f, stW, tabBarH - 8.0f)) {
         fm_activeSubTab = 1;
+        // Hide preview when switching to Drive tab
+        if (fm_previewVisible) { LoadPreview(L"", L""); fm_previewVisible = false; }
         if (fm_driveSignedIn && fm_driveItems.empty()) DriveListFolder(fm_driveCurrentFolderId);
         if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
         return;
@@ -1657,7 +2046,6 @@ void ProcessFileManagerMouseClick(float x, float y, HWND hWnd) {
         float listH = bodyH - tbH - bcH;
         float colHdrH = 28.0f;
         float flX = cx + sideW;
-        float flW = cw - sideW;
         float rowH = 34.0f;
         float rowsY = listY + colHdrH;
         float rowsH = listH - colHdrH;
@@ -1665,18 +2053,40 @@ void ProcessFileManagerMouseClick(float x, float y, HWND hWnd) {
         {
             float rowHC = 24.0f;
             float sbWC  = 16.0f;
-            if (PtIn(x, y, flX, rowsY, flW - sbWC, rowsH)) {
+            // Compute file list width (preview panel may shrink it)
+            float listAreaWC = g_fm_cw - 160.0f; // sideW=160
+            float previewWC  = fm_previewVisible ? (listAreaWC * PREVIEW_WIDTH_RATIO) : 0.0f;
+            float fileListWC = listAreaWC - previewWC;
+            if (PtIn(x, y, flX, rowsY, fileListWC - sbWC, rowsH)) {
                 int idx = (int)((y - rowsY) / rowHC) + fm_scrollOffset;
                 if (idx >= 0 && idx < (int)fm_items.size()) {
                     if (fm_selectedItem == idx && fm_items[idx].second) {
-                        // Double-click into folder
+                        // Double-click into folder → navigate, clear preview
                         wstring dest = fm_currentPath + fm_items[idx].first + L"\\";
+                        LoadPreview(L"", L"");
                         NavigateTo(dest);
                         if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
                         return;
                     }
                     fm_selectedItem = idx;
-                    if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
+                    // Single click → load preview
+                    if (!fm_items[idx].second) {
+                        // It's a file — determine extension
+                        wstring fname2 = fm_items[idx].first;
+                        size_t dot = fname2.rfind(L'.');
+                        wstring ext2;
+                        if (dot != wstring::npos) {
+                            ext2 = fname2.substr(dot + 1);
+                            for (auto& ch2 : ext2) ch2 = towlower(ch2);
+                        }
+                        wstring fullPath2 = fm_currentPath + fname2;
+                        LoadPreview(fullPath2, ext2);
+                    } else {
+                        // Folder selected — show empty/folder preview
+                        LoadPreview(L"", L"");
+                        fm_previewVisible = false;
+                    }
+                    if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
                 }
             }
         }

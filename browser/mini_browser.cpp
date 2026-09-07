@@ -5148,4 +5148,126 @@ void LaunchMiniBrowser(std::wstring url, std::wstring /*title*/) {
     RepositionAddressBar(hWnd);
     CreateWebViewForTab(hWnd, 0);
 }
+// ============================================================
+// EMBEDDED PREVIEW WEBVIEW2  (File Manager Preview Panel)
+// ============================================================
+// One dedicated controller for in-panel preview.
+// Shares g_sharedEnv so no second browser process is spawned.
+
+static ComPtr<ICoreWebView2Controller>  g_previewCtrl;
+static ComPtr<ICoreWebView2>            g_previewWV;
+static HWND                             g_previewParent = NULL;
+static RECT                             g_previewBounds = {};
+
+// Handler: environment ready → create preview controller
+class PreviewControllerHandler
+    : public ICoreWebView2CreateCoreWebView2ControllerCompletedHandler
+{
+    ULONG m_ref = 1;
+    RECT  m_bounds;
+    std::wstring m_url;
+public:
+    PreviewControllerHandler(RECT b, const std::wstring& u) : m_bounds(b), m_url(u) {}
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID, void** ppv) override { *ppv = this; return S_OK; }
+    ULONG   STDMETHODCALLTYPE AddRef()  override { return InterlockedIncrement(&m_ref); }
+    ULONG   STDMETHODCALLTYPE Release() override {
+        ULONG r = InterlockedDecrement(&m_ref);
+        if (!r) delete this;
+        return r;
+    }
+    HRESULT STDMETHODCALLTYPE Invoke(HRESULT hr, ICoreWebView2Controller* ctl) override {
+        if (FAILED(hr) || !ctl) return S_OK;
+        g_previewCtrl = ctl;
+        ctl->get_CoreWebView2(&g_previewWV);
+
+        // Transparent background (default white → match our dark/light theme)
+        ComPtr<ICoreWebView2Controller2> ctl2;
+        if (SUCCEEDED(ctl->QueryInterface(IID_PPV_ARGS(&ctl2)))) {
+            COREWEBVIEW2_COLOR bg = {255, 245, 248, 250};  // matches bBg
+            ctl2->put_DefaultBackgroundColor(bg);
+        }
+
+        // Minimal settings — no context menu, no dev tools in preview
+        ComPtr<ICoreWebView2Settings> settings;
+        if (SUCCEEDED(g_previewWV->get_Settings(&settings))) {
+            settings->put_AreDefaultContextMenusEnabled(FALSE);
+            settings->put_AreDevToolsEnabled(FALSE);
+            settings->put_IsStatusBarEnabled(FALSE);
+        }
+
+        ctl->put_Bounds(m_bounds);
+        ctl->put_IsVisible(TRUE);
+        if (!m_url.empty()) g_previewWV->Navigate(m_url.c_str());
+        return S_OK;
+    }
+};
+
+// Handler: create env from scratch when g_sharedEnv not yet ready
+class PreviewEnvHandler
+    : public ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler
+{
+    ULONG m_ref = 1;
+    RECT  m_bounds;
+    std::wstring m_url;
+public:
+    PreviewEnvHandler(RECT b, const std::wstring& u) : m_bounds(b), m_url(u) {}
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID, void** ppv) override { *ppv = this; return S_OK; }
+    ULONG   STDMETHODCALLTYPE AddRef()  override { return InterlockedIncrement(&m_ref); }
+    ULONG   STDMETHODCALLTYPE Release() override {
+        ULONG r = InterlockedDecrement(&m_ref);
+        if (!r) delete this;
+        return r;
+    }
+    HRESULT STDMETHODCALLTYPE Invoke(HRESULT hr, ICoreWebView2Environment* env) override {
+        if (FAILED(hr) || !env) return S_OK;
+        if (!g_sharedEnv) g_sharedEnv = env;
+        g_sharedEnv->CreateCoreWebView2Controller(
+            g_previewParent, new PreviewControllerHandler(m_bounds, m_url));
+        return S_OK;
+    }
+};
+
+void CreateEmbeddedPreviewWebView(HWND parentHwnd, RECT bounds, const std::wstring& url)
+{
+    g_previewParent = parentHwnd;
+    g_previewBounds = bounds;
+
+    // If we already have a controller on the same parent, reuse it
+    if (g_previewCtrl && g_previewWV) {
+        g_previewCtrl->put_Bounds(bounds);
+        g_previewCtrl->put_IsVisible(TRUE);
+        if (!url.empty()) g_previewWV->Navigate(url.c_str());
+        return;
+    }
+
+    if (g_sharedEnv) {
+        g_sharedEnv->CreateCoreWebView2Controller(
+            parentHwnd, new PreviewControllerHandler(bounds, url));
+    } else {
+        // g_sharedEnv not yet initialised (browser tab not yet opened)
+        // create a minimal env for preview
+        CreateCoreWebView2EnvironmentWithOptions(
+            nullptr, nullptr, nullptr,
+            new PreviewEnvHandler(bounds, url));
+    }
+}
+
+void UpdateEmbeddedPreviewBounds(RECT newBounds)
+{
+    g_previewBounds = newBounds;
+    if (g_previewCtrl) {
+        g_previewCtrl->put_Bounds(newBounds);
+        g_previewCtrl->put_IsVisible(TRUE);
+    }
+}
+
+void DestroyEmbeddedPreview()
+{
+    if (g_previewCtrl) {
+        g_previewCtrl->put_IsVisible(FALSE);
+        g_previewCtrl->Close();
+        g_previewCtrl.Reset();
+        g_previewWV.Reset();
+    }
+}
 // COMPLETE FILE END ───────────────────────────────────────────────────────────
