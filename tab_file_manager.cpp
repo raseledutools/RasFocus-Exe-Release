@@ -489,6 +489,9 @@ static void RefreshLocalDir() {
     do {
         wstring name = fd.cFileName;
         if (name == L"." || name == L"..") continue;
+        // Skip hidden and system files/folders (like Windows Explorer default)
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_HIDDEN) continue;
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_SYSTEM) continue;
         bool isDir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
         fm_items.push_back({ name, isDir });
     } while (FindNextFileW(hFind, &fd));
