@@ -64,184 +64,207 @@ ss << LR"XHTML(<!DOCTYPE html>
 )XHTML";
 
 // ─────────────────────────────────────────────────────────────
-// PART 02 · CSS Variables + Reset  (Acrobat DC exact palette)
+// PART 02 · CSS Variables + Reset  (Sumatra-style compact palette)
 // ─────────────────────────────────────────────────────────────
 ss << LR"CSS(
 <style>
 :root{
-  --ac-red:#E8423F;
-  --ac-red-h:#CC2E2B;
-  --ac-topbar:#323232;
-  --ac-tabbar:#404040;
-  --ac-tab-bg:#484848;
-  --ac-tab-active:#F4F4F4;
-  --ac-toolbar:#F4F4F4;
-  --ac-toolbar-border:#C8C8C8;
-  --ac-viewer:#606060;
+  --ac-red:#C0392B;
+  --ac-red-h:#A93226;
+  --ac-topbar:#1C1C1C;
+  --ac-tabbar:#2A2A2A;
+  --ac-tab-bg:#363636;
+  --ac-tab-active:#FFFFFF;
+  --ac-toolbar:#F2F2F2;
+  --ac-toolbar-border:#CCCCCC;
+  --ac-viewer:#525252;
   --ac-sidebar:#EBEBEB;
-  --ac-sidebar-hdr:#D4D4D4;
+  --ac-sidebar-hdr:#D0D0D0;
   --ac-text:#1A1A1A;
-  --ac-muted:#666;
+  --ac-muted:#777;
   --ac-light:#BBB;
   --ac-border:#DEDEDE;
-  --ac-blue:#1473E6;
+  --ac-blue:#2980B9;
   --ac-page:#FFF;
-  --ac-shadow:0 1px 6px rgba(0,0,0,.32);
+  --ac-shadow:0 2px 8px rgba(0,0,0,.40);
   --radius:2px;
-  --topbar-h:32px;
-  --tabbar-h:30px;
-  --statusbar-h:22px;
+  --topbar-h:26px;
+  --tabbar-h:24px;
+  --toolbar-h:28px;
+  --statusbar-h:20px;
 }
 *{margin:0;padding:0;box-sizing:border-box;}
 html,body{
   height:100vh;overflow:hidden;
-  font-family:'Segoe UI',Arial,sans-serif;font-size:12px;
+  font-family:'Segoe UI',Arial,sans-serif;font-size:11px;
   background:var(--ac-viewer);color:var(--ac-text);user-select:none;
 }
-::-webkit-scrollbar{width:8px;height:8px;}
-::-webkit-scrollbar-track{background:#4a4a4a;}
-::-webkit-scrollbar-thumb{background:#808080;border-radius:0;}
-::-webkit-scrollbar-thumb:hover{background:#a0a0a0;}
+::-webkit-scrollbar{width:6px;height:6px;}
+::-webkit-scrollbar-track{background:#3a3a3a;}
+::-webkit-scrollbar-thumb{background:#686868;border-radius:0;}
+::-webkit-scrollbar-thumb:hover{background:#909090;}
 #app{display:flex;flex-direction:column;height:100vh;overflow:hidden;}
+.workspace{display:flex;flex:1;min-height:0;overflow:hidden;}
 </style>
 )CSS";
 
 // ─────────────────────────────────────────────────────────────
-// PART 03 · Topbar  (Acrobat DC dark header with Adobe logo area)
+// PART 03 · Topbar — Sumatra-style compact single strip
 // ─────────────────────────────────────────────────────────────
 ss << LR"CSS(
 <style>
-/* ── Topbar ── */
+/* ── Topbar: one compact dark strip with menus + nav + zoom + tools ── */
 .topbar{
   height:var(--topbar-h);background:var(--ac-topbar);
-  display:flex;align-items:center;padding:0 0 0 6px;
-  gap:0;flex-shrink:0;border-bottom:1px solid #1a1a1a;z-index:200;
+  display:flex;align-items:center;padding:0 4px 0 4px;
+  gap:0;flex-shrink:0;border-bottom:1px solid #111;z-index:200;
 }
+/* File icon button (replaces logo) */
 .ac-logo{
-  width:32px;height:32px;display:flex;align-items:center;justify-content:center;
-  background:var(--ac-red);flex-shrink:0;margin-right:4px;
-  font-size:14px;font-weight:900;color:#fff;letter-spacing:-1px;
-  font-style:italic;
+  width:22px;height:var(--topbar-h);display:flex;align-items:center;justify-content:center;
+  background:var(--ac-red);flex-shrink:0;margin-right:2px;
+  font-size:11px;font-weight:900;color:#fff;letter-spacing:-1px;
+  font-style:italic;cursor:pointer;
 }
+/* Menu items */
 .top-menu{
-  color:#ccc;font-size:11.5px;padding:0 9px;height:var(--topbar-h);
+  color:#ccc;font-size:11px;padding:0 7px;height:var(--topbar-h);
   display:flex;align-items:center;
   cursor:pointer;white-space:nowrap;position:relative;
 }
-.top-menu:hover,.top-menu.open{background:rgba(255,255,255,.10);color:#fff;}
-.top-sep{width:1px;height:14px;background:#555;margin:0 3px;}
-.top-right{margin-left:auto;display:flex;align-items:center;gap:0;height:100%;}
+.top-menu:hover,.top-menu.open{background:rgba(255,255,255,.12);color:#fff;}
+/* Separator */
+.top-sep{width:1px;height:12px;background:#484848;margin:0 3px;flex-shrink:0;}
+/* Page nav group (compact inline) */
+.tb-nav{
+  display:flex;align-items:center;gap:2px;padding:0 4px;
+  height:var(--topbar-h);
+}
+.tb-nav-btn{
+  color:#bbb;cursor:pointer;padding:0 3px;height:18px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:12px;border-radius:1px;
+}
+.tb-nav-btn:hover{background:rgba(255,255,255,.12);color:#fff;}
+.tb-page-input{
+  width:32px;padding:1px 3px;border:1px solid #555;border-radius:1px;
+  font-size:10px;text-align:center;background:#2a2a2a;color:#ddd;outline:none;
+}
+.tb-page-input:focus{border-color:#888;}
+.tb-page-total{font-size:10px;color:#888;white-space:nowrap;}
+/* Zoom group */
+.tb-zoom{display:flex;align-items:center;gap:2px;padding:0 4px;}
+.tb-zoom-btn{
+  width:18px;height:18px;background:#333;border:1px solid #484848;
+  border-radius:1px;cursor:pointer;font-size:13px;color:#ccc;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+}
+.tb-zoom-btn:hover{background:#484848;color:#fff;}
+.tb-zoom-input{
+  width:44px;padding:1px 3px;border:1px solid #555;border-radius:1px;
+  font-size:10px;text-align:center;background:#2a2a2a;color:#ddd;outline:none;
+}
+.tb-zoom-input:focus{border-color:#888;}
+/* Tool buttons in topbar (Sumatra style small icons) */
+.tb-tool{
+  display:flex;align-items:center;justify-content:center;
+  width:22px;height:22px;border-radius:1px;cursor:pointer;
+  color:#bbb;border:1px solid transparent;flex-shrink:0;
+  position:relative;
+}
+.tb-tool svg{width:14px;height:14px;fill:currentColor;pointer-events:none;}
+.tb-tool:hover{background:rgba(255,255,255,.12);color:#fff;border-color:#555;}
+.tb-tool.active{background:rgba(255,255,255,.18);color:#fff;border-color:#777;}
+.tb-tool-sep{width:1px;height:14px;background:#484848;margin:0 2px;flex-shrink:0;}
+/* Mode toggle buttons */
+.tb-mode{
+  display:flex;align-items:center;gap:1px;padding:1px;
+  background:#2a2a2a;border:1px solid #484848;border-radius:2px;
+}
+.tb-mode-btn{
+  padding:1px 7px;font-size:9.5px;border-radius:1px;cursor:pointer;
+  color:#999;white-space:nowrap;
+}
+.tb-mode-btn:hover{color:#fff;background:rgba(255,255,255,.08);}
+.tb-mode-btn.active{background:var(--ac-red);color:#fff;}
+/* Right side icons */
+.top-right{margin-left:auto;display:flex;align-items:center;gap:1px;height:100%;}
 .top-icon{
-  color:#bbb;cursor:pointer;padding:0 8px;height:100%;
-  display:flex;align-items:center;font-size:14px;
+  color:#bbb;cursor:pointer;padding:0 5px;height:100%;
+  display:flex;align-items:center;font-size:13px;
 }
 .top-icon:hover{background:rgba(255,255,255,.10);color:#fff;}
 /* Dropdown */
 .dropdown{
-  display:none;position:fixed;background:#3a3a3a;border:1px solid #555;
-  box-shadow:0 4px 18px rgba(0,0,0,.5);z-index:9000;
-  min-width:200px;padding:3px 0;border-radius:1px;
+  display:none;position:fixed;background:#2e2e2e;border:1px solid #484848;
+  box-shadow:0 4px 16px rgba(0,0,0,.6);z-index:9000;
+  min-width:190px;padding:2px 0;border-radius:1px;
 }
 .dropdown.show{display:block;}
 .dd-item{
-  color:#ccc;font-size:11.5px;padding:5px 16px;cursor:pointer;
-  display:flex;align-items:center;gap:10px;white-space:nowrap;
+  color:#ccc;font-size:11px;padding:4px 14px;cursor:pointer;
+  display:flex;align-items:center;gap:9px;white-space:nowrap;
 }
-.dd-item:hover{background:#4a4a4a;color:#fff;}
+.dd-item:hover{background:#3e3e3e;color:#fff;}
 .dd-item.danger{color:#f08080;}
 .dd-item.danger:hover{background:#5a2828;}
-.dd-sep{height:1px;background:#555;margin:3px 0;}
-.dd-shortcut{margin-left:auto;color:#888;font-size:10px;padding-left:20px;}
+.dd-sep{height:1px;background:#484848;margin:2px 0;}
+.dd-shortcut{margin-left:auto;color:#777;font-size:9.5px;padding-left:18px;}
 </style>
 )CSS";
 
 // ─────────────────────────────────────────────────────────────
-// PART 04 · Tabbar  (Acrobat multi-document tabs)
+// PART 04 · Tabbar  (Sumatra-style compact dark tabs)
 // ─────────────────────────────────────────────────────────────
 ss << LR"CSS(
 <style>
 .tabbar{
   height:var(--tabbar-h);background:var(--ac-tabbar);
   display:flex;align-items:flex-end;padding-left:0;
-  overflow-x:auto;flex-shrink:0;border-bottom:1px solid #2a2a2a;
+  overflow-x:auto;flex-shrink:0;border-bottom:1px solid #111;
 }
 .tabbar::-webkit-scrollbar{height:0;}
 .pdf-tab{
-  height:26px;background:var(--ac-tab-bg);color:#aaa;
-  padding:0 10px 0 8px;
-  display:flex;align-items:center;gap:5px;font-size:11.5px;
+  height:var(--tabbar-h);background:var(--ac-tab-bg);color:#999;
+  padding:0 8px 0 7px;
+  display:flex;align-items:center;gap:4px;font-size:10.5px;
   border-radius:0;margin-right:1px;cursor:pointer;
-  max-width:200px;white-space:nowrap;
-  border-top:1px solid #555;border-left:1px solid #555;border-right:1px solid #555;
-  border-bottom:none;position:relative;top:0;flex-shrink:0;
+  max-width:180px;white-space:nowrap;
+  border-right:1px solid #222;
+  flex-shrink:0;
 }
-.pdf-tab:hover{background:#505050;color:#ddd;}
+.pdf-tab:hover{background:#444;color:#ddd;}
 .pdf-tab.active{
-  background:var(--ac-toolbar);color:var(--ac-text);font-weight:600;
-  border-top:2px solid var(--ac-red);
+  background:#E8E8E8;color:#1a1a1a;font-weight:600;
+  border-top:2px solid var(--ac-red);border-right:1px solid #ccc;
 }
-.pdf-tab .tab-icon{font-size:11px;opacity:.6;}
-.tab-name{overflow:hidden;text-overflow:ellipsis;max-width:140px;}
+.pdf-tab .tab-icon{font-size:10px;opacity:.5;}
+.tab-name{overflow:hidden;text-overflow:ellipsis;max-width:120px;}
 .tab-modified{color:var(--ac-red);font-size:8px;margin-left:1px;}
 .tab-close{
-  font-size:12px;cursor:pointer;opacity:0;border-radius:2px;
-  width:14px;height:14px;display:flex;align-items:center;justify-content:center;
-  flex-shrink:0;margin-left:3px;
+  font-size:11px;cursor:pointer;opacity:0;border-radius:2px;
+  width:13px;height:13px;display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;margin-left:2px;
 }
-.pdf-tab:hover .tab-close{opacity:.6;}
-.tab-close:hover{opacity:1!important;background:rgba(0,0,0,.2);color:var(--ac-red);}
+.pdf-tab:hover .tab-close{opacity:.5;}
+.tab-close:hover{opacity:1!important;background:rgba(0,0,0,.15);color:var(--ac-red);}
 .tab-add{
-  color:#888;cursor:pointer;padding:0 10px;font-size:17px;
-  height:26px;display:flex;align-items:center;flex-shrink:0;
+  color:#666;cursor:pointer;padding:0 8px;font-size:15px;
+  height:var(--tabbar-h);display:flex;align-items:center;flex-shrink:0;
 }
-.tab-add:hover{color:#fff;background:#505050;}
+.tab-add:hover{color:#ddd;background:#444;}
 </style>
 )CSS";
 
 // ─────────────────────────────────────────────────────────────
-// PART 05 · Tool Panel  (Acrobat DC left vertical icon strip
-//           + top horizontal quick-tool bar)
+// PART 05 · Quick-bar stub (hidden — tools moved to topbar)
 // ─────────────────────────────────────────────────────────────
 ss << LR"CSS(
 <style>
-/* ── Quick toolbar (top horizontal strip under tabs) ── */
-.quick-bar{
-  height:40px;background:var(--ac-toolbar);
-  border-bottom:1px solid var(--ac-toolbar-border);
-  display:flex;align-items:center;padding:0 8px;gap:2px;
-  flex-shrink:0;
-}
-.qb-group{
-  display:flex;align-items:center;gap:1px;
-  border-right:1px solid var(--ac-border);padding-right:6px;margin-right:4px;
-}
-.qb-group:last-child{border-right:none;}
-.qb-btn{
-  display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:1px;cursor:pointer;border-radius:var(--radius);
-  border:1px solid transparent;padding:3px 6px;
-  color:var(--ac-text);background:transparent;
-  transition:background .1s,border-color .1s;min-width:36px;
-}
-.qb-btn:hover{background:#E4E4E4;border-color:var(--ac-border);}
-.qb-btn.active{background:#FFDEDE;border-color:#F5AAAA;color:var(--ac-red);}
-.qb-btn svg{width:18px;height:18px;fill:currentColor;flex-shrink:0;}
-.qb-lbl{font-size:9px;line-height:1;white-space:nowrap;color:var(--ac-muted);}
-.qb-btn.active .qb-lbl{color:var(--ac-red);}
-.qb-sep{width:1px;height:22px;background:var(--ac-border);margin:0 3px;}
-/* zoom row in quick bar */
-.qb-zoom{display:flex;align-items:center;gap:3px;}
-.qb-zoom-btn{
-  width:22px;height:22px;border:1px solid var(--ac-border);
-  border-radius:var(--radius);background:#fff;cursor:pointer;
-  font-size:14px;display:flex;align-items:center;justify-content:center;
-}
-.qb-zoom-btn:hover{background:#e8e8e8;}
-.qb-zoom-input{
-  width:46px;border:1px solid var(--ac-border);border-radius:var(--radius);
-  font-size:11px;text-align:center;padding:2px 3px;outline:none;background:#fff;
-}
-.qb-zoom-input:focus{border-color:var(--ac-blue);}
+/* quick-bar is hidden; tools live in topbar now */
+.quick-bar{display:none!important;}
+/* Keep qb- class stubs so JS references don't break */
+.qb-btn{} .qb-zoom-input{} .qb-zoom-btn{} .qb-group{} .qb-lbl{}
 </style>
 )CSS";
 
@@ -310,8 +333,8 @@ ss << LR"CSS(
   display:flex;justify-content:center;position:relative;cursor:default;
 }
 .pdf-container{
-  display:flex;flex-direction:column;gap:12px;
-  align-items:center;padding:16px 20px;width:100%;
+  display:flex;flex-direction:column;gap:8px;
+  align-items:center;padding:8px 10px;width:100%;
   transform-origin:top center;will-change:transform;
 }
 /* Page */
@@ -421,24 +444,24 @@ ss << LR"CSS(
 ss << LR"CSS(
 <style>
 .statusbar{
-  height:var(--statusbar-h);background:#E8E8E8;border-top:1px solid #C8C8C8;
-  display:flex;align-items:center;padding:0 10px;gap:10px;
+  height:var(--statusbar-h);background:#2A2A2A;border-top:1px solid #111;
+  display:flex;align-items:center;padding:0 8px;gap:8px;
   flex-shrink:0;z-index:100;
 }
-.sb-item{font-size:10.5px;color:var(--ac-muted);white-space:nowrap;}
-.sb-sep{width:1px;height:12px;background:#C0C0C0;margin:0 2px;}
-.sb-zoom-row{display:flex;align-items:center;gap:3px;}
+.sb-item{font-size:10px;color:#888;white-space:nowrap;}
+.sb-sep{width:1px;height:10px;background:#484848;margin:0 2px;}
+.sb-zoom-row{display:flex;align-items:center;gap:2px;}
 .sb-zoom-btn{
-  width:18px;height:18px;background:#D8D8D8;border:1px solid #C0C0C0;
-  border-radius:var(--radius);cursor:pointer;font-size:13px;
+  width:16px;height:16px;background:#383838;border:1px solid #484848;
+  border-radius:1px;cursor:pointer;font-size:12px;color:#aaa;
   display:flex;align-items:center;justify-content:center;line-height:1;
 }
-.sb-zoom-btn:hover{background:#C8C8C8;}
+.sb-zoom-btn:hover{background:#484848;color:#fff;}
 #sb-zoom-val{
-  font-size:10.5px;min-width:36px;text-align:center;
-  color:var(--ac-text);cursor:default;
+  font-size:10px;min-width:32px;text-align:center;
+  color:#bbb;cursor:default;
 }
-.sb-right{margin-left:auto;display:flex;align-items:center;gap:8px;}
+.sb-right{margin-left:auto;display:flex;align-items:center;gap:6px;}
 /* Find bar */
 .findbar{
   display:none;position:absolute;bottom:var(--statusbar-h);right:12px;

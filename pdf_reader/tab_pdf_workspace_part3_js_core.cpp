@@ -637,7 +637,8 @@ const TOOL_LABELS = {
 
 function setTool(tool) {
   g_tool = tool;
-  document.querySelectorAll('.qb-btn[id^="rb-"]').forEach(b => b.classList.remove('active'));
+  // tb-tool (topbar) এবং qb-btn (old, hidden) দুটোই handle করো
+  document.querySelectorAll('.tb-tool[id^="rb-"], .qb-btn[id^="rb-"]').forEach(b => b.classList.remove('active'));
   const rbtn = document.getElementById('rb-' + tool);
   if (rbtn) rbtn.classList.add('active');
 
