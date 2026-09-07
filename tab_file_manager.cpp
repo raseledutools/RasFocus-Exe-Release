@@ -1098,7 +1098,6 @@ void DrawFileManagerTab(Graphics& g, float cx, float cy, float cw, float ch) {
                 detectedDrives.push_back(p);
         }
 
-        struct QuickItem { const wchar_t* icon; const wchar_t* label; const wchar_t* path; };
         QuickItem quickItems[] = {
             { L"\xE8B7", L"Desktop",    L"" },
             { L"\xEC0A", L"Downloads",  L"" },
@@ -1158,7 +1157,7 @@ void DrawFileManagerTab(Graphics& g, float cx, float cy, float cw, float ch) {
             wstring drv = detectedDrives[di];
             // Drive letter label e.g. "C:\"
             wstring label = drv;
-            if (!label.empty() && label.back() == L'\') label.pop_back(); // "C:"
+            if (!label.empty() && label.back() == L'\x5C') label.pop_back(); // "C:"
             UINT dtype = GetDriveTypeW(drv.c_str());
             const wchar_t* dIcon = L"\xE7D2"; // HDD icon
             if (dtype == DRIVE_REMOVABLE) dIcon = L"\xE88E"; // USB icon
@@ -1294,10 +1293,10 @@ void DrawFileManagerTab(Graphics& g, float cx, float cy, float cw, float ch) {
 
                 // --- Icon: file-type colored like Explorer ---
                 const wchar_t* ico = L"\xE8A5"; // generic file
-                SolidBrush bIco(Color(255, 100, 130, 200));
+                Color icoClr(255, 100, 130, 200); // default
                 if (isDir) {
                     ico = L"\xED41"; // folder
-                    bIco = SolidBrush(Color(255, 255, 196, 37)); // Explorer yellow
+                    icoClr = Color(255, 255, 196, 37); // Explorer yellow
                 } else {
                     wstring nm = fm_items[i].first;
                     size_t dot = nm.rfind(L'.');
@@ -1305,26 +1304,27 @@ void DrawFileManagerTab(Graphics& g, float cx, float cy, float cw, float ch) {
                         wstring ext = nm.substr(dot + 1);
                         // lowercase ext
                         for (auto& ch : ext) ch = towlower(ch);
-                        if (ext==L"exe"||ext==L"msi")          { ico=L"\xE756"; bIco=SolidBrush(Color(255,0,120,215)); }
-                        else if (ext==L"pdf")                   { ico=L"\xEA90"; bIco=SolidBrush(Color(255,220,38,38)); }
+                        if (ext==L"exe"||ext==L"msi")          { ico=L"\xE756"; icoClr=Color(255,0,120,215); }
+                        else if (ext==L"pdf")                   { ico=L"\xEA90"; icoClr=Color(255,220,38,38); }
                         else if (ext==L"jpg"||ext==L"jpeg"||ext==L"png"||ext==L"gif"||ext==L"webp"||ext==L"bmp")
-                                                                { ico=L"\xEB9F"; bIco=SolidBrush(Color(255,168,85,247)); }
+                                                                { ico=L"\xEB9F"; icoClr=Color(255,168,85,247); }
                         else if (ext==L"mp4"||ext==L"mkv"||ext==L"avi"||ext==L"mov")
-                                                                { ico=L"\xE8B2"; bIco=SolidBrush(Color(255,236,72,153)); }
+                                                                { ico=L"\xE8B2"; icoClr=Color(255,236,72,153); }
                         else if (ext==L"mp3"||ext==L"wav"||ext==L"flac"||ext==L"aac")
-                                                                { ico=L"\xEC4F"; bIco=SolidBrush(Color(255,20,184,166)); }
+                                                                { ico=L"\xEC4F"; icoClr=Color(255,20,184,166); }
                         else if (ext==L"zip"||ext==L"rar"||ext==L"7z")
-                                                                { ico=L"\xE7B8"; bIco=SolidBrush(Color(255,245,158,11)); }
+                                                                { ico=L"\xE7B8"; icoClr=Color(255,245,158,11); }
                         else if (ext==L"txt"||ext==L"log"||ext==L"ini"||ext==L"cfg")
-                                                                { ico=L"\xE8A5"; bIco=SolidBrush(Color(255,100,116,139)); }
-                        else if (ext==L"docx"||ext==L"doc")    { ico=L"\xE8A5"; bIco=SolidBrush(Color(255,43,87,154)); }
+                                                                { ico=L"\xE8A5"; icoClr=Color(255,100,116,139); }
+                        else if (ext==L"docx"||ext==L"doc")    { ico=L"\xE8A5"; icoClr=Color(255,43,87,154); }
                         else if (ext==L"xlsx"||ext==L"xls"||ext==L"csv")
-                                                                { ico=L"\xE9F9"; bIco=SolidBrush(Color(255,33,115,70)); }
-                        else if (ext==L"pptx"||ext==L"ppt")   { ico=L"\xE8D1"; bIco=SolidBrush(Color(255,209,52,56)); }
+                                                                { ico=L"\xE9F9"; icoClr=Color(255,33,115,70); }
+                        else if (ext==L"pptx"||ext==L"ppt")   { ico=L"\xE8D1"; icoClr=Color(255,209,52,56); }
                         else if (ext==L"cpp"||ext==L"h"||ext==L"py"||ext==L"js"||ext==L"ts"||ext==L"cs")
-                                                                { ico=L"\xE943"; bIco=SolidBrush(Color(255,88,28,135)); }
+                                                                { ico=L"\xE943"; icoClr=Color(255,88,28,135); }
                     }
                 }
+                SolidBrush bIco(icoClr);
                 g.DrawString(ico, -1, &fIconSm, RectF(flX + 4.0f, ry, 20.0f, rowH), &fmtL, &bIco);
 
                 // --- Name ---
