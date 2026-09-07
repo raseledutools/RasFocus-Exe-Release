@@ -824,113 +824,222 @@ void DrawFileManagerTab(Graphics& g, float cx, float cy, float cw, float ch) {
         float flX = cx + sideW;
         float flW = cw - sideW;
 
-        // Column header (height 28)
-        float colHdrH = 28.0f;
-        SolidBrush bColHdr(Color(255, 240, 244, 248));
-        g.FillRectangle(&bColHdr, flX, listY, flW, colHdrH);
-        Pen pColBrd(Color(255, 218, 225, 232), 1.0f);
-        g.DrawLine(&pColBrd, flX, listY + colHdrH, flX + flW, listY + colHdrH);
+        // Column header — Windows Explorer style (flat, white, border separators)
+        float colHdrH = 26.0f;
+        SolidBrush bColHdrBg(Color(255, 250, 250, 250));
+        g.FillRectangle(&bColHdrBg, flX, listY, flW, colHdrH);
 
-        float c1W = flW * 0.50f, c2W = flW * 0.15f, c3W = flW * 0.20f, c4W = flW * 0.15f;
+        float c1W = flW * 0.45f, c2W = flW * 0.15f, c3W = flW * 0.25f, c4W = flW * 0.15f;
         float hdrY = listY;
-        g.DrawString(L"Name",      -1, &fSmall, RectF(flX + 10.0f,            hdrY, c1W, colHdrH), &fmtL, &bGray);
-        g.DrawString(L"Type",      -1, &fSmall, RectF(flX + c1W,              hdrY, c2W, colHdrH), &fmtL, &bGray);
-        g.DrawString(L"Modified",  -1, &fSmall, RectF(flX + c1W + c2W,        hdrY, c3W, colHdrH), &fmtL, &bGray);
-        g.DrawString(L"Size",      -1, &fSmall, RectF(flX + c1W + c2W + c3W,  hdrY, c4W, colHdrH), &fmtR, &bGray);
 
-        // File rows
-        float rowH = 34.0f;
-        float rowsY = listY + colHdrH;
-        float rowsH = listH - colHdrH;
-        int maxVisible = (int)(rowsH / rowH);
+        // Column header text
+        Font fHdrCol(&ff, 12, FontStyleRegular, UnitPixel);
+        SolidBrush bHdrTxt(Color(255, 50, 50, 50));
+        g.DrawString(L"Name",          -1, &fHdrCol, RectF(flX + 28.0f,           hdrY, c1W, colHdrH), &fmtL, &bHdrTxt);
+        g.DrawString(L"Type",          -1, &fHdrCol, RectF(flX + c1W + 4.0f,      hdrY, c2W, colHdrH), &fmtL, &bHdrTxt);
+        g.DrawString(L"Date modified", -1, &fHdrCol, RectF(flX + c1W + c2W + 4.0f,hdrY, c3W, colHdrH), &fmtL, &bHdrTxt);
+        g.DrawString(L"Size",          -1, &fHdrCol, RectF(flX + c1W+c2W+c3W,     hdrY, c4W-20.0f, colHdrH), &fmtR, &bHdrTxt);
 
-        // Clip to rows area
-        Region clipRegion(RectF(flX, rowsY, flW, rowsH));
-        g.SetClip(&clipRegion);
+        // Column dividers (vertical lines between headers)
+        Pen pColDiv(Color(255, 213, 213, 213), 1.0f);
+        g.DrawLine(&pColDiv, flX + c1W,           hdrY + 4.0f, flX + c1W,           hdrY + colHdrH - 4.0f);
+        g.DrawLine(&pColDiv, flX + c1W + c2W,     hdrY + 4.0f, flX + c1W + c2W,     hdrY + colHdrH - 4.0f);
+        g.DrawLine(&pColDiv, flX + c1W+c2W+c3W,   hdrY + 4.0f, flX + c1W+c2W+c3W,   hdrY + colHdrH - 4.0f);
+
+        // Bottom border of header
+        Pen pHdrBtm(Color(255, 213, 213, 213), 1.0f);
+        g.DrawLine(&pHdrBtm, flX, hdrY + colHdrH, flX + flW, hdrY + colHdrH);
+
+        // ================================================================
+        // FILE LIST — Windows Explorer style
+        // ================================================================
+        float rowH   = 24.0f;   // compact like Explorer (was 34)
+        float rowsY  = listY + colHdrH;
+        float rowsH  = listH - colHdrH;
+        int   maxVis = (int)(rowsH / rowH);
+
+        // Scrollbar geometry (right edge, always reserve 16px like Explorer)
+        float sbW   = 16.0f;
+        float sbX   = flX + flW - sbW;
+        float listW = flW - sbW;  // actual list width excluding scrollbar
+
+        // Clip rows to content area (NO bleed = no replace effect)
+        g.SetClip(RectF(flX, rowsY, listW, rowsH));
 
         if (fm_items.empty()) {
+            g.ResetClip();
+            SolidBrush bEmpty(Color(255, 160, 160, 160));
             g.DrawString(L"This folder is empty.", -1, &fSub,
-                RectF(flX, rowsY + rowsH / 2.0f - 10.0f, flW, 24.0f), &fmtC, &bGray);
+                RectF(flX, rowsY + rowsH / 2.0f - 12.0f, listW, 24.0f), &fmtC, &bEmpty);
         } else {
-            for (int i = fm_scrollOffset; i < (int)fm_items.size() && i < fm_scrollOffset + maxVisible + 1; i++) {
+            for (int i = fm_scrollOffset; i < (int)fm_items.size(); i++) {
                 float ry = rowsY + (i - fm_scrollOffset) * rowH;
-                if (ry + rowH < rowsY || ry > rowsY + rowsH) continue;
+                if (ry >= rowsY + rowsH) break;   // strictly stop at bottom
+                if (ry + rowH <= rowsY) continue;  // not yet visible
 
                 bool isDir = fm_items[i].second;
                 bool isSel = (fm_selectedItem == i);
                 bool isHov = (fm_hovItem == i);
 
-                if (isSel)       { g.FillRectangle(&bSelBg, flX, ry, flW, rowH); }
-                else if (isHov)  { g.FillRectangle(&bHov,   flX, ry, flW, rowH); }
+                // Row background — Windows Explorer style
+                if (isSel) {
+                    // Selected: blue highlight (Explorer blue)
+                    SolidBrush bSelRow(Color(255, 204, 232, 255));
+                    Pen pSelBrd(Color(255, 153, 209, 255), 1.0f);
+                    g.FillRectangle(&bSelRow, flX, ry, listW, rowH);
+                    g.DrawRectangle(&pSelBrd, flX, ry, listW - 1.0f, rowH - 1.0f);
+                } else if (isHov) {
+                    // Hover: very light blue (Explorer hover)
+                    SolidBrush bHovRow(Color(255, 229, 243, 255));
+                    Pen pHovBrd(Color(255, 204, 232, 255), 1.0f);
+                    g.FillRectangle(&bHovRow, flX, ry, listW, rowH);
+                    g.DrawRectangle(&pHovBrd, flX, ry, listW - 1.0f, rowH - 1.0f);
+                } else {
+                    // Normal: pure white (Explorer default)
+                    g.FillRectangle(&bWhite, flX, ry, listW, rowH);
+                    // Very subtle bottom line
+                    Pen pRowLine(Color(30, 0, 0, 0), 1.0f);
+                    g.DrawLine(&pRowLine, flX, ry + rowH - 1.0f, flX + listW, ry + rowH - 1.0f);
+                }
 
-                // Separator
-                Pen pRow(Color(255, 235, 240, 244), 1.0f);
-                g.DrawLine(&pRow, flX, ry + rowH, flX + flW, ry + rowH);
-
-                // Icon
-                const wchar_t* ico = isDir ? L"\xED41" : L"\xE8A5";
-                SolidBrush bIco(isDir ? Color(255, 245, 158, 11) : Color(255, 100, 130, 200));
-                g.DrawString(ico, -1, &fIconSm, RectF(flX + 8.0f, ry, 22.0f, rowH), &fmtL, &bIco);
-
-                // Name
-                g.DrawString(fm_items[i].first.c_str(), -1, &fSmall,
-                    RectF(flX + 34.0f, ry, c1W - 38.0f, rowH), &fmtL, isSel ? &bDark : &bDark);
-
-                // Type
-                wstring typeStr = isDir ? L"Folder" : L"File";
-                wstring name = fm_items[i].first;
-                size_t dot = name.rfind(L'.');
-                if (!isDir && dot != wstring::npos) typeStr = name.substr(dot + 1) + L" File";
-                g.DrawString(typeStr.c_str(), -1, &fSmall, RectF(flX + c1W, ry, c2W, rowH), &fmtL, &bGray);
-
-                // Modified — get from filesystem
-                WIN32_FILE_ATTRIBUTE_DATA fad;
                 wstring fullPath = fm_currentPath + fm_items[i].first;
-                wstring modStr = L"—";
+
+                // --- Icon: file-type colored like Explorer ---
+                const wchar_t* ico = L"\xE8A5"; // generic file
+                SolidBrush bIco(Color(255, 100, 130, 200));
+                if (isDir) {
+                    ico = L"\xED41"; // folder
+                    bIco = SolidBrush(Color(255, 255, 196, 37)); // Explorer yellow
+                } else {
+                    wstring nm = fm_items[i].first;
+                    size_t dot = nm.rfind(L'.');
+                    if (dot != wstring::npos) {
+                        wstring ext = nm.substr(dot + 1);
+                        // lowercase ext
+                        for (auto& ch : ext) ch = towlower(ch);
+                        if (ext==L"exe"||ext==L"msi")          { ico=L"\xE756"; bIco=SolidBrush(Color(255,0,120,215)); }
+                        else if (ext==L"pdf")                   { ico=L"\xEA90"; bIco=SolidBrush(Color(255,220,38,38)); }
+                        else if (ext==L"jpg"||ext==L"jpeg"||ext==L"png"||ext==L"gif"||ext==L"webp"||ext==L"bmp")
+                                                                { ico=L"\xEB9F"; bIco=SolidBrush(Color(255,168,85,247)); }
+                        else if (ext==L"mp4"||ext==L"mkv"||ext==L"avi"||ext==L"mov")
+                                                                { ico=L"\xE8B2"; bIco=SolidBrush(Color(255,236,72,153)); }
+                        else if (ext==L"mp3"||ext==L"wav"||ext==L"flac"||ext==L"aac")
+                                                                { ico=L"\xEC4F"; bIco=SolidBrush(Color(255,20,184,166)); }
+                        else if (ext==L"zip"||ext==L"rar"||ext==L"7z")
+                                                                { ico=L"\xE7B8"; bIco=SolidBrush(Color(255,245,158,11)); }
+                        else if (ext==L"txt"||ext==L"log"||ext==L"ini"||ext==L"cfg")
+                                                                { ico=L"\xE8A5"; bIco=SolidBrush(Color(255,100,116,139)); }
+                        else if (ext==L"docx"||ext==L"doc")    { ico=L"\xE8A5"; bIco=SolidBrush(Color(255,43,87,154)); }
+                        else if (ext==L"xlsx"||ext==L"xls"||ext==L"csv")
+                                                                { ico=L"\xE9F9"; bIco=SolidBrush(Color(255,33,115,70)); }
+                        else if (ext==L"pptx"||ext==L"ppt")   { ico=L"\xE8D1"; bIco=SolidBrush(Color(255,209,52,56)); }
+                        else if (ext==L"cpp"||ext==L"h"||ext==L"py"||ext==L"js"||ext==L"ts"||ext==L"cs")
+                                                                { ico=L"\xE943"; bIco=SolidBrush(Color(255,88,28,135)); }
+                    }
+                }
+                g.DrawString(ico, -1, &fIconSm, RectF(flX + 4.0f, ry, 20.0f, rowH), &fmtL, &bIco);
+
+                // --- Name ---
+                SolidBrush bNameClr(isSel ? Color(255,0,0,0) : Color(255,0,0,0));
+                g.DrawString(fm_items[i].first.c_str(), -1, &fSmall,
+                    RectF(flX + 26.0f, ry, c1W - 30.0f, rowH), &fmtL, &bNameClr);
+
+                // --- Type ---
+                wstring typeStr = isDir ? L"File folder" : L"File";
+                wstring name2 = fm_items[i].first;
+                size_t dot2 = name2.rfind(L'.');
+                if (!isDir && dot2 != wstring::npos) {
+                    wstring ext2 = name2.substr(dot2 + 1);
+                    for (auto& ch : ext2) ch = towupper(ch);
+                    typeStr = ext2 + L" File";
+                }
+                SolidBrush bTypeTxt(Color(255, 80, 80, 80));
+                g.DrawString(typeStr.c_str(), -1, &fSmall,
+                    RectF(flX + c1W, ry, c2W, rowH), &fmtL, &bTypeTxt);
+
+                // --- Date Modified ---
+                WIN32_FILE_ATTRIBUTE_DATA fad;
+                wstring modStr = L"";
                 if (GetFileAttributesExW(fullPath.c_str(), GetFileExInfoStandard, &fad)) {
-                    FILETIME ft = fad.ftLastWriteTime;
-                    SYSTEMTIME st; FileTimeToSystemTime(&ft, &st);
-                    wchar_t buf[32];
-                    swprintf(buf, 32, L"%02d/%02d/%04d", st.wDay, st.wMonth, st.wYear);
+                    FILETIME ft  = fad.ftLastWriteTime;
+                    FILETIME lft; FileTimeToLocalFileTime(&ft, &lft);
+                    SYSTEMTIME st; FileTimeToSystemTime(&lft, &st);
+                    wchar_t buf[40];
+                    // Format: "9/7/2026 3:45 PM" — Explorer style
+                    int hr = st.wHour; bool pm = hr >= 12;
+                    if (hr == 0) hr = 12; else if (hr > 12) hr -= 12;
+                    swprintf(buf, 40, L"%d/%d/%04d %d:%02d %s",
+                        st.wMonth, st.wDay, st.wYear, hr, st.wMinute, pm ? L"PM" : L"AM");
                     modStr = buf;
                 }
-                g.DrawString(modStr.c_str(), -1, &fSmall, RectF(flX + c1W + c2W, ry, c3W, rowH), &fmtL, &bGray);
+                g.DrawString(modStr.c_str(), -1, &fSmall,
+                    RectF(flX + c1W + c2W + 4.0f, ry, c3W - 4.0f, rowH), &fmtL, &bTypeTxt);
 
-                // Size
-                wstring sizeStr = L"—";
+                // --- Size ---
+                wstring sizeStr = L"";
                 if (!isDir) {
                     WIN32_FIND_DATAW fd2;
                     HANDLE h2 = FindFirstFileW(fullPath.c_str(), &fd2);
                     if (h2 != INVALID_HANDLE_VALUE) {
                         ULONGLONG sz = ((ULONGLONG)fd2.nFileSizeHigh << 32) | fd2.nFileSizeLow;
                         wchar_t buf[32];
-                        if      (sz < 1024)          swprintf(buf, 32, L"%llu B",   sz);
-                        else if (sz < 1024*1024)     swprintf(buf, 32, L"%llu KB",  sz/1024);
-                        else if (sz < 1024*1024*1024)swprintf(buf, 32, L"%llu MB",  sz/(1024*1024));
-                        else                          swprintf(buf, 32, L"%llu GB",  sz/(1024*1024*1024));
+                        if      (sz < 1024)               swprintf(buf, 32, L"%llu B",   sz);
+                        else if (sz < 1024*1024)          swprintf(buf, 32, L"%llu KB",  (sz+1023)/1024);
+                        else if (sz < 1024LL*1024*1024)   swprintf(buf, 32, L"%.1f MB",  sz/1048576.0);
+                        else                               swprintf(buf, 32, L"%.2f GB",  sz/1073741824.0);
                         sizeStr = buf;
                         FindClose(h2);
                     }
                 }
-                g.DrawString(sizeStr.c_str(), -1, &fSmall, RectF(flX + c1W + c2W + c3W, ry, c4W - 6.0f, rowH), &fmtR, &bGray);
+                g.DrawString(sizeStr.c_str(), -1, &fSmall,
+                    RectF(flX + c1W + c2W + c3W, ry, c4W - 6.0f, rowH), &fmtR, &bTypeTxt);
             }
+            g.ResetClip();
         }
 
-        g.ResetClip();
+        // ================================================================
+        // SCROLLBAR — Windows Explorer style
+        // Right-side track + thumb, 16px wide
+        // ================================================================
+        {
+            // Track background (light gray like Explorer)
+            SolidBrush bTrack(Color(255, 240, 240, 240));
+            g.FillRectangle(&bTrack, sbX, rowsY, sbW, rowsH);
+            // Track left border
+            Pen pTrackBrd(Color(255, 200, 200, 200), 1.0f);
+            g.DrawLine(&pTrackBrd, sbX, rowsY, sbX, rowsY + rowsH);
 
-        // Scrollbar
-        if ((int)fm_items.size() > maxVisible) {
-            float sbW = 6.0f, sbX = flX + flW - sbW - 2.0f;
-            float sbTotalH = rowsH;
-            float thumbH = max(30.0f, sbTotalH * maxVisible / (float)fm_items.size());
-            float thumbY = rowsY + sbTotalH * fm_scrollOffset / (float)fm_items.size();
-            SolidBrush bThumb(Color(180, 0, 150, 160));
-            FillRect_(g, &bThumb, nullptr, sbX, thumbY, sbW, thumbH, 3.0f);
-        }
+            if ((int)fm_items.size() > maxVis) {
+                float ratio  = (float)maxVis / (float)fm_items.size();
+                float thumbH = max(20.0f, rowsH * ratio);
+                float maxOff = (float)(fm_items.size() - maxVis);
+                float thumbY = rowsY + (rowsH - thumbH) * (fm_scrollOffset / maxOff);
+                thumbY = min(thumbY, rowsY + rowsH - thumbH);
 
-        // ---- EMPTY STATE ----
-        if (fm_items.empty()) {
-            // already handled above
+                // Up arrow button (top of scrollbar)
+                SolidBrush bArrowBg(Color(255, 225, 225, 225));
+                g.FillRectangle(&bArrowBg, sbX, rowsY, sbW, 17.0f);
+                Font fArrow(&ff, 9, FontStyleRegular, UnitPixel);
+                SolidBrush bArrowClr(Color(255, 80, 80, 80));
+                g.DrawString(L"▲", -1, &fArrow, RectF(sbX, rowsY, sbW, 17.0f), &fmtC, &bArrowClr);
+
+                // Down arrow button (bottom)
+                g.FillRectangle(&bArrowBg, sbX, rowsY + rowsH - 17.0f, sbW, 17.0f);
+                g.DrawString(L"▼", -1, &fArrow, RectF(sbX, rowsY + rowsH - 17.0f, sbW, 17.0f), &fmtC, &bArrowClr);
+
+                // Thumb (darker gray, rounded slightly)
+                float tY = max(rowsY + 17.0f, thumbY);
+                float tH = min(thumbH, rowsH - 34.0f);
+                SolidBrush bThumbNorm(Color(255, 173, 173, 173));
+                FillRect_(g, &bThumbNorm, nullptr, sbX + 2.0f, tY, sbW - 4.0f, tH, 3.0f);
+                // Thumb border
+                Pen pThumbBrd(Color(255, 150, 150, 150), 1.0f);
+                FillRect_(g, nullptr, &pThumbBrd, sbX + 2.0f, tY, sbW - 4.0f, tH, 3.0f);
+            } else {
+                // No scroll needed — show greyed out scrollbar
+                SolidBrush bNoScroll(Color(255, 240, 240, 240));
+                g.FillRectangle(&bNoScroll, sbX, rowsY, sbW, rowsH);
+            }
         }
 
     }
@@ -1371,11 +1480,11 @@ void ProcessFileManagerMouseMove(float x, float y) {
         float colHdrH = 28.0f;
         float flX = cx + sideW;
         float flW = cw - sideW;
-        float rowH = 34.0f;
+        float rowH = 24.0f; // match draw rowH
         float rowsY = listY + colHdrH;
         float rowsH = listH - colHdrH;
-        int maxVisible = (int)(rowsH / rowH);
-        if (PtIn(x, y, flX, rowsY, flW, rowsH)) {
+        float sbWM = 16.0f;
+        if (PtIn(x, y, flX, rowsY, flW - sbWM, rowsH)) {
             int idx = (int)((y - rowsY) / rowH) + fm_scrollOffset;
             if (idx >= 0 && idx < (int)fm_items.size()) fm_hovItem = idx;
         }
@@ -1550,18 +1659,22 @@ void ProcessFileManagerMouseClick(float x, float y, HWND hWnd) {
         float rowsY = listY + colHdrH;
         float rowsH = listH - colHdrH;
 
-        if (PtIn(x, y, flX, rowsY, flW, rowsH)) {
-            int idx = (int)((y - rowsY) / rowH) + fm_scrollOffset;
-            if (idx >= 0 && idx < (int)fm_items.size()) {
-                if (fm_selectedItem == idx && fm_items[idx].second) {
-                    // Double-click into folder (treated as two single clicks on same item)
-                    wstring dest = fm_currentPath + fm_items[idx].first + L"\\";
-                    NavigateTo(dest);
-                    if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
-                    return;
+        {
+            float rowHC = 24.0f;
+            float sbWC  = 16.0f;
+            if (PtIn(x, y, flX, rowsY, flW - sbWC, rowsH)) {
+                int idx = (int)((y - rowsY) / rowHC) + fm_scrollOffset;
+                if (idx >= 0 && idx < (int)fm_items.size()) {
+                    if (fm_selectedItem == idx && fm_items[idx].second) {
+                        // Double-click into folder
+                        wstring dest = fm_currentPath + fm_items[idx].first + L"\\";
+                        NavigateTo(dest);
+                        if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
+                        return;
+                    }
+                    fm_selectedItem = idx;
+                    if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
                 }
-                fm_selectedItem = idx;
-                if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
             }
         }
 
@@ -1683,12 +1796,18 @@ void ProcessFileManagerMouseClick(float x, float y, HWND hWnd) {
 // MOUSE WHEEL
 // ============================================================
 void ProcessFileManagerMouseWheel(float x, float y, int delta) {
-    int step = (delta > 0) ? -3 : 3;
+    // Windows Explorer style: 3 lines per notch (WHEEL_DELTA=120 = 1 notch)
+    int notches = abs(delta) / WHEEL_DELTA;
+    if (notches == 0) notches = 1;
+    int step = (delta > 0) ? -(3 * notches) : (3 * notches);
+
     if (fm_activeSubTab == 0) {
-        fm_scrollOffset = max(0, min((int)fm_items.size() - 1, fm_scrollOffset + step));
+        int maxScroll = max(0, (int)fm_items.size() - 1);
+        fm_scrollOffset = max(0, min(maxScroll, fm_scrollOffset + step));
     } else {
-        fm_driveScrollOff = max(0, min((int)fm_driveItems.size() - 1, fm_driveScrollOff + step));
+        int maxScroll = max(0, (int)fm_driveItems.size() - 1);
+        fm_driveScrollOff = max(0, min(maxScroll, fm_driveScrollOff + step));
     }
     extern HWND hParentWnd;
-    if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
+    if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE); // FALSE = no erase → no flicker
 }
