@@ -203,9 +203,22 @@ async function createTab(name, bytes) {
     if (hint) hint.remove();
     const doc = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
     const id = 'tab_' + Date.now() + Math.random().toString(36).slice(2, 6);
+
+    // Auto fit-width zoom: প্রথম page এর width দিয়ে viewer এর available width থেকে zoom calculate করো
+    let autoZoom = 1.0;
+    try {
+      const firstPage = await doc.getPage(1);
+      const vp = firstPage.getViewport({ scale: 1.0 });
+      const viewerEl = document.getElementById('viewer-area');
+      if (viewerEl && vp.width > 0) {
+        const availableWidth = viewerEl.clientWidth - 40; // 40px = padding (2×20px)
+        autoZoom = Math.min(3.0, Math.max(0.5, availableWidth / vp.width));
+      }
+    } catch (_) {}
+
     const tab = {
       id, name, bytes: bytes.slice(), doc,
-      zoom: 1.0, rotation: 0,
+      zoom: autoZoom, rotation: 0,
       annotations: [],    // draw strokes, notes, shapes, stamps
       pasteImages: [],    // pasted image overlays
       textBoxes: [],      // editable text boxes
@@ -392,7 +405,8 @@ function renderNative(t) {
   const iframe = document.createElement('iframe');
   iframe.id  = 'native-pdf-iframe';
   // #toolbar=0 suppresses Edge/Chrome PDF toolbar so only our UI shows
-  iframe.src = url + '#toolbar=0&navpanes=0&scrollbar=1&view=FitH';
+  // view=FitH,0: page width-fit করে, top থেকে শুরু করে (gray gap কমায়)
+  iframe.src = url + '#toolbar=0&navpanes=0&scrollbar=1&view=FitH,0';
   iframe.style.cssText = [
     'width:100%',
     'height:100%',
