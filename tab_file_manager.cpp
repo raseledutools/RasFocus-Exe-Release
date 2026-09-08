@@ -1005,16 +1005,16 @@ void DrawFileManagerTab(Graphics& g, float cx, float cy, float cw, float ch) {
         }
 
         // ---- PREVIEW PANEL (right side) ----
-        // Compute geometry first so file list knows its available width
-        float sideW = 160.0f;
+        // Compute geometry first so file list knows its available width.
+        // Sidebar is drawn by tab_special.cpp; cx/cw here is already the content area.
         float listY = bcY + bcH;
         float listH = bodyH - tbH - bcH;
 
-        // Preview panel takes right PREVIEW_WIDTH_RATIO of the list area (right of sidebar)
-        float listAreaW = cw - sideW; // total width available for file list + preview
+        // Preview panel takes right PREVIEW_WIDTH_RATIO of the full content width
+        float listAreaW = cw; // no internal sidebar — full content width
         float previewW  = fm_previewVisible ? (listAreaW * PREVIEW_WIDTH_RATIO) : 0.0f;
         float fileListW = listAreaW - previewW; // file list actual width
-        float previewX  = cx + sideW + fileListW;
+        float previewX  = cx + fileListW;
 
         // Draw preview panel if visible
         if (fm_previewVisible) {
@@ -1080,141 +1080,10 @@ void DrawFileManagerTab(Graphics& g, float cx, float cy, float cw, float ch) {
             lastType = fm_previewType;
         }
 
-        // ---- LEFT SIDEBAR (quick access, width 160) ----
-
-        SolidBrush bSide(Color(255, 248, 250, 252));
-        g.FillRectangle(&bSide, cx, listY, sideW, listH);
-        Pen pSideBrd(Color(255, 218, 225, 232), 1.0f);
-        g.DrawLine(&pSideBrd, cx + sideW, listY, cx + sideW, listY + listH);
-
-        struct QuickItem { const wchar_t* icon; const wchar_t* label; const wchar_t* path; };
-        // --- Dynamically detect all local drives ---
-        wchar_t driveStrings[512] = {};
-        GetLogicalDriveStringsW(511, driveStrings);
-        vector<wstring> detectedDrives;
-        for (wchar_t* p = driveStrings; *p; p += wcslen(p) + 1) {
-            UINT t = GetDriveTypeW(p);
-            if (t == DRIVE_FIXED || t == DRIVE_REMOVABLE || t == DRIVE_REMOTE || t == DRIVE_RAMDISK)
-                detectedDrives.push_back(p);
-        }
-
-        QuickItem quickItems[] = {
-            { L"\xE8B7", L"Desktop",    L"" },
-            { L"\xEC0A", L"Downloads",  L"" },
-            { L"\xE8A5", L"Documents",  L"" },
-            { L"\xEB9F", L"Pictures",   L"" },
-            { L"\xEC4F", L"Music",      L"" },
-            { L"\xE8B2", L"Videos",     L"" },
-        };
-        int quickCount = 6;
-        // Fill paths dynamically
-        wchar_t desktopPath[MAX_PATH], dlPath[MAX_PATH], docPath[MAX_PATH];
-        wchar_t picPath[MAX_PATH], musicPath[MAX_PATH], vidPath[MAX_PATH];
-        SHGetFolderPathW(NULL, CSIDL_DESKTOPDIRECTORY, NULL, 0, desktopPath);
-        SHGetFolderPathW(NULL, CSIDL_PERSONAL, NULL, 0, docPath);
-        SHGetFolderPathW(NULL, CSIDL_MYPICTURES, NULL, 0, picPath);
-        SHGetFolderPathW(NULL, CSIDL_MYMUSIC, NULL, 0, musicPath);
-        SHGetFolderPathW(NULL, CSIDL_MYVIDEO, NULL, 0, vidPath);
-        // Downloads
-        PWSTR dlRaw = NULL;
-        SHGetKnownFolderPath(FOLDERID_Downloads, 0, NULL, &dlRaw);
-        if (dlRaw) { wcscpy_s(dlPath, dlRaw); CoTaskMemFree(dlRaw); }
-
-        // Overwrite the path fields
-        const wchar_t* pathArr[] = { desktopPath, dlPath, docPath, picPath, musicPath, vidPath };
-
-        float qH = 34.0f;
-
-        // --- "Quick access" section label ---
-        float qaLabelY = listY + 4.0f;
-        Font fTiny3(&ff, 10, FontStyleBold, UnitPixel);
-        SolidBrush bQALabel(Color(255, 160, 170, 180));
-        g.DrawString(L"Quick access", -1, &fTiny3, RectF(cx + 10.0f, qaLabelY, sideW - 14.0f, 16.0f), &fmtL, &bQALabel);
-
-        // --- Draw fixed quick access items (start after Quick access label) ---
-        float quickItemsStartY = listY + 22.0f; // label height (16) + top gap (4) + small gap (2)
-        for (int i = 0; i < quickCount; i++) {
-            float qY = quickItemsStartY + i * qH;
-            bool isActive = (pathArr[i] && pathArr[i][0] != 0 && fm_currentPath.find(pathArr[i]) == 0);
-            if (isActive) {
-                SolidBrush qAct(Color(255, 225, 245, 248));
-                g.FillRectangle(&qAct, cx, qY, sideW, qH);
-                g.FillRectangle(&bTeal, cx, qY + 4.0f, 3.0f, qH - 8.0f);
-            }
-            g.DrawString(quickItems[i].icon,  -1, &fIconSm, RectF(cx + 10.0f, qY, 20.0f, qH), &fmtL, isActive ? &bTeal : &bGray);
-            g.DrawString(quickItems[i].label, -1, &fSmall,  RectF(cx + 34.0f, qY, sideW - 38.0f, qH), &fmtL, isActive ? &bTeal : &bDark);
-        }
-
-        // --- Separator line ---
-        float sepY = quickItemsStartY + quickCount * qH + 2.0f;
-        Pen pSepLine(Color(180, 200, 210, 220), 1.0f);
-        g.DrawLine(&pSepLine, cx + 8.0f, sepY, cx + sideW - 8.0f, sepY);
-
-        // --- "This PC" section label ---
-        float secLabelY = sepY + 4.0f;
-        SolidBrush bSecLabel(Color(255, 160, 170, 180));
-        Font fTiny2(&ff, 10, FontStyleBold, UnitPixel);
-        g.DrawString(L"THIS PC", -1, &fTiny2, RectF(cx + 10.0f, secLabelY, sideW - 14.0f, 18.0f), &fmtL, &bSecLabel);
-
-        // --- Dynamic Drives ---
-        float driveStartY = secLabelY + 20.0f;
-        for (int di = 0; di < (int)detectedDrives.size(); di++) {
-            float dqY = driveStartY + di * qH;
-            wstring drv = detectedDrives[di];
-            // Drive letter label e.g. "C:\"
-            wstring label = drv;
-            if (!label.empty() && label.back() == L'\x5C') label.pop_back(); // "C:"
-            UINT dtype = GetDriveTypeW(drv.c_str());
-            const wchar_t* dIcon = L"\xE7D2"; // HDD icon
-            if (dtype == DRIVE_REMOVABLE) dIcon = L"\xE88E"; // USB icon
-            if (dtype == DRIVE_REMOTE)    dIcon = L"\xE753"; // Network icon
-            bool isDriveActive = (fm_currentPath.find(drv) == 0);
-            if (isDriveActive) {
-                SolidBrush qAct2(Color(255, 225, 245, 248));
-                g.FillRectangle(&qAct2, cx, dqY, sideW, qH);
-                g.FillRectangle(&bTeal, cx, dqY + 4.0f, 3.0f, qH - 8.0f);
-            }
-            g.DrawString(dIcon,        -1, &fIconSm, RectF(cx + 10.0f, dqY, 20.0f, qH), &fmtL, isDriveActive ? &bTeal : &bGray);
-            g.DrawString(label.c_str(),-1, &fSmall,  RectF(cx + 34.0f, dqY, sideW - 38.0f, qH), &fmtL, isDriveActive ? &bTeal : &bDark);
-        }
-
-        // --- Google Drive entry (after drives) ---
-        float gdY = driveStartY + detectedDrives.size() * qH + 4.0f;
-        Pen pSepLine2(Color(180, 200, 210, 220), 1.0f);
-        g.DrawLine(&pSepLine2, cx + 8.0f, gdY, cx + sideW - 8.0f, gdY);
-        gdY += 5.0f;
-
-        // Google Drive colored dots icon (mini)
-        float gdIconX = cx + 8.0f;
-        float gdIconY = gdY + (qH - 14.0f) / 2.0f;
-        SolidBrush bGDB(Color(255, 66, 133, 244));
-        SolidBrush bGDG(Color(255, 52, 168, 83));
-        SolidBrush bGDY(Color(255, 251, 188, 5));
-        g.FillEllipse(&bGDB, gdIconX,        gdIconY,       8.0f, 8.0f);
-        g.FillEllipse(&bGDG, gdIconX + 5.0f, gdIconY,       8.0f, 8.0f);
-        g.FillEllipse(&bGDY, gdIconX + 2.5f, gdIconY + 5.0f,8.0f, 8.0f);
-
-        bool isGDActive = (fm_activeSubTab == 1);  // Drive tab active
-        if (fm_hovSideGDrive && !isGDActive) {
-            SolidBrush bGDHov(Color(255, 235, 248, 252));
-            g.FillRectangle(&bGDHov, cx, gdY, sideW, qH);
-        }
-        if (isGDActive) {
-            SolidBrush bGDAct(Color(255, 225, 238, 255));
-            g.FillRectangle(&bGDAct, cx, gdY, sideW, qH);
-            SolidBrush bGDBar(Color(255, 66, 133, 244));
-            g.FillRectangle(&bGDBar, cx, gdY + 4.0f, 3.0f, qH - 8.0f);
-            // Re-draw dots on top of active bg
-            g.FillEllipse(&bGDB, gdIconX,        gdIconY,       8.0f, 8.0f);
-            g.FillEllipse(&bGDG, gdIconX + 5.0f, gdIconY,       8.0f, 8.0f);
-            g.FillEllipse(&bGDY, gdIconX + 2.5f, gdIconY + 5.0f,8.0f, 8.0f);
-        }
-        SolidBrush bGDLabel(isGDActive ? Color(255, 30, 64, 175) : Color(255, 50, 50, 50));
-        g.DrawString(L"Google Drive", -1, isGDActive ? &fBold : &fSmall,
-            RectF(cx + 26.0f, gdY, sideW - 30.0f, qH), &fmtL, &bGDLabel);
-
-        // ---- FILE LIST (right of sidebar, left of preview panel) ----
-        float flX = cx + sideW;
+        // ---- FILE LIST (full content width, sidebar is drawn by tab_special.cpp) ----
+        // tab_special.cpp already draws the sidebar (Quick access, This PC, drives, Google Drive)
+        // and calls DrawFileManagerTab() with contentX offset — so we use the full cx here.
+        float flX = cx;
         float flW = fileListW;  // narrowed when preview panel is visible
 
         // Column header — Windows Explorer style (flat, white, border separators)
@@ -1868,12 +1737,11 @@ void ProcessFileManagerMouseMove(float x, float y) {
         }
 
         // File rows — account for preview panel width
-        float sideW = 160.0f;
         float listY = bcY + bcH;
         float listH = bodyH - tbH - bcH;
         float colHdrH = 28.0f;
-        float flX = cx + sideW;
-        float listAreaWM = cw - sideW;
+        float flX = cx; // no internal sidebar; cx is already the content area start
+        float listAreaWM = cw;
         float previewWM  = fm_previewVisible ? (listAreaWM * PREVIEW_WIDTH_RATIO) : 0.0f;
         float flW = listAreaWM - previewWM;
         float rowH = 24.0f; // match draw rowH
@@ -2047,11 +1915,10 @@ void ProcessFileManagerMouseClick(float x, float y, HWND hWnd) {
         }
 
         // File list click
-        float sideW = 160.0f;
         float listY = bcY + bcH;
         float listH = bodyH - tbH - bcH;
         float colHdrH = 28.0f;
-        float flX = cx + sideW;
+        float flX = cx; // no internal sidebar; cx is already content area start
         float rowH = 34.0f;
         float rowsY = listY + colHdrH;
         float rowsH = listH - colHdrH;
@@ -2060,7 +1927,7 @@ void ProcessFileManagerMouseClick(float x, float y, HWND hWnd) {
             float rowHC = 24.0f;
             float sbWC  = 16.0f;
             // Compute file list width (preview panel may shrink it)
-            float listAreaWC = g_fm_cw - 160.0f; // sideW=160
+            float listAreaWC = g_fm_cw; // full content width, no internal sidebar
             float previewWC  = fm_previewVisible ? (listAreaWC * PREVIEW_WIDTH_RATIO) : 0.0f;
             float fileListWC = listAreaWC - previewWC;
             if (PtIn(x, y, flX, rowsY, fileListWC - sbWC, rowsH)) {
@@ -2097,61 +1964,7 @@ void ProcessFileManagerMouseClick(float x, float y, HWND hWnd) {
             }
         }
 
-        // Quick sidebar click
-        wchar_t desktopPath[MAX_PATH], dlPath[MAX_PATH], docPath[MAX_PATH];
-        wchar_t picPath[MAX_PATH], musicPath[MAX_PATH], vidPath[MAX_PATH];
-        SHGetFolderPathW(NULL, CSIDL_DESKTOPDIRECTORY, NULL, 0, desktopPath);
-        SHGetFolderPathW(NULL, CSIDL_PERSONAL, NULL, 0, docPath);
-        SHGetFolderPathW(NULL, CSIDL_MYPICTURES, NULL, 0, picPath);
-        SHGetFolderPathW(NULL, CSIDL_MYMUSIC, NULL, 0, musicPath);
-        SHGetFolderPathW(NULL, CSIDL_MYVIDEO, NULL, 0, vidPath);
-        PWSTR dlRaw = NULL;
-        SHGetKnownFolderPath(FOLDERID_Downloads, 0, NULL, &dlRaw);
-        if (dlRaw) { wcscpy_s(dlPath, dlRaw); CoTaskMemFree(dlRaw); }
-
-        const wchar_t* pathArr[] = { desktopPath, dlPath, docPath, picPath, musicPath, vidPath };
-        float qH = 34.0f;
-        int quickCountC = 6;
-        float quickItemsStartYC = listY + 22.0f; // must match draw section
-        for (int i = 0; i < quickCountC; i++) {
-            float qY = quickItemsStartYC + i * qH;
-            if (PtIn(x, y, cx, qY, sideW, qH) && pathArr[i][0] != 0) {
-                NavigateTo(pathArr[i]);
-                if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
-                return;
-            }
-        }
-
-        // Dynamic drives click
-        wchar_t driveStringsC[512] = {};
-        GetLogicalDriveStringsW(511, driveStringsC);
-        vector<wstring> detectedDrivesC;
-        for (wchar_t* p = driveStringsC; *p; p += wcslen(p) + 1) {
-            UINT t = GetDriveTypeW(p);
-            if (t == DRIVE_FIXED || t == DRIVE_REMOVABLE || t == DRIVE_REMOTE || t == DRIVE_RAMDISK)
-                detectedDrivesC.push_back(p);
-        }
-        float sepYC     = quickItemsStartYC + quickCountC * qH + 2.0f;
-        float secLabelYC= sepYC + 4.0f;
-        float driveStartYC = secLabelYC + 20.0f;
-        for (int di = 0; di < (int)detectedDrivesC.size(); di++) {
-            float dqY = driveStartYC + di * qH;
-            if (PtIn(x, y, cx, dqY, sideW, qH)) {
-                NavigateTo(detectedDrivesC[di]);
-                fm_activeSubTab = 0; // ensure local tab shown
-                if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
-                return;
-            }
-        }
-
-        // Google Drive sidebar click
-        float gdYC = driveStartYC + detectedDrivesC.size() * qH + 4.0f + 5.0f;
-        if (PtIn(x, y, cx, gdYC, sideW, qH)) {
-            fm_activeSubTab = 1; // switch to Google Drive sub-tab
-            if (fm_driveSignedIn && fm_driveItems.empty()) DriveListFolder(fm_driveCurrentFolderId);
-            if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
-            return;
-        }
+        // Sidebar clicks (Quick access, drives, Google Drive) are handled by tab_special.cpp.
 
     } else if (fm_activeSubTab == 1) {
         if (!fm_driveSignedIn) {
