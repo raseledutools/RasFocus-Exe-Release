@@ -19,8 +19,6 @@
 #include <vector>
 #include <functional>
 
-using namespace std;
-
 // ============================================================
 // CONSTANTS
 // ============================================================
@@ -38,51 +36,51 @@ using namespace std;
 // ============================================================
 
 struct RgUser {
-    string uid;
-    string mobile;       // phone number = unique ID in RasGram
-    string name;
-    string avatarUrl;
+    std::string uid;
+    std::string mobile;       // phone number = unique ID in RasGram
+    std::string name;
+    std::string avatarUrl;
     bool   isOnline   = false;
     long long lastSeen = 0;
 };
 
 struct RgMessage {
-    string   id;
-    string   chatId;
-    string   senderMobile;
-    string   senderName;
-    string   text;
+    std::string   id;
+    std::string   chatId;
+    std::string   senderMobile;
+    std::string   senderName;
+    std::string   text;
     long long timestamp  = 0;
-    string   timeString;
-    string   fileUrl;
-    string   fileName;
-    string   fileType;   // "image/*", "audio/*", "video/*", etc.
+    std::string   timeString;
+    std::string   fileUrl;
+    std::string   fileName;
+    std::string   fileType;   // "image/*", "audio/*", "video/*", etc.
     long long fileSizeBytes = 0;
-    string   reaction;
+    std::string   reaction;
     bool     read        = false;
     bool     delivered   = false;
     bool     isCallLog   = false;
-    string   callStatus; // "missed", "answered", "declined"
-    string   callType;   // "audio", "video"
+    std::string   callStatus; // "missed", "answered", "declined"
+    std::string   callType;   // "audio", "video"
     bool     isDeleted   = false;
     bool     isForwarded = false;
     bool     isPending   = false;
-    string   replyToId;
-    string   replyToText;
-    string   replyToSender;
+    std::string   replyToId;
+    std::string   replyToText;
+    std::string   replyToSender;
     int      duration    = 0; // voice message duration in seconds
     bool     deliveredViaLan = false;
 };
 
 struct RgChatPreview {
-    string   contactMobile;
-    string   contactName;
-    string   contactAvatarUrl;
-    string   lastMessageText;
-    string   lastMessageSender;
+    std::string   contactMobile;
+    std::string   contactName;
+    std::string   contactAvatarUrl;
+    std::string   lastMessageText;
+    std::string   lastMessageSender;
     long long lastTimestamp = 0;
-    string   lastTimeString;
-    string   lastFileType;
+    std::string   lastTimeString;
+    std::string   lastFileType;
     bool     lastIsCallLog = false;
     int      unreadCount   = 0;
     bool     isPinned      = false;
@@ -90,21 +88,21 @@ struct RgChatPreview {
 };
 
 struct RgLanPeer {
-    string mobile;
-    string name;
-    string ip;
+    std::string mobile;
+    std::string name;
+    std::string ip;
     int    port = RG_LAN_TCP_PORT;
 };
 
 // ============================================================
 // CALLBACKS
 // ============================================================
-typedef function<void(const vector<RgChatPreview>&)>   RgChatsCallback;
-typedef function<void(const vector<RgMessage>&)>       RgMessagesCallback;
-typedef function<void(const RgMessage&)>               RgNewMessageCallback;
-typedef function<void(const vector<RgLanPeer>&)>       RgLanPeersCallback;
-typedef function<void(bool /*connected*/)>             RgCallStateCallback;
-typedef function<void(const void* /*frameRGB*/,
+typedef std::function<void(const std::vector<RgChatPreview>&)>   RgChatsCallback;
+typedef std::function<void(const std::vector<RgMessage>&)>       RgMessagesCallback;
+typedef std::function<void(const RgMessage&)>               RgNewMessageCallback;
+typedef std::function<void(const std::vector<RgLanPeer>&)>       RgLanPeersCallback;
+typedef std::function<void(bool /*connected*/)>             RgCallStateCallback;
+typedef std::function<void(const void* /*frameRGB*/,
                       int w, int h)>                   RgVideoFrameCallback;
 
 // ============================================================
@@ -112,8 +110,8 @@ typedef function<void(const void* /*frameRGB*/,
 // ============================================================
 
 // Initialization
-void RgNet_Init(const string& myMobile, const string& myName,
-                const string& myUid, const string& idToken);
+void RgNet_Init(const std::string& myMobile, const std::string& myName,
+                const std::string& myUid, const std::string& idToken);
 void RgNet_Shutdown();
 
 // ── Contacts & Chats ────────────────────────────────────────
@@ -125,46 +123,46 @@ void RgNet_StartChatListPolling(RgChatsCallback cb);
 void RgNet_StopChatListPolling();
 
 // Load messages for a specific chat
-void RgNet_FetchMessages(const string& chatId, RgMessagesCallback cb);
+void RgNet_FetchMessages(const std::string& chatId, RgMessagesCallback cb);
 
 // Start polling new messages for open chat
-void RgNet_StartMessagePolling(const string& chatId, long long sinceTimestamp,
+void RgNet_StartMessagePolling(const std::string& chatId, long long sinceTimestamp,
                                RgNewMessageCallback cb);
 void RgNet_StopMessagePolling();
 
 // Send a text message
-void RgNet_SendText(const string& chatId,
-                    const string& text,
-                    const string& receiverMobile);
+void RgNet_SendText(const std::string& chatId,
+                    const std::string& text,
+                    const std::string& receiverMobile);
 
 // Mark messages as read
-void RgNet_MarkRead(const string& chatId, const string& myMobile);
+void RgNet_MarkRead(const std::string& chatId, const std::string& myMobile);
 
 // ── File / Voice ─────────────────────────────────────────────
 // Upload a local file to Firebase Storage, then send message
-void RgNet_SendFile(const string& chatId,
-                    const string& receiverMobile,
-                    const wstring& localFilePath,
-                    const string& mimeType);
+void RgNet_SendFile(const std::string& chatId,
+                    const std::string& receiverMobile,
+                    const std::wstring& localFilePath,
+                    const std::string& mimeType);
 
 // ── LAN Mode ─────────────────────────────────────────────────
 void RgNet_StartLan(RgLanPeersCallback peersCb,
                     RgNewMessageCallback msgCb);
 void RgNet_StopLan();
 void RgNet_LanSendText(const RgLanPeer& peer,
-                       const string& chatId,
-                       const string& text);
+                       const std::string& chatId,
+                       const std::string& text);
 void RgNet_LanSendFile(const RgLanPeer& peer,
-                       const string& chatId,
-                       const wstring& filePath,
-                       const string& mimeType);
+                       const std::string& chatId,
+                       const std::wstring& filePath,
+                       const std::string& mimeType);
 
 // ── Audio / Video Calls ──────────────────────────────────────
 struct RgCallParams {
-    string   chatId;
-    string   peerMobile;
-    string   peerName;
-    string   peerIp;     // for LAN direct call
+    std::string   chatId;
+    std::string   peerMobile;
+    std::string   peerName;
+    std::string   peerIp;     // for LAN direct call
     bool     isVideo  = false;
     bool     isLan    = false; // true = LAN direct, false = relay via Firebase
 };
@@ -192,18 +190,18 @@ void RgNet_SetOnline(bool online);
 
 // ── Helpers ──────────────────────────────────────────────────
 // Build Firestore REST path
-string RgBuildPath(const string& collection, const string& docId = "",
-                   const string& sub = "", const string& subId = "");
+std::string RgBuildPath(const std::string& collection, const std::string& docId = "",
+                   const std::string& sub = "", const std::string& subId = "");
 // HTTP GET to Firestore
-string RgFirestoreGet(const string& path);
+std::string RgFirestoreGet(const std::string& path);
 // HTTP POST/PATCH to Firestore
-string RgFirestorePost(const string& method, const string& path,
-                       const string& jsonBody);
+std::string RgFirestorePost(const std::string& method, const std::string& path,
+                       const std::string& jsonBody);
 // Parse a simple string field from Firestore JSON response
-string RgParseField(const string& json, const string& field);
+std::string RgParseField(const std::string& json, const std::string& field);
 // Parse integer field
-long long RgParseIntField(const string& json, const string& field);
+long long RgParseIntField(const std::string& json, const std::string& field);
 // Format timestamp to "HH:MM" string
-string RgFormatTime(long long timestampMs);
+std::string RgFormatTime(long long timestampMs);
 // Build chatId from two mobiles (same logic as Android)
-string RgBuildChatId(const string& mobileA, const string& mobileB);
+std::string RgBuildChatId(const std::string& mobileA, const std::string& mobileB);

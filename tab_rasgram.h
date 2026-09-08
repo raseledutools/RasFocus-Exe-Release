@@ -6,6 +6,8 @@
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
+#include <objbase.h>
+#include <propidl.h>
 #include <windows.h>
 #include <gdiplus.h>
 #include <string>
