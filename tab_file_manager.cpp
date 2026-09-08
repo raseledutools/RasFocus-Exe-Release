@@ -1105,9 +1105,8 @@ void DrawFileManagerTab(Graphics& g, float cx, float cy, float cw, float ch) {
             { L"\xEB9F", L"Pictures",   L"" },
             { L"\xEC4F", L"Music",      L"" },
             { L"\xE8B2", L"Videos",     L"" },
-            { L"\xEDA2", L"This PC",    L"" },
         };
-        int quickCount = 7;
+        int quickCount = 6;
         // Fill paths dynamically
         wchar_t desktopPath[MAX_PATH], dlPath[MAX_PATH], docPath[MAX_PATH];
         wchar_t picPath[MAX_PATH], musicPath[MAX_PATH], vidPath[MAX_PATH];
@@ -1122,13 +1121,20 @@ void DrawFileManagerTab(Graphics& g, float cx, float cy, float cw, float ch) {
         if (dlRaw) { wcscpy_s(dlPath, dlRaw); CoTaskMemFree(dlRaw); }
 
         // Overwrite the path fields
-        const wchar_t* pathArr[] = { desktopPath, dlPath, docPath, picPath, musicPath, vidPath, L"" };
+        const wchar_t* pathArr[] = { desktopPath, dlPath, docPath, picPath, musicPath, vidPath };
 
         float qH = 34.0f;
 
-        // --- Draw fixed quick access items ---
+        // --- "Quick access" section label ---
+        float qaLabelY = listY + 4.0f;
+        Font fTiny3(&ff, 10, FontStyleBold, UnitPixel);
+        SolidBrush bQALabel(Color(255, 160, 170, 180));
+        g.DrawString(L"Quick access", -1, &fTiny3, RectF(cx + 10.0f, qaLabelY, sideW - 14.0f, 16.0f), &fmtL, &bQALabel);
+
+        // --- Draw fixed quick access items (start after Quick access label) ---
+        float quickItemsStartY = listY + 22.0f; // label height (16) + top gap (4) + small gap (2)
         for (int i = 0; i < quickCount; i++) {
-            float qY = listY + 8.0f + i * qH;
+            float qY = quickItemsStartY + i * qH;
             bool isActive = (pathArr[i] && pathArr[i][0] != 0 && fm_currentPath.find(pathArr[i]) == 0);
             if (isActive) {
                 SolidBrush qAct(Color(255, 225, 245, 248));
@@ -1140,7 +1146,7 @@ void DrawFileManagerTab(Graphics& g, float cx, float cy, float cw, float ch) {
         }
 
         // --- Separator line ---
-        float sepY = listY + 8.0f + quickCount * qH + 2.0f;
+        float sepY = quickItemsStartY + quickCount * qH + 2.0f;
         Pen pSepLine(Color(180, 200, 210, 220), 1.0f);
         g.DrawLine(&pSepLine, cx + 8.0f, sepY, cx + sideW - 8.0f, sepY);
 
@@ -2103,11 +2109,12 @@ void ProcessFileManagerMouseClick(float x, float y, HWND hWnd) {
         SHGetKnownFolderPath(FOLDERID_Downloads, 0, NULL, &dlRaw);
         if (dlRaw) { wcscpy_s(dlPath, dlRaw); CoTaskMemFree(dlRaw); }
 
-        const wchar_t* pathArr[] = { desktopPath, dlPath, docPath, picPath, musicPath, vidPath, L"" };
+        const wchar_t* pathArr[] = { desktopPath, dlPath, docPath, picPath, musicPath, vidPath };
         float qH = 34.0f;
-        int quickCountC = 7;
+        int quickCountC = 6;
+        float quickItemsStartYC = listY + 22.0f; // must match draw section
         for (int i = 0; i < quickCountC; i++) {
-            float qY = listY + 8.0f + i * qH;
+            float qY = quickItemsStartYC + i * qH;
             if (PtIn(x, y, cx, qY, sideW, qH) && pathArr[i][0] != 0) {
                 NavigateTo(pathArr[i]);
                 if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
@@ -2124,7 +2131,7 @@ void ProcessFileManagerMouseClick(float x, float y, HWND hWnd) {
             if (t == DRIVE_FIXED || t == DRIVE_REMOVABLE || t == DRIVE_REMOTE || t == DRIVE_RAMDISK)
                 detectedDrivesC.push_back(p);
         }
-        float sepYC     = listY + 8.0f + quickCountC * qH + 2.0f;
+        float sepYC     = quickItemsStartYC + quickCountC * qH + 2.0f;
         float secLabelYC= sepYC + 4.0f;
         float driveStartYC = secLabelYC + 20.0f;
         for (int di = 0; di < (int)detectedDrivesC.size(); di++) {
