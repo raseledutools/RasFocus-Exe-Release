@@ -652,7 +652,7 @@ static void LanListenLoop() {
     addr.sin_family      = AF_INET;
     addr.sin_port        = htons(RG_LAN_UDP_PORT);
     addr.sin_addr.s_addr = INADDR_ANY;
-    if (bind(g_udpListenSock, (sockaddr*)&addr, sizeof(addr)) != 0) {
+    if (::bind(g_udpListenSock, (sockaddr*)&addr, sizeof(addr)) != 0) {
         closesocket(g_udpListenSock); g_udpListenSock = INVALID_SOCKET; return;
     }
 
@@ -764,7 +764,7 @@ static void LanTcpServerLoop() {
     addr.sin_family      = AF_INET;
     addr.sin_port        = htons(RG_LAN_TCP_PORT);
     addr.sin_addr.s_addr = INADDR_ANY;
-    if (bind(g_tcpServerSock, (sockaddr*)&addr, sizeof(addr)) != 0 ||
+    if (::bind(g_tcpServerSock, (sockaddr*)&addr, sizeof(addr)) != 0 ||
         listen(g_tcpServerSock, 8) != 0) {
         closesocket(g_tcpServerSock); g_tcpServerSock = INVALID_SOCKET; return;
     }
@@ -1052,7 +1052,7 @@ void RgCall_StartOutgoing(const RgCallParams& p,
         local.sin_family      = AF_INET;
         local.sin_port        = htons(RG_CALL_UDP_PORT);
         local.sin_addr.s_addr = INADDR_ANY;
-        bind(g_callUdpSock, (sockaddr*)&local, sizeof(local));
+        (void)::bind(g_callUdpSock, (sockaddr*)&local, sizeof(local));
 
         string peerIp = p.peerIp;
         // For internet calls: use relay. Simplified: same IP is fine for LAN tests
