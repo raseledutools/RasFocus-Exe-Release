@@ -1,12 +1,12 @@
 // tab_special.cpp
 // Special Tab — Windows File Explorer–style shell with
 //   left sidebar (Quick Access, This PC, Drives, Google Drive)
-//   top sub-tab bar (File Manager Plus | Professional Diary | Student Utilities)
+//   top sub-tab bar (File Manager Plus | Professional Diary | RasGram Desktop)
 //   content area delegates to existing sub-tab renderers
 
 #include "tab_special.h"
 #include "tab_gemini.h"        // Diary Tab
-#include "tab_utilities.h"     // Utilities Tab
+#include "tab_rasgram.h"       // RasGram Desktop Sub-Tab
 #include "tab_file_manager.h"  // File Manager Plus Sub-Tab
 #include <string>
 #include <vector>
@@ -35,33 +35,22 @@ static wstring currentMotiveQuote = L"";
 static int  sf_hovSideItem  = -1;  // quick-access row
 static int  sf_hovDriveItem = -1;  // drive row
 static bool sf_hovGDrive    = false;
-static bool sf_hovAddDrive  = false;  // "+ Add as Drive" button hover
 
 // Sub-tab hover
-static bool sf_hovTabFM    = false;
-static bool sf_hovTabDiary = false;
-static bool sf_hovTabUtils = false;
+static bool sf_hovTabFM      = false;
+static bool sf_hovTabDiary   = false;
+static bool sf_hovTabRasGram = false;
 
 // Layout cache (set each draw, used by mouse handlers)
 static float g_cx = 0, g_cy = 0, g_cw = 0, g_ch = 0;
-static float g_sideW   = 200.0f;  // sidebar width (Win11 Explorer style)
+static float g_sideW   = 220.0f;  // sidebar width
 static float g_headerH =  52.0f;  // sub-tab bar height
 
 // Sidebar item rects cache (for hit testing)
 struct SideRect { float x, y, w, h; };
-static vector<SideRect> g_quickRects;   // quick-access items (0=Home,1=Gallery,2..7=pinned)
+static vector<SideRect> g_quickRects;   // quick-access items
 static vector<SideRect> g_driveRects;   // drive items
-static SideRect          g_gdriveRect;  // Network row
-static SideRect          g_addDriveRect; // "+ Add as Drive" button rect
-
-// Quick-access navigation paths (filled each draw, used by click handler)
-static wstring g_quickPaths[8]; // index matches g_quickRects; 0,1=no path (Home/Gallery)
-
-// Google Drive → local drive letter mapping via SUBST
-// g_gdriveMountLetter: L'\0' = not mounted, else e.g. L'G'
-static wchar_t g_gdriveMountLetter = L'\0';
-// Cached Google Drive local sync path (OneDrive-style; empty = not found)
-static wstring g_gdriveLocalPath = L"";
+static SideRect          g_gdriveRect;  // google drive item
 
 // Motivational quotes
 static vector<wstring> quotesEng = {
@@ -93,10 +82,13 @@ extern void ResizeGeminiControls(int cx, int cy, int cw, int ch);
 extern void ProcessGeminiMouseMove(float x, float y);
 extern void ProcessGeminiMouseClick(float x, float y);
 
-// Utilities
-extern void DrawUtilitiesTab(Graphics& g, float cx, float cy, float cw, float ch);
-extern void ProcessUtilitiesMouseMove(float x, float y);
-extern void ProcessUtilitiesMouseClick(float x, float y);
+// Utilities (removed — replaced by RasGram Desktop)
+// RasGram Desktop
+extern void ShowRasGramControls(bool show);
+extern void DrawRasGramTab(Graphics& g, float cx, float cy, float cw, float ch);
+extern void ProcessRasGramMouseMove(float x, float y);
+extern void ProcessRasGramMouseClick(float x, float y);
+extern void ProcessRasGramMouseWheel(int delta);
 
 // ============================================================
 // HELPERS
@@ -170,7 +162,7 @@ static void MotivationBackgroundThread() {
 }
 
 // ============================================================
-// DRAW SIDEBAR  —  Windows 11 File Explorer exact style
+// DRAW SIDEBAR  —  Windows Explorer left panel style
 // ============================================================
 static void DrawSidebar(Graphics& g,
                         float sx, float sy, float sw, float sh,
@@ -179,98 +171,38 @@ static void DrawSidebar(Graphics& g,
     g_quickRects.clear();
     g_driveRects.clear();
 
-    // --- Fonts (match Win11 Explorer: Segoe UI 12px) ---
-    Font fItem (&ff, 12, FontStyleRegular, UnitPixel);
-    Font fLabel(&ff, 11, FontStyleRegular, UnitPixel);
-    Font fIc   (&ffIc, 15, FontStyleRegular, UnitPixel);
-    Font fIcSm (&ffIc, 13, FontStyleRegular, UnitPixel);
-    Font fChevron(&ffIc, 10, FontStyleRegular, UnitPixel);
+    // Fonts
+    Font fSm (&ff,   12, FontStyleRegular, UnitPixel);
+    Font fTiny(&ff,  10, FontStyleBold,    UnitPixel);
+    Font fIcSm(&ffIc,14, FontStyleRegular, UnitPixel);
 
-    // --- Colours (Win11 sidebar: nearly white bg, dark text) ---
-    SolidBrush bBg   (Color(255, 243, 243, 243)); // sidebar bg
-    SolidBrush bText (Color(255,  30,  30,  30)); // primary text
-    SolidBrush bMuted(Color(255, 100, 100, 100)); // icons / labels
-    SolidBrush bPin  (Color(255, 140, 140, 140)); // pin icon colour
-    SolidBrush bHov  (Color(255, 222, 222, 222)); // hover bg
-    SolidBrush bSel  (Color(255, 205, 228, 255)); // selected bg (Win11 blue tint)
-    SolidBrush bGray2(Color(255, 160, 160, 160));
+    // Brushes / pens
+    SolidBrush bSideBg (Color(255, 243, 243, 243));   // Win11-ish sidebar grey
+    SolidBrush bDark   (Color(255,  40,  40,  40));
+    SolidBrush bGray   (Color(255, 130, 130, 130));
+    SolidBrush bLabel  (Color(255, 110, 110, 110));
+    SolidBrush bTeal   (Color(255,   0, 150, 160));
+    SolidBrush bActBg  (Color(255, 209, 238, 241));  // selected row tint
+    SolidBrush bHovBg  (Color(255, 228, 228, 228));  // hovered row
 
-    Pen pBorder(Color(255, 225, 225, 225), 1.0f); // right border
-    Pen pSep   (Color(200, 190, 190, 190), 1.0f); // section separator
+    StringFormat fmtL; fmtL.SetAlignment(StringAlignmentNear); fmtL.SetLineAlignment(StringAlignmentCenter);
 
-    StringFormat fmtL;
-    fmtL.SetAlignment(StringAlignmentNear);
-    fmtL.SetLineAlignment(StringAlignmentCenter);
-    fmtL.SetFormatFlags(StringFormatFlagsNoWrap);
-    StringFormat fmtC;
-    fmtC.SetAlignment(StringAlignmentCenter);
-    fmtC.SetLineAlignment(StringAlignmentCenter);
+    // Sidebar background
+    g.FillRectangle(&bSideBg, sx, sy, sw, sh);
+    // Right border
+    Pen pSideBrd(Color(255, 218, 220, 224), 1.0f);
+    g.DrawLine(&pSideBrd, sx+sw, sy, sx+sw, sy+sh);
 
-    // --- Sidebar background + right border ---
-    g.FillRectangle(&bBg, sx, sy, sw, sh);
-    g.DrawLine(&pBorder, sx + sw - 1.0f, sy, sx + sw - 1.0f, sy + sh);
+    float rowH = 32.0f;
+    float curY = sy + 8.0f;
+    float padX = 12.0f;
 
-    float curY   = sy + 6.0f;
-    float rowH   = 30.0f;   // Win11 row height
-    float padL   = 10.0f;   // left padding
-    float icW    = 18.0f;   // icon column width
-    float icGap  = 6.0f;    // gap between icon and text
-    float pinW   = 18.0f;   // pin icon area on right
+    // --- Quick Access section ---
+    // Section header
+    g.DrawString(L"Quick access", -1, &fTiny,
+                 RectF(sx+padX, curY, sw-padX*2, 18.0f), &fmtL, &bLabel);
+    curY += 22.0f;
 
-    // Helper: draw one sidebar row
-    // Returns the rect stored for hit-testing
-    auto DrawRow = [&](float ry, const wchar_t* icon, const wchar_t* label,
-                       bool hovered, bool selected, bool showPin,
-                       Color iconColor) -> SideRect
-    {
-        float rh = rowH;
-        // Background
-        if (selected) {
-            FillRoundRect(g, &bSel, nullptr, sx + 2.0f, ry + 1.0f, sw - 4.0f, rh - 2.0f, 4.0f);
-        } else if (hovered) {
-            FillRoundRect(g, &bHov, nullptr, sx + 2.0f, ry + 1.0f, sw - 4.0f, rh - 2.0f, 4.0f);
-        }
-        // Icon
-        SolidBrush bIcoClr(iconColor);
-        g.DrawString(icon, -1, &fIc,
-            RectF(sx + padL, ry, icW, rh), &fmtC, &bIcoClr);
-        // Label
-        float txtX = sx + padL + icW + icGap;
-        float txtW = sw - padL - icW - icGap - (showPin ? pinW + 4.0f : 8.0f);
-        g.DrawString(label, -1, &fItem,
-            RectF(txtX, ry, txtW, rh), &fmtL, &bText);
-        // Pin icon (📌 \xE840 in Segoe MDL2) — shown on hovered pinned items
-        if (showPin && hovered) {
-            g.DrawString(L"\xE840", -1, &fIcSm,
-                RectF(sx + sw - pinW - 4.0f, ry, pinW, rh), &fmtC, &bPin);
-        }
-        return { sx, ry, sw, rh };
-    };
-
-    // ── HOME ──────────────────────────────────────────
-    {
-        bool hov = (sf_hovSideItem == 0); // index 0 in g_quickRects
-        auto r = DrawRow(curY, L"\xEA8A", L"Home", hov, false, false,
-                         Color(255, 60, 60, 60));
-        g_quickRects.push_back({r.x, r.y, r.w, r.h}); // index 0 = Home
-        curY += rowH;
-    }
-
-    // ── GALLERY ───────────────────────────────────────
-    {
-        bool hov = (sf_hovSideItem == 1); // index 1 in g_quickRects
-        auto r = DrawRow(curY, L"\xE91B", L"Gallery", hov, false, false,
-                         Color(255, 60, 60, 60));
-        g_quickRects.push_back({r.x, r.y, r.w, r.h}); // index 1 = Gallery
-        curY += rowH;
-    }
-
-    // ── Separator after Home/Gallery ──────────────────
-    curY += 4.0f;
-    g.DrawLine(&pSep, sx + 8.0f, curY, sx + sw - 8.0f, curY);
-    curY += 4.0f;
-
-    // ── QUICK ACCESS pinned items ──────────────────────
     // Resolve shell paths
     wchar_t desktopPath[MAX_PATH]={}, dlPath[MAX_PATH]={};
     wchar_t docPath[MAX_PATH]={},    picPath[MAX_PATH]={};
@@ -280,213 +212,134 @@ static void DrawSidebar(Graphics& g,
     SHGetFolderPathW(NULL, CSIDL_MYPICTURES,        NULL, 0, picPath);
     SHGetFolderPathW(NULL, CSIDL_MYMUSIC,           NULL, 0, musicPath);
     SHGetFolderPathW(NULL, CSIDL_MYVIDEO,           NULL, 0, vidPath);
-    PWSTR dlRaw = NULL;
-    SHGetKnownFolderPath(FOLDERID_Downloads, 0, NULL, &dlRaw);
-    if (dlRaw) { wcscpy_s(dlPath, dlRaw); CoTaskMemFree(dlRaw); }
+    PWSTR dlRaw=NULL;
+    SHGetKnownFolderPath(FOLDERID_Downloads,0,NULL,&dlRaw);
+    if (dlRaw){wcscpy_s(dlPath,dlRaw);CoTaskMemFree(dlRaw);}
 
-    // Store paths for click handler (index 2..7)
-    g_quickPaths[0] = L"";            // Home — no direct nav
-    g_quickPaths[1] = L"";            // Gallery — no direct nav
-    g_quickPaths[2] = desktopPath;
-    g_quickPaths[3] = dlPath;
-    g_quickPaths[4] = docPath;
-    g_quickPaths[5] = picPath;
-    g_quickPaths[6] = musicPath;
-    g_quickPaths[7] = vidPath;
-
-    struct QItem { const wchar_t* icon; const wchar_t* label; Color iconColor; };
+    struct QItem { const wchar_t* icon; const wchar_t* label; const wchar_t* path; };
     QItem qa[] = {
-        { L"\xE8B7", L"Desktop",   Color(255,  70, 130, 180) },
-        { L"\xEC0A", L"Downloads", Color(255,  70, 130, 180) },
-        { L"\xE8A5", L"Documents", Color(255,  70, 130, 180) },
-        { L"\xEB9F", L"Pictures",  Color(255,  70, 130, 180) },
-        { L"\xEC4F", L"Music",     Color(255,  70, 130, 180) },
-        { L"\xE8B2", L"Videos",    Color(255,  70, 130, 180) },
+        { L"\xE8B7", L"Desktop",    desktopPath },
+        { L"\xEC0A", L"Downloads",  dlPath      },
+        { L"\xE8A5", L"Documents",  docPath     },
+        { L"\xEB9F", L"Pictures",   picPath     },
+        { L"\xEC4F", L"Music",      musicPath   },
+        { L"\xE8B2", L"Videos",     vidPath     },
     };
 
-    for (int i = 0; i < 6; i++) {
-        int idx = i + 2; // g_quickRects index: 2=Desktop ... 7=Videos
-        bool hov = (sf_hovSideItem == idx);
-        auto r = DrawRow(curY, qa[i].icon, qa[i].label, hov, false, true,
-                         qa[i].iconColor);
-        g_quickRects.push_back({r.x, r.y, r.w, r.h}); // index 2..7
+    for (int i=0; i<6; i++) {
+        float ry = curY;
+        bool hov = (sf_hovSideItem == i);
+
+        if (hov) {
+            SolidBrush bH(Color(255, 228, 228, 228));
+            FillRoundRect(g, &bH, nullptr, sx+4, ry, sw-8, rowH, 4.0f);
+        }
+        // Active-tab indicator (teal pill on left edge)
+        // (for this sidebar we highlight when file manager is active)
+        if (sf_activeSubTab == 0) {
+            // no path tracking here — just style
+        }
+
+        g.DrawString(qa[i].icon,  -1, &fIcSm, RectF(sx+padX,         ry, 20.0f,  rowH), &fmtL, &bGray);
+        g.DrawString(qa[i].label, -1, &fSm,   RectF(sx+padX+24.0f,   ry, sw-padX*2-24, rowH), &fmtL, &bDark);
+
+        g_quickRects.push_back({sx, ry, sw, rowH});
         curY += rowH;
     }
 
-    // ── Separator before This PC ───────────────────────
-    curY += 4.0f;
-    g.DrawLine(&pSep, sx + 8.0f, curY, sx + sw - 8.0f, curY);
-    curY += 4.0f;
+    // --- This PC separator + label ---
+    curY += 6.0f;
+    Pen pSep(Color(200, 200, 200, 200), 1.0f);
+    g.DrawLine(&pSep, sx+padX, curY, sx+sw-padX, curY);
+    curY += 6.0f;
+    g.DrawString(L"This PC", -1, &fTiny,
+                 RectF(sx+padX, curY, sw-padX*2, 18.0f), &fmtL, &bLabel);
+    curY += 22.0f;
 
-    // ── THIS PC header row (chevron + label, not clickable as nav) ──
-    g.DrawString(L"\xE76C", -1, &fChevron,
-        RectF(sx + padL - 2.0f, curY, 12.0f, rowH), &fmtC, &bMuted);
-    g.DrawString(L"This PC", -1, &fLabel,
-        RectF(sx + padL + 12.0f, curY, sw - padL - 16.0f, rowH), &fmtL, &bMuted);
-    curY += rowH;
-
-    // ── DRIVES (dynamic, clickable) ────────────────────
-    wchar_t driveStrings[512] = {};
+    // --- Drives (dynamic) ---
+    wchar_t driveStrings[512]={};
     GetLogicalDriveStringsW(511, driveStrings);
     vector<wstring> drives;
-    for (wchar_t* p = driveStrings; *p; p += wcslen(p) + 1) {
-        UINT t = GetDriveTypeW(p);
-        if (t == DRIVE_FIXED || t == DRIVE_REMOVABLE || t == DRIVE_REMOTE || t == DRIVE_RAMDISK)
+    for (wchar_t* p=driveStrings; *p; p+=wcslen(p)+1) {
+        UINT t=GetDriveTypeW(p);
+        if (t==DRIVE_FIXED||t==DRIVE_REMOVABLE||t==DRIVE_REMOTE||t==DRIVE_RAMDISK)
             drives.push_back(p);
     }
 
-    for (int di = 0; di < (int)drives.size(); di++) {
+    for (int di=0; di<(int)drives.size(); di++) {
+        float ry = curY;
         bool hov = (sf_hovDriveItem == di);
-        wstring raw = drives[di]; // e.g. L"C:\"
-        wstring lbl = raw;
-        if (!lbl.empty() && lbl.back() == L'\\') lbl.pop_back(); // "C:"
 
-        // Friendly volume name: "Windows-SSD (C:)"
-        wchar_t volName[MAX_PATH] = {};
-        if (GetVolumeInformationW(raw.c_str(), volName, MAX_PATH,
-                                  NULL, NULL, NULL, NULL, 0) && volName[0]) {
-            lbl = wstring(volName) + L" (" + lbl + L")";
+        if (hov) {
+            FillRoundRect(g, &bHovBg, nullptr, sx+4, ry, sw-8, rowH, 4.0f);
         }
 
-        UINT dtype = GetDriveTypeW(raw.c_str());
-        const wchar_t* dIcon = L"\xE88E"; // USB/generic
-        Color dIconColor(255, 80, 80, 80);
+        wstring lbl = drives[di];
+        if (!lbl.empty() && lbl.back()==L'\\') lbl.pop_back(); // "C:"
+
+        UINT dtype = GetDriveTypeW(drives[di].c_str());
+        const wchar_t* dIcon = L"\xE7D2"; // HDD
+        if (dtype==DRIVE_REMOVABLE) dIcon = L"\xE88E"; // USB
+        if (dtype==DRIVE_REMOTE)    dIcon = L"\xE753"; // Network
+
+        // Drive label + free space bar
+        g.DrawString(dIcon,       -1, &fIcSm, RectF(sx+padX,        ry, 20.0f, rowH), &fmtL, &bGray);
+        g.DrawString(lbl.c_str(),-1, &fSm,   RectF(sx+padX+24.0f, ry, sw-padX*2-24, rowH), &fmtL, &bDark);
+
+        // Mini drive usage bar (only for fixed drives)
         if (dtype == DRIVE_FIXED) {
-            dIcon      = L"\xE7D2";
-            dIconColor = Color(255, 60, 60, 60);
-        } else if (dtype == DRIVE_REMOTE) {
-            dIcon      = L"\xE753";
-            dIconColor = Color(255, 60, 120, 200);
+            ULARGE_INTEGER freeBytesAvail={}, totalBytes={}, totalFreeBytes={};
+            if (GetDiskFreeSpaceExW(drives[di].c_str(), &freeBytesAvail, &totalBytes, &totalFreeBytes)
+                && totalBytes.QuadPart > 0)
+            {
+                float used = 1.0f - (float)totalFreeBytes.QuadPart / (float)totalBytes.QuadPart;
+                float barX = sx+padX+24.0f, barY = ry+rowH-8.0f;
+                float barW = sw-padX*2-30.0f, barH = 4.0f;
+                // Track
+                SolidBrush bTrack(Color(255, 210, 210, 210));
+                g.FillRectangle(&bTrack, barX, barY, barW, barH);
+                // Fill (blue if < 80%, orange if < 90%, red if >= 90%)
+                Color fillCol = used < 0.80f ? Color(255, 66, 133, 244) :
+                                used < 0.90f ? Color(255, 245, 158, 11)  :
+                                               Color(255, 220, 60, 60);
+                SolidBrush bFill(fillCol);
+                g.FillRectangle(&bFill, barX, barY, barW * used, barH);
+            }
         }
 
-        auto r = DrawRow(curY, dIcon, lbl.c_str(), hov, false, false, dIconColor);
-        g_driveRects.push_back({r.x, r.y, r.w, r.h});
+        g_driveRects.push_back({sx, ry, sw, rowH});
         curY += rowH;
     }
 
-    // ── Separator before Network ───────────────────────
-    curY += 4.0f;
-    g.DrawLine(&pSep, sx + 8.0f, curY, sx + sw - 8.0f, curY);
-    curY += 4.0f;
+    // --- Google Drive separator + entry ---
+    curY += 6.0f;
+    g.DrawLine(&pSep, sx+padX, curY, sx+sw-padX, curY);
+    curY += 6.0f;
 
-    // ── NETWORK row ────────────────────────────────────
-    {
-        bool hov = sf_hovGDrive;
-        auto r = DrawRow(curY, L"\xEC27", L"Network", hov, false, false,
-                         Color(255, 60, 60, 60));
-        g_gdriveRect = {r.x, r.y, r.w, r.h};
-        curY += rowH;
+    // Google Drive colored-dot icon (G colour marks)
+    float gdY = curY;
+    bool gdHov = sf_hovGDrive;
+    if (gdHov) {
+        FillRoundRect(g, &bHovBg, nullptr, sx+4, gdY, sw-8, rowH, 4.0f);
     }
 
-    // ── GOOGLE DRIVE — "Add as Drive" button ───────────
-    // Draws a small pill button: [☁ Google Drive  + Add as Drive ▾]
-    // When not mounted: show "+ Add as Drive (A:/B:/C:)" button
-    // When mounted: show drive letter row (clickable to navigate)
-    curY += 2.0f;
-    {
-        Font fBtn(&ff, 11, FontStyleRegular, UnitPixel);
-        Font fBtnBold(&ff, 11, FontStyleBold, UnitPixel);
-        Font fIcBtn(&ffIc, 12, FontStyleRegular, UnitPixel);
+    // Draw Google Drive tri-colour icon manually
+    float dotX = sx + padX + 2.0f;
+    float dotCY = gdY + rowH/2.0f;
+    float r2 = 5.0f;
+    // Triangle shape: three coloured circles arranged as Google Drive logo hint
+    SolidBrush bGBlue (Color(255,  66, 133, 244));
+    SolidBrush bGGreen(Color(255,  52, 168,  83));
+    SolidBrush bGYellow(Color(255, 251, 188,   5));
+    // Small triangle of dots
+    g.FillEllipse(&bGBlue,   dotX,        dotCY - r2*1.1f, r2*1.5f, r2*1.5f);
+    g.FillEllipse(&bGGreen,  dotX+r2*0.8f,dotCY + r2*0.2f, r2*1.5f, r2*1.5f);
+    g.FillEllipse(&bGYellow, dotX-r2*0.1f,dotCY + r2*0.2f, r2*1.5f, r2*1.5f);
 
-        if (g_gdriveMountLetter == L'\0') {
-            // ── Not mounted: show "Google Drive" label + "+ Add as Drive" button ──
-            // Google Drive label row (informational)
-            {
-                // tri-colour Google Drive dots icon
-                float dotX  = sx + padL + 1.0f;
-                float dotCY = curY + rowH / 2.0f;
-                float r2    = 4.5f;
-                SolidBrush bB(Color(255, 66, 133, 244));
-                SolidBrush bG(Color(255, 52, 168,  83));
-                SolidBrush bY(Color(255, 251,188,   5));
-                g.FillEllipse(&bB,  dotX,          dotCY - r2,      r2*1.6f, r2*1.6f);
-                g.FillEllipse(&bG,  dotX + r2*0.9f,dotCY - r2,      r2*1.6f, r2*1.6f);
-                g.FillEllipse(&bY,  dotX + r2*0.4f,dotCY + r2*0.1f, r2*1.6f, r2*1.6f);
-
-                SolidBrush bGDTxt(Color(255, 50, 50, 50));
-                g.DrawString(L"Google Drive", -1, &fBtn,
-                    RectF(sx + padL + 18.0f, curY, sw - padL - 22.0f, rowH),
-                    &fmtL, &bGDTxt);
-                curY += rowH - 4.0f;
-            }
-
-            // "+ Add as Drive" pill button
-            {
-                float btnH = 26.0f;
-                float btnW = sw - 16.0f;
-                float btnX = sx + 8.0f;
-                float btnY = curY;
-
-                // Button background
-                Color btnBgCol = sf_hovAddDrive
-                    ? Color(255, 0, 120, 212)   // hovered: Win11 accent blue
-                    : Color(255, 235, 235, 235); // normal: light grey pill
-                SolidBrush bBtnBg(btnBgCol);
-                FillRoundRect(g, &bBtnBg, nullptr, btnX, btnY, btnW, btnH, 4.0f);
-
-                // Button border (only when not hovered)
-                if (!sf_hovAddDrive) {
-                    Pen pBtnBrd(Color(255, 180, 180, 180), 1.0f);
-                    // draw border manually via path
-                    GraphicsPath bp;
-                    bp.AddArc(btnX, btnY, 8, 8, 180, 90);
-                    bp.AddArc(btnX+btnW-8, btnY, 8, 8, 270, 90);
-                    bp.AddArc(btnX+btnW-8, btnY+btnH-8, 8, 8, 0, 90);
-                    bp.AddArc(btnX, btnY+btnH-8, 8, 8, 90, 90);
-                    bp.CloseFigure();
-                    g.DrawPath(&pBtnBrd, &bp);
-                }
-
-                // Button text "+ Add as Drive"
-                SolidBrush bBtnTxt(sf_hovAddDrive
-                    ? Color(255, 255, 255, 255)
-                    : Color(255,  30,  30,  30));
-                // + icon then text
-                g.DrawString(L"\xE710", -1, &fIcBtn,
-                    RectF(btnX + 6.0f, btnY, 16.0f, btnH), &fmtC, &bBtnTxt);
-                g.DrawString(L"Add as Drive (A:/B:/C:)", -1, &fBtn,
-                    RectF(btnX + 22.0f, btnY, btnW - 26.0f, btnH), &fmtL, &bBtnTxt);
-
-                g_addDriveRect = {btnX, btnY, btnW, btnH};
-                curY += btnH + 4.0f;
-            }
-        } else {
-            // ── Mounted: show as a drive row (letter e.g. "Google Drive (G:)") ──
-            wstring mountLabel = wstring(L"Google Drive (") + g_gdriveMountLetter + L":)";
-            bool hov = sf_hovAddDrive;
-            // tri-colour icon
-            float dotX  = sx + padL + 1.0f;
-            float dotCY = curY + rowH / 2.0f;
-            float r2    = 4.0f;
-            if (hov) {
-                FillRoundRect(g, &bHov, nullptr,
-                    sx + 2.0f, curY + 1.0f, sw - 4.0f, rowH - 2.0f, 4.0f);
-            }
-            SolidBrush bB(Color(255,  66, 133, 244));
-            SolidBrush bG(Color(255,  52, 168,  83));
-            SolidBrush bY(Color(255, 251, 188,   5));
-            g.FillEllipse(&bB,  dotX,           dotCY - r2,      r2*1.6f, r2*1.6f);
-            g.FillEllipse(&bG,  dotX + r2*0.9f, dotCY - r2,      r2*1.6f, r2*1.6f);
-            g.FillEllipse(&bY,  dotX + r2*0.4f, dotCY+r2*0.1f,  r2*1.6f, r2*1.6f);
-            SolidBrush bGDTxt(Color(255, 30, 30, 30));
-            g.DrawString(mountLabel.c_str(), -1, &fBtn,
-                RectF(sx + padL + 18.0f, curY, sw - padL - 22.0f, rowH), &fmtL, &bGDTxt);
-            g_addDriveRect = {sx, curY, sw, rowH};
-            curY += rowH;
-
-            // "Remove Drive" small text link
-            float remY = curY;
-            SolidBrush bRem(sf_hovGDrive
-                ? Color(255, 0, 120, 212)
-                : Color(255, 130, 130, 130));
-            Font fTiny(&ff, 10, FontStyleRegular, UnitPixel);
-            g.DrawString(L"  ✕ Unmount drive", -1, &fTiny,
-                RectF(sx + padL + 18.0f, remY, sw - padL - 22.0f, 20.0f),
-                &fmtL, &bRem);
-            g_gdriveRect = {sx + padL + 18.0f, remY, sw - padL - 22.0f, 20.0f};
-            curY += 22.0f;
-        }
-    }
+    g.DrawString(L"Google Drive", -1, &fSm,
+                 RectF(sx+padX+24.0f, gdY, sw-padX*2-24, rowH), &fmtL, &bDark);
+    g_gdriveRect = {sx, gdY, sw, rowH};
+    curY += rowH;
 }
 
 // ============================================================
@@ -504,12 +357,12 @@ static void DrawSubTabBar(Graphics& g,
     SolidBrush bTeal (Color(255,  0,150,160));
     SolidBrush bGray (Color(255,130,130,130));
     SolidBrush bDiaryBlue(Color(255,35,137,215));
-    SolidBrush bUtilPurple(Color(255,155,89,182));
+    SolidBrush bRasGramGreen(Color(255,0,168,132));  // RasGram teal-green
 
     Pen pBrd(Color(255,218,225,232),1.0f);
     Pen pTeal(Color(255,0,150,160),2.5f);
     Pen pDiaryBlue(Color(255,35,137,215),2.5f);
-    Pen pUtilPurple(Color(255,155,89,182),2.5f);
+    Pen pRasGramGreen(Color(255,0,168,132),2.5f);
 
     StringFormat fmtC;
     fmtC.SetAlignment(StringAlignmentCenter);
@@ -531,9 +384,9 @@ static void DrawSubTabBar(Graphics& g,
         Pen*           activePen;
     };
     TabDef tabs[] = {
-        { L"\xEC50", L"File Manager Plus",   0, sf_hovTabFM,    &bTeal,       &pTeal       },
-        { L"\xE7BC", L"Professional Diary",  1, sf_hovTabDiary, &bDiaryBlue,  &pDiaryBlue  },
-        { L"\xE943", L"Student Utilities",   2, sf_hovTabUtils, &bUtilPurple, &pUtilPurple },
+        { L"\xEC50", L"File Manager Plus",   0, sf_hovTabFM,      &bTeal,           &pTeal          },
+        { L"\xE7BC", L"Professional Diary",  1, sf_hovTabDiary,   &bDiaryBlue,      &pDiaryBlue     },
+        { L"\xE8BD", L"RasGram Desktop",     2, sf_hovTabRasGram, &bRasGramGreen,   &pRasGramGreen  },
     };
 
     float tabW = tw / 3.0f;
@@ -602,16 +455,19 @@ void DrawSpecialFeatureTab(Graphics& g, float cx, float cy, float cw, float ch) 
 
     if (sf_activeSubTab == 0) {
         ShowGeminiControls(false);
+        ShowRasGramControls(false);
         DrawFileManagerTab(g, contentX, bodyY, contentW, bodyH);
     }
     else if (sf_activeSubTab == 1) {
+        ShowRasGramControls(false);
         DrawGeminiTab(g, contentX, bodyY, contentW, bodyH);
         ResizeGeminiControls((int)contentX, (int)bodyY, (int)contentW, (int)bodyH);
         ShowGeminiControls(true);
     }
     else if (sf_activeSubTab == 2) {
         ShowGeminiControls(false);
-        DrawUtilitiesTab(g, contentX, bodyY, contentW, bodyH);
+        DrawRasGramTab(g, contentX, bodyY, contentW, bodyH);
+        ShowRasGramControls(true);
     }
 }
 
@@ -620,25 +476,23 @@ void DrawSpecialFeatureTab(Graphics& g, float cx, float cy, float cw, float ch) 
 // ============================================================
 void ProcessSpecialFeatureMouseMove(float x, float y) {
     // ---- Sub-tab bar hover ----
-    bool old_hFM    = sf_hovTabFM;
-    bool old_hDiary = sf_hovTabDiary;
-    bool old_hUtils = sf_hovTabUtils;
+    bool old_hFM      = sf_hovTabFM;
+    bool old_hDiary   = sf_hovTabDiary;
+    bool old_hRasGram = sf_hovTabRasGram;
 
     float tabW = g_cw / 3.0f;
-    sf_hovTabFM    = (y >= g_cy && y <= g_cy+g_headerH && x >= g_cx          && x < g_cx+tabW);
-    sf_hovTabDiary = (y >= g_cy && y <= g_cy+g_headerH && x >= g_cx+tabW     && x < g_cx+tabW*2);
-    sf_hovTabUtils = (y >= g_cy && y <= g_cy+g_headerH && x >= g_cx+tabW*2   && x < g_cx+g_cw);
+    sf_hovTabFM      = (y >= g_cy && y <= g_cy+g_headerH && x >= g_cx          && x < g_cx+tabW);
+    sf_hovTabDiary   = (y >= g_cy && y <= g_cy+g_headerH && x >= g_cx+tabW     && x < g_cx+tabW*2);
+    sf_hovTabRasGram = (y >= g_cy && y <= g_cy+g_headerH && x >= g_cx+tabW*2   && x < g_cx+g_cw);
 
     // ---- Sidebar hover ----
     int old_hSide  = sf_hovSideItem;
     int old_hDrive = sf_hovDriveItem;
     bool old_hGD   = sf_hovGDrive;
-    bool old_hAD   = sf_hovAddDrive;
 
     sf_hovSideItem  = -1;
     sf_hovDriveItem = -1;
     sf_hovGDrive    = false;
-    sf_hovAddDrive  = false;
 
     for (int i=0; i<(int)g_quickRects.size(); i++) {
         auto& r = g_quickRects[i];
@@ -651,15 +505,8 @@ void ProcessSpecialFeatureMouseMove(float x, float y) {
         }
     }
     if (sf_hovSideItem<0 && sf_hovDriveItem<0) {
-        // Check add-drive button
-        auto& rad = g_addDriveRect;
-        if (rad.w>0 && x>=rad.x && x<rad.x+rad.w && y>=rad.y && y<rad.y+rad.h)
-            sf_hovAddDrive = true;
-        // Check network/unmount row
-        if (!sf_hovAddDrive) {
-            auto& r = g_gdriveRect;
-            if (r.w>0 && x>=r.x && x<r.x+r.w && y>=r.y && y<r.y+r.h) sf_hovGDrive = true;
-        }
+        auto& r = g_gdriveRect;
+        if (x>=r.x && x<r.x+r.w && y>=r.y && y<r.y+r.h) sf_hovGDrive=true;
     }
 
     // ---- Delegate to active sub-tab ----
@@ -672,15 +519,14 @@ void ProcessSpecialFeatureMouseMove(float x, float y) {
     else if (sf_activeSubTab == 1)
         ProcessGeminiMouseMove(x, y);
     else if (sf_activeSubTab == 2)
-        ProcessUtilitiesMouseMove(x, y);
+        ProcessRasGramMouseMove(x, y);
 
-    bool changed = (old_hFM    != sf_hovTabFM    ||
-                    old_hDiary != sf_hovTabDiary  ||
-                    old_hUtils != sf_hovTabUtils  ||
-                    old_hSide  != sf_hovSideItem  ||
-                    old_hDrive != sf_hovDriveItem ||
-                    old_hGD    != sf_hovGDrive    ||
-                    old_hAD    != sf_hovAddDrive);
+    bool changed = (old_hFM      != sf_hovTabFM      ||
+                    old_hDiary   != sf_hovTabDiary    ||
+                    old_hRasGram != sf_hovTabRasGram  ||
+                    old_hSide    != sf_hovSideItem    ||
+                    old_hDrive   != sf_hovDriveItem   ||
+                    old_hGD      != sf_hovGDrive);
     if (changed && hParentWnd)
         InvalidateRect(hParentWnd, NULL, TRUE);
 }
@@ -702,167 +548,37 @@ void ProcessSpecialFeatureMouseClick(float x, float y) {
     float bodyY    = g_cy + g_headerH;
     float contentX = g_cx + g_sideW;
 
-    // ---- Sidebar clicks ----
+    // ---- Sidebar quick-access clicks (navigate File Manager Plus) ----
     if (x >= g_cx && x < g_cx + g_sideW) {
-
-        // Quick access items (Home, Gallery, Desktop, Downloads, ...)
-        for (int i = 0; i < (int)g_quickRects.size(); i++) {
+        // Quick access items
+        for (int i=0; i<(int)g_quickRects.size(); i++) {
             auto& r = g_quickRects[i];
             if (x>=r.x && x<r.x+r.w && y>=r.y && y<r.y+r.h) {
-                sf_activeSubTab = 0; // ensure File Manager is active
-                // Navigate if we have a path (index 2..7)
-                if (i >= 2 && i <= 7 && !g_quickPaths[i].empty()) {
-                    NavigateFileManagerTo(g_quickPaths[i]);
-                }
+                // Switch to File Manager tab and navigate
+                sf_activeSubTab = 0;
                 if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
                 return;
             }
         }
-
-        // Drive items — navigate to drive root
-        for (int i = 0; i < (int)g_driveRects.size(); i++) {
+        // Drive items — switch to file manager
+        for (int i=0; i<(int)g_driveRects.size(); i++) {
             auto& r = g_driveRects[i];
             if (x>=r.x && x<r.x+r.w && y>=r.y && y<r.y+r.h) {
-                // Re-enumerate drives to get path (same order as DrawSidebar)
-                wchar_t ds[512] = {};
-                GetLogicalDriveStringsW(511, ds);
-                vector<wstring> dv;
-                for (wchar_t* p = ds; *p; p += wcslen(p) + 1) {
-                    UINT t = GetDriveTypeW(p);
-                    if (t==DRIVE_FIXED||t==DRIVE_REMOVABLE||t==DRIVE_REMOTE||t==DRIVE_RAMDISK)
-                        dv.push_back(p);
-                }
-                if (i < (int)dv.size()) {
-                    sf_activeSubTab = 0;
-                    NavigateFileManagerTo(dv[i]);
-                    if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
-                }
+                sf_activeSubTab = 0;
+                if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
                 return;
             }
         }
-
-        // "Add as Drive" button (or mounted drive row)
+        // Google Drive
         {
-            auto& r = g_addDriveRect;
-            if (r.w > 0 && x>=r.x && x<r.x+r.w && y>=r.y && y<r.y+r.h) {
-                if (g_gdriveMountLetter == L'\0') {
-                    // Find first free letter from A..Z (skip known drives)
-                    wchar_t existing[512] = {};
-                    GetLogicalDriveStringsW(511, existing);
-                    wstring usedLetters;
-                    for (wchar_t* p = existing; *p; p += wcslen(p) + 1)
-                        usedLetters += (wchar_t)towupper(p[0]);
-
-                    // Prefer G for Google, then first free letter
-                    wchar_t preferred[] = { L'G', L'H', L'I', L'J', L'K', L'L', L'M',
-                                            L'N', L'O', L'P', L'Q', L'R', L'S', L'T',
-                                            L'U', L'V', L'W', L'X', L'Y', L'Z',
-                                            L'A', L'B', L'F', L'\0' };
-                    wchar_t chosen = L'\0';
-                    for (int k = 0; preferred[k]; k++) {
-                        if (usedLetters.find(preferred[k]) == wstring::npos) {
-                            chosen = preferred[k]; break;
-                        }
-                    }
-
-                    if (chosen != L'\0') {
-                        // Look for Google Drive local sync folder
-                        // Common paths: %USERPROFILE%\Google Drive,
-                        //               %USERPROFILE%\My Drive, etc.
-                        wchar_t prof[MAX_PATH] = {};
-                        SHGetFolderPathW(NULL, CSIDL_PROFILE, NULL, 0, prof);
-                        const wchar_t* candidates[] = {
-                            L"Google Drive",
-                            L"My Drive",
-                            L"GoogleDrive",
-                        };
-                        wstring gdPath;
-                        for (auto* c : candidates) {
-                            wstring try_ = wstring(prof) + L"\\" + c;
-                            if (GetFileAttributesW(try_.c_str()) != INVALID_FILE_ATTRIBUTES) {
-                                gdPath = try_; break;
-                            }
-                        }
-                        // If not found, use Desktop as fallback (user can change)
-                        if (gdPath.empty()) {
-                            wchar_t desk[MAX_PATH] = {};
-                            SHGetFolderPathW(NULL, CSIDL_DESKTOPDIRECTORY, NULL, 0, desk);
-                            gdPath = desk;
-                        }
-
-                        // Run: subst <letter>: "<path>"
-                        wstring substCmd = wstring(L"subst ") + chosen + L": \"" + gdPath + L"\"";
-                        SHELLEXECUTEINFOW sei = {};
-                        sei.cbSize = sizeof(sei);
-                        sei.fMask  = SEE_MASK_NOCLOSEPROCESS;
-                        sei.lpVerb = L"open";
-                        sei.lpFile = L"cmd.exe";
-                        wstring args = L"/c " + substCmd;
-                        sei.lpParameters = args.c_str();
-                        sei.nShow  = SW_HIDE;
-                        ShellExecuteExW(&sei);
-                        if (sei.hProcess) {
-                            WaitForSingleObject(sei.hProcess, 3000);
-                            CloseHandle(sei.hProcess);
-                        }
-
-                        g_gdriveMountLetter = chosen;
-                        g_gdriveLocalPath   = gdPath;
-
-                        // Navigate file manager to the new drive
-                        sf_activeSubTab = 0;
-                        wstring drivePath = wstring(1, chosen) + L":\\";
-                        NavigateFileManagerTo(drivePath);
-                    }
-                } else {
-                    // Already mounted — navigate to it
-                    sf_activeSubTab = 0;
-                    wstring drivePath = wstring(1, g_gdriveMountLetter) + L":\\";
-                    NavigateFileManagerTo(drivePath);
-                }
+            auto& r = g_gdriveRect;
+            if (x>=r.x && x<r.x+r.w && y>=r.y && y<r.y+r.h) {
+                sf_activeSubTab = 0; // Switch to File Manager (Drive tab inside)
                 if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
                 return;
             }
         }
-
-        // "Unmount drive" link (gdriveRect repurposed when mounted)
-        if (g_gdriveMountLetter != L'\0') {
-            auto& r = g_gdriveRect;
-            if (r.w > 0 && x>=r.x && x<r.x+r.w && y>=r.y && y<r.y+r.h) {
-                // Run: subst <letter>: /d
-                wstring substCmd = wstring(L"subst ") + g_gdriveMountLetter + L": /d";
-                SHELLEXECUTEINFOW sei = {};
-                sei.cbSize = sizeof(sei);
-                sei.fMask  = SEE_MASK_NOCLOSEPROCESS;
-                sei.lpVerb = L"open";
-                sei.lpFile = L"cmd.exe";
-                wstring args = L"/c " + substCmd;
-                sei.lpParameters = args.c_str();
-                sei.nShow  = SW_HIDE;
-                ShellExecuteExW(&sei);
-                if (sei.hProcess) {
-                    WaitForSingleObject(sei.hProcess, 2000);
-                    CloseHandle(sei.hProcess);
-                }
-                g_gdriveMountLetter = L'\0';
-                g_gdriveLocalPath   = L"";
-                if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
-                return;
-            }
-        }
-
-        // Network row (when not mounted, gdriveRect = Network row)
-        if (g_gdriveMountLetter == L'\0') {
-            auto& r = g_gdriveRect;
-            if (r.w > 0 && x>=r.x && x<r.x+r.w && y>=r.y && y<r.y+r.h) {
-                // Open Network in Windows Explorer
-                ShellExecuteW(NULL, L"open", L"explorer.exe",
-                              L"shell:NetworkPlacesFolder", NULL, SW_SHOW);
-                return;
-            }
-        }
-
-        return; // click in sidebar but missed all items
+        return; // click was in sidebar but missed all items
     }
 
     // ---- Content area clicks — guard below header ----
@@ -873,5 +589,5 @@ void ProcessSpecialFeatureMouseClick(float x, float y) {
     else if (sf_activeSubTab == 1)
         ProcessGeminiMouseClick(x, y);
     else if (sf_activeSubTab == 2)
-        ProcessUtilitiesMouseClick(x, y);
+        ProcessRasGramMouseClick(x, y);
 }

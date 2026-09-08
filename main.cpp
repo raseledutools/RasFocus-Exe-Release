@@ -44,6 +44,7 @@ HWND hParentWnd = NULL;
 #include "tab_device_block.h"
 #include "tab_deep_study.h"
 #include "tab_utilities.h"
+#include "tab_rasgram.h"
 #include "tab_dashboard.h"
 #include "tab_special.h"
 #include "tab_file_manager.h"  // ← File Manager Plus Tab
