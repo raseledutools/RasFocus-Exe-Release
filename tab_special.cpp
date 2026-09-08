@@ -43,7 +43,7 @@ static bool sf_hovTabUtils = false;
 
 // Layout cache (set each draw, used by mouse handlers)
 static float g_cx = 0, g_cy = 0, g_cw = 0, g_ch = 0;
-static float g_sideW   = 220.0f;  // sidebar width
+static float g_sideW   = 200.0f;  // sidebar width (Win11 Explorer style)
 static float g_headerH =  52.0f;  // sub-tab bar height
 
 // Sidebar item rects cache (for hit testing)
@@ -159,7 +159,7 @@ static void MotivationBackgroundThread() {
 }
 
 // ============================================================
-// DRAW SIDEBAR  —  Windows Explorer left panel style
+// DRAW SIDEBAR  —  Windows 11 File Explorer exact style
 // ============================================================
 static void DrawSidebar(Graphics& g,
                         float sx, float sy, float sw, float sh,
@@ -168,38 +168,98 @@ static void DrawSidebar(Graphics& g,
     g_quickRects.clear();
     g_driveRects.clear();
 
-    // Fonts
-    Font fSm (&ff,   12, FontStyleRegular, UnitPixel);
-    Font fTiny(&ff,  10, FontStyleBold,    UnitPixel);
-    Font fIcSm(&ffIc,14, FontStyleRegular, UnitPixel);
+    // --- Fonts (match Win11 Explorer: Segoe UI 12px) ---
+    Font fItem (&ff, 12, FontStyleRegular, UnitPixel);
+    Font fLabel(&ff, 11, FontStyleRegular, UnitPixel);
+    Font fIc   (&ffIc, 15, FontStyleRegular, UnitPixel);
+    Font fIcSm (&ffIc, 13, FontStyleRegular, UnitPixel);
+    Font fChevron(&ffIc, 10, FontStyleRegular, UnitPixel);
 
-    // Brushes / pens
-    SolidBrush bSideBg (Color(255, 243, 243, 243));   // Win11-ish sidebar grey
-    SolidBrush bDark   (Color(255,  40,  40,  40));
-    SolidBrush bGray   (Color(255, 130, 130, 130));
-    SolidBrush bLabel  (Color(255, 110, 110, 110));
-    SolidBrush bTeal   (Color(255,   0, 150, 160));
-    SolidBrush bActBg  (Color(255, 209, 238, 241));  // selected row tint
-    SolidBrush bHovBg  (Color(255, 228, 228, 228));  // hovered row
+    // --- Colours (Win11 sidebar: nearly white bg, dark text) ---
+    SolidBrush bBg   (Color(255, 243, 243, 243)); // sidebar bg
+    SolidBrush bText (Color(255,  30,  30,  30)); // primary text
+    SolidBrush bMuted(Color(255, 100, 100, 100)); // icons / labels
+    SolidBrush bPin  (Color(255, 140, 140, 140)); // pin icon colour
+    SolidBrush bHov  (Color(255, 222, 222, 222)); // hover bg
+    SolidBrush bSel  (Color(255, 205, 228, 255)); // selected bg (Win11 blue tint)
+    SolidBrush bGray2(Color(255, 160, 160, 160));
 
-    StringFormat fmtL; fmtL.SetAlignment(StringAlignmentNear); fmtL.SetLineAlignment(StringAlignmentCenter);
+    Pen pBorder(Color(255, 225, 225, 225), 1.0f); // right border
+    Pen pSep   (Color(200, 190, 190, 190), 1.0f); // section separator
 
-    // Sidebar background
-    g.FillRectangle(&bSideBg, sx, sy, sw, sh);
-    // Right border
-    Pen pSideBrd(Color(255, 218, 220, 224), 1.0f);
-    g.DrawLine(&pSideBrd, sx+sw, sy, sx+sw, sy+sh);
+    StringFormat fmtL;
+    fmtL.SetAlignment(StringAlignmentNear);
+    fmtL.SetLineAlignment(StringAlignmentCenter);
+    fmtL.SetFormatFlags(StringFormatFlagsNoWrap);
+    StringFormat fmtC;
+    fmtC.SetAlignment(StringAlignmentCenter);
+    fmtC.SetLineAlignment(StringAlignmentCenter);
 
-    float rowH = 32.0f;
-    float curY = sy + 8.0f;
-    float padX = 12.0f;
+    // --- Sidebar background + right border ---
+    g.FillRectangle(&bBg, sx, sy, sw, sh);
+    g.DrawLine(&pBorder, sx + sw - 1.0f, sy, sx + sw - 1.0f, sy + sh);
 
-    // --- Quick Access section ---
-    // Section header
-    g.DrawString(L"Quick access", -1, &fTiny,
-                 RectF(sx+padX, curY, sw-padX*2, 18.0f), &fmtL, &bLabel);
-    curY += 22.0f;
+    float curY   = sy + 6.0f;
+    float rowH   = 30.0f;   // Win11 row height
+    float padL   = 10.0f;   // left padding
+    float icW    = 18.0f;   // icon column width
+    float icGap  = 6.0f;    // gap between icon and text
+    float pinW   = 18.0f;   // pin icon area on right
 
+    // Helper: draw one sidebar row
+    // Returns the rect stored for hit-testing
+    auto DrawRow = [&](float ry, const wchar_t* icon, const wchar_t* label,
+                       bool hovered, bool selected, bool showPin,
+                       Color iconColor) -> SideRect
+    {
+        float rh = rowH;
+        // Background
+        if (selected) {
+            FillRoundRect(g, &bSel, nullptr, sx + 2.0f, ry + 1.0f, sw - 4.0f, rh - 2.0f, 4.0f);
+        } else if (hovered) {
+            FillRoundRect(g, &bHov, nullptr, sx + 2.0f, ry + 1.0f, sw - 4.0f, rh - 2.0f, 4.0f);
+        }
+        // Icon
+        SolidBrush bIcoClr(iconColor);
+        g.DrawString(icon, -1, &fIc,
+            RectF(sx + padL, ry, icW, rh), &fmtC, &bIcoClr);
+        // Label
+        float txtX = sx + padL + icW + icGap;
+        float txtW = sw - padL - icW - icGap - (showPin ? pinW + 4.0f : 8.0f);
+        g.DrawString(label, -1, &fItem,
+            RectF(txtX, ry, txtW, rh), &fmtL, &bText);
+        // Pin icon (📌 \xE840 in Segoe MDL2) — shown on hovered pinned items
+        if (showPin && hovered) {
+            g.DrawString(L"\xE840", -1, &fIcSm,
+                RectF(sx + sw - pinW - 4.0f, ry, pinW, rh), &fmtC, &bPin);
+        }
+        return { sx, ry, sw, rh };
+    };
+
+    // ── HOME ──────────────────────────────────────────
+    {
+        bool hov = (sf_hovSideItem == 0); // index 0 in g_quickRects
+        auto r = DrawRow(curY, L"\xEA8A", L"Home", hov, false, false,
+                         Color(255, 60, 60, 60));
+        g_quickRects.push_back({r.x, r.y, r.w, r.h}); // index 0 = Home
+        curY += rowH;
+    }
+
+    // ── GALLERY ───────────────────────────────────────
+    {
+        bool hov = (sf_hovSideItem == 1); // index 1 in g_quickRects
+        auto r = DrawRow(curY, L"\xE91B", L"Gallery", hov, false, false,
+                         Color(255, 60, 60, 60));
+        g_quickRects.push_back({r.x, r.y, r.w, r.h}); // index 1 = Gallery
+        curY += rowH;
+    }
+
+    // ── Separator after Home/Gallery ──────────────────
+    curY += 4.0f;
+    g.DrawLine(&pSep, sx + 8.0f, curY, sx + sw - 8.0f, curY);
+    curY += 4.0f;
+
+    // ── QUICK ACCESS pinned items ──────────────────────
     // Resolve shell paths
     wchar_t desktopPath[MAX_PATH]={}, dlPath[MAX_PATH]={};
     wchar_t docPath[MAX_PATH]={},    picPath[MAX_PATH]={};
@@ -209,134 +269,94 @@ static void DrawSidebar(Graphics& g,
     SHGetFolderPathW(NULL, CSIDL_MYPICTURES,        NULL, 0, picPath);
     SHGetFolderPathW(NULL, CSIDL_MYMUSIC,           NULL, 0, musicPath);
     SHGetFolderPathW(NULL, CSIDL_MYVIDEO,           NULL, 0, vidPath);
-    PWSTR dlRaw=NULL;
-    SHGetKnownFolderPath(FOLDERID_Downloads,0,NULL,&dlRaw);
-    if (dlRaw){wcscpy_s(dlPath,dlRaw);CoTaskMemFree(dlRaw);}
+    PWSTR dlRaw = NULL;
+    SHGetKnownFolderPath(FOLDERID_Downloads, 0, NULL, &dlRaw);
+    if (dlRaw) { wcscpy_s(dlPath, dlRaw); CoTaskMemFree(dlRaw); }
 
-    struct QItem { const wchar_t* icon; const wchar_t* label; const wchar_t* path; };
+    struct QItem { const wchar_t* icon; const wchar_t* label; Color iconColor; };
     QItem qa[] = {
-        { L"\xE8B7", L"Desktop",    desktopPath },
-        { L"\xEC0A", L"Downloads",  dlPath      },
-        { L"\xE8A5", L"Documents",  docPath     },
-        { L"\xEB9F", L"Pictures",   picPath     },
-        { L"\xEC4F", L"Music",      musicPath   },
-        { L"\xE8B2", L"Videos",     vidPath     },
+        { L"\xE8B7", L"Desktop",   Color(255,  70, 130, 180) }, // steel blue folder
+        { L"\xEC0A", L"Downloads", Color(255,  70, 130, 180) },
+        { L"\xE8A5", L"Documents", Color(255,  70, 130, 180) },
+        { L"\xEB9F", L"Pictures",  Color(255,  70, 130, 180) },
+        { L"\xEC4F", L"Music",     Color(255,  70, 130, 180) },
+        { L"\xE8B2", L"Videos",    Color(255,  70, 130, 180) },
     };
 
-    for (int i=0; i<6; i++) {
-        float ry = curY;
-        bool hov = (sf_hovSideItem == i);
-
-        if (hov) {
-            SolidBrush bH(Color(255, 228, 228, 228));
-            FillRoundRect(g, &bH, nullptr, sx+4, ry, sw-8, rowH, 4.0f);
-        }
-        // Active-tab indicator (teal pill on left edge)
-        // (for this sidebar we highlight when file manager is active)
-        if (sf_activeSubTab == 0) {
-            // no path tracking here — just style
-        }
-
-        g.DrawString(qa[i].icon,  -1, &fIcSm, RectF(sx+padX,         ry, 20.0f,  rowH), &fmtL, &bGray);
-        g.DrawString(qa[i].label, -1, &fSm,   RectF(sx+padX+24.0f,   ry, sw-padX*2-24, rowH), &fmtL, &bDark);
-
-        g_quickRects.push_back({sx, ry, sw, rowH});
+    for (int i = 0; i < 6; i++) {
+        int idx = i + 2; // g_quickRects index: 2=Desktop, 3=Downloads, ... 7=Videos
+        bool hov = (sf_hovSideItem == idx);
+        auto r = DrawRow(curY, qa[i].icon, qa[i].label, hov, false, true,
+                         qa[i].iconColor);
+        g_quickRects.push_back({r.x, r.y, r.w, r.h}); // index 2..7
         curY += rowH;
     }
 
-    // --- This PC separator + label ---
-    curY += 6.0f;
-    Pen pSep(Color(200, 200, 200, 200), 1.0f);
-    g.DrawLine(&pSep, sx+padX, curY, sx+sw-padX, curY);
-    curY += 6.0f;
-    g.DrawString(L"This PC", -1, &fTiny,
-                 RectF(sx+padX, curY, sw-padX*2, 18.0f), &fmtL, &bLabel);
-    curY += 22.0f;
+    // ── Separator before This PC ───────────────────────
+    curY += 4.0f;
+    g.DrawLine(&pSep, sx + 8.0f, curY, sx + sw - 8.0f, curY);
+    curY += 4.0f;
 
-    // --- Drives (dynamic) ---
-    wchar_t driveStrings[512]={};
+    // ── THIS PC header row (chevron + label, not clickable as nav) ──
+    // In Win11: "This PC" has a collapse chevron, we draw it static
+    g.DrawString(L"\xE76C", -1, &fChevron,
+        RectF(sx + padL - 2.0f, curY, 12.0f, rowH), &fmtC, &bMuted); // right chevron = expanded
+    g.DrawString(L"This PC", -1, &fLabel,
+        RectF(sx + padL + 12.0f, curY, sw - padL - 16.0f, rowH), &fmtL, &bMuted);
+    curY += rowH;
+
+    // ── DRIVES ────────────────────────────────────────
+    wchar_t driveStrings[512] = {};
     GetLogicalDriveStringsW(511, driveStrings);
     vector<wstring> drives;
-    for (wchar_t* p=driveStrings; *p; p+=wcslen(p)+1) {
-        UINT t=GetDriveTypeW(p);
-        if (t==DRIVE_FIXED||t==DRIVE_REMOVABLE||t==DRIVE_REMOTE||t==DRIVE_RAMDISK)
+    for (wchar_t* p = driveStrings; *p; p += wcslen(p) + 1) {
+        UINT t = GetDriveTypeW(p);
+        if (t == DRIVE_FIXED || t == DRIVE_REMOVABLE || t == DRIVE_REMOTE || t == DRIVE_RAMDISK)
             drives.push_back(p);
     }
 
-    for (int di=0; di<(int)drives.size(); di++) {
-        float ry = curY;
+    for (int di = 0; di < (int)drives.size(); di++) {
         bool hov = (sf_hovDriveItem == di);
-
-        if (hov) {
-            FillRoundRect(g, &bHovBg, nullptr, sx+4, ry, sw-8, rowH, 4.0f);
-        }
-
         wstring lbl = drives[di];
-        if (!lbl.empty() && lbl.back()==L'\\') lbl.pop_back(); // "C:"
+        if (!lbl.empty() && lbl.back() == L'\\') lbl.pop_back(); // "C:"
+
+        // Get volume label for friendly name  e.g. "Windows-SSD (C:)"
+        wchar_t volName[MAX_PATH] = {};
+        if (GetVolumeInformationW(drives[di].c_str(), volName, MAX_PATH,
+                                  NULL, NULL, NULL, NULL, 0) && volName[0]) {
+            wstring friendly = wstring(volName) + L" (" + lbl + L")";
+            lbl = friendly;
+        }
 
         UINT dtype = GetDriveTypeW(drives[di].c_str());
-        const wchar_t* dIcon = L"\xE7D2"; // HDD
-        if (dtype==DRIVE_REMOVABLE) dIcon = L"\xE88E"; // USB
-        if (dtype==DRIVE_REMOTE)    dIcon = L"\xE753"; // Network
-
-        // Drive label + free space bar
-        g.DrawString(dIcon,       -1, &fIcSm, RectF(sx+padX,        ry, 20.0f, rowH), &fmtL, &bGray);
-        g.DrawString(lbl.c_str(),-1, &fSm,   RectF(sx+padX+24.0f, ry, sw-padX*2-24, rowH), &fmtL, &bDark);
-
-        // Mini drive usage bar (only for fixed drives)
+        const wchar_t* dIcon = L"\xE88E"; // USB/generic
+        Color dIconColor(255, 80, 80, 80);
         if (dtype == DRIVE_FIXED) {
-            ULARGE_INTEGER freeBytesAvail={}, totalBytes={}, totalFreeBytes={};
-            if (GetDiskFreeSpaceExW(drives[di].c_str(), &freeBytesAvail, &totalBytes, &totalFreeBytes)
-                && totalBytes.QuadPart > 0)
-            {
-                float used = 1.0f - (float)totalFreeBytes.QuadPart / (float)totalBytes.QuadPart;
-                float barX = sx+padX+24.0f, barY = ry+rowH-8.0f;
-                float barW = sw-padX*2-30.0f, barH = 4.0f;
-                // Track
-                SolidBrush bTrack(Color(255, 210, 210, 210));
-                g.FillRectangle(&bTrack, barX, barY, barW, barH);
-                // Fill (blue if < 80%, orange if < 90%, red if >= 90%)
-                Color fillCol = used < 0.80f ? Color(255, 66, 133, 244) :
-                                used < 0.90f ? Color(255, 245, 158, 11)  :
-                                               Color(255, 220, 60, 60);
-                SolidBrush bFill(fillCol);
-                g.FillRectangle(&bFill, barX, barY, barW * used, barH);
-            }
+            dIcon      = L"\xE7D2"; // HDD
+            dIconColor = Color(255, 60, 60, 60);
+        } else if (dtype == DRIVE_REMOTE) {
+            dIcon      = L"\xE753"; // Network
+            dIconColor = Color(255, 60, 120, 200);
         }
 
-        g_driveRects.push_back({sx, ry, sw, rowH});
+        auto r = DrawRow(curY, dIcon, lbl.c_str(), hov, false, false, dIconColor);
+        g_driveRects.push_back({r.x, r.y, r.w, r.h});
         curY += rowH;
     }
 
-    // --- Google Drive separator + entry ---
-    curY += 6.0f;
-    g.DrawLine(&pSep, sx+padX, curY, sx+sw-padX, curY);
-    curY += 6.0f;
+    // ── Separator before Network ───────────────────────
+    curY += 4.0f;
+    g.DrawLine(&pSep, sx + 8.0f, curY, sx + sw - 8.0f, curY);
+    curY += 4.0f;
 
-    // Google Drive colored-dot icon (G colour marks)
-    float gdY = curY;
-    bool gdHov = sf_hovGDrive;
-    if (gdHov) {
-        FillRoundRect(g, &bHovBg, nullptr, sx+4, gdY, sw-8, rowH, 4.0f);
+    // ── NETWORK row ────────────────────────────────────
+    {
+        bool hov = sf_hovGDrive; // reuse gdriveRect for Network
+        auto r = DrawRow(curY, L"\xEC27", L"Network", hov, false, false,
+                         Color(255, 60, 60, 60));
+        g_gdriveRect = {r.x, r.y, r.w, r.h};
+        curY += rowH;
     }
-
-    // Draw Google Drive tri-colour icon manually
-    float dotX = sx + padX + 2.0f;
-    float dotCY = gdY + rowH/2.0f;
-    float r2 = 5.0f;
-    // Triangle shape: three coloured circles arranged as Google Drive logo hint
-    SolidBrush bGBlue (Color(255,  66, 133, 244));
-    SolidBrush bGGreen(Color(255,  52, 168,  83));
-    SolidBrush bGYellow(Color(255, 251, 188,   5));
-    // Small triangle of dots
-    g.FillEllipse(&bGBlue,   dotX,        dotCY - r2*1.1f, r2*1.5f, r2*1.5f);
-    g.FillEllipse(&bGGreen,  dotX+r2*0.8f,dotCY + r2*0.2f, r2*1.5f, r2*1.5f);
-    g.FillEllipse(&bGYellow, dotX-r2*0.1f,dotCY + r2*0.2f, r2*1.5f, r2*1.5f);
-
-    g.DrawString(L"Google Drive", -1, &fSm,
-                 RectF(sx+padX+24.0f, gdY, sw-padX*2-24, rowH), &fmtL, &bDark);
-    g_gdriveRect = {sx, gdY, sw, rowH};
-    curY += rowH;
 }
 
 // ============================================================
