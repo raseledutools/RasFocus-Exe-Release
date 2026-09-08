@@ -827,6 +827,170 @@ void RgNet_LanSendText(const RgLanPeer& peer, const string& chatId,
     }).detach();
 }
 
+// ============================================================
+// CLOUD FILE SEND — Cloudinary upload → Firestore message
+// ============================================================
+
+// Cloudinary unsigned upload via multipart/form-data over WinINet
+// Cloud name and upload_preset come from the same project as Android app.
+#define RG_CLOUDINARY_CLOUD   "rasfocus-c746d"
+#define RG_CLOUDINARY_PRESET  "rasfocus_unsigned"
+
+static string CloudinaryUpload(const wstring& filePath, const string& mimeType) {
+    // Read file into memory
+    HANDLE hFile = CreateFileW(filePath.c_str(), GENERIC_READ,
+                               FILE_SHARE_READ, NULL, OPEN_EXISTING,
+                               FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) return "";
+
+    LARGE_INTEGER fSize; GetFileSizeEx(hFile, &fSize);
+    if (fSize.QuadPart == 0 || fSize.QuadPart > 50LL * 1024 * 1024) {
+        CloseHandle(hFile); return ""; // skip empty or >50 MB
+    }
+
+    vector<char> fileData((size_t)fSize.QuadPart);
+    DWORD rd = 0;
+    ReadFile(hFile, fileData.data(), (DWORD)fileData.size(), &rd, NULL);
+    CloseHandle(hFile);
+
+    // Extract filename
+    size_t slash = filePath.rfind(L'\\');
+    wstring wfn = (slash != wstring::npos) ? filePath.substr(slash + 1) : filePath;
+    string fname(wfn.begin(), wfn.end());
+
+    // Build multipart/form-data body
+    string boundary = "RasGramBoundary12345";
+    string body;
+    // upload_preset field
+    body += "--" + boundary + "\r\n";
+    body += "Content-Disposition: form-data; name=\"upload_preset\"\r\n\r\n";
+    body += string(RG_CLOUDINARY_PRESET) + "\r\n";
+    // file field
+    body += "--" + boundary + "\r\n";
+    body += "Content-Disposition: form-data; name=\"file\"; filename=\"" + fname + "\"\r\n";
+    body += "Content-Type: " + mimeType + "\r\n\r\n";
+    body.append(fileData.data(), fileData.size());
+    body += "\r\n--" + boundary + "--\r\n";
+
+    string contentType = "multipart/form-data; boundary=" + boundary;
+    string uploadUrl = "/v1_1/" + string(RG_CLOUDINARY_CLOUD) + "/auto/upload";
+
+    string resp;
+    HINTERNET hInet = InternetOpenA("RasGram-Desktop/1.0",
+                        INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
+    if (!hInet) return "";
+
+    HINTERNET hConn = InternetConnectA(hInet, "api.cloudinary.com",
+                        INTERNET_DEFAULT_HTTPS_PORT,
+                        NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
+    if (hConn) {
+        HINTERNET hReq = HttpOpenRequestA(hConn, "POST", uploadUrl.c_str(),
+                            NULL, NULL, NULL,
+                            INTERNET_FLAG_SECURE | INTERNET_FLAG_RELOAD |
+                            INTERNET_FLAG_NO_CACHE_WRITE, 0);
+        if (hReq) {
+            string headers = "Content-Type: " + contentType + "\r\n";
+            HttpSendRequestA(hReq,
+                headers.c_str(), (DWORD)headers.size(),
+                (LPVOID)body.c_str(), (DWORD)body.size());
+            char buf[4096]; DWORD n = 0;
+            while (InternetReadFile(hReq, buf, sizeof(buf) - 1, &n) && n > 0) {
+                buf[n] = '\0'; resp += buf;
+            }
+            InternetCloseHandle(hReq);
+        }
+        InternetCloseHandle(hConn);
+    }
+    InternetCloseHandle(hInet);
+
+    // Parse "secure_url" from JSON response
+    // {"secure_url":"https://res.cloudinary.com/..."}
+    string key = "\"secure_url\":\"";
+    size_t p = resp.find(key);
+    if (p == string::npos) return "";
+    p += key.size();
+    size_t q = resp.find('"', p);
+    if (q == string::npos) return "";
+    string url = resp.substr(p, q - p);
+    // Unescape forward slashes  (\/ → /)
+    string result;
+    for (size_t i = 0; i < url.size(); ++i) {
+        if (url[i] == '\\' && i + 1 < url.size() && url[i+1] == '/') { result += '/'; ++i; }
+        else result += url[i];
+    }
+    return result;
+}
+
+void RgNet_SendFile(const string& chatId,
+                    const string& receiverMobile,
+                    const wstring& localFilePath,
+                    const string& mimeType) {
+    if (g_myMobile.empty() || chatId.empty() || localFilePath.empty()) return;
+    thread([chatId, receiverMobile, localFilePath, mimeType]() {
+        // 1) Upload to Cloudinary
+        string fileUrl = CloudinaryUpload(localFilePath, mimeType);
+        if (fileUrl.empty()) return; // upload failed — silently skip
+
+        // 2) Get filename for display
+        size_t slash = localFilePath.rfind(L'\\');
+        wstring wfn = (slash != wstring::npos) ? localFilePath.substr(slash + 1) : localFilePath;
+        string fname(wfn.begin(), wfn.end());
+
+        long long ts = NowMs();
+        string timeStr = RgFormatTime(ts);
+
+        // Determine message type from mimeType
+        string msgType = "file";
+        if (mimeType.find("image/") == 0)  msgType = "image";
+        else if (mimeType.find("video/") == 0) msgType = "video";
+        else if (mimeType.find("audio/") == 0) msgType = "audio";
+
+        // 3) Write message to Firestore
+        string payload = "{\"fields\":{"
+            "\"chatId\":{\"stringValue\":\"" + chatId + "\"},"
+            "\"senderMobile\":{\"stringValue\":\"" + g_myMobile + "\"},"
+            "\"senderName\":{\"stringValue\":\"" + g_myName + "\"},"
+            "\"text\":{\"stringValue\":\"" + fname + "\"},"
+            "\"fileUrl\":{\"stringValue\":\"" + fileUrl + "\"},"
+            "\"fileName\":{\"stringValue\":\"" + fname + "\"},"
+            "\"mimeType\":{\"stringValue\":\"" + mimeType + "\"},"
+            "\"type\":{\"stringValue\":\"" + msgType + "\"},"
+            "\"timestamp\":{\"integerValue\":\"" + to_string(ts) + "\"},"
+            "\"timeString\":{\"stringValue\":\"" + timeStr + "\"},"
+            "\"read\":{\"booleanValue\":false},"
+            "\"delivered\":{\"booleanValue\":true},"
+            "\"isDeleted\":{\"booleanValue\":false},"
+            "\"isCallLog\":{\"booleanValue\":false}"
+            "}}";
+
+        string path = RgBuildPath("chats", chatId, "messages");
+        RgFirestorePost("POST", path, payload);
+
+        // 4) Update chat previews (same pattern as RgNet_SendText)
+        string previewText = "[" + msgType + "] " + fname;
+        string previewPayload = "{\"fields\":{"
+            "\"contactMobile\":{\"stringValue\":\"" + receiverMobile + "\"},"
+            "\"lastMessageText\":{\"stringValue\":\"" + previewText + "\"},"
+            "\"lastMessageSender\":{\"stringValue\":\"" + g_myMobile + "\"},"
+            "\"lastTimestamp\":{\"integerValue\":\"" + to_string(ts) + "\"},"
+            "\"lastTimeString\":{\"stringValue\":\"" + timeStr + "\"}"
+            "}}";
+        string previewPath = RgBuildPath("users", g_myMobile, "chat_previews", receiverMobile);
+        RgFirestorePost("PATCH", previewPath, previewPayload);
+
+        string rxPreviewPath = RgBuildPath("users", receiverMobile, "chat_previews", g_myMobile);
+        string rxPreviewPayload = "{\"fields\":{"
+            "\"contactMobile\":{\"stringValue\":\"" + g_myMobile + "\"},"
+            "\"contactName\":{\"stringValue\":\"" + g_myName + "\"},"
+            "\"lastMessageText\":{\"stringValue\":\"" + previewText + "\"},"
+            "\"lastMessageSender\":{\"stringValue\":\"" + g_myMobile + "\"},"
+            "\"lastTimestamp\":{\"integerValue\":\"" + to_string(ts) + "\"},"
+            "\"lastTimeString\":{\"stringValue\":\"" + timeStr + "\"}"
+            "}}";
+        RgFirestorePost("PATCH", rxPreviewPath, rxPreviewPayload);
+    }).detach();
+}
+
 void RgNet_LanSendFile(const RgLanPeer& peer, const string& chatId,
                        const wstring& filePath, const string& mimeType) {
     // File send: open file → send header + 8-byte size + raw bytes
