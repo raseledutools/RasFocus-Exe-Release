@@ -3,6 +3,9 @@
 // Replaces Student Utilities in tab_special.cpp sub-tab bar (index 2)
 
 #pragma once
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
 #include <windows.h>
 #include <gdiplus.h>
 #include <string>
