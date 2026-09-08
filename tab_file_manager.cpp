@@ -828,7 +828,7 @@ static void RefreshLocalDir() {
     if (!p.empty()) fm_breadcrumb.push_back(p);
 }
 
-static void NavigateTo(const wstring& path) {
+void NavigateFileManagerTo(const wstring& path) {
     fm_currentPath = path;
     if (!fm_currentPath.empty() && fm_currentPath.back() != L'\\')
         fm_currentPath += L'\\';
@@ -1838,8 +1838,8 @@ void ProcessFileManagerMouseClick(float x, float y, HWND hWnd) {
             wstring p = fm_currentPath;
             if (!p.empty() && p.back() == L'\\') p.pop_back();
             size_t pos = p.rfind(L'\\');
-            if (pos != wstring::npos) NavigateTo(p.substr(0, pos + 1));
-            else if (p.length() >= 2) NavigateTo(p.substr(0, 3));
+            if (pos != wstring::npos) NavigateFileManagerTo(p.substr(0, pos + 1));
+            else if (p.length() >= 2) NavigateFileManagerTo(p.substr(0, 3));
             if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
             return;
         }
@@ -1907,7 +1907,7 @@ void ProcessFileManagerMouseClick(float x, float y, HWND hWnd) {
                     dest += fm_breadcrumb[j];
                     if (!dest.empty() && dest.back() != L'\\') dest += L'\\';
                 }
-                NavigateTo(dest);
+                NavigateFileManagerTo(dest);
                 if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
                 return;
             }
@@ -1937,7 +1937,7 @@ void ProcessFileManagerMouseClick(float x, float y, HWND hWnd) {
                         // Double-click into folder → navigate, clear preview
                         wstring dest = fm_currentPath + fm_items[idx].first + L"\\";
                         LoadPreview(L"", L"");
-                        NavigateTo(dest);
+                        NavigateFileManagerTo(dest);
                         if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
                         return;
                     }
