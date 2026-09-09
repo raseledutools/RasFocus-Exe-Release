@@ -42,8 +42,9 @@ extern wstring g_loggedInName;
 extern wstring g_loggedInEmail;
 
 // ── Module State ─────────────────────────────────────────────
-static bool  g_rgInitDone  = false;
-static bool  g_rgVisible   = false;
+static bool   g_rgInitDone    = false;
+static string g_rgInitWithUid = "";   // UID that was used at last init
+static bool   g_rgVisible     = false;
 
 // Layout cache (set on each draw)
 static float g_cx = 0, g_cy = 0, g_cw = 0, g_ch = 0;
@@ -310,27 +311,47 @@ static long long NowMs_safe() {
 // INIT
 // ─────────────────────────────────────────────────────────────
 void InitRasGramDesktop() {
-    if (g_rgInitDone) return;
-    g_rgInitDone = true;
-
-    CreateInputControls();
-
     // Get logged-in user info from accounts module globals
     extern string g_loggedInUserUid;
     extern wstring g_loggedInEmail;
     extern wstring g_loggedInName;
 
+    // Not logged in — do nothing; DrawRasGramTab will show login prompt
+    if (g_loggedInUserUid.empty()) return;
+
+    // Already initialised with the same UID — skip
+    if (g_rgInitDone && g_rgInitWithUid == g_loggedInUserUid) return;
+
+    // (Re-)initialise: user just logged in, or switched accounts
+    g_rgInitDone    = true;
+    g_rgInitWithUid = g_loggedInUserUid;
+
+    // Reset chat state on reinit
+    { lock_guard<mutex> lk(g_chatsMtx); g_chats.clear(); }
+    { lock_guard<mutex> lk(g_msgsMtx);  g_messages.clear(); }
+    g_selectedChat   = -1;
+    g_chatListScroll = 0.0f;
+    g_msgScroll      = 0.0f;
+
+    CreateInputControls();
+
     g_myName_w = g_loggedInName;
-    // Use email prefix as mobile fallback if not set
-    // (Android RasGram uses mobile number; desktop uses same account)
-    // TODO: expose mobile from accounts.cpp — for now use UID prefix
-    g_myMobile = g_loggedInUserUid.empty() ? "desktop_user" : g_loggedInUserUid;
+
+    // Derive mobile from email prefix — matches Android RasGram's identity scheme.
+    // Android uses phone number; desktop falls back to email-prefix so chats
+    // created on this device are consistent within the same Firebase project.
+    // If the user has a real mobile registered via Android, contacts should still
+    // appear via Firestore chat_previews written by the Android app.
+    string emailUtf8 = WideToUtf8(g_loggedInEmail);
+    size_t atPos = emailUtf8.find('@');
+    g_myMobile = (atPos != string::npos) ? emailUtf8.substr(0, atPos) : g_loggedInUserUid;
 
     RgNet_Init(g_myMobile, WideToUtf8(g_myName_w),
                g_loggedInUserUid, "");
     RgNet_SetOnline(true);
 
     // Start chat list polling
+    RgNet_StopChatListPolling();
     RgNet_StartChatListPolling([](const vector<RgChatPreview>& chats) {
         { lock_guard<mutex> lk(g_chatsMtx); g_chats = chats; }
         if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
@@ -903,16 +924,72 @@ static void DrawEmptyState(Graphics& g,
 // ─────────────────────────────────────────────────────────────
 // MAIN DRAW
 // ─────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
+// DRAW: NOT LOGGED IN SCREEN
+// ─────────────────────────────────────────────────────────────
+static void DrawNotLoggedInScreen(Graphics& g,
+                                  float cx, float cy, float cw, float ch,
+                                  const FontFamily& ff, const FontFamily& ffIc) {
+    // Background — same dark header as top bar
+    SolidBrush bBg(Color(255, 240, 242, 245));
+    g.FillRectangle(&bBg, cx, cy, cw, ch);
+
+    // RasGram icon (chat bubble icon from Segoe MDL2)
+    Font fIcBig(&ffIc, 56, FontStyleRegular, UnitPixel);
+    SolidBrush bTeal(Color(255, 0, 150, 160));
+    StringFormat fmtC;
+    fmtC.SetAlignment(StringAlignmentCenter);
+    fmtC.SetLineAlignment(StringAlignmentCenter);
+    float iconY = cy + ch / 2.0f - 100.0f;
+    g.DrawString(L"\xE8BD", -1, &fIcBig,
+                 RectF(cx, iconY, cw, 70), &fmtC, &bTeal);
+
+    // "RasGram Desktop" title
+    Font fBig(&ff, 24, FontStyleBold, UnitPixel);
+    SolidBrush bDark(Color(255, 40, 40, 40));
+    g.DrawString(L"RasGram Desktop", -1, &fBig,
+                 RectF(cx, iconY + 76, cw, 34), &fmtC, &bDark);
+
+    // Sub-message
+    Font fSub(&ff, 14, FontStyleRegular, UnitPixel);
+    SolidBrush bGray(Color(255, 120, 120, 120));
+    g.DrawString(
+        L"You are not logged in.\n"
+        L"Please go to the \u0022My Account\u0022 tab and log in\n"
+        L"to use RasGram Desktop.",
+        -1, &fSub,
+        RectF(cx + 40, iconY + 118, cw - 80, 80),
+        &fmtC, &bGray);
+
+    // Arrow hint
+    Font fHint(&ff, 12, FontStyleItalic, UnitPixel);
+    SolidBrush bHint(Color(255, 170, 170, 170));
+    g.DrawString(L"Tip: Use the sidebar \u2192 My Account to sign in.",
+                 -1, &fHint,
+                 RectF(cx + 40, iconY + 210, cw - 80, 24),
+                 &fmtC, &bHint);
+}
+
 void DrawRasGramTab(Graphics& g, float cx, float cy, float cw, float ch) {
     g_cx = cx; g_cy = cy; g_cw = cw; g_ch = ch;
-
-    InitRasGramDesktop();
 
     g.SetSmoothingMode(SmoothingModeAntiAlias);
     g.SetTextRenderingHint(TextRenderingHintClearTypeGridFit);
 
     FontFamily ff  (L"Segoe UI");
     FontFamily ffIc(L"Segoe MDL2 Assets");
+
+    // ── Login check ──────────────────────────────────────────
+    // g_loggedInUserUid is set by accounts.cpp after successful login.
+    // Show a friendly prompt instead of a broken chat UI.
+    extern string g_loggedInUserUid;
+    if (g_loggedInUserUid.empty()) {
+        DrawNotLoggedInScreen(g, cx, cy, cw, ch, ff, ffIc);
+        return;
+    }
+
+    // (Re-)initialise if this is the first draw after login
+    InitRasGramDesktop();
 
     // 1. Top bar
     DrawTopBar(g, cx, cy, cw, g_topBarH, ff, ffIc);
