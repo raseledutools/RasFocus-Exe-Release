@@ -446,12 +446,17 @@ void DrawSpecialFeatureTab(Graphics& g, float cx, float cy, float cw, float ch) 
     float bodyY = cy + g_headerH;
     float bodyH = ch - g_headerH;
 
-    // ---- Sidebar (left of content) ----
-    DrawSidebar(g, cx, bodyY, g_sideW, bodyH, ff, ffIc);
-
-    // ---- Content area ----
-    float contentX = cx + g_sideW;
-    float contentW = cw - g_sideW;
+    // ---- Sidebar: only for File Manager tab ----
+    float contentX, contentW;
+    if (sf_activeSubTab == 0) {
+        DrawSidebar(g, cx, bodyY, g_sideW, bodyH, ff, ffIc);
+        contentX = cx + g_sideW;
+        contentW = cw - g_sideW;
+    } else {
+        // Non-file-manager tabs: full width, no sidebar
+        contentX = cx;
+        contentW = cw;
+    }
 
     if (sf_activeSubTab == 0) {
         // Hide ALL overlay controls first so WebView2 / Win32 edits
@@ -489,7 +494,7 @@ void ProcessSpecialFeatureMouseMove(float x, float y) {
     sf_hovTabDiary   = (y >= g_cy && y <= g_cy+g_headerH && x >= g_cx+tabW     && x < g_cx+tabW*2);
     sf_hovTabRasGram = (y >= g_cy && y <= g_cy+g_headerH && x >= g_cx+tabW*2   && x < g_cx+g_cw);
 
-    // ---- Sidebar hover ----
+    // ---- Sidebar hover (only for File Manager tab) ----
     int old_hSide  = sf_hovSideItem;
     int old_hDrive = sf_hovDriveItem;
     bool old_hGD   = sf_hovGDrive;
@@ -498,25 +503,27 @@ void ProcessSpecialFeatureMouseMove(float x, float y) {
     sf_hovDriveItem = -1;
     sf_hovGDrive    = false;
 
-    for (int i=0; i<(int)g_quickRects.size(); i++) {
-        auto& r = g_quickRects[i];
-        if (x>=r.x && x<r.x+r.w && y>=r.y && y<r.y+r.h) { sf_hovSideItem=i; break; }
-    }
-    if (sf_hovSideItem < 0) {
-        for (int i=0; i<(int)g_driveRects.size(); i++) {
-            auto& r = g_driveRects[i];
-            if (x>=r.x && x<r.x+r.w && y>=r.y && y<r.y+r.h) { sf_hovDriveItem=i; break; }
+    if (sf_activeSubTab == 0) {
+        for (int i=0; i<(int)g_quickRects.size(); i++) {
+            auto& r = g_quickRects[i];
+            if (x>=r.x && x<r.x+r.w && y>=r.y && y<r.y+r.h) { sf_hovSideItem=i; break; }
         }
-    }
-    if (sf_hovSideItem<0 && sf_hovDriveItem<0) {
-        auto& r = g_gdriveRect;
-        if (x>=r.x && x<r.x+r.w && y>=r.y && y<r.y+r.h) sf_hovGDrive=true;
+        if (sf_hovSideItem < 0) {
+            for (int i=0; i<(int)g_driveRects.size(); i++) {
+                auto& r = g_driveRects[i];
+                if (x>=r.x && x<r.x+r.w && y>=r.y && y<r.y+r.h) { sf_hovDriveItem=i; break; }
+            }
+        }
+        if (sf_hovSideItem<0 && sf_hovDriveItem<0) {
+            auto& r = g_gdriveRect;
+            if (x>=r.x && x<r.x+r.w && y>=r.y && y<r.y+r.h) sf_hovGDrive=true;
+        }
     }
 
     // ---- Delegate to active sub-tab ----
     float bodyY    = g_cy + g_headerH;
-    float contentX = g_cx + g_sideW;
-    float contentW = g_cw - g_sideW;
+    float contentX = (sf_activeSubTab == 0) ? (g_cx + g_sideW) : g_cx;
+    float contentW = (sf_activeSubTab == 0) ? (g_cw - g_sideW) : g_cw;
 
     if (sf_activeSubTab == 0)
         ProcessFileManagerMouseMove(x, y);
@@ -563,10 +570,10 @@ void ProcessSpecialFeatureMouseClick(float x, float y) {
     }
 
     float bodyY    = g_cy + g_headerH;
-    float contentX = g_cx + g_sideW;
+    float contentX = (sf_activeSubTab == 0) ? (g_cx + g_sideW) : g_cx;
 
-    // ---- Sidebar quick-access clicks (navigate File Manager Plus) ----
-    if (x >= g_cx && x < g_cx + g_sideW) {
+    // ---- Sidebar quick-access clicks (only for File Manager tab) ----
+    if (sf_activeSubTab == 0 && x >= g_cx && x < g_cx + g_sideW) {
         // Quick access items
         for (int i=0; i<(int)g_quickRects.size(); i++) {
             auto& r = g_quickRects[i];
