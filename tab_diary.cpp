@@ -360,7 +360,7 @@ static void DrawToolbar(Graphics& g, const FontFamily& ff) {
 
     if (g_view == DiaryView::List) {
         // Title
-        DrawText_(&g, L"📔  Personal Diary", &fBold,
+        DrawText_(g, L"📔  Personal Diary", &fBold,
                   RectF(g_cx + PAD, g_cy + 2, g_cw * 0.4f, TOOLBAR_H - 4),
                   StringAlignmentNear, StringAlignmentCenter, &bDark);
 
@@ -369,7 +369,7 @@ static void DrawToolbar(Graphics& g, const FontFamily& ff) {
         float sX = g_cx + g_cw - PAD - 110.f - sW - 8.f;
         Pen pSrch(g_searchFocus ? Primary : Divider, g_searchFocus ? 2.f : 1.f);
         FillRR(g, &bSurf, &pSrch, sX, g_cy + 10, sW, 32, 16);
-        DrawText_(&g, g_search[0] ? g_search : L"🔍  Search entries…", &fNorm,
+        DrawText_(g, g_search[0] ? g_search : L"🔍  Search entries…", &fNorm,
                   RectF(sX + 10, g_cy + 10, sW - 16, 32),
                   StringAlignmentNear, StringAlignmentCenter,
                   g_search[0] ? &bDark : &bGray);
@@ -378,7 +378,7 @@ static void DrawToolbar(Graphics& g, const FontFamily& ff) {
         float btnX = g_cx + g_cw - PAD - 110.f;
         SolidBrush& bBtn = g_hovNew ? bPrimHov : bPrim;
         FillRR(g, &bBtn, nullptr, btnX, g_cy + 10, 108, 32, 16);
-        DrawText_(&g, L"+ New Entry", &fSm,
+        DrawText_(g, L"+ New Entry", &fSm,
                   RectF(btnX, g_cy + 10, 108, 32),
                   StringAlignmentCenter, StringAlignmentCenter, &bWhite);
     } else {
@@ -387,13 +387,13 @@ static void DrawToolbar(Graphics& g, const FontFamily& ff) {
         FillRR(g, &bBackBg, nullptr, g_cx + PAD, g_cy + 12, 32, 28, 8);
         FontFamily ffIc(L"Segoe MDL2 Assets");
         Font fIc(&ffIc, 14, FontStyleRegular, UnitPixel);
-        DrawText_(&g, L"\xE80F", &fIc,
+        DrawText_(g, L"\xE80F", &fIc,
                   RectF(g_cx + PAD, g_cy + 12, 32, 28),
                   StringAlignmentCenter, StringAlignmentCenter, &bDark);
 
         // Title
         const wchar_t* titleText = g_editIsNew ? L"New Entry" : L"Edit Entry";
-        DrawText_(&g, titleText, &fBold,
+        DrawText_(g, titleText, &fBold,
                   RectF(g_cx + PAD + 40, g_cy + 2, g_cw * 0.5f, TOOLBAR_H - 4),
                   StringAlignmentNear, StringAlignmentCenter, &bDark);
 
@@ -401,7 +401,7 @@ static void DrawToolbar(Graphics& g, const FontFamily& ff) {
         float sX = g_cx + g_cw - PAD - 90;
         SolidBrush& bSav = g_hovSave ? bPrimHov : bPrim;
         FillRR(g, &bSav, nullptr, sX, g_cy + 12, 88, 28, 14);
-        DrawText_(&g, L"💾  Save", &fSm,
+        DrawText_(g, L"💾  Save", &fSm,
                   RectF(sX, g_cy + 12, 88, 28),
                   StringAlignmentCenter, StringAlignmentCenter, &bWhite);
 
@@ -412,7 +412,7 @@ static void DrawToolbar(Graphics& g, const FontFamily& ff) {
             Pen pDelBrd(Danger, 1.f);
             FillRR(g, &bDelBg, &pDelBrd, dX, g_cy + 12, 82, 28, 14);
             SolidBrush bDelTxt(g_hovDelBtn ? Color(255,255,255,255) : Danger);
-            DrawText_(&g, L"🗑 Delete", &fSm,
+            DrawText_(g, L"🗑 Delete", &fSm,
                       RectF(dX, g_cy + 12, 82, 28),
                       StringAlignmentCenter, StringAlignmentCenter, &bDelTxt);
         }
@@ -449,13 +449,13 @@ static void DrawFolderBar(Graphics& g, const FontFamily& ff) {
             SolidBrush bAct(Primary);
             FillRR(g, &bAct, nullptr, rect.X, rect.Y, rect.Width, rect.Height, 14);
             SolidBrush bTxt(Color(255,255,255,255));
-            DrawText_(&g, lbl.c_str(), &fSmB, rect,
+            DrawText_(g, lbl.c_str(), &fSmB, rect,
                       StringAlignmentCenter, StringAlignmentCenter, &bTxt);
         } else {
             SolidBrush bChip(TagBg);
             FillRR(g, &bChip, nullptr, rect.X, rect.Y, rect.Width, rect.Height, 14);
             SolidBrush bTxt(Primary);
-            DrawText_(&g, lbl.c_str(), &fSm, rect,
+            DrawText_(g, lbl.c_str(), &fSm, rect,
                       StringAlignmentCenter, StringAlignmentCenter, &bTxt);
         }
         g_folderRects.push_back(rect);
@@ -495,7 +495,7 @@ static void DrawEntryCard(Graphics& g, const FontFamily& ff,
 
     // Title
     wstring title = e.title.empty() ? S2W(e.date) : S2W(e.title);
-    DrawText_(&g, title.c_str(), &fTitle,
+    DrawText_(g, title.c_str(), &fTitle,
               RectF(cx + padX, cy + padY, inner - 20, 20),
               StringAlignmentNear, StringAlignmentNear, &bDark);
 
@@ -503,21 +503,21 @@ static void DrawEntryCard(Graphics& g, const FontFamily& ff,
     wstring preview = S2W(e.body);
     // truncate newlines for preview
     for (auto& c : preview) if (c == L'\n') c = L' ';
-    DrawText_(&g, preview.c_str(), &fBody,
+    DrawText_(g, preview.c_str(), &fBody,
               RectF(cx + padX, cy + padY + 22, inner, 18),
               StringAlignmentNear, StringAlignmentNear, &bGray);
 
     // Date + folder
     wstring meta = S2W(e.date);
     if (!e.folder.empty() && e.folder != "General") meta += L"  •  " + S2W(e.folder);
-    DrawText_(&g, meta.c_str(), &fMeta,
+    DrawText_(g, meta.c_str(), &fMeta,
               RectF(cx + padX, cy + padY + 43, inner, 16),
               StringAlignmentNear, StringAlignmentNear, &bGray);
 
     // Delete confirmation row
     if (pendingDel) {
         SolidBrush bDangerBr(Danger);
-        DrawText_(&g, L"🗑 Tap again to confirm delete", &fMeta,
+        DrawText_(g, L"🗑 Tap again to confirm delete", &fMeta,
                   RectF(cx + padX, cy + CARD_H - CARD_GAP - 18, inner, 16),
                   StringAlignmentNear, StringAlignmentNear, &bDangerBr);
     }
@@ -548,7 +548,7 @@ void DrawDiaryListView(Graphics& g, const FontFamily& ff) {
     if (filtered.empty()) {
         Font fMid(&ff, 15, FontStyleRegular, UnitPixel);
         SolidBrush bGray(TextGray);
-        DrawText_(&g, L"No diary entries yet.\nTap \"+ New Entry\" to start writing.",
+        DrawText_(g, L"No diary entries yet.\nTap \"+ New Entry\" to start writing.",
                   &fMid, RectF(g_cx, areaY, g_cw, areaH),
                   StringAlignmentCenter, StringAlignmentCenter, &bGray, StringTrimmingNone);
     }
@@ -574,7 +574,7 @@ void DrawDiaryListView(Graphics& g, const FontFamily& ff) {
         float maxScroll= g_listContentH - areaH;
         float thumbY   = areaY + (g_listScroll / maxScroll) * (trackH - thumbH);
         SolidBrush bThumb(Color(180, 180, 185, 200));
-        g.FillRectangle(&bThumb, g_cx + g_cw - 5, thumbY, 4, thumbH);
+        g.FillRectangle(&bThumb, (Gdiplus::REAL)(g_cx + g_cw - 5), (Gdiplus::REAL)thumbY, (Gdiplus::REAL)4, (Gdiplus::REAL)thumbH);
     }
 }
 
@@ -612,13 +612,13 @@ void DrawDiaryEditView(Graphics& g, const FontFamily& ff) {
     {
         Font fDate(&ff, 11, FontStyleItalic, UnitPixel);
         wstring ds = S2W(g_edit.date.empty() ? CurrentDate() : g_edit.date);
-        DrawText_(&g, (L"📅  " + ds).c_str(), &fDate,
+        DrawText_(g, (L"📅  " + ds).c_str(), &fDate,
                   RectF(left, y, w, 18), StringAlignmentNear, StringAlignmentNear, &bGray);
         y += 24.f;
     }
 
     // ── Mood selector
-    DrawText_(&g, L"MOOD", &fLabel, RectF(left, y, w, 16),
+    DrawText_(g, L"MOOD", &fLabel, RectF(left, y, w, 16),
               StringAlignmentNear, StringAlignmentNear, &bGray);
     y += 20.f;
     float moodW = min(w / 5.f - 6.f, 64.f);
@@ -632,16 +632,16 @@ void DrawDiaryEditView(Graphics& g, const FontFamily& ff) {
         FillRR(g, &bM, &pM, mx, y, moodW, 36, 10);
         // emoji + label
         Font fIco(&ff, 16, FontStyleRegular, UnitPixel);
-        DrawText_(&g, MOOD_ICON[i], &fIco, RectF(mx, y, moodW, 20),
+        DrawText_(g, MOOD_ICON[i], &fIco, RectF(mx, y, moodW, 20),
                   StringAlignmentCenter, StringAlignmentCenter, &bDark);
-        DrawText_(&g, MOOD_LBL[i], &fSm, RectF(mx, y + 18, moodW, 18),
+        DrawText_(g, MOOD_LBL[i], &fSm, RectF(mx, y + 18, moodW, 18),
                   StringAlignmentCenter, StringAlignmentCenter, &bDark);
         g_moodRects.push_back(RectF(mx, y, moodW, 36));
     }
     y += 44.f;
 
     // ── Title
-    DrawText_(&g, L"TITLE", &fLabel, RectF(left, y, w, 16),
+    DrawText_(g, L"TITLE", &fLabel, RectF(left, y, w, 16),
               StringAlignmentNear, StringAlignmentNear, &bGray);
     y += 20.f;
     bool tFocus = (g_editFocus == 1);
@@ -649,14 +649,14 @@ void DrawDiaryEditView(Graphics& g, const FontFamily& ff) {
     FillRR(g, &bSurf, &pTBrd, left, y, w, 40, 8);
     wstring titleTxt = S2W(g_edit.title);
     if (tFocus) titleTxt += L"│"; // cursor
-    DrawText_(&g, titleTxt.empty() ? L"Entry title…" : titleTxt.c_str(), &fInputB,
+    DrawText_(g, titleTxt.empty() ? L"Entry title…" : titleTxt.c_str(), &fInputB,
               RectF(left + 10, y, w - 16, 40),
               StringAlignmentNear, StringAlignmentCenter,
               titleTxt.empty() ? &bGray : &bDark);
     g_titleRect = RectF(left, y, w, 40); y += 50.f;
 
     // ── Body
-    DrawText_(&g, L"CONTENT", &fLabel, RectF(left, y, w, 16),
+    DrawText_(g, L"CONTENT", &fLabel, RectF(left, y, w, 16),
               StringAlignmentNear, StringAlignmentNear, &bGray);
     y += 20.f;
     float bodyH = g_ch - y - g_cy - PAD - 80.f; // leave room for folder+tags
@@ -671,7 +671,7 @@ void DrawDiaryEditView(Graphics& g, const FontFamily& ff) {
     wstring bodyTxt = S2W(g_edit.body);
     if (bFocus) bodyTxt += L"│";
     Font fBodyIn(&ff, 13, FontStyleRegular, UnitPixel);
-    DrawText_(&g, bodyTxt.empty() ? L"Write your thoughts…" : bodyTxt.c_str(),
+    DrawText_(g, bodyTxt.empty() ? L"Write your thoughts…" : bodyTxt.c_str(),
               &fBodyIn, RectF(left + 10, y + 8 - g_bodyScroll, w - 20, bodyH * 10),
               StringAlignmentNear, StringAlignmentNear,
               bodyTxt.empty() ? &bGray : &bDark, StringTrimmingNone);
@@ -679,7 +679,7 @@ void DrawDiaryEditView(Graphics& g, const FontFamily& ff) {
     g_bodyRect = RectF(left, y, w, bodyH); y += bodyH + 12.f;
 
     // ── Folder chips
-    DrawText_(&g, L"FOLDER", &fLabel, RectF(left, y, 80, 16),
+    DrawText_(g, L"FOLDER", &fLabel, RectF(left, y, 80, 16),
               StringAlignmentNear, StringAlignmentNear, &bGray);
     y += 20.f;
     float fx = left;
@@ -701,7 +701,7 @@ void DrawDiaryEditView(Graphics& g, const FontFamily& ff) {
         SolidBrush bFChip(bgF);
         FillRR(g, &bFChip, nullptr, fx, y, cw2, 28, 14);
         SolidBrush bFTxt(active2 ? Color(255,255,255,255) : Primary);
-        DrawText_(&g, lbl.c_str(), &fSm, RectF(fx, y, cw2, 28),
+        DrawText_(g, lbl.c_str(), &fSm, RectF(fx, y, cw2, 28),
                   StringAlignmentCenter, StringAlignmentCenter, &bFTxt);
         g_folderChipRects.push_back(RectF(fx, y, cw2, 28));
         // store label in parallel
@@ -714,7 +714,7 @@ void DrawDiaryEditView(Graphics& g, const FontFamily& ff) {
     Pen pAddF(Accent, 1.5f);
     FillRR(g, &bAddF, &pAddF, fx, y, 60, 28, 14);
     SolidBrush bAddFTxt(hov3 ? Color(255,255,255,255) : Accent);
-    DrawText_(&g, L"+ New", &fSm, RectF(fx, y, 60, 28),
+    DrawText_(g, L"+ New", &fSm, RectF(fx, y, 60, 28),
               StringAlignmentCenter, StringAlignmentCenter, &bAddFTxt);
     g_addFolderRect = RectF(fx, y, 60, 28);
     y += 38.f;
@@ -726,7 +726,7 @@ void DrawDiaryEditView(Graphics& g, const FontFamily& ff) {
         FillRR(g, &bSurf, &pFI, left, y, w * 0.6f, 32, 8);
         wstring nf = g_newFolder;
         if (ffocus) nf += L"│";
-        DrawText_(&g, nf.empty() ? L"New folder name…" : nf.c_str(),
+        DrawText_(g, nf.empty() ? L"New folder name…" : nf.c_str(),
                   &fSm, RectF(left + 8, y, w * 0.6f - 12, 32),
                   StringAlignmentNear, StringAlignmentCenter,
                   nf.empty() ? &bGray : &bDark);
@@ -736,13 +736,13 @@ void DrawDiaryEditView(Graphics& g, const FontFamily& ff) {
         float cfX = left + w * 0.6f + 8;
         SolidBrush bCf(Accent);
         FillRR(g, &bCf, nullptr, cfX, y, 60, 32, 8);
-        DrawText_(&g, L"Add", &fSm, RectF(cfX, y, 60, 32),
+        DrawText_(g, L"Add", &fSm, RectF(cfX, y, 60, 32),
                   StringAlignmentCenter, StringAlignmentCenter, &bWhite);
         y += 42.f;
     }
 
     // ── Tags
-    DrawText_(&g, L"TAGS (comma separated)", &fLabel, RectF(left, y, w, 16),
+    DrawText_(g, L"TAGS (comma separated)", &fLabel, RectF(left, y, w, 16),
               StringAlignmentNear, StringAlignmentNear, &bGray);
     y += 20.f;
     bool tgFocus = (g_editFocus == 4);
@@ -750,7 +750,7 @@ void DrawDiaryEditView(Graphics& g, const FontFamily& ff) {
     FillRR(g, &bSurf, &pTgBrd, left, y, w, 32, 8);
     wstring tagsTxt = S2W(g_edit.tags);
     if (tgFocus) tagsTxt += L"│";
-    DrawText_(&g, tagsTxt.empty() ? L"e.g. work, ideas, family…" : tagsTxt.c_str(),
+    DrawText_(g, tagsTxt.empty() ? L"e.g. work, ideas, family…" : tagsTxt.c_str(),
               &fSm, RectF(left + 8, y, w - 12, 32),
               StringAlignmentNear, StringAlignmentCenter,
               tagsTxt.empty() ? &bGray : &bDark);
