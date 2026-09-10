@@ -1,4 +1,5 @@
 // mini_browser.cpp — RasBrowser | Premium UI, Smart Omnibox, Dynamic Bookmarks
+#define MINI_BROWSER_IMPL   // tells mini_browser.h not to extern g_sharedEnv here
 // REFACTORED: Per-Monitor v2 DPI, Chrome bezier tabs, double-buffering,
 //             Smart Google Search, Dark Mode Toggle, App Branding.
 // ADDED: Google Login Bypass, Pure Popup Mode, AI Filter Integration, Chrome 3-Dot Menu.
