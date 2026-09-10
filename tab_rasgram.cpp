@@ -69,7 +69,8 @@ static float  g_cx = 0, g_cy = 0, g_cw = 0, g_ch = 0;
 // WebView2
 static ComPtr<ICoreWebView2Controller> g_rgCtrl;
 static ComPtr<ICoreWebView2>           g_rgWV;
-static bool g_wvReady = false;
+static bool g_wvReady    = false;
+static bool g_rgCreating = false;  // true while async WebView2 creation is in-flight
 
 // My identity
 static string  g_myMobile;
@@ -1218,7 +1219,8 @@ public:
 
     HRESULT Invoke(HRESULT hr, ICoreWebView2Controller* ctl) override {
         if (FAILED(hr)||!ctl) return S_OK;
-        g_rgCtrl = ctl;
+        g_rgCtrl    = ctl;
+        g_rgCreating = false;   // creation complete; guard can be cleared
         ctl->get_CoreWebView2(&g_rgWV);
 
         // Background
@@ -1226,8 +1228,13 @@ public:
         if (SUCCEEDED(ctl->QueryInterface(IID_PPV_ARGS(&ctl2))))
             ctl2->put_DefaultBackgroundColor({255,240,242,245});
 
-        ctl->put_Bounds(m_bounds);
-        ctl->put_IsVisible(TRUE);
+        // Start hidden — ShowRasGramControls(true) will set bounds + make visible
+        // only when the RasGram sub-tab is actually active.  Starting visible here
+        // causes the WebView to paint over the whole parent window before
+        // DrawRasGramTab has had a chance to position it correctly.
+        RECT offscreen = { -4, -4, -2, -2 };
+        ctl->put_Bounds(offscreen);
+        ctl->put_IsVisible(FALSE);
 
         // Settings
         ComPtr<ICoreWebView2Settings> s;
@@ -1254,6 +1261,19 @@ public:
         // Navigate to HTML string
         g_rgWV->NavigateToString(GetRasGramHTML());
         g_wvReady = true;
+
+        // If the RasGram tab is already the active tab (ShowRasGramControls(true)
+        // was called before WebView finished creating), apply the correct bounds and
+        // make it visible now.  Otherwise it stays offscreen/hidden until the user
+        // switches to the RasGram sub-tab.
+        if (g_rgVisible && g_cx > 0 && g_cw > 0) {
+            RECT r = {
+                (LONG)g_cx, (LONG)g_cy,
+                (LONG)(g_cx + g_cw), (LONG)(g_cy + g_ch)
+            };
+            ctl->put_Bounds(r);
+            ctl->put_IsVisible(TRUE);
+        }
 
         // Immediately push login state and chats if already available
         if (!g_loggedInUserUid.empty()) RgSendLoginState();
@@ -1401,8 +1421,11 @@ void InitRasGramDesktop() {
 void DrawRasGramTab(Graphics& g, float cx, float cy, float cw, float ch) {
     g_cx = cx; g_cy = cy; g_cw = cw; g_ch = ch;
 
-    // First draw: create the embedded WebView2
-    if (!g_rgCtrl && hParentWnd) {
+    // First draw: create the embedded WebView2.
+    // Guard with g_rgCreating so that rapid WM_PAINT calls while the async
+    // controller creation is in-flight don't try to create a second WebView.
+    if (!g_rgCtrl && !g_rgCreating && hParentWnd) {
+        g_rgCreating = true;
         RECT bounds = { (LONG)cx, (LONG)cy, (LONG)(cx+cw), (LONG)(cy+ch) };
         RgCreateWebView(hParentWnd, bounds);
     }
