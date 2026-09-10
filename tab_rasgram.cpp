@@ -49,6 +49,9 @@
 
 #pragma comment(lib, "comdlg32.lib")
 
+#include <wincrypt.h>           // CryptBinaryToStringA, CRYPT_STRING_BASE64
+#pragma comment(lib, "crypt32.lib")
+
 using namespace Microsoft::WRL;
 using namespace Gdiplus;   // still needed for DrawRasGramTab signature
 using namespace std;
@@ -1550,16 +1553,15 @@ static string RgQrGeneratePng(const string& url) {
     while (!b64.empty() && b64.back() == '\0') b64.pop_back();
     return b64;
 }
-#pragma comment(lib, "crypt32.lib")
 
 // Write qr_sessions/{token} to Firestore, return token
 static string RgQrCreateSession(const string& token) {
     string path = "/v1/projects/" RG_FIREBASE_PROJECT
                   "/databases/(default)/documents/qr_sessions/" + token;
-    long long expiry = NowMs() + 120000LL; // 2 min expiry
+    long long expiry = NowMs_rg() + 120000LL; // 2 min expiry
     string payload = "{\"fields\":{"
         "\"status\":{\"stringValue\":\"pending\"},"
-        "\"createdAt\":{\"integerValue\":\"" + to_string(NowMs()) + "\"},"
+        "\"createdAt\":{\"integerValue\":\"" + to_string(NowMs_rg()) + "\"},"
         "\"expiresAt\":{\"integerValue\":\"" + to_string(expiry) + "\"},"
         "\"mobile\":{\"stringValue\":\"\"},"
         "\"name\":{\"stringValue\":\"\"}"
