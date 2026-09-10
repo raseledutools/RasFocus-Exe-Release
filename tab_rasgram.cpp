@@ -1345,6 +1345,62 @@ static void RgHandleMessage(const wstring& json) {
             { lock_guard<mutex> lk(g_lanPeersMtx); g_lanPeers.clear(); }
         }
 
+    } else if (action == "rasgram_login") {
+        // User submitted phone+name from the login screen.
+        // Write to chat_users/{mobile} in Firestore (same schema as Android)
+        // so other devices can discover this user.
+        string phone = ParseJsField(j, "phone");
+        string name  = ParseJsField(j, "name");
+        if (phone.empty() || name.empty()) {
+            RgExecJS(L"LG.loginError('Phone and name are required.');");
+            return;
+        }
+
+        // Use the EXE's Firebase uid if logged in, otherwise use phone as uid
+        string uid = g_loggedInUserUid.empty() ? phone : g_loggedInUserUid;
+
+        // Build chat_users/{mobile} document matching Android schema
+        string payload =
+            "{\"fields\":{"
+             "\"uid\":{\"stringValue\":\""    + JsEscape(uid)   + "\"},"
+             "\"name\":{\"stringValue\":\""   + JsEscape(name)  + "\"},"
+             "\"mobile\":{\"stringValue\":\"" + JsEscape(phone) + "\"},"
+             "\"isOnline\":{\"booleanValue\":true}"
+             "}}";
+
+        // Network on background thread; UI update on completion
+        thread([phone, name, uid, payload]() {
+            string path = "/v1/projects/" RG_FIREBASE_PROJECT
+                          "/databases/(default)/documents/chat_users/"
+                          + phone;
+            RgFirestorePost("PATCH", path, payload);
+
+            // Update module state
+            g_myMobile = phone;
+            g_myName_w = Utf8ToWide(name);
+            RgNet_Init(phone, name, uid, "");
+            RgNet_SetOnline(true);
+
+            // Start chat list polling
+            RgNet_StopChatListPolling();
+            RgNet_StartChatListPolling([](const vector<RgChatPreview>& chats) {
+                { lock_guard<mutex> lk(g_chatsMtx); g_chats = chats; }
+                RgPushChatsToUI();
+            });
+
+            // Desktop notifications
+            if (!g_notifyReady && hParentWnd) {
+                RgNotify_Init(hParentWnd);
+                g_notifyReady = true;
+            }
+
+            // Tell JS login succeeded — show main app UI
+            wstring js = L"RG.setLoginState(\""
+                         + Utf8ToWide(JsEscape(name))  + L"\",\""
+                         + Utf8ToWide(JsEscape(phone)) + L"\");";
+            RgExecJS(js);
+        }).detach();
+
     } else if (action == "call_audio" || action == "call_video") {
         string mobile = ParseJsField(j, "contactMobile");
         if (mobile.empty()) return;
