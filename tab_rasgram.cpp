@@ -89,6 +89,23 @@ static bool g_lanMode = false;
 static vector<RgLanPeer> g_lanPeers;
 static mutex g_lanPeersMtx;
 
+// ── Call Window (fullscreen overlay) ─────────────────────────
+static HWND  g_callHwnd       = nullptr;
+static bool  g_callWndVisible = false;
+
+// Incoming call state (written from polling thread, read on UI thread)
+static mutex          g_incomingMtx;
+static bool           g_pendingIncoming = false;
+static RgCallParams   g_pendingCallParams;
+
+// Video frame (latest decoded frame from remote peer)
+static mutex          g_videoMtx;
+static vector<BYTE>   g_videoFrame;
+static int            g_videoW = 0, g_videoH = 0;
+
+// Notify inited flag
+static bool g_notifyReady = false;
+
 // ── String helpers ───────────────────────────────────────────
 static string WideToUtf8(const wstring& ws) {
     if (ws.empty()) return "";
@@ -135,6 +152,319 @@ static void RgSendText(const string& chatId, const string& contactMobile, const 
 static void RgSendLoginState();
 static void RgCreateWebView(HWND parent, RECT bounds);
 static void RgPositionWebView();
+static void RgShowCallWindow(const string& peerName, bool isVideo, bool isIncoming);
+static void RgHideCallWindow();
+static void RgUpdateCallWindowVideoFrame();
+
+// ── WM_USER messages for cross-thread call-window updates ────
+#define WM_RG_INCOMING_CALL (WM_USER + 70)
+#define WM_RG_CALL_ENDED    (WM_USER + 71)
+#define WM_RG_VIDEO_FRAME   (WM_USER + 72)
+#define WM_RG_NEW_MESSAGE   (WM_USER + 73)
+
+// ════════════════════════════════════════════════════════════
+// CALL WINDOW  — fullscreen Win32 overlay for audio/video calls
+// Buttons: Mute (M) | End Call (Esc / button) | Camera toggle (C)
+// Video frame: drawn with GDI StretchDIBits from g_videoFrame
+// ════════════════════════════════════════════════════════════
+
+#define RG_CALL_CLASS L"RasGramCallWnd"
+
+// Layout constants
+static const int BTN_W  = 64;
+static const int BTN_H  = 64;
+static const int BTN_R  = 32; // corner radius for drawing
+
+static string  g_callPeerName;
+static bool    g_callIsVideo   = false;
+static bool    g_callIsIncoming = false;
+
+// Button IDs
+#define RGCB_HANGUP  1
+#define RGCB_MUTE    2
+#define RGCB_CAMERA  3
+#define RGCB_ACCEPT  4
+
+static HWND g_btnHangup  = nullptr;
+static HWND g_btnMute    = nullptr;
+static HWND g_btnCamera  = nullptr;
+static HWND g_btnAccept  = nullptr;
+
+static wstring Utf8ToWide_rg(const string& s) {
+    if (s.empty()) return L"";
+    int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0);
+    if (n <= 0) return L"";
+    wstring ws(n, 0);
+    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, &ws[0], n);
+    if (!ws.empty() && ws.back() == L'\0') ws.pop_back();
+    return ws;
+}
+
+static void DrawCallWindow(HWND hwnd) {
+    PAINTSTRUCT ps;
+    HDC hdc = BeginPaint(hwnd, &ps);
+    RECT rc; GetClientRect(hwnd, &rc);
+    int W = rc.right, H = rc.bottom;
+
+    // Background: dark teal gradient approximated with two fills
+    HBRUSH bgBrush = CreateSolidBrush(RGB(18, 32, 50));
+    FillRect(hdc, &rc, bgBrush);
+    DeleteObject(bgBrush);
+
+    // If video frame available — draw it centred
+    {
+        lock_guard<mutex> lk(g_videoMtx);
+        if (!g_videoFrame.empty() && g_videoW > 0 && g_videoH > 0) {
+            // Scale to fit window keeping aspect ratio
+            float scale = min((float)W / g_videoW, (float)H / g_videoH);
+            int dw = (int)(g_videoW * scale);
+            int dh = (int)(g_videoH * scale);
+            int dx = (W - dw) / 2;
+            int dy = (H - dh) / 2;
+
+            BITMAPINFO bmi = {};
+            bmi.bmiHeader.biSize        = sizeof(BITMAPINFOHEADER);
+            bmi.bmiHeader.biWidth       = g_videoW;
+            bmi.bmiHeader.biHeight      = -g_videoH; // top-down
+            bmi.bmiHeader.biPlanes      = 1;
+            bmi.bmiHeader.biBitCount    = 24;
+            bmi.bmiHeader.biCompression = BI_RGB;
+            StretchDIBits(hdc, dx, dy, dw, dh,
+                          0, 0, g_videoW, g_videoH,
+                          g_videoFrame.data(), &bmi,
+                          DIB_RGB_COLORS, SRCCOPY);
+        } else if (g_callIsVideo) {
+            // No frame yet: show camera icon placeholder
+            SetBkMode(hdc, TRANSPARENT);
+            SetTextColor(hdc, RGB(160, 200, 200));
+            HFONT fBig = CreateFontW(80, 0, 0, 0, FW_NORMAL, 0, 0, 0,
+                                     DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY,
+                                     DEFAULT_PITCH, L"Segoe UI Emoji");
+            HFONT old = (HFONT)SelectObject(hdc, fBig);
+            RECT cr = {0, H/4, W, H*3/4};
+            DrawTextW(hdc, L"📹", -1, &cr, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            SelectObject(hdc, old);
+            DeleteObject(fBig);
+        }
+    }
+
+    // Avatar circle (top-centre)
+    HBRUSH avatarBrush = CreateSolidBrush(RGB(0, 150, 160));
+    int avR = 60, avX = W/2 - avR, avY = 60;
+    Ellipse(hdc, avX, avY, avX + avR*2, avY + avR*2);
+    DeleteObject(avatarBrush);
+
+    // Peer name
+    wstring nameW = Utf8ToWide_rg(g_callPeerName);
+    HFONT fName = CreateFontW(28, 0, 0, 0, FW_BOLD, 0, 0, 0,
+                               DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY,
+                               DEFAULT_PITCH, L"Segoe UI");
+    HFONT old2 = (HFONT)SelectObject(hdc, fName);
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, RGB(255,255,255));
+    RECT nameRc = {0, avY + avR*2 + 12, W, avY + avR*2 + 60};
+    DrawTextW(hdc, nameW.c_str(), -1, &nameRc, DT_CENTER | DT_SINGLELINE);
+
+    // Status text
+    HFONT fSub = CreateFontW(16, 0, 0, 0, FW_NORMAL, 0, 0, 0,
+                              DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY,
+                              DEFAULT_PITCH, L"Segoe UI");
+    SelectObject(hdc, fSub);
+    SetTextColor(hdc, RGB(180, 210, 210));
+    RECT subRc = {0, avY + avR*2 + 64, W, avY + avR*2 + 96};
+    wstring statusTxt;
+    if (g_callIsIncoming)
+        statusTxt = (g_callIsVideo ? L"Incoming video call" : L"Incoming audio call");
+    else if (RgCall_IsActive()) {
+        int secs = RgCall_GetDurationSeconds();
+        wchar_t buf[32];
+        swprintf(buf, 32, L"%02d:%02d", secs/60, secs%60);
+        statusTxt = buf;
+    } else {
+        statusTxt = L"Calling…";
+    }
+    DrawTextW(hdc, statusTxt.c_str(), -1, &subRc, DT_CENTER | DT_SINGLELINE);
+
+    SelectObject(hdc, old2);
+    DeleteObject(fName);
+    DeleteObject(fSub);
+
+    EndPaint(hwnd, &ps);
+}
+
+static LRESULT CALLBACK RgCallWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+    switch (msg) {
+    case WM_PAINT:
+        DrawCallWindow(hwnd);
+        return 0;
+
+    case WM_KEYDOWN:
+        if (wp == VK_ESCAPE) {
+            // Esc = hang up
+            RgCall_Hangup();
+            RgHideCallWindow();
+        } else if (wp == 'M') {
+            RgCall_ToggleMute(!RgCall_IsMuted());
+            SetWindowTextW(g_btnMute, RgCall_IsMuted() ? L"🔇 Unmute" : L"🎤 Mute");
+        } else if (wp == 'C' && g_callIsVideo) {
+            RgCall_ToggleCamera(!RgCall_IsVideo());
+        }
+        return 0;
+
+    case WM_COMMAND:
+        switch (LOWORD(wp)) {
+        case RGCB_HANGUP:
+            RgCall_Hangup();
+            RgHideCallWindow();
+            break;
+        case RGCB_MUTE:
+            RgCall_ToggleMute(!RgCall_IsMuted());
+            SetWindowTextW(g_btnMute, RgCall_IsMuted() ? L"🔇 Unmute" : L"🎤 Mute");
+            break;
+        case RGCB_CAMERA:
+            if (g_callIsVideo) RgCall_ToggleCamera(!RgCall_IsVideo());
+            break;
+        case RGCB_ACCEPT:
+            // Accept incoming call
+            RgCall_AcceptIncoming(g_pendingCallParams,
+                [](bool connected){
+                    if (!connected) RgHideCallWindow();
+                },
+                [](const void* frame, int w, int h){
+                    lock_guard<mutex> lk(g_videoMtx);
+                    const BYTE* p = (const BYTE*)frame;
+                    g_videoFrame.assign(p, p + w*h*3);
+                    g_videoW = w; g_videoH = h;
+                    // Trigger repaint
+                    if (g_callHwnd) InvalidateRect(g_callHwnd, nullptr, FALSE);
+                });
+            g_callIsIncoming = false;
+            if (g_btnAccept) { DestroyWindow(g_btnAccept); g_btnAccept = nullptr; }
+            break;
+        }
+        return 0;
+
+    case WM_RG_VIDEO_FRAME:
+        InvalidateRect(hwnd, nullptr, FALSE);
+        return 0;
+
+    case WM_TIMER:
+        // Refresh duration display every second while call is active
+        if (RgCall_IsActive())
+            InvalidateRect(hwnd, nullptr, FALSE);
+        else
+            RgHideCallWindow();
+        return 0;
+
+    case WM_DESTROY:
+        g_callHwnd = nullptr;
+        return 0;
+    }
+    return DefWindowProcW(hwnd, msg, wp, lp);
+}
+
+static void RgShowCallWindow(const string& peerName, bool isVideo, bool isIncoming) {
+    g_callPeerName   = peerName;
+    g_callIsVideo    = isVideo;
+    g_callIsIncoming = isIncoming;
+
+    // Register class once
+    static bool classReg = false;
+    if (!classReg) {
+        WNDCLASSEXW wc = {};
+        wc.cbSize        = sizeof(wc);
+        wc.lpfnWndProc   = RgCallWndProc;
+        wc.hInstance     = GetModuleHandleW(nullptr);
+        wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
+        wc.lpszClassName = RG_CALL_CLASS;
+        wc.hCursor       = LoadCursorW(nullptr, IDC_ARROW);
+        RegisterClassExW(&wc);
+        classReg = true;
+    }
+
+    if (g_callHwnd) {
+        // Already open — just update and repaint
+        SetWindowTextW(g_callHwnd,
+            (Utf8ToWide_rg(peerName) + L" — RasGram Call").c_str());
+        InvalidateRect(g_callHwnd, nullptr, TRUE);
+        return;
+    }
+
+    // Full-screen window (no title bar)
+    int SW = GetSystemMetrics(SM_CXSCREEN);
+    int SH = GetSystemMetrics(SM_CYSCREEN);
+    g_callHwnd = CreateWindowExW(
+        WS_EX_TOPMOST,
+        RG_CALL_CLASS,
+        (Utf8ToWide_rg(peerName) + L" — RasGram Call").c_str(),
+        WS_POPUP | WS_VISIBLE,
+        0, 0, SW, SH,
+        hParentWnd, nullptr, GetModuleHandleW(nullptr), nullptr);
+
+    if (!g_callHwnd) return;
+
+    // Buttons — bottom-centre row
+    int btnY = SH - 120;
+    int cx   = SW / 2;
+    int bw = 140, bh = 48, gap = 20;
+
+    if (isIncoming) {
+        // Accept + Decline
+        g_btnAccept = CreateWindowExW(0, L"BUTTON", L"✅ Accept",
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+            cx - bw - gap/2, btnY, bw, bh,
+            g_callHwnd, (HMENU)RGCB_ACCEPT, GetModuleHandleW(nullptr), nullptr);
+        g_btnHangup = CreateWindowExW(0, L"BUTTON", L"❌ Decline",
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+            cx + gap/2, btnY, bw, bh,
+            g_callHwnd, (HMENU)RGCB_HANGUP, GetModuleHandleW(nullptr), nullptr);
+    } else {
+        // Mute + Hang up + Camera(if video)
+        int totalBtns = isVideo ? 3 : 2;
+        int startX = cx - (totalBtns * bw + (totalBtns-1)*gap) / 2;
+
+        g_btnMute = CreateWindowExW(0, L"BUTTON", L"🎤 Mute",
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+            startX, btnY, bw, bh,
+            g_callHwnd, (HMENU)RGCB_MUTE, GetModuleHandleW(nullptr), nullptr);
+        startX += bw + gap;
+
+        if (isVideo) {
+            g_btnCamera = CreateWindowExW(0, L"BUTTON", L"📷 Camera",
+                WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+                startX, btnY, bw, bh,
+                g_callHwnd, (HMENU)RGCB_CAMERA, GetModuleHandleW(nullptr), nullptr);
+            startX += bw + gap;
+        }
+
+        g_btnHangup = CreateWindowExW(0, L"BUTTON", L"📵 End Call",
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+            startX, btnY, bw, bh,
+            g_callHwnd, (HMENU)RGCB_HANGUP, GetModuleHandleW(nullptr), nullptr);
+    }
+
+    // 1-second timer to refresh duration
+    SetTimer(g_callHwnd, 1, 1000, nullptr);
+    SetFocus(g_callHwnd);
+}
+
+static void RgHideCallWindow() {
+    if (g_callHwnd) {
+        KillTimer(g_callHwnd, 1);
+        DestroyWindow(g_callHwnd);
+        g_callHwnd = nullptr;
+    }
+    g_btnHangup = g_btnMute = g_btnCamera = g_btnAccept = nullptr;
+    g_callIsIncoming = false;
+    // Clear video buffer
+    lock_guard<mutex> lk(g_videoMtx);
+    g_videoFrame.clear();
+    g_videoW = g_videoH = 0;
+}
+
+static void RgUpdateCallWindowVideoFrame() {
+    if (g_callHwnd) PostMessageW(g_callHwnd, WM_RG_VIDEO_FRAME, 0, 0);
+}
 
 // ── HTML/CSS/JS string ───────────────────────────────────────
 static const wchar_t* GetRasGramHTML() {
@@ -649,6 +979,19 @@ static void RgPushMessagesToUI() {
 // ── Push one message to UI ────────────────────────────────────
 static void RgPushOneMessageToUI(const RgMessage& m) {
     if (!g_wvReady) return;
+
+    // Desktop notification for incoming messages (not our own, not call logs)
+    if (m.senderMobile != g_myMobile && !m.isCallLog && !m.text.empty() && g_notifyReady) {
+        // Find sender name from chats list
+        string senderName = m.senderName.empty() ? m.senderMobile : m.senderName;
+        {
+            lock_guard<mutex> lk(g_chatsMtx);
+            for (auto& c : g_chats)
+                if (c.contactMobile == m.senderMobile) { senderName = c.contactName; break; }
+        }
+        RgNotify_Message(senderName, m.text);
+    }
+
     ostringstream ss;
     ss << "{"
        << "\"id\":\""            << JsEscape(m.id)           << "\","
@@ -799,12 +1142,33 @@ static void RgHandleMessage(const wstring& json) {
             cp.peerIp     = peerIp;
             cp.isVideo    = (action == "call_video");
             cp.isLan      = !peerIp.empty();
-            // Find name
             { lock_guard<mutex> lk(g_chatsMtx);
               for (auto& c:g_chats) if(c.contactMobile==mobile){cp.peerName=c.contactName;break;} }
-            RgCall_StartOutgoing(cp, [](bool){});
+
+            // Show fullscreen call window immediately (outgoing)
+            RgShowCallWindow(cp.peerName, cp.isVideo, /*isIncoming=*/false);
+
+            RgCall_StartOutgoing(cp,
+                // State callback: called when connected or ended
+                [](bool connected){
+                    if (!connected) {
+                        // Call ended — close window from UI thread
+                        if (hParentWnd) PostMessageW(hParentWnd, WM_RG_CALL_ENDED, 0, 0);
+                    }
+                },
+                // Video frame callback: called on recv thread for each frame
+                [](const void* frame, int w, int h){
+                    {
+                        lock_guard<mutex> lk(g_videoMtx);
+                        const BYTE* p = (const BYTE*)frame;
+                        g_videoFrame.assign(p, p + w*h*3);
+                        g_videoW = w; g_videoH = h;
+                    }
+                    RgUpdateCallWindowVideoFrame();
+                });
         } else {
             RgCall_Hangup();
+            RgHideCallWindow();
         }
     }
 }
@@ -978,6 +1342,28 @@ void InitRasGramDesktop() {
             { lock_guard<mutex> lk(g_chatsMtx); g_chats = chats; }
             RgPushChatsToUI();
         });
+
+        // ── Desktop notifications for new messages ──────────
+        if (!g_notifyReady && hParentWnd) {
+            RgNotify_Init(hParentWnd);
+            g_notifyReady = true;
+        }
+
+        // ── Incoming call polling ────────────────────────────
+        RgNet_StopIncomingCallPolling();
+        RgNet_StartIncomingCallPolling([](const RgCallParams& cp) {
+            // Fire on background thread — post to UI thread via hParentWnd
+            {
+                lock_guard<mutex> lk(g_incomingMtx);
+                g_pendingIncoming    = true;
+                g_pendingCallParams  = cp;
+            }
+            // Notify balloon
+            RgNotify_IncomingCall(cp.peerName, cp.isVideo);
+            // Wake up UI thread
+            if (hParentWnd)
+                PostMessageW(hParentWnd, WM_RG_INCOMING_CALL, 0, 0);
+        });
     }).detach();
 }
 
@@ -1024,3 +1410,38 @@ void ProcessRasGramMouseClick(float, float) {}
 void ProcessRasGramMouseWheel(int) {}
 void ProcessRasGramChar      (wchar_t) {}
 void ProcessRasGramKeyDown   (WPARAM) {}
+
+// ─────────────────────────────────────────────────────────────
+// RgHandleParentWndMsg
+// Call from main WndProc for WM_RG_* messages.
+// Returns true if handled (caller should return 0).
+// ─────────────────────────────────────────────────────────────
+bool RgHandleParentWndMsg(HWND /*hwnd*/, UINT msg, WPARAM /*wp*/, LPARAM /*lp*/) {
+    switch (msg) {
+
+    case WM_RG_INCOMING_CALL: {
+        // Background polling thread posted this — show call window on UI thread
+        RgCallParams cp;
+        {
+            lock_guard<mutex> lk(g_incomingMtx);
+            if (!g_pendingIncoming) return false;
+            cp = g_pendingCallParams;
+            g_pendingIncoming = false;
+        }
+        RgShowCallWindow(cp.peerName, cp.isVideo, /*isIncoming=*/true);
+        return true;
+    }
+
+    case WM_RG_CALL_ENDED:
+        // Call thread signalled that the call ended
+        RgHideCallWindow();
+        return true;
+
+    case WM_RG_VIDEO_FRAME:
+        // Already handled inside RgCallWndProc — nothing to do here
+        return false;
+
+    default:
+        return false;
+    }
+}
