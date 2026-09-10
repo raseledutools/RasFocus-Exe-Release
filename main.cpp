@@ -2670,10 +2670,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         break;
     }
 
+    // ── RasGram cross-thread messages (WM_USER+70…73) ──────────
+    case WM_USER + 70:  // WM_RG_INCOMING_CALL
+    case WM_USER + 71:  // WM_RG_CALL_ENDED
+    case WM_USER + 72:  // WM_RG_VIDEO_FRAME
+    case WM_USER + 73:  // WM_RG_NEW_MESSAGE
+        RgHandleParentWndMsg(hWnd, msg, wp, lp);
+        break;
+
     case WM_DESTROY:
         extern void SaveDeepStudySettings();
         SaveDeepStudySettings();
         RemoveTrayIcon();
+        RgNotify_Destroy();   // clean up tray notification icon
+        RgNet_StopIncomingCallPolling();
         PostQuitMessage(0);
         break;
 
