@@ -31,6 +31,43 @@
 #include <mmdeviceapi.h>
 #include <audioclient.h>
 #include <dshow.h>
+#include <shellapi.h>
+#pragma comment(lib, "shell32.lib")
+#include <initguid.h>
+
+// ISampleGrabberCB / ISampleGrabber — manually declared since qedit.h
+// is not reliably present in modern Windows SDKs.
+DEFINE_GUID(IID_ISampleGrabberCB_rg,
+    0x0579154a,0x2b53,0x4994,0xb0,0xd0,0xe7,0x73,0x14,0x8e,0xff,0x85);
+DEFINE_GUID(IID_ISampleGrabber_rg,
+    0x6b652fff,0x11fe,0x4fce,0x92,0xad,0x02,0x66,0xb5,0xd7,0xc7,0x8f);
+DEFINE_GUID(CLSID_SampleGrabber_rg,
+    0xc1f400a0,0x3f08,0x11d3,0x9f,0x0b,0x00,0x60,0x08,0x03,0x9e,0x37);
+DEFINE_GUID(CLSID_NullRenderer_rg,
+    0xc1f400a4,0x3f08,0x11d3,0x9f,0x0b,0x00,0x60,0x08,0x03,0x9e,0x37);
+
+#undef IID_ISampleGrabberCB
+#define IID_ISampleGrabberCB IID_ISampleGrabberCB_rg
+#undef IID_ISampleGrabber
+#define IID_ISampleGrabber   IID_ISampleGrabber_rg
+#undef CLSID_SampleGrabber
+#define CLSID_SampleGrabber  CLSID_SampleGrabber_rg
+#undef CLSID_NullRenderer
+#define CLSID_NullRenderer   CLSID_NullRenderer_rg
+
+struct ISampleGrabberCB : public IUnknown {
+    virtual HRESULT STDMETHODCALLTYPE SampleCB(double SampleTime, IMediaSample* pSample) = 0;
+    virtual HRESULT STDMETHODCALLTYPE BufferCB(double SampleTime, BYTE* pBuffer, long BufferLen) = 0;
+};
+struct ISampleGrabber : public IUnknown {
+    virtual HRESULT STDMETHODCALLTYPE SetOneShot(BOOL OneShot) = 0;
+    virtual HRESULT STDMETHODCALLTYPE SetMediaType(const AM_MEDIA_TYPE* pType) = 0;
+    virtual HRESULT STDMETHODCALLTYPE GetConnectedMediaType(AM_MEDIA_TYPE* pType) = 0;
+    virtual HRESULT STDMETHODCALLTYPE SetBufferSamples(BOOL BufferThem) = 0;
+    virtual HRESULT STDMETHODCALLTYPE GetCurrentBuffer(long* pBufferSize, long* pBuffer) = 0;
+    virtual HRESULT STDMETHODCALLTYPE GetCurrentSample(IMediaSample** ppSample) = 0;
+    virtual HRESULT STDMETHODCALLTYPE SetCallback(ISampleGrabberCB* pCallback, long WhichMethodToCallback) = 0;
+};
 #include <string>
 #include <vector>
 #include <thread>
@@ -1242,6 +1279,13 @@ static void CallAudioLoop(SOCKET udpSock, const string& peerIp, int peerPort,
     rend.Shutdown();
 }
 
+// ── Video call forward declarations ─────────────────────────
+struct RgSampleGrabberCB;
+static bool StartCamera(int targetW, int targetH);
+static void StopCamera();
+static void CallVideoSendLoop(SOCKET udpSock, const string& peerIp, int peerPort);
+static void CallVideoRecvLoop(SOCKET udpSock);
+
 static void CallSignalFirebase(bool start) {
     // Write call signal to Firestore: calls/{chatId}/state
     string path = RgBuildPath("calls", g_callParams.chatId, "state", "current");
@@ -1439,7 +1483,7 @@ void RgNotify_Init(HWND ownerHwnd) {
     g_nid.uCallbackMessage = RG_NOTIFY_WM;
     // Use the app's own icon (first icon resource) or fallback to default
     g_nid.hIcon = LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(101));
-    if (!g_nid.hIcon) g_nid.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+    if (!g_nid.hIcon) g_nid.hIcon = LoadIconW(nullptr, MAKEINTRESOURCEW(32512));
     wcscpy_s(g_nid.szTip, L"RasFocus — RasGram");
 
     Shell_NotifyIconW(NIM_ADD, &g_nid);
@@ -1503,8 +1547,6 @@ void RgNotify_IncomingCall(const string& callerName, bool isVideo) {
 // Frames are scaled to 320×240 before sending to keep bandwidth low.
 // Receiver decodes and calls g_callVideoCb(frameRGB, w, h).
 
-#include <initguid.h>
-#include <strmif.h>   // DirectShow core (already via dshow.h)
 
 static IGraphBuilder*  g_dshowGraph   = nullptr;
 static ICaptureGraphBuilder2* g_dshowCapture = nullptr;
