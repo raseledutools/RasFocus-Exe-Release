@@ -583,6 +583,22 @@ body{display:flex;flex-direction:column;height:100vh;overflow:hidden;background:
 ::-webkit-scrollbar{width:5px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:#ccc;border-radius:3px}
+
+/* ── RESPONSIVE: small window (< 600px) ── */
+#btn-chat-toggle{display:none}
+@media (max-width:600px){
+  #btn-chat-toggle{display:flex}
+  #chatlist{
+    position:absolute;left:0;top:52px;bottom:0;z-index:100;
+    width:100%;max-width:320px;
+    box-shadow:2px 0 12px rgba(0,0,0,.18);
+    transform:translateX(-110%);
+    transition:transform .22s cubic-bezier(.4,0,.2,1);
+  }
+  #chatlist.open{transform:translateX(0)}
+  #overlay{display:none;position:absolute;inset:0;z-index:99;background:rgba(0,0,0,.3)}
+  #overlay.show{display:block}
+}
 </style>
 </head>
 <body>
@@ -600,13 +616,15 @@ body{display:flex;flex-direction:column;height:100vh;overflow:hidden;background:
 
   <!-- TOP BAR -->
   <div id="topbar">
+    <button id="btn-chat-toggle" title="Chats" onclick="RG.toggleChatList()">☰</button>
     <button id="btn-lan" title="LAN Mode" onclick="RG.toggleLan()">📡</button>
     <div class="logo">RasGram<span class="badge">DESKTOP</span></div>
     <button title="Settings" onclick="RG.openSettings()">⚙️</button>
   </div>
 
   <!-- BODY -->
-  <div id="body">
+  <div id="body" style="position:relative">
+    <div id="overlay" onclick="RG.closeChatList()"></div>
 
     <!-- CHAT LIST -->
     <div id="chatlist">
@@ -836,6 +854,8 @@ window.RG = {
     document.getElementById('messages').innerHTML = '<div style="text-align:center;color:#aaa;padding:20px">Loading…</div>';
     renderChats(); // update selected highlight
     postMsg({action:'open', chatId, contactMobile});
+    // On small screens, collapse the chat list after opening a chat
+    RG.closeChatList();
   },
 
   send() {
@@ -886,6 +906,17 @@ window.RG = {
   callAudio() { postMsg({action:'call_audio', contactMobile: state.openMobile}); },
   callVideo() { postMsg({action:'call_video', contactMobile: state.openMobile}); },
   openSettings() { postMsg({action:'settings'}); },
+
+  toggleChatList() {
+    const cl = document.getElementById('chatlist');
+    const ov = document.getElementById('overlay');
+    const open = cl.classList.toggle('open');
+    ov.classList.toggle('show', open);
+  },
+  closeChatList() {
+    document.getElementById('chatlist').classList.remove('open');
+    document.getElementById('overlay').classList.remove('show');
+  },
 };
 </script>
 </body>
