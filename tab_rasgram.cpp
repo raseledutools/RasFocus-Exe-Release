@@ -34,6 +34,7 @@
 #endif
 #include <windows.h>
 #include <wrl/client.h>
+#include <wrl/event.h>
 #include "WebView2.h"
 #include "WebView2EnvironmentOptions.h"
 
