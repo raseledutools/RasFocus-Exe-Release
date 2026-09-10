@@ -1290,7 +1290,16 @@ void RgCall_StartOutgoing(const RgCallParams& p,
         (void)::bind(g_callUdpSock, (sockaddr*)&local, sizeof(local));
 
         string peerIp = p.peerIp;
-        // For internet calls: use relay. Simplified: same IP is fine for LAN tests
+
+        // Video call: start DirectShow camera + video send/recv threads
+        if (p.isVideo) {
+            if (StartCamera(320, 240)) {
+                SOCKET vs = g_callUdpSock;
+                thread([vs, peerIp](){ CallVideoSendLoop(vs, peerIp, RG_CALL_UDP_PORT); StopCamera(); }).detach();
+                thread([vs](){ CallVideoRecvLoop(vs); }).detach();
+            }
+        }
+
         CallAudioLoop(g_callUdpSock, peerIp, RG_CALL_UDP_PORT, p.isVideo);
 
         CallSignalFirebase(false);
@@ -1322,3 +1331,368 @@ bool RgCall_IsActive()               { return g_callActive.load(); }
 bool RgCall_IsMuted()                { return g_callMuted.load(); }
 bool RgCall_IsVideo()                { return g_callVideo.load(); }
 int  RgCall_GetDurationSeconds()     { return g_callDuration.load(); }
+
+// ============================================================
+// DECLINE INCOMING CALL
+// ============================================================
+void RgCall_Decline() {
+    // Write "declined" to Firestore so caller knows
+    string path = RgBuildPath("calls", g_callParams.chatId, "state", "current");
+    string payload = "{\"fields\":{"
+        "\"status\":{\"stringValue\":\"declined\"},"
+        "\"endedAt\":{\"integerValue\":\"" + to_string(NowMs()) + "\"}"
+        "}}";
+    thread([path, payload](){
+        RgFirestorePost("PATCH",
+            path + "?updateMask.fieldPaths=status&updateMask.fieldPaths=endedAt",
+            payload);
+    }).detach();
+    g_callActive = false;
+}
+
+// ============================================================
+// INCOMING CALL POLLING
+// ============================================================
+static atomic<bool>        g_incomingPollRun { false };
+static RgIncomingCallCallback g_incomingCb;
+
+// Firestore path: calls/{myMobile}/incoming/{docId}
+// Android side writes a doc here when dialling the desktop user.
+static void IncomingCallPollLoop() {
+    // Track the last doc we saw so we don't fire twice
+    string lastSeenId;
+    while (g_incomingPollRun) {
+        if (!g_myMobile.empty() && !g_callActive) {
+            string path = RgBuildPath("calls", g_myMobile, "incoming", "");
+            // List documents in the incoming sub-collection
+            string resp = RgFirestoreGet(path);
+            // Look for a document with status == "ringing"
+            // Simple scan: find "status" field with "ringing"
+            if (resp.find("ringing") != string::npos) {
+                // Parse callerMobile, callerName, callType, docId
+                string callerMobile = RgParseField(resp, "callerMobile");
+                string callerName   = RgParseField(resp, "callerName");
+                string callType     = RgParseField(resp, "callType");
+                string chatId       = RgParseField(resp, "chatId");
+                string docId        = callerMobile; // one doc per caller
+
+                if (!callerMobile.empty() && docId != lastSeenId) {
+                    lastSeenId = docId;
+                    RgCallParams cp;
+                    cp.chatId     = chatId.empty()
+                                      ? RgBuildChatId(g_myMobile, callerMobile)
+                                      : chatId;
+                    cp.peerMobile = callerMobile;
+                    cp.peerName   = callerName;
+                    cp.isVideo    = (callType == "video");
+                    cp.isLan      = false;
+                    if (g_incomingCb) g_incomingCb(cp);
+                }
+            } else {
+                // No active ringing doc — reset so next call fires again
+                if (!lastSeenId.empty() && resp.find(lastSeenId) == string::npos)
+                    lastSeenId.clear();
+            }
+        }
+        for (int i = 0; i < 20 && g_incomingPollRun; i++) Sleep(100); // poll every 2s
+    }
+}
+
+void RgNet_StartIncomingCallPolling(RgIncomingCallCallback cb) {
+    if (g_incomingPollRun) return;
+    g_incomingCb      = cb;
+    g_incomingPollRun = true;
+    thread(IncomingCallPollLoop).detach();
+}
+
+void RgNet_StopIncomingCallPolling() {
+    g_incomingPollRun = false;
+    g_incomingCb      = nullptr;
+}
+
+// ============================================================
+// DESKTOP NOTIFICATIONS  (Win32 Shell_NotifyIcon balloon)
+// ============================================================
+#include <shellapi.h>
+#pragma comment(lib, "shell32.lib")
+
+#define RG_NOTIFY_WM     (WM_APP + 55)
+#define RG_NOTIFY_ICON_ID 501
+
+static HWND  g_notifyOwner = nullptr;
+static bool  g_notifyInited = false;
+static NOTIFYICONDATAW g_nid = {};
+
+static LRESULT CALLBACK RgNotifyWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+    return DefWindowProcW(hwnd, msg, wp, lp);
+}
+
+void RgNotify_Init(HWND ownerHwnd) {
+    g_notifyOwner = ownerHwnd;
+    if (!ownerHwnd) return;
+
+    ZeroMemory(&g_nid, sizeof(g_nid));
+    g_nid.cbSize           = sizeof(NOTIFYICONDATAW);
+    g_nid.hWnd             = ownerHwnd;
+    g_nid.uID              = RG_NOTIFY_ICON_ID;
+    g_nid.uFlags           = NIF_ICON | NIF_TIP | NIF_MESSAGE;
+    g_nid.uCallbackMessage = RG_NOTIFY_WM;
+    // Use the app's own icon (first icon resource) or fallback to default
+    g_nid.hIcon = LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(101));
+    if (!g_nid.hIcon) g_nid.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+    wcscpy_s(g_nid.szTip, L"RasFocus — RasGram");
+
+    Shell_NotifyIconW(NIM_ADD, &g_nid);
+    g_notifyInited = true;
+}
+
+void RgNotify_Destroy() {
+    if (g_notifyInited) {
+        Shell_NotifyIconW(NIM_DELETE, &g_nid);
+        g_notifyInited = false;
+    }
+}
+
+// Internal helper — must be called from any thread; posts to UI if needed
+static void RgShowBalloon(const wstring& title, const wstring& body, DWORD infoFlags) {
+    if (!g_notifyOwner || !g_notifyInited) return;
+    // Update nid with balloon fields
+    NOTIFYICONDATAW n = g_nid;
+    n.uFlags     |= NIF_INFO;
+    n.dwInfoFlags = infoFlags;
+    n.uTimeout    = 5000;
+    wcscpy_s(n.szInfoTitle, title.c_str());
+    wcscpy_s(n.szInfo,      body.c_str());
+    Shell_NotifyIconW(NIM_MODIFY, &n);
+}
+
+static wstring Utf8ToWide_N(const string& s) {
+    if (s.empty()) return L"";
+    int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0);
+    if (n <= 0) return L"";
+    wstring ws(n, 0);
+    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, &ws[0], n);
+    if (!ws.empty() && ws.back() == L'\0') ws.pop_back();
+    return ws;
+}
+
+void RgNotify_Message(const string& senderName, const string& text) {
+    // Truncate body to 64 chars to fit balloon
+    wstring body = Utf8ToWide_N(text);
+    if (body.size() > 64) body = body.substr(0, 61) + L"...";
+    thread([senderName, body](){
+        RgShowBalloon(Utf8ToWide_N(senderName), body, NIIF_INFO);
+    }).detach();
+}
+
+void RgNotify_IncomingCall(const string& callerName, bool isVideo) {
+    wstring title = isVideo ? L"Incoming Video Call" : L"Incoming Audio Call";
+    wstring body  = Utf8ToWide_N(callerName) + L" is calling…";
+    thread([title, body](){
+        RgShowBalloon(title, body, NIIF_INFO | NIIF_NOSOUND);
+        // Also play the system "Ring" sound
+        MessageBeep(MB_ICONINFORMATION);
+    }).detach();
+}
+
+// ============================================================
+// VIDEO CALL  — DirectShow camera capture + UDP send/receive
+// ============================================================
+// Video frame layout over UDP:
+//   [4 bytes: width][4 bytes: height][4 bytes: size][RGB24 data…]
+// Frames are scaled to 320×240 before sending to keep bandwidth low.
+// Receiver decodes and calls g_callVideoCb(frameRGB, w, h).
+
+#include <initguid.h>
+#include <strmif.h>   // DirectShow core (already via dshow.h)
+
+static IGraphBuilder*  g_dshowGraph   = nullptr;
+static ICaptureGraphBuilder2* g_dshowCapture = nullptr;
+static IBaseFilter*    g_dshowCamera  = nullptr;
+static IMediaControl*  g_dshowCtrl    = nullptr;
+
+// Simple sample grabber callback — stores latest frame
+struct RgSampleGrabberCB : public ISampleGrabberCB {
+    vector<BYTE> frame;
+    int          width  = 0;
+    int          height = 0;
+    mutex        mtx;
+    ULONG ref = 1;
+
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override {
+        if (riid == IID_ISampleGrabberCB || riid == IID_IUnknown) {
+            *ppv = this; AddRef(); return S_OK;
+        }
+        *ppv = nullptr; return E_NOINTERFACE;
+    }
+    ULONG STDMETHODCALLTYPE AddRef()  override { return ++ref; }
+    ULONG STDMETHODCALLTYPE Release() override { return --ref; }
+
+    HRESULT STDMETHODCALLTYPE SampleCB(double, IMediaSample*) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE BufferCB(double, BYTE* buf, long len) override {
+        lock_guard<mutex> lk(mtx);
+        frame.assign(buf, buf + len);
+        return S_OK;
+    }
+};
+static RgSampleGrabberCB* g_grabberCB = nullptr;
+
+static bool StartCamera(int targetW, int targetH) {
+    CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    if (FAILED(CoCreateInstance(CLSID_FilterGraph, nullptr, CLSCTX_INPROC_SERVER,
+                                IID_IGraphBuilder, (void**)&g_dshowGraph))) return false;
+    if (FAILED(CoCreateInstance(CLSID_CaptureGraphBuilder2, nullptr, CLSCTX_INPROC_SERVER,
+                                IID_ICaptureGraphBuilder2, (void**)&g_dshowCapture))) return false;
+    g_dshowCapture->SetFiltergraph(g_dshowGraph);
+
+    // Enumerate video capture devices and pick first
+    ICreateDevEnum* devEnum = nullptr;
+    if (FAILED(CoCreateInstance(CLSID_SystemDeviceEnum, nullptr, CLSCTX_INPROC_SERVER,
+                                IID_ICreateDevEnum, (void**)&devEnum))) return false;
+    IEnumMoniker* enumMon = nullptr;
+    devEnum->CreateClassEnumerator(CLSID_VideoInputDeviceCategory, &enumMon, 0);
+    devEnum->Release();
+    if (!enumMon) return false;
+
+    IMoniker* mon = nullptr;
+    if (enumMon->Next(1, &mon, nullptr) != S_OK) { enumMon->Release(); return false; }
+    mon->BindToObject(nullptr, nullptr, IID_IBaseFilter, (void**)&g_dshowCamera);
+    mon->Release(); enumMon->Release();
+    if (!g_dshowCamera) return false;
+    g_dshowGraph->AddFilter(g_dshowCamera, L"Camera");
+
+    // Sample grabber
+    IBaseFilter* grabFilter = nullptr;
+    CoCreateInstance(CLSID_SampleGrabber, nullptr, CLSCTX_INPROC_SERVER,
+                     IID_IBaseFilter, (void**)&grabFilter);
+    g_dshowGraph->AddFilter(grabFilter, L"Grabber");
+    ISampleGrabber* sg = nullptr;
+    grabFilter->QueryInterface(IID_ISampleGrabber, (void**)&sg);
+    AM_MEDIA_TYPE mt = {};
+    mt.majortype  = MEDIATYPE_Video;
+    mt.subtype    = MEDIASUBTYPE_RGB24;
+    mt.formattype = FORMAT_VideoInfo;
+    sg->SetMediaType(&mt);
+    sg->SetOneShot(FALSE);
+    sg->SetBufferSamples(TRUE);
+    g_grabberCB = new RgSampleGrabberCB();
+    sg->SetCallback(g_grabberCB, 1);
+    sg->Release();
+
+    // Null renderer
+    IBaseFilter* nullRend = nullptr;
+    CoCreateInstance(CLSID_NullRenderer, nullptr, CLSCTX_INPROC_SERVER,
+                     IID_IBaseFilter, (void**)&nullRend);
+    g_dshowGraph->AddFilter(nullRend, L"Null");
+
+    g_dshowCapture->RenderStream(&PIN_CATEGORY_CAPTURE, &MEDIATYPE_Video,
+                                  g_dshowCamera, grabFilter, nullRend);
+    if (nullRend) nullRend->Release();
+    if (grabFilter) grabFilter->Release();
+
+    g_dshowGraph->QueryInterface(IID_IMediaControl, (void**)&g_dshowCtrl);
+    g_dshowCtrl->Run();
+    return true;
+}
+
+static void StopCamera() {
+    if (g_dshowCtrl)   { g_dshowCtrl->Stop(); g_dshowCtrl->Release();   g_dshowCtrl   = nullptr; }
+    if (g_dshowCamera) { g_dshowCamera->Release();                        g_dshowCamera = nullptr; }
+    if (g_dshowCapture){ g_dshowCapture->Release();                       g_dshowCapture= nullptr; }
+    if (g_dshowGraph)  { g_dshowGraph->Release();                         g_dshowGraph  = nullptr; }
+    if (g_grabberCB)   { delete g_grabberCB; g_grabberCB = nullptr; }
+}
+
+// Video send loop — runs alongside CallAudioLoop when isVideo=true
+static void CallVideoSendLoop(SOCKET udpSock, const string& peerIp, int peerPort) {
+    sockaddr_in peer = {};
+    peer.sin_family = AF_INET;
+    peer.sin_port   = htons((u_short)(peerPort + 1)); // video on port+1
+    inet_pton(AF_INET, peerIp.c_str(), &peer.sin_addr);
+
+    while (g_callActive && g_callVideo) {
+        if (g_grabberCB) {
+            vector<BYTE> frame;
+            int w = 0, h = 0;
+            {
+                lock_guard<mutex> lk(g_grabberCB->mtx);
+                frame = g_grabberCB->frame;
+                w = g_grabberCB->width;
+                h = g_grabberCB->height;
+            }
+            if (!frame.empty() && w > 0 && h > 0) {
+                // Simple scale to 320x240 (just crop/copy for now)
+                int tw = 320, th = 240;
+                vector<BYTE> out(tw * th * 3);
+                for (int row = 0; row < th && row < h; row++) {
+                    int srcRow = row * h / th;
+                    for (int col = 0; col < tw && col < w; col++) {
+                        int srcCol = col * w / tw;
+                        int si = (srcRow * w + srcCol) * 3;
+                        int di = (row * tw + col) * 3;
+                        out[di] = frame[si]; out[di+1] = frame[si+1]; out[di+2] = frame[si+2];
+                    }
+                }
+                // Header: w(4) h(4) size(4) + data
+                int size = (int)out.size();
+                vector<BYTE> pkt(12 + size);
+                memcpy(pkt.data() + 0, &tw,   4);
+                memcpy(pkt.data() + 4, &th,   4);
+                memcpy(pkt.data() + 8, &size, 4);
+                memcpy(pkt.data() + 12, out.data(), size);
+                // Send in chunks if needed (UDP max ~65KB; 320*240*3=230KB so split)
+                int chunkSz = 60000;
+                int offset  = 0;
+                int seq     = 0;
+                while (offset < (int)pkt.size()) {
+                    int len = min(chunkSz, (int)pkt.size() - offset);
+                    sendto(udpSock, (char*)pkt.data() + offset, len, 0,
+                           (sockaddr*)&peer, sizeof(peer));
+                    offset += len; seq++;
+                }
+            }
+        }
+        Sleep(33); // ~30 fps
+    }
+}
+
+// Video receive loop — fires g_callVideoCb with decoded frames
+static void CallVideoRecvLoop(SOCKET udpSock) {
+    // Bind recv on peerPort+1 for video
+    sockaddr_in local = {};
+    local.sin_family      = AF_INET;
+    local.sin_port        = htons((u_short)(RG_CALL_UDP_PORT + 1));
+    local.sin_addr.s_addr = INADDR_ANY;
+    SOCKET recvSock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    ::bind(recvSock, (sockaddr*)&local, sizeof(local));
+    u_long mode = 1; ioctlsocket(recvSock, FIONBIO, &mode);
+
+    vector<BYTE> accumBuf;
+    int expectW = 0, expectH = 0, expectSize = 0;
+
+    BYTE chunk[65000];
+    while (g_callActive) {
+        sockaddr_in from; int fromLen = sizeof(from);
+        int n = recvfrom(recvSock, (char*)chunk, sizeof(chunk), 0,
+                         (sockaddr*)&from, &fromLen);
+        if (n > 0) {
+            accumBuf.insert(accumBuf.end(), chunk, chunk + n);
+            if (accumBuf.size() >= 12 && expectSize == 0) {
+                memcpy(&expectW,    accumBuf.data() + 0, 4);
+                memcpy(&expectH,    accumBuf.data() + 4, 4);
+                memcpy(&expectSize, accumBuf.data() + 8, 4);
+            }
+            if (expectSize > 0 && (int)accumBuf.size() >= 12 + expectSize) {
+                if (g_callVideoCb && expectW > 0 && expectH > 0) {
+                    g_callVideoCb(accumBuf.data() + 12, expectW, expectH);
+                }
+                accumBuf.clear();
+                expectW = expectH = expectSize = 0;
+            }
+        } else {
+            Sleep(5);
+        }
+    }
+    closesocket(recvSock);
+}
+
