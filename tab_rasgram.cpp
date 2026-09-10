@@ -1442,26 +1442,37 @@ public:
                 return S_OK;
             }).Get(), nullptr);
 
-        // Navigate to HTML string
+        // Navigate to HTML string.
+        // g_wvReady is set inside NavigationCompleted so the WebView is fully
+        // painted before we make it visible; this avoids the blank-white flash.
         g_rgWV->NavigateToString(GetRasGramHTML());
-        g_wvReady = true;
 
-        // If the RasGram tab is already the active tab (ShowRasGramControls(true)
-        // was called before WebView finished creating), apply the correct bounds and
-        // make it visible now.  Otherwise it stays offscreen/hidden until the user
-        // switches to the RasGram sub-tab.
-        if (g_rgVisible && g_cx > 0 && g_cw > 0) {
-            float sf = (g_scaleFactor > 0.0f) ? g_scaleFactor : 1.0f;
-            RECT r = {
-                (LONG)(g_cx * sf), (LONG)(g_cy * sf),
-                (LONG)((g_cx + g_cw) * sf), (LONG)((g_cy + g_ch) * sf)
-            };
-            ctl->put_Bounds(r);
-            ctl->put_IsVisible(TRUE);
-        }
+        // ── NavigationCompleted: mark ready, position, and show if active ──
+        g_rgWV->add_NavigationCompleted(
+            Callback<ICoreWebView2NavigationCompletedEventHandler>(
+            [ctl](ICoreWebView2*, ICoreWebView2NavigationCompletedEventArgs*) -> HRESULT {
+                g_wvReady = true;
 
-        // Immediately push login state and chats if already available
-        if (!g_loggedInUserUid.empty()) RgSendLoginState();
+                // If the RasGram sub-tab is already active, show the WebView now.
+                if (g_rgVisible && g_cx > 0 && g_cw > 0) {
+                    float sf = (g_scaleFactor > 0.0f) ? g_scaleFactor : 1.0f;
+                    RECT r = {
+                        (LONG)(g_cx * sf),          (LONG)(g_cy * sf),
+                        (LONG)((g_cx + g_cw) * sf), (LONG)((g_cy + g_ch) * sf)
+                    };
+                    ctl->put_Bounds(r);
+                    ctl->put_IsVisible(TRUE);
+                }
+
+                // Push login / chat state now that JS is ready.
+                if (!g_loggedInUserUid.empty()) RgSendLoginState();
+
+                // Force a repaint so the parent window stops showing the
+                // "RasGram loading…" placeholder immediately.
+                if (hParentWnd) InvalidateRect(hParentWnd, nullptr, FALSE);
+
+                return S_OK;
+            }).Get(), nullptr);
 
         return S_OK;
     }
@@ -1522,6 +1533,11 @@ void ShowRasGramControls(bool show) {
     if (!g_rgCtrl) return;
 
     if (show) {
+        // Only make the WebView visible once navigation has completed;
+        // showing it before NavigationCompleted fires causes a blank white area.
+        // g_rgVisible remains true so NavigationCompleted will show it when ready.
+        if (!g_wvReady) return;
+
         // Restore to the last known content-area bounds (pixel coords), then make visible.
         float sf = (g_scaleFactor > 0.0f) ? g_scaleFactor : 1.0f;
         RECT r = {
