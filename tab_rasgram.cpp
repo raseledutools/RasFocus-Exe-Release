@@ -58,6 +58,7 @@ extern HWND    hParentWnd;
 extern string  g_loggedInUserUid;
 extern wstring g_loggedInName;
 extern wstring g_loggedInEmail;
+extern float   g_scaleFactor;   // DPI scale (1.0 on 96dpi, 1.25 on 120dpi, etc.)
 
 // ── Module state ─────────────────────────────────────────────
 static bool   g_rgInitDone    = false;
@@ -1267,9 +1268,10 @@ public:
         // make it visible now.  Otherwise it stays offscreen/hidden until the user
         // switches to the RasGram sub-tab.
         if (g_rgVisible && g_cx > 0 && g_cw > 0) {
+            float sf = (g_scaleFactor > 0.0f) ? g_scaleFactor : 1.0f;
             RECT r = {
-                (LONG)g_cx, (LONG)g_cy,
-                (LONG)(g_cx + g_cw), (LONG)(g_cy + g_ch)
+                (LONG)(g_cx * sf), (LONG)(g_cy * sf),
+                (LONG)((g_cx + g_cw) * sf), (LONG)((g_cy + g_ch) * sf)
             };
             ctl->put_Bounds(r);
             ctl->put_IsVisible(TRUE);
@@ -1316,11 +1318,14 @@ static void RgCreateWebView(HWND parent, RECT bounds) {
 }
 
 // ── Position existing WebView to current draw area ────────────
+// NOTE: g_cx/cy/cw/ch are GDI+ logical coords (already divided by g_scaleFactor).
+// WebView2 put_Bounds needs actual pixel coords, so we multiply back by g_scaleFactor.
 static void RgPositionWebView() {
     if (!g_rgCtrl) return;
+    float sf = (g_scaleFactor > 0.0f) ? g_scaleFactor : 1.0f;
     RECT r = {
-        (LONG)g_cx, (LONG)g_cy,
-        (LONG)(g_cx + g_cw), (LONG)(g_cy + g_ch)
+        (LONG)(g_cx * sf), (LONG)(g_cy * sf),
+        (LONG)((g_cx + g_cw) * sf), (LONG)((g_cy + g_ch) * sf)
     };
     g_rgCtrl->put_Bounds(r);
 }
@@ -1334,10 +1339,11 @@ void ShowRasGramControls(bool show) {
     if (!g_rgCtrl) return;
 
     if (show) {
-        // Restore to the last known content-area bounds, then make visible.
+        // Restore to the last known content-area bounds (pixel coords), then make visible.
+        float sf = (g_scaleFactor > 0.0f) ? g_scaleFactor : 1.0f;
         RECT r = {
-            (LONG)g_cx, (LONG)g_cy,
-            (LONG)(g_cx + g_cw), (LONG)(g_cy + g_ch)
+            (LONG)(g_cx * sf), (LONG)(g_cy * sf),
+            (LONG)((g_cx + g_cw) * sf), (LONG)((g_cy + g_ch) * sf)
         };
         g_rgCtrl->put_Bounds(r);
         g_rgCtrl->put_IsVisible(TRUE);
@@ -1426,7 +1432,12 @@ void DrawRasGramTab(Graphics& g, float cx, float cy, float cw, float ch) {
     // controller creation is in-flight don't try to create a second WebView.
     if (!g_rgCtrl && !g_rgCreating && hParentWnd) {
         g_rgCreating = true;
-        RECT bounds = { (LONG)cx, (LONG)cy, (LONG)(cx+cw), (LONG)(cy+ch) };
+        // WebView2 put_Bounds requires actual pixel coords; GDI+ coords are logical (÷ scaleFactor).
+        float sf = (g_scaleFactor > 0.0f) ? g_scaleFactor : 1.0f;
+        RECT bounds = {
+            (LONG)(cx * sf), (LONG)(cy * sf),
+            (LONG)((cx + cw) * sf), (LONG)((cy + ch) * sf)
+        };
         RgCreateWebView(hParentWnd, bounds);
     }
 
