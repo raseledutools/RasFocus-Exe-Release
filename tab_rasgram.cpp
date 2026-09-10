@@ -99,6 +99,8 @@ static bool  g_callWndVisible = false;
 static mutex          g_incomingMtx;
 static bool           g_pendingIncoming = false;
 static RgCallParams   g_pendingCallParams;
+static wstring        g_pendingLoginName;
+static wstring        g_pendingLoginPhone;
 
 // Video frame (latest decoded frame from remote peer)
 static mutex          g_videoMtx;
@@ -1373,7 +1375,11 @@ static void RgHandleMessage(const wstring& json) {
             string path = "/v1/projects/" RG_FIREBASE_PROJECT
                           "/databases/(default)/documents/chat_users/"
                           + phone;
-            RgFirestorePost("PATCH", path, payload);
+            string firestoreResp = RgFirestorePost("PATCH", path, payload);
+            if (firestoreResp.empty()) {
+                if (hParentWnd) PostMessageW(hParentWnd, WM_RG_LOGIN_ERR, 0, 0);
+                return;
+            }
 
             // Update module state
             g_myMobile = phone;
@@ -1398,7 +1404,9 @@ static void RgHandleMessage(const wstring& json) {
             wstring js = L"RG.setLoginState(\""
                          + Utf8ToWide(JsEscape(name))  + L"\",\""
                          + Utf8ToWide(JsEscape(phone)) + L"\");";
-            RgExecJS(js);
+            g_pendingLoginName  = Utf8ToWide(name);
+            g_pendingLoginPhone = Utf8ToWide(phone);
+            if (hParentWnd) PostMessageW(hParentWnd, WM_RG_LOGIN_OK, 0, 0);
         }).detach();
 
     } else if (action == "call_audio" || action == "call_video") {
@@ -1760,6 +1768,19 @@ bool RgHandleParentWndMsg(HWND /*hwnd*/, UINT msg, WPARAM /*wp*/, LPARAM /*lp*/)
     case WM_RG_VIDEO_FRAME:
         // Already handled inside RgCallWndProc — nothing to do here
         return false;
+
+    case WM_RG_LOGIN_OK: {
+        // rasgram_login thread finished — run setLoginState on UI thread
+        wstring js = L"RG.setLoginState(\""
+                     + Utf8ToWide(JsEscape(WideToUtf8(g_pendingLoginName)))  + L"\",\""
+                     + Utf8ToWide(JsEscape(WideToUtf8(g_pendingLoginPhone))) + L"\");";
+        RgExecJS(js);
+        return true;
+    }
+
+    case WM_RG_LOGIN_ERR:
+        RgExecJS(L"LG.loginError('Login failed. Check your connection and try again.');");
+        return true;
 
     default:
         return false;
