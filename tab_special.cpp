@@ -454,8 +454,10 @@ void DrawSpecialFeatureTab(Graphics& g, float cx, float cy, float cw, float ch) 
     float contentW = cw - g_sideW;
 
     if (sf_activeSubTab == 0) {
+        // Hide ALL overlay controls first so WebView2 / Win32 edits
+        // from other sub-tabs don't paint over the File Manager GDI content.
         ShowGeminiControls(false);
-        ShowRasGramControls(false);
+        ShowRasGramControls(false);   // hides WebView2 if it exists
         DrawFileManagerTab(g, contentX, bodyY, contentW, bodyH);
     }
     else if (sf_activeSubTab == 1) {
@@ -466,6 +468,8 @@ void DrawSpecialFeatureTab(Graphics& g, float cx, float cy, float cw, float ch) 
     }
     else if (sf_activeSubTab == 2) {
         ShowGeminiControls(false);
+        // DrawRasGramTab creates/positions the WebView2 and calls InitRasGramDesktop.
+        // ShowRasGramControls(true) makes the controller visible AFTER it is positioned.
         DrawRasGramTab(g, contentX, bodyY, contentW, bodyH);
         ShowRasGramControls(true);
     }
@@ -534,13 +538,26 @@ void ProcessSpecialFeatureMouseMove(float x, float y) {
 // ============================================================
 // MOUSE CLICK
 // ============================================================
+// Helper: immediately hide all overlay controls for sub-tabs we are
+// switching AWAY from, so WebView2 / Win32 windows don't bleed through
+// on the very next WM_PAINT before DrawSpecialFeatureTab runs.
+static void HideInactiveOverlays(int nextSubTab) {
+    if (nextSubTab != 2) ShowRasGramControls(false);
+    if (nextSubTab != 1) ShowGeminiControls(false);
+}
+
 void ProcessSpecialFeatureMouseClick(float x, float y) {
     // ---- Sub-tab bar clicks ----
     if (y >= g_cy && y <= g_cy + g_headerH) {
         float tabW = g_cw / 3.0f;
-        if      (x >= g_cx          && x < g_cx+tabW)   sf_activeSubTab = 0;
-        else if (x >= g_cx+tabW     && x < g_cx+tabW*2) sf_activeSubTab = 1;
-        else if (x >= g_cx+tabW*2   && x < g_cx+g_cw)   sf_activeSubTab = 2;
+        int next = sf_activeSubTab;
+        if      (x >= g_cx          && x < g_cx+tabW)   next = 0;
+        else if (x >= g_cx+tabW     && x < g_cx+tabW*2) next = 1;
+        else if (x >= g_cx+tabW*2   && x < g_cx+g_cw)   next = 2;
+        if (next != sf_activeSubTab) {
+            HideInactiveOverlays(next);
+            sf_activeSubTab = next;
+        }
         if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
         return;
     }
@@ -555,6 +572,7 @@ void ProcessSpecialFeatureMouseClick(float x, float y) {
             auto& r = g_quickRects[i];
             if (x>=r.x && x<r.x+r.w && y>=r.y && y<r.y+r.h) {
                 // Switch to File Manager tab and navigate
+                if (sf_activeSubTab != 0) HideInactiveOverlays(0);
                 sf_activeSubTab = 0;
                 if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
                 return;
@@ -564,6 +582,7 @@ void ProcessSpecialFeatureMouseClick(float x, float y) {
         for (int i=0; i<(int)g_driveRects.size(); i++) {
             auto& r = g_driveRects[i];
             if (x>=r.x && x<r.x+r.w && y>=r.y && y<r.y+r.h) {
+                if (sf_activeSubTab != 0) HideInactiveOverlays(0);
                 sf_activeSubTab = 0;
                 if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
                 return;
@@ -573,6 +592,7 @@ void ProcessSpecialFeatureMouseClick(float x, float y) {
         {
             auto& r = g_gdriveRect;
             if (x>=r.x && x<r.x+r.w && y>=r.y && y<r.y+r.h) {
+                if (sf_activeSubTab != 0) HideInactiveOverlays(0);
                 sf_activeSubTab = 0; // Switch to File Manager (Drive tab inside)
                 if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
                 return;
