@@ -999,11 +999,11 @@ window.RG = {
   setLoginState(name, mobile) {
     state.myName   = name;
     state.myMobile = mobile;
-    document.getElementById('not-logged-in').style.display = 'none';
+    document.getElementById('login-screen').style.display = 'none';
     document.getElementById('app').style.display = 'flex';
   },
   showNotLoggedIn() {
-    document.getElementById('not-logged-in').style.display = 'flex';
+    document.getElementById('login-screen').style.display = 'flex';
     document.getElementById('app').style.display = 'none';
   },
 
