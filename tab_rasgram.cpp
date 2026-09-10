@@ -377,7 +377,7 @@ static void RgShowCallWindow(const string& peerName, bool isVideo, bool isIncomi
         wc.hInstance     = GetModuleHandleW(nullptr);
         wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
         wc.lpszClassName = RG_CALL_CLASS;
-        wc.hCursor       = LoadCursorW(nullptr, IDC_ARROW);
+        wc.hCursor       = LoadCursorW(nullptr, (LPCWSTR)IDC_ARROW);
         RegisterClassExW(&wc);
         classReg = true;
     }
