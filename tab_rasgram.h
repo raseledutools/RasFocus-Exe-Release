@@ -44,3 +44,7 @@ void RgNet_StopIncomingCallPolling();
 #define WM_RG_CALL_ENDED    (WM_USER + 71)
 #define WM_RG_VIDEO_FRAME   (WM_USER + 72)
 #define WM_RG_NEW_MESSAGE   (WM_USER + 73)
+// Login completion — posted from background thread so UI thread runs RgExecJS
+#define WM_RG_LOGIN_OK      (WM_USER + 74)
+#define WM_RG_LOGIN_ERR     (WM_USER + 75)
+
