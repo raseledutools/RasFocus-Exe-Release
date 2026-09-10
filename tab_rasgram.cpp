@@ -915,9 +915,23 @@ static void RgPositionWebView() {
 
 void ShowRasGramControls(bool show) {
     g_rgVisible = show;
-    if (g_rgCtrl) g_rgCtrl->put_IsVisible(show ? TRUE : FALSE);
-    if (!show) {
-        // Hide Win32 edits (none used now — WebView owns input)
+    if (!g_rgCtrl) return;
+
+    if (show) {
+        // Restore to the last known content-area bounds, then make visible.
+        RECT r = {
+            (LONG)g_cx, (LONG)g_cy,
+            (LONG)(g_cx + g_cw), (LONG)(g_cy + g_ch)
+        };
+        g_rgCtrl->put_Bounds(r);
+        g_rgCtrl->put_IsVisible(TRUE);
+    } else {
+        // Move WebView2 off-screen to a zero-size rect BEFORE hiding it.
+        // This prevents any stale frame from bleeding through the GDI content
+        // on the next WM_PAINT when another sub-tab is active.
+        RECT offscreen = { -4, -4, -2, -2 };
+        g_rgCtrl->put_Bounds(offscreen);
+        g_rgCtrl->put_IsVisible(FALSE);
     }
 }
 
