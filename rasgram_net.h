@@ -176,6 +176,7 @@ void RgCall_AcceptIncoming(const RgCallParams& p,
                            RgVideoFrameCallback videoCb = nullptr);
 
 void RgCall_Hangup();
+void RgCall_Decline();          // decline incoming — writes "declined" to Firestore
 void RgCall_ToggleMute(bool mute);
 void RgCall_ToggleSpeaker(bool on);
 void RgCall_ToggleCamera(bool on);
@@ -183,6 +184,19 @@ void RgCall_ToggleCamera(bool on);
 bool RgCall_IsActive();
 bool RgCall_IsMuted();
 bool RgCall_IsVideo();
+
+// Incoming call polling — starts a background thread that watches
+// Firestore calls/{myMobile}/incoming and fires cb when a new call arrives.
+typedef std::function<void(const RgCallParams&)> RgIncomingCallCallback;
+void RgNet_StartIncomingCallPolling(RgIncomingCallCallback cb);
+void RgNet_StopIncomingCallPolling();
+
+// Desktop notification (Win32 Shell_NotifyIcon balloon)
+void RgNotify_Message(const std::string& senderName,
+                      const std::string& text);
+void RgNotify_IncomingCall(const std::string& callerName, bool isVideo);
+void RgNotify_Init(HWND ownerHwnd);   // call once at startup with main HWND
+void RgNotify_Destroy();              // call at shutdown
 int  RgCall_GetDurationSeconds();
 
 // ── Presence ─────────────────────────────────────────────────
