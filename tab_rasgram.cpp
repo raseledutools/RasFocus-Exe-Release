@@ -592,6 +592,7 @@ static void RgPushChatsToUI() {
     ss << "[";
     for (int i = 0; i < (int)chats.size(); i++) {
         auto& c = chats[i];
+        // chatId = pure "mobileA_mobileB" (no pvt_msg_ prefix) — matches Android generateChatId
         string chatId = RgBuildChatId(g_myMobile, c.contactMobile);
         if (i) ss << ",";
         ss << "{"
@@ -934,21 +935,35 @@ void InitRasGramDesktop() {
     g_openContactMobile = "";
 
     g_myName_w = g_loggedInName;
-    string emailUtf8 = WideToUtf8(g_loggedInEmail);
-    size_t atPos = emailUtf8.find('@');
-    g_myMobile = (atPos != string::npos) ? emailUtf8.substr(0, atPos) : g_loggedInUserUid;
 
-    RgNet_Init(g_myMobile, WideToUtf8(g_myName_w), g_loggedInUserUid, "");
-    RgNet_SetOnline(true);
+    // Resolve mobile from Firestore chat_users (uid → mobile).
+    // EXE logs in with email+password; Android stores chat_users/{mobile} with uid field.
+    // We need the mobile to query pvt_msg_* collections correctly.
+    RgNet_Init("", WideToUtf8(g_myName_w), g_loggedInUserUid, "");
+    if (g_wvReady) RgExecJS(L"RG.showNotLoggedIn();"); // show loading state
 
-    // Update UI if webview already up
-    if (g_wvReady) RgSendLoginState();
+    string capturedUid = g_loggedInUserUid;
+    thread([capturedUid](){ 
+        string resolved = RgNet_ResolveMyMobile(capturedUid);
+        if (!resolved.empty()) {
+            g_myMobile = resolved;
+        } else {
+            // Fallback: use email prefix (won't work for chat but at least shows logged in)
+            string emailUtf8 = WideToUtf8(g_loggedInEmail);
+            size_t atPos = emailUtf8.find('@');
+            g_myMobile = (atPos != string::npos) ? emailUtf8.substr(0, atPos) : g_loggedInUserUid;
+        }
+        RgNet_Init(g_myMobile, WideToUtf8(g_myName_w), g_loggedInUserUid, "");
+        RgNet_SetOnline(true);
 
-    RgNet_StopChatListPolling();
-    RgNet_StartChatListPolling([](const vector<RgChatPreview>& chats) {
-        { lock_guard<mutex> lk(g_chatsMtx); g_chats = chats; }
-        RgPushChatsToUI();
-    });
+        if (g_wvReady) RgSendLoginState();
+
+        RgNet_StopChatListPolling();
+        RgNet_StartChatListPolling([](const vector<RgChatPreview>& chats) {
+            { lock_guard<mutex> lk(g_chatsMtx); g_chats = chats; }
+            RgPushChatsToUI();
+        });
+    }).detach();
 }
 
 void DrawRasGramTab(Graphics& g, float cx, float cy, float cw, float ch) {

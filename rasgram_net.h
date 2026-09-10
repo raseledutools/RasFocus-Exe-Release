@@ -192,6 +192,12 @@ void RgNet_SetOnline(bool online);
 // Build Firestore REST path
 std::string RgBuildPath(const std::string& collection, const std::string& docId = "",
                    const std::string& sub = "", const std::string& subId = "");
+// Build chatId from two mobiles (pure, no "pvt_msg_" prefix — matches Android generateChatId)
+std::string RgBuildChatId(const std::string& mobileA, const std::string& mobileB);
+// Build Firestore collection name for a private chat
+std::string RgChatCollection(const std::string& chatId);
+// Resolve my phone mobile from chat_users by scanning for matching uid
+std::string RgNet_ResolveMyMobile(const std::string& uid);
 // HTTP GET to Firestore
 std::string RgFirestoreGet(const std::string& path);
 // HTTP POST/PATCH to Firestore
@@ -203,5 +209,3 @@ std::string RgParseField(const std::string& json, const std::string& field);
 long long RgParseIntField(const std::string& json, const std::string& field);
 // Format timestamp to "HH:MM" string
 std::string RgFormatTime(long long timestampMs);
-// Build chatId from two mobiles (same logic as Android)
-std::string RgBuildChatId(const std::string& mobileA, const std::string& mobileB);

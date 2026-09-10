@@ -235,11 +235,16 @@ string RgFormatTime(long long timestampMs) {
 }
 
 string RgBuildChatId(const string& mobileA, const string& mobileB) {
-    // Same logic as Android: sort the two mobiles, join with "_"
-    // Android uses "pvt_msg_" + sorted(mobileA + "_" + mobileB)
+    // Android: generateChatId = if (m1 < m2) "${m1}_${m2}" else "${m2}_${m1}"
+    // Collection name = "pvt_msg_{chatId}"
     string a = mobileA, b = mobileB;
     if (a > b) swap(a, b);
-    return "pvt_msg_" + a + "_" + b;
+    return a + "_" + b;   // pure chatId; prepend "pvt_msg_" only in collection name
+}
+
+// Build the Firestore collection name for a private chat
+string RgChatCollection(const string& chatId) {
+    return "pvt_msg_" + chatId;
 }
 
 string RgBuildPath(const string& col, const string& docId,
@@ -340,14 +345,139 @@ static vector<RgChatPreview> ParseChatPreviews(const string& json) {
     return result;
 }
 
+// ── Resolve my mobile number from Firestore chat_users (uid → mobile) ──────
+// EXE logs in with email+password → uid known, mobile unknown.
+// Android stores chat_users/{mobile} docs with a "uid" field.
+// We list chat_users and find the doc whose uid == g_myUid.
+string RgNet_ResolveMyMobile(const string& uid) {
+    // GET all chat_users documents (pageSize=300 should cover any user base)
+    string path = "/v1/projects/" RG_FIREBASE_PROJECT
+                  "/databases/(default)/documents/chat_users?pageSize=300";
+    string resp = RgFirestoreGet(path);
+    if (resp.empty()) return "";
+    // Walk through documents, find the one with matching uid
+    size_t pos = 0;
+    while ((pos = resp.find("\"name\":", pos)) != string::npos) {
+        size_t blockEnd = resp.find("\"name\":", pos + 7);
+        string block = resp.substr(pos, blockEnd == string::npos
+                                        ? resp.size() - pos
+                                        : blockEnd - pos);
+        // Extract doc id (last path segment of "name" value)
+        string docId;
+        {
+            size_t np = block.find("\"name\":");
+            if (np != string::npos) {
+                np += 7;
+                while (np < block.size() && block[np] != '"') np++;
+                if (np < block.size()) {
+                    np++;
+                    string fullName;
+                    while (np < block.size() && block[np] != '"') fullName += block[np++];
+                    size_t lastSlash = fullName.rfind('/');
+                    if (lastSlash != string::npos) docId = fullName.substr(lastSlash + 1);
+                }
+            }
+        }
+        string docUid = RgParseField(block, "uid");
+        if (!docId.empty() && docUid == uid) return docId;
+        pos = blockEnd == string::npos ? resp.size() : blockEnd;
+    }
+    return "";
+}
+
+// ── Fetch all users from chat_users + their latest message ────────────────
+// Returns RgChatPreview list — same data Android's ChatsTab shows
+static vector<RgChatPreview> FetchChatListFromChatUsers() {
+    vector<RgChatPreview> result;
+    if (g_myMobile.empty()) return result;
+
+    // 1) List all chat_users
+    string path = "/v1/projects/" RG_FIREBASE_PROJECT
+                  "/databases/(default)/documents/chat_users?pageSize=300";
+    string resp = RgFirestoreGet(path);
+    if (resp.empty()) return result;
+
+    // 2) Parse each user doc (skip myself)
+    vector<pair<string,string>> contacts; // (mobile, name)
+    size_t pos = 0;
+    while ((pos = resp.find("\"name\":", pos)) != string::npos) {
+        size_t blockEnd = resp.find("\"name\":", pos + 7);
+        string block = resp.substr(pos, blockEnd == string::npos
+                                        ? resp.size() - pos
+                                        : blockEnd - pos);
+        string docId;
+        {
+            size_t np = block.find("\"name\":");
+            if (np != string::npos) {
+                np += 7;
+                while (np < block.size() && block[np] != '"') np++;
+                if (np < block.size()) {
+                    np++;
+                    string fullName;
+                    while (np < block.size() && block[np] != '"') fullName += block[np++];
+                    size_t lastSlash = fullName.rfind('/');
+                    if (lastSlash != string::npos) docId = fullName.substr(lastSlash + 1);
+                }
+            }
+        }
+        string name = RgParseField(block, "name");
+        string avatarUrl = RgParseField(block, "avatarUrl");
+        if (!docId.empty() && docId != g_myMobile) {
+            contacts.push_back({docId, name});
+        }
+        pos = blockEnd == string::npos ? resp.size() : blockEnd;
+    }
+
+    // 3) For each contact, fetch latest message from pvt_msg_{chatId}
+    for (auto& [mobile, name] : contacts) {
+        string chatId = RgBuildChatId(g_myMobile, mobile);
+        string collection = RgChatCollection(chatId);
+        // GET last 1 message ordered by timestamp desc
+        string msgPath = "/v1/projects/" RG_FIREBASE_PROJECT
+                         "/databases/(default)/documents/" + collection
+                         + "?orderBy=timestamp%20desc&pageSize=1";
+        string msgResp = RgFirestoreGet(msgPath);
+
+        RgChatPreview cp;
+        cp.contactMobile = mobile;
+        cp.contactName   = name.empty() ? mobile : name;
+
+        if (!msgResp.empty() && msgResp.find("\"documents\"") != string::npos) {
+            // Parse single message block
+            size_t mp = msgResp.find("\"name\":");
+            if (mp != string::npos) {
+                size_t blockEnd2 = msgResp.find("\"name\":", mp + 7);
+                string mblock = msgResp.substr(mp, blockEnd2 == string::npos
+                                               ? msgResp.size() - mp
+                                               : blockEnd2 - mp);
+                cp.lastMessageText   = RgParseField(mblock, "text");
+                cp.lastMessageSender = RgParseField(mblock, "senderMobile");
+                cp.lastTimestamp     = RgParseIntField(mblock, "timestamp");
+                cp.lastTimeString    = RgFormatTime(cp.lastTimestamp);
+                cp.lastFileType      = RgParseField(mblock, "fileType");
+                cp.lastIsCallLog     = RgParseBoolField(mblock, "isCallLog");
+                // unread: messages where read==false && senderMobile != myMobile
+                // (expensive to count exactly — skip for now, set 0)
+                cp.unreadCount = 0;
+            }
+        }
+        // Only include contacts we have a chat with (or include all for contact list)
+        result.push_back(cp);
+    }
+
+    // Sort: most recent first
+    sort(result.begin(), result.end(), [](const RgChatPreview& a, const RgChatPreview& b){
+        return a.lastTimestamp > b.lastTimestamp;
+    });
+    return result;
+}
+
 void RgNet_FetchContacts(RgChatsCallback cb) {
     if (g_myMobile.empty()) return;
     thread([cb]() {
-        // Query chat_previews sub-collection under users/{myMobile}
-        string path = RgBuildPath("users", g_myMobile, "chat_previews");
-        // Firestore list documents
-        string resp = RgFirestoreGet(path);
-        auto previews = ParseChatPreviews(resp);
+        // Use the same approach as StartChatListPolling:
+        // list chat_users → fetch latest message per contact
+        auto previews = FetchChatListFromChatUsers();
         if (cb) cb(previews);
     }).detach();
 }
@@ -358,13 +488,11 @@ void RgNet_StartChatListPolling(RgChatsCallback cb) {
     g_chatPollThread = thread([cb]() {
         while (g_chatPollRunning) {
             if (!g_myMobile.empty()) {
-                string path = RgBuildPath("users", g_myMobile, "chat_previews");
-                string resp = RgFirestoreGet(path);
-                auto previews = ParseChatPreviews(resp);
+                auto previews = FetchChatListFromChatUsers();
                 if (cb && g_chatPollRunning) cb(previews);
             }
-            // Poll every 2 seconds
-            for (int i = 0; i < 20 && g_chatPollRunning; i++)
+            // Poll every 5 seconds (REST polling is heavier than Firestore SDK)
+            for (int i = 0; i < 50 && g_chatPollRunning; i++)
                 Sleep(100);
         }
     });
@@ -439,13 +567,17 @@ static vector<RgMessage> ParseMessages(const string& json) {
 
 void RgNet_FetchMessages(const string& chatId, RgMessagesCallback cb) {
     thread([chatId, cb]() {
-        // GET /chats/{chatId}/messages?orderBy=timestamp&pageSize=100
-        string path = RgBuildPath("chats", chatId, "messages")
-                    + "?orderBy=timestamp%20desc&pageSize=100";
+        // Android collection: pvt_msg_{chatId}  (chatId = "mobileA_mobileB")
+        string collection = RgChatCollection(chatId);
+        string path = "/v1/projects/" RG_FIREBASE_PROJECT
+                      "/databases/(default)/documents/" + collection
+                      + "?orderBy=timestamp%20desc&pageSize=100";
         string resp = RgFirestoreGet(path);
         auto msgs = ParseMessages(resp);
-        // Reverse so newest is at bottom
-        reverse(msgs.begin(), msgs.end());
+        // ParseMessages returns oldest-first after reverse; re-sort ascending
+        sort(msgs.begin(), msgs.end(), [](const RgMessage& a, const RgMessage& b){
+            return a.timestamp < b.timestamp;
+        });
         if (cb) cb(msgs);
     }).detach();
 }
@@ -458,8 +590,10 @@ void RgNet_StartMessagePolling(const string& chatId, long long sinceTs,
     g_msgPollThread = thread([chatId, sinceTs, cb]() {
         long long lastTs = sinceTs;
         while (g_msgPollRunning) {
-            string path = RgBuildPath("chats", chatId, "messages")
-                        + "?orderBy=timestamp%20desc&pageSize=10";
+            string collection = RgChatCollection(chatId);
+            string path = "/v1/projects/" RG_FIREBASE_PROJECT
+                          "/databases/(default)/documents/" + collection
+                          + "?orderBy=timestamp%20desc&pageSize=10";
             string resp = RgFirestoreGet(path);
             auto msgs = ParseMessages(resp);
             for (auto& m : msgs) {
@@ -513,63 +647,20 @@ void RgNet_SendText(const string& chatId,
             "\"isCallLog\":{\"booleanValue\":false}"
             "}}";
 
-        // POST to chats/{chatId}/messages (auto-ID)
-        string path = RgBuildPath("chats", chatId, "messages");
+        // POST to pvt_msg_{chatId} collection — matches Android path exactly
+        string collection = RgChatCollection(chatId);
+        string path = "/v1/projects/" RG_FIREBASE_PROJECT
+                      "/databases/(default)/documents/" + collection;
         RgFirestorePost("POST", path, payload);
-
-        // Update sender's chat_previews
-        string previewPayload = "{\"fields\":{"
-            "\"contactMobile\":{\"stringValue\":\"" + receiverMobile + "\"},"
-            "\"lastMessageText\":{\"stringValue\":\"" + escaped + "\"},"
-            "\"lastMessageSender\":{\"stringValue\":\"" + g_myMobile + "\"},"
-            "\"lastTimestamp\":{\"integerValue\":\"" + to_string(ts) + "\"},"
-            "\"lastTimeString\":{\"stringValue\":\"" + timeStr + "\"}"
-            "}}";
-        string previewPath = RgBuildPath("users", g_myMobile,
-                                         "chat_previews", receiverMobile);
-        RgFirestorePost("PATCH", previewPath, previewPayload);
-
-        // Update receiver's chat_previews (increment unreadCount via read then patch)
-        // Simplified: just set lastMessage on receiver's side
-        string rxPreviewPath = RgBuildPath("users", receiverMobile,
-                                            "chat_previews", g_myMobile);
-        string rxPreviewPayload = "{\"fields\":{"
-            "\"contactMobile\":{\"stringValue\":\"" + g_myMobile + "\"},"
-            "\"contactName\":{\"stringValue\":\"" + g_myName + "\"},"
-            "\"lastMessageText\":{\"stringValue\":\"" + escaped + "\"},"
-            "\"lastMessageSender\":{\"stringValue\":\"" + g_myMobile + "\"},"
-            "\"lastTimestamp\":{\"integerValue\":\"" + to_string(ts) + "\"},"
-            "\"lastTimeString\":{\"stringValue\":\"" + timeStr + "\"}"
-            "}}";
-        RgFirestorePost("PATCH", rxPreviewPath, rxPreviewPayload);
+        // Android does not use chat_previews sub-collection — no further writes needed.
     }).detach();
 }
 
 void RgNet_MarkRead(const string& chatId, const string& myMobile) {
-    // Reset unreadCount on our chat_preview for this contact
-    // (simplified: just patch unreadCount = 0)
-    thread([chatId, myMobile]() {
-        // Extract contact mobile from chatId  "pvt_msg_A_B"
-        string contact;
-        size_t p = chatId.find("pvt_msg_");
-        if (p != string::npos) {
-            string rest = chatId.substr(p + 8);
-            size_t u = rest.find('_');
-            if (u != string::npos) {
-                string a = rest.substr(0, u);
-                string b = rest.substr(u+1);
-                contact = (a == myMobile) ? b : a;
-            }
-        }
-        if (contact.empty()) return;
-        string path = RgBuildPath("users", myMobile,
-                                   "chat_previews", contact);
-        string payload = "{\"fields\":{"
-            "\"unreadCount\":{\"integerValue\":\"0\"}"
-            "}}";
-        RgFirestorePost("PATCH",
-            path + "?updateMask.fieldPaths=unreadCount", payload);
-    }).detach();
+    // chatId is now pure "mobileA_mobileB" (no pvt_msg_ prefix)
+    // Android does not use chat_previews for read status — just a no-op for now.
+    // Real unread count comes from message polling.
+    (void)chatId; (void)myMobile;
 }
 
 // ============================================================
@@ -963,31 +1054,11 @@ void RgNet_SendFile(const string& chatId,
             "\"isCallLog\":{\"booleanValue\":false}"
             "}}";
 
-        string path = RgBuildPath("chats", chatId, "messages");
+        // POST to pvt_msg_{chatId} collection — matches Android path exactly
+        string collection = RgChatCollection(chatId);
+        string path = "/v1/projects/" RG_FIREBASE_PROJECT
+                      "/databases/(default)/documents/" + collection;
         RgFirestorePost("POST", path, payload);
-
-        // 4) Update chat previews (same pattern as RgNet_SendText)
-        string previewText = "[" + msgType + "] " + fname;
-        string previewPayload = "{\"fields\":{"
-            "\"contactMobile\":{\"stringValue\":\"" + receiverMobile + "\"},"
-            "\"lastMessageText\":{\"stringValue\":\"" + previewText + "\"},"
-            "\"lastMessageSender\":{\"stringValue\":\"" + g_myMobile + "\"},"
-            "\"lastTimestamp\":{\"integerValue\":\"" + to_string(ts) + "\"},"
-            "\"lastTimeString\":{\"stringValue\":\"" + timeStr + "\"}"
-            "}}";
-        string previewPath = RgBuildPath("users", g_myMobile, "chat_previews", receiverMobile);
-        RgFirestorePost("PATCH", previewPath, previewPayload);
-
-        string rxPreviewPath = RgBuildPath("users", receiverMobile, "chat_previews", g_myMobile);
-        string rxPreviewPayload = "{\"fields\":{"
-            "\"contactMobile\":{\"stringValue\":\"" + g_myMobile + "\"},"
-            "\"contactName\":{\"stringValue\":\"" + g_myName + "\"},"
-            "\"lastMessageText\":{\"stringValue\":\"" + previewText + "\"},"
-            "\"lastMessageSender\":{\"stringValue\":\"" + g_myMobile + "\"},"
-            "\"lastTimestamp\":{\"integerValue\":\"" + to_string(ts) + "\"},"
-            "\"lastTimeString\":{\"stringValue\":\"" + timeStr + "\"}"
-            "}}";
-        RgFirestorePost("PATCH", rxPreviewPath, rxPreviewPayload);
     }).detach();
 }
 
