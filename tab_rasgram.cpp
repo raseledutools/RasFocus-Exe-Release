@@ -560,13 +560,68 @@ body{display:flex;flex-direction:column;height:100vh;overflow:hidden;background:
 #empty-state h3{font-size:20px;color:#555;font-weight:700}
 #empty-state p{font-size:13px;text-align:center;max-width:320px}
 
-/* not-logged-in */
-#not-logged-in{display:none;flex-direction:column;align-items:center;justify-content:center;
-               height:100%;gap:14px;background:#f0f2f5}
-#not-logged-in .icon{font-size:64px;color:#00969f;opacity:.5}
-#not-logged-in h2{font-size:22px;color:#333;font-weight:700}
-#not-logged-in p{font-size:14px;color:#888;text-align:center;max-width:320px}
-#not-logged-in .hint{font-size:12px;color:#bbb;font-style:italic}
+/* ── LOGIN SCREEN ── */
+#login-screen{display:none;flex-direction:column;align-items:center;justify-content:flex-start;
+              height:100%;background:linear-gradient(180deg,rgba(0,128,105,.28) 0%,#0B141A 38%);
+              overflow-y:auto;padding:0 24px 40px}
+#login-deco-top{position:fixed;top:-100px;left:50%;transform:translateX(-50%);
+                width:300px;height:300px;border-radius:50%;pointer-events:none;
+                background:radial-gradient(circle,rgba(0,168,132,.14) 0%,transparent 70%)}
+#login-deco-bot{position:fixed;bottom:-100px;right:-50px;
+                width:200px;height:200px;border-radius:50%;pointer-events:none;
+                background:radial-gradient(circle,rgba(37,211,102,.09) 0%,transparent 70%)}
+#login-logo-wrap{margin-top:72px;width:100px;height:100px;border-radius:50%;
+                 background:#00A884;display:flex;align-items:center;justify-content:center;
+                 box-shadow:0 8px 32px rgba(0,168,132,.35);flex-shrink:0}
+#login-logo-wrap svg{width:54px;height:54px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+#login-title{margin-top:28px;font-size:36px;font-weight:900;color:#E9EDEF;letter-spacing:.5px;text-align:center}
+#login-tagline{margin-top:6px;font-size:14px;color:#00A884;font-weight:500;text-align:center}
+#login-sub{margin-top:10px;font-size:13px;color:#8696A0;text-align:center;line-height:1.6;max-width:320px}
+#login-card{margin-top:36px;width:100%;max-width:440px;background:rgba(31,44,52,.82);
+            border-radius:24px;border:1px solid rgba(42,57,66,.5);
+            box-shadow:0 8px 32px rgba(0,0,0,.3);padding:28px;box-sizing:border-box}
+.lg-label{font-size:12px;color:#8696A0;font-weight:600;letter-spacing:.5px;text-transform:uppercase;margin-bottom:8px}
+.lg-row{display:flex;gap:8px;align-items:stretch}
+.lg-country-btn{background:none;border:1px solid #2A3942;border-radius:12px;
+                color:#E9EDEF;cursor:pointer;padding:0 14px;height:52px;
+                font-size:14px;white-space:nowrap;display:flex;align-items:center;gap:4px;
+                transition:border-color .15s}
+.lg-country-btn:hover{border-color:#00A884}
+.lg-country-drop{position:absolute;background:#1F2C34;border:1px solid #2A3942;border-radius:12px;
+                 z-index:99;min-width:180px;box-shadow:0 8px 24px rgba(0,0,0,.4);margin-top:4px;overflow:hidden}
+.lg-country-drop div{padding:10px 16px;color:#E9EDEF;font-size:14px;cursor:pointer;transition:background .12s}
+.lg-country-drop div:hover{background:rgba(0,168,132,.15)}
+.lg-input{width:100%;background:#2A3942;border:1px solid #2A3942;border-radius:12px;
+          padding:0 16px;height:52px;color:#E9EDEF;font-size:14px;outline:none;
+          font-family:inherit;box-sizing:border-box;transition:border-color .15s}
+.lg-input:focus{border-color:#00A884}
+.lg-input::placeholder{color:#8696A0}
+.lg-error{font-size:12px;color:#EA0038;margin-top:6px;min-height:18px}
+.lg-btn{width:100%;height:52px;border:none;border-radius:14px;background:#00A884;
+        color:#000;font-size:16px;font-weight:700;cursor:pointer;
+        display:flex;align-items:center;justify-content:center;gap:8px;
+        transition:background .15s;margin-top:20px}
+.lg-btn:hover{background:#00c49a}
+.lg-btn:disabled{opacity:.5;cursor:default}
+.lg-back-row{display:flex;gap:12px;margin-top:20px}
+.lg-btn-back{flex:1;height:52px;border:1px solid #2A3942;border-radius:14px;
+             background:none;color:#8696A0;font-size:14px;cursor:pointer;transition:border-color .15s}
+.lg-btn-back:hover{border-color:#8696A0;color:#E9EDEF}
+.lg-btn-main{flex:2;height:52px;border:none;border-radius:14px;background:#00A884;
+             color:#000;font-size:16px;font-weight:700;cursor:pointer;
+             display:flex;align-items:center;justify-content:center;
+             transition:background .15s}
+.lg-btn-main:hover{background:#00c49a}
+.lg-btn-main:disabled{opacity:.5;cursor:default}
+.lg-char-count{font-size:11px;color:#8696A0;text-align:right;margin-top:4px}
+.lg-badge{display:flex;align-items:center;gap:8px;margin-top:32px;
+          background:rgba(0,168,132,.1);border:1px solid rgba(0,168,132,.28);
+          border-radius:20px;padding:10px 18px;font-size:13px;color:#00A884;font-weight:500}
+.lg-spinner{width:22px;height:22px;border:3px solid rgba(0,0,0,.3);border-top-color:#000;
+            border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.lg-step-phone,.lg-step-name{display:none}
+.lg-step-phone.active,.lg-step-name.active{display:block}
 
 /* input bar */
 #input-bar{display:flex;align-items:center;gap:6px;padding:8px 12px;
@@ -605,12 +660,73 @@ body{display:flex;flex-direction:column;height:100vh;overflow:hidden;background:
 </head>
 <body>
 
-<!-- NOT LOGGED IN -->
-<div id="not-logged-in">
-  <div class="icon">💬</div>
-  <h2>RasGram Desktop</h2>
-  <p>You are not logged in.<br>Please go to the <strong>My Account</strong> tab and sign in.</p>
-  <div class="hint">After login, come back here — your chats will load automatically.</div>
+<!-- LOGIN SCREEN -->
+<div id="login-screen">
+  <div id="login-deco-top"></div>
+  <div id="login-deco-bot"></div>
+
+  <div id="login-logo-wrap">
+    <!-- Send / paper-plane icon matching APK's Icons.Default.Send -->
+    <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+  </div>
+
+  <div id="login-title">RasGram</div>
+  <div id="login-tagline">Simple. Secure. Reliable.</div>
+  <div id="login-sub" id="login-sub-text">Enter your phone number to continue</div>
+
+  <div id="login-card">
+
+    <!-- STEP 0: Phone -->
+    <div class="lg-step-phone active" id="step-phone">
+      <div class="lg-label">Phone Number</div>
+      <div class="lg-row" style="position:relative">
+        <button class="lg-country-btn" onclick="LG.toggleDrop()" id="lg-drop-btn">
+          <span id="lg-flag">🇧🇩</span>
+          <span id="lg-code">+880</span>
+          <span style="color:#8696A0;font-size:12px">▾</span>
+        </button>
+        <div id="lg-drop" class="lg-country-drop" style="display:none;position:absolute;top:56px;left:0">
+          <div onclick="LG.selectCountry('+880','🇧🇩')">🇧🇩  +880</div>
+          <div onclick="LG.selectCountry('+1','🇺🇸')">🇺🇸  +1</div>
+          <div onclick="LG.selectCountry('+44','🇬🇧')">🇬🇧  +44</div>
+          <div onclick="LG.selectCountry('+91','🇮🇳')">🇮🇳  +91</div>
+          <div onclick="LG.selectCountry('+971','🇦🇪')">🇦🇪  +971</div>
+          <div onclick="LG.selectCountry('+966','🇸🇦')">🇸🇦  +966</div>
+        </div>
+        <input id="lg-phone" class="lg-input" type="tel" placeholder="Phone number" maxlength="11"
+               oninput="this.value=this.value.replace(/\D/g,'')"
+               onkeydown="if(event.key==='Enter')LG.nextToName()" style="flex:1">
+      </div>
+      <div class="lg-error" id="lg-phone-err"></div>
+      <button class="lg-btn" onclick="LG.nextToName()">Continue</button>
+    </div>
+
+    <!-- STEP 1: Name -->
+    <div class="lg-step-name" id="step-name">
+      <div class="lg-label">Your Name</div>
+      <input id="lg-name" class="lg-input" style="width:100%" type="text" placeholder="Enter your name" maxlength="25"
+             oninput="document.getElementById('lg-name-count').textContent=this.value.length+'/25'"
+             onkeydown="if(event.key==='Enter')LG.doLogin()">
+      <div class="lg-char-count" id="lg-name-count">0/25</div>
+      <div class="lg-error" id="lg-name-err"></div>
+      <div class="lg-back-row">
+        <button class="lg-btn-back" onclick="LG.backToPhone()">Back</button>
+        <button class="lg-btn-main" id="lg-submit-btn" onclick="LG.doLogin()">
+          <span id="lg-submit-txt">Continue</span>
+        </button>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="lg-badge">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00A884" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+      <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+    </svg>
+    End-to-end encrypted
+  </div>
 </div>
 
 <!-- MAIN APP (hidden until logged in) -->
@@ -675,6 +791,73 @@ body{display:flex;flex-direction:column;height:100vh;overflow:hidden;background:
 </div><!-- /app -->
 
 <script>
+// ── Login Screen (LG) ─────────────────────────────────────────
+window.LG = {
+  _code: '+880',
+  toggleDrop() {
+    const d = document.getElementById('lg-drop');
+    d.style.display = d.style.display === 'none' ? 'block' : 'none';
+  },
+  selectCountry(code, flag) {
+    this._code = code;
+    document.getElementById('lg-flag').textContent = flag;
+    document.getElementById('lg-code').textContent = code;
+    document.getElementById('lg-drop').style.display = 'none';
+  },
+  nextToName() {
+    const phone = document.getElementById('lg-phone').value.trim();
+    if (phone.length < 9) {
+      document.getElementById('lg-phone-err').textContent = 'Enter a valid phone number';
+      return;
+    }
+    document.getElementById('lg-phone-err').textContent = '';
+    document.getElementById('step-phone').classList.remove('active');
+    document.getElementById('step-name').classList.add('active');
+    document.getElementById('login-sub').textContent = 'What should we call you?';
+    document.getElementById('lg-name').focus();
+  },
+  backToPhone() {
+    document.getElementById('step-name').classList.remove('active');
+    document.getElementById('step-phone').classList.add('active');
+    document.getElementById('login-sub').textContent = 'Enter your phone number to continue';
+    document.getElementById('lg-name-err').textContent = '';
+  },
+  doLogin() {
+    const name = document.getElementById('lg-name').value.trim();
+    if (!name) {
+      document.getElementById('lg-name-err').textContent = 'Enter your name';
+      return;
+    }
+    const phone = document.getElementById('lg-phone').value.trim();
+    const fullPhone = this._code + phone;
+    const btn = document.getElementById('lg-submit-btn');
+    const txt = document.getElementById('lg-submit-txt');
+    btn.disabled = true;
+    txt.innerHTML = '<div class="lg-spinner"></div>';
+    document.getElementById('lg-name-err').textContent = '';
+    // Post to C++ — C++ will write to Firestore and call RG.setLoginState
+    if (window.chrome && window.chrome.webview)
+      window.chrome.webview.postMessage(JSON.stringify({
+        action: 'rasgram_login',
+        phone: fullPhone,
+        name: name
+      }));
+  },
+  loginError(msg) {
+    const btn = document.getElementById('lg-submit-btn');
+    const txt = document.getElementById('lg-submit-txt');
+    btn.disabled = false;
+    txt.textContent = 'Continue';
+    document.getElementById('lg-name-err').textContent = msg || 'Login failed. Try again.';
+  }
+};
+// Close dropdown when clicking outside
+document.addEventListener('click', e => {
+  const d = document.getElementById('lg-drop');
+  if (d && !document.getElementById('lg-drop-btn').contains(e.target))
+    d.style.display = 'none';
+});
+
 // ── State ──────────────────────────────────────────────────────
 const state = {
   myMobile: '',
