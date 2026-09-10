@@ -2573,9 +2573,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         int delta = GET_WHEEL_DELTA_WPARAM(wp);
         if (selectedTab == 1) { extern void ProcessBlocksMouseWheel(float,float,int); ProcessBlocksMouseWheel(x,y,delta); InvalidateRect(hWnd,NULL,FALSE); }
         if (selectedTab == 12) { ProcessFileManagerMouseWheel(x, y, delta); InvalidateRect(hWnd,NULL,FALSE); } // File Manager (Special only)
-        if (selectedTab == 3)  { // ← Special tab: forward wheel to File Manager Plus sub-tab if active
+        if (selectedTab == 3)  { // ← Special tab: forward wheel to active sub-tab
             extern int sf_activeSubTab; // defined in tab_special.cpp
             if (sf_activeSubTab == 0) { ProcessFileManagerMouseWheel(x, y, delta); InvalidateRect(hWnd, NULL, FALSE); }
+            else if (sf_activeSubTab == 1) { extern void ProcessDiaryMouseWheel(int); ProcessDiaryMouseWheel(delta); InvalidateRect(hWnd, NULL, FALSE); }
         }
         if (selectedTab == 0) { ProcessDashboardMouseWheel(delta); }
         if (selectedTab == 11) {
@@ -2625,6 +2626,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         else if (selectedTab == 2) { ProcessDeepStudyKeyPress((wchar_t)wp); InvalidateRect(hWnd,NULL,FALSE); }
         else if (selectedTab == 8) { ProcessFamilyLinkChar((wchar_t)wp); InvalidateRect(hWnd, NULL, FALSE); } // ← Family Link Char Input Handled
         else if (selectedTab == 11) { PhoneRemoteChar((wchar_t)wp); InvalidateRect(hWnd, NULL, FALSE); } // ← Phone Remote IP input
+        else if (selectedTab == 3) { // ← Special tab: diary keyboard
+            extern int sf_activeSubTab;
+            if (sf_activeSubTab == 1) { extern void ProcessDiaryChar(wchar_t); ProcessDiaryChar((wchar_t)wp); InvalidateRect(hWnd, NULL, FALSE); }
+        }
         break;
     }
 
@@ -2643,6 +2648,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (selectedTab == 1) { extern void ProcessBlocksKeyDown(WPARAM); ProcessBlocksKeyDown(wp); InvalidateRect(hWnd,NULL,FALSE); }
         else if (selectedTab == 2) { ProcessDeepStudyKeyDown(wp); InvalidateRect(hWnd,NULL,FALSE); }
         else if (selectedTab == 8) { ProcessFamilyLinkKeyDown(wp); InvalidateRect(hWnd, NULL, FALSE); } // ← Family Link KeyDown Handled
+        else if (selectedTab == 3) { // ← Special tab: diary ESC/nav keys
+            extern int sf_activeSubTab;
+            if (sf_activeSubTab == 1) { extern void ProcessDiaryKeyDown(WPARAM); ProcessDiaryKeyDown(wp); InvalidateRect(hWnd, NULL, FALSE); }
+        }
         break;
     }
 

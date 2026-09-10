@@ -1,491 +1,1084 @@
-// tab_diary.cpp 
+// tab_diary.cpp
+// Professional Diary — GDI+ native implementation
+// Data: %APPDATA%\.rasfocus\diary_entries.json
+// Features: Entry list | Add/Edit | Moods | Folders | Search | Delete | Scroll
 
-#include "tab_gemini.h" 
+#include "tab_gemini.h"  // extern declarations (ShowGeminiControls etc.)
 #include <windows.h>
-#include <shellapi.h>
 #include <gdiplus.h>
+#include <shlobj.h>
 #include <string>
 #include <vector>
-#include <cstdint>
-#include <commdlg.h> 
-#include <urlmon.h>
-#include <process.h>
-#include <shlwapi.h>
 #include <algorithm>
+#include <fstream>
+#include <sstream>
+#include <ctime>
+#include <functional>
 
-// --- WebView2 Headers ---
-#include "WebView2.h"
-#include "WebView2EnvironmentOptions.h"
-#include <wrl.h>
-#include <objbase.h>
+#pragma comment(lib,"gdiplus.lib")
+#pragma comment(lib,"shlwapi.lib")
 
 using namespace Gdiplus;
 using namespace std;
-using namespace Microsoft::WRL; 
 
-// =========================================================================
-// PREMIUM LOCAL HTML UI (0% Lag, C++ Memory Rendered)
-// FIX [C2026]: HTML string was too large for a single literal (MSVC limit: ~16380 chars).
-// Split into multiple parts and joined at runtime via GetPremiumUIHtml().
-// =========================================================================
+// ============================================================
+// COLOURS
+// ============================================================
+static const Color Bg        (255, 248, 250, 252);
+static const Color Surface   (255, 255, 255, 255);
+static const Color Primary   (255,  79, 172, 254);
+static const Color PrimaryDk (255,  45, 140, 220);
+static const Color Accent    (255, 100, 200, 160);
+static const Color Danger    (255, 220,  60,  60);
+static const Color TextDark  (255,  30,  40,  60);
+static const Color TextGray  (255, 130, 145, 165);
+static const Color Divider   (255, 220, 225, 235);
+static const Color CardHov   (255, 240, 245, 255);
+static const Color TagBg     (255, 229, 242, 255);
 
-static const wchar_t* HTML_PART1 = LR"HTML(<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RasFocus AI - Premium UI</title>
-    <style>
-        * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-        body { margin: 0; background-color: #212121; color: #ececec; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
-        #chat-history { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 20px; }
-        .msg { display: flex; max-width: 80%; line-height: 1.6; font-size: 16px; padding: 15px 20px; border-radius: 18px; white-space: pre-wrap; word-wrap: break-word; }
-        .user-msg { background-color: #2f2f2f; align-self: flex-end; border-bottom-right-radius: 4px; border: 1px solid #444; }
-        .ai-msg { background-color: transparent; align-self: flex-start; }
-        .sent-img { max-width: 250px; border-radius: 10px; margin-top: 10px; display: block; border: 1px solid #555; }
-        #input-wrapper { padding: 20px; display: flex; justify-content: center; background: linear-gradient(to top, #212121 80%, transparent); }
-        .input-container { width: 100%; max-width: 800px; background-color: #2f2f2f; border-radius: 20px; padding: 12px; border: 1px solid #444; position: relative; transition: 0.2s; }
-        .input-container.dragover { background-color: #3b3b3b; border-color: #00ADB5; }
-        #attachment-area { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 5px; }
-        .file-card { width: 120px; height: 120px; background-color: #212121; border: 1px solid #444; border-radius: 12px; padding: 10px; position: relative; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; }
-        .file-card .remove-btn { position: absolute; top: 5px; right: 5px; background: #444; color: white; border: none; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-size: 12px; display: flex; align-items: center; justify-content: center; }
-        .file-card .remove-btn:hover { background: #ff4d4d; }
-        .text-card-content { font-size: 10px; color: #888; overflow: hidden; height: 70px; word-break: break-all; }
-        .text-card-label { background: #333; color: #ccc; font-size: 11px; padding: 3px 8px; border-radius: 6px; align-self: flex-start; font-weight: bold; border: 1px solid #555; }
-        .img-card-preview { width: 100%; height: 70px; object-fit: cover; border-radius: 6px; }
-        .input-row { display: flex; align-items: flex-end; gap: 10px; }
-        #add-btn { background: transparent; border: none; color: #aaa; font-size: 24px; cursor: pointer; padding: 5px 10px; display: flex; align-items: center; justify-content: center; border-radius: 50%; height: 40px; width: 40px; }
-        #add-btn:hover { background: #444; color: white; }
-        textarea { flex: 1; background: transparent; border: none; color: white; font-size: 16px; padding: 8px 0; resize: none; outline: none; max-height: 200px; min-height: 24px; overflow-y: auto; }
-        #send-btn { background: #444; color: #aaa; border: none; padding: 8px 12px; border-radius: 10px; cursor: pointer; font-weight: bold; height: 36px; display: flex; align-items: center; justify-content: center; transition: 0.2s; }
-        #send-btn.active { background: #d9d9e3; color: #111; }
-        #file-input { display: none; }
-        .thinking { color: #00ADB5; font-style: italic; font-size: 14px; margin-left: 10px; display: none; }
-    </style>
-</head>
-<body>
-    <div id="chat-history">
-        <div class="msg ai-msg">Welcome to RasFocus Native AI! &#x1F680;<br>Powered by <b>Llama-4 Scout</b>. Drag files, paste images, or paste large code blocks to test me.</div>
-    </div>
-    <div id="thinking-indicator" class="thinking" style="text-align:center;">AI is analyzing... please wait.</div>
-    <div id="input-wrapper">
-        <div class="input-container" id="drop-zone">
-            <div id="attachment-area"></div>
-            <div class="input-row">
-                <input type="file" id="file-input" accept="image/*" multiple>
-                <button id="add-btn" onclick="document.getElementById('file-input').click()">+</button>
-                <textarea id="chat-input" placeholder="Message AI..."></textarea>
-                <button id="send-btn">&#x2191;</button>
-            </div>
-        </div>
-    </div>)HTML";
+// Mood colours
+static const Color MoodHappy (255, 255, 200,  50);
+static const Color MoodSad   (255,  80, 130, 255);
+static const Color MoodAngry (255, 240,  80,  60);
+static const Color MoodCalmC (255,  60, 200, 160);
+static const Color MoodNeutl (255, 180, 180, 180);
 
-static const wchar_t* HTML_PART2 = LR"HTML(
-    <script>
-        const API_KEY = "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";
-        const MODEL_NAME = "meta-llama/llama-4-scout-17b-16e-instruct";
+// ============================================================
+// HELPERS
+// ============================================================
+extern string GetSecretDir();
+extern HWND   hParentWnd;
+extern float  g_scaleFactor;
 
-        const inputContainer = document.getElementById('drop-zone');
-        const chatInput = document.getElementById('chat-input');
-        const attachmentArea = document.getElementById('attachment-area');
-        const sendBtn = document.getElementById('send-btn');
-        const chatHistory = document.getElementById('chat-history');
-        const thinkingIndicator = document.getElementById('thinking-indicator');
+static wstring S2W(const string& s) {
+    if (s.empty()) return L"";
+    int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, NULL, 0);
+    wstring w(n, 0); MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, &w[0], n);
+    if (!w.empty() && w.back() == L'\0') w.pop_back();
+    return w;
+}
+static string W2S(const wstring& w) {
+    if (w.empty()) return "";
+    int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, NULL, 0, NULL, NULL);
+    string s(n, 0); WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, &s[0], n, NULL, NULL);
+    if (!s.empty() && s.back() == '\0') s.pop_back();
+    return s;
+}
 
-        let attachments = [];
+static void FillRR(Graphics& g, Brush* b, Pen* p, float x, float y, float w, float h, float r = 8.f) {
+    GraphicsPath path;
+    path.AddArc(x,       y,       r*2,r*2, 180,90);
+    path.AddArc(x+w-r*2,y,       r*2,r*2, 270,90);
+    path.AddArc(x+w-r*2,y+h-r*2,r*2,r*2,   0,90);
+    path.AddArc(x,       y+h-r*2,r*2,r*2,  90,90);
+    path.CloseFigure();
+    if (b) g.FillPath(b, &path);
+    if (p) g.DrawPath(p, &path);
+}
 
-        chatInput.addEventListener('input', function() {
-            this.style.height = '24px';
-            this.style.height = (this.scrollHeight) + 'px';
-            toggleSendButton();
-        });
+static string CurrentDate() {
+    time_t t = time(NULL); struct tm tm; localtime_s(&tm, &t);
+    char buf[32]; strftime(buf, sizeof(buf), "%Y-%m-%d", &tm); return buf;
+}
+static wstring CurrentDateW() { return S2W(CurrentDate()); }
 
-        function toggleSendButton() {
-            if (chatInput.value.trim().length > 0 || attachments.length > 0) {
-                sendBtn.classList.add('active');
-            } else {
-                sendBtn.classList.remove('active');
+// ============================================================
+// SIMPLE JSON HELPERS  (no external lib)
+// ============================================================
+// Escape/unescape for JSON string values
+static string JsonEsc(const string& s) {
+    string o; o.reserve(s.size() + 8);
+    for (char c : s) {
+        if      (c == '"')  o += "\\\"";
+        else if (c == '\\') o += "\\\\";
+        else if (c == '\n') o += "\\n";
+        else if (c == '\r') o += "\\r";
+        else if (c == '\t') o += "\\t";
+        else o += c;
+    }
+    return o;
+}
+static string JsonUnescape(const string& s) {
+    string o; bool esc = false;
+    for (size_t i = 0; i < s.size(); i++) {
+        if (esc) {
+            if      (s[i] == '"')  o += '"';
+            else if (s[i] == '\\') o += '\\';
+            else if (s[i] == 'n')  o += '\n';
+            else if (s[i] == 'r')  o += '\r';
+            else if (s[i] == 't')  o += '\t';
+            else { o += '\\'; o += s[i]; }
+            esc = false;
+        } else if (s[i] == '\\') { esc = true; }
+        else { o += s[i]; }
+    }
+    return o;
+}
+
+// Extract first string value for key from flat JSON object text
+static string JGet(const string& json, const string& key) {
+    // Handles: "key":"value"  or  "key": "value"
+    string pat = "\"" + key + "\"";
+    size_t p = json.find(pat);
+    if (p == string::npos) return "";
+    p += pat.size();
+    while (p < json.size() && (json[p] == ' ' || json[p] == ':')) p++;
+    if (p >= json.size()) return "";
+    if (json[p] == '"') {
+        p++;
+        string val; bool esc = false;
+        while (p < json.size()) {
+            char c = json[p++];
+            if (esc) { val += '\\'; val += c; esc = false; }
+            else if (c == '\\') esc = true;
+            else if (c == '"') break;
+            else val += c;
+        }
+        return JsonUnescape(val);
+    }
+    // number / bool
+    size_t e = p;
+    while (e < json.size() && json[e] != ',' && json[e] != '}' && json[e] != ']') e++;
+    return json.substr(p, e - p);
+}
+
+// ============================================================
+// DATA MODEL
+// ============================================================
+struct DiaryEntry {
+    long long  id         = 0;
+    string     title;
+    string     body;
+    string     folder     = "General";
+    string     mood;           // "happy","sad","angry","calm","neutral"
+    string     tags;           // comma-separated
+    string     date;
+    long long  timestamp  = 0;
+
+    string Serialize() const {
+        return "{\"id\":" + to_string(id)
+             + ",\"title\":\"" + JsonEsc(title) + "\""
+             + ",\"body\":\"" + JsonEsc(body) + "\""
+             + ",\"folder\":\"" + JsonEsc(folder) + "\""
+             + ",\"mood\":\"" + JsonEsc(mood) + "\""
+             + ",\"tags\":\"" + JsonEsc(tags) + "\""
+             + ",\"date\":\"" + JsonEsc(date) + "\""
+             + ",\"timestamp\":" + to_string(timestamp) + "}";
+    }
+    static DiaryEntry Deserialize(const string& json) {
+        DiaryEntry e;
+        string idStr = JGet(json, "id");
+        if (!idStr.empty()) { try { e.id = stoll(idStr); } catch(...) {} }
+        e.title     = JGet(json, "title");
+        e.body      = JGet(json, "body");
+        e.folder    = JGet(json, "folder");    if (e.folder.empty()) e.folder = "General";
+        e.mood      = JGet(json, "mood");
+        e.tags      = JGet(json, "tags");
+        e.date      = JGet(json, "date");
+        string ts   = JGet(json, "timestamp");
+        if (!ts.empty()) { try { e.timestamp = stoll(ts); } catch(...) {} }
+        return e;
+    }
+};
+
+// ============================================================
+// STORAGE
+// ============================================================
+static string DiaryFilePath() { return GetSecretDir() + "diary_entries.json"; }
+
+static vector<DiaryEntry> g_entries;
+static bool g_loaded = false;
+
+static void LoadEntries() {
+    g_entries.clear();
+    string path = DiaryFilePath();
+    ifstream f(path);
+    if (!f.is_open()) { g_loaded = true; return; }
+    string content((istreambuf_iterator<char>(f)), istreambuf_iterator<char>());
+    f.close();
+
+    // Parse array [ {...}, {...}, ... ]
+    size_t p = content.find('[');
+    if (p == string::npos) { g_loaded = true; return; }
+    p++;
+    while (p < content.size()) {
+        while (p < content.size() && content[p] != '{' && content[p] != ']') p++;
+        if (p >= content.size() || content[p] == ']') break;
+        // Find matching }
+        int depth = 0; size_t start = p;
+        for (size_t i = p; i < content.size(); i++) {
+            if (content[i] == '{') depth++;
+            else if (content[i] == '}') { depth--; if (depth == 0) { p = i + 1; break; } }
+        }
+        string obj = content.substr(start, p - start);
+        if (!obj.empty()) g_entries.push_back(DiaryEntry::Deserialize(obj));
+    }
+    g_loaded = true;
+}
+
+static void SaveEntries() {
+    string out = "[\n";
+    for (size_t i = 0; i < g_entries.size(); i++) {
+        out += "  " + g_entries[i].Serialize();
+        if (i + 1 < g_entries.size()) out += ",";
+        out += "\n";
+    }
+    out += "]";
+    string path = DiaryFilePath();
+    ofstream f(path);
+    if (f.is_open()) { f << out; f.close(); }
+}
+
+static void UpsertEntry(const DiaryEntry& e) {
+    for (auto& x : g_entries) {
+        if (x.id == e.id) { x = e; SaveEntries(); return; }
+    }
+    g_entries.insert(g_entries.begin(), e);
+    SaveEntries();
+}
+
+static void DeleteEntry(long long id) {
+    g_entries.erase(remove_if(g_entries.begin(), g_entries.end(),
+        [id](const DiaryEntry& e){ return e.id == id; }), g_entries.end());
+    SaveEntries();
+}
+
+// ============================================================
+// VIEW STATE
+// ============================================================
+enum class DiaryView { List, Edit };
+static DiaryView g_view    = DiaryView::List;
+
+// List state
+static int   g_listScroll   = 0;    // pixel offset
+static int   g_hovCard      = -1;   // hovered card index in filtered
+static bool  g_hovNew       = false;
+static bool  g_hovSearch    = false;
+static bool  g_hovDelConfirm= false;
+static long long g_delId    = -1;   // entry pending delete
+static wchar_t g_search[256]= {};
+static bool  g_searchFocus  = false;
+static bool  g_hovFolderBar = false;
+static int   g_selFolder    = 0;    // 0 = All
+
+// Folder list (dynamic + fixed)
+static vector<string> g_folders = { "All" };
+
+static void RebuildFolders() {
+    g_folders = { "All" };
+    for (auto& e : g_entries)
+        if (find(g_folders.begin(), g_folders.end(), e.folder) == g_folders.end())
+            g_folders.push_back(e.folder);
+}
+
+static vector<DiaryEntry*> FilteredEntries() {
+    string folderFilter = (g_selFolder > 0 && g_selFolder < (int)g_folders.size())
+                           ? g_folders[g_selFolder] : "";
+    string srch = W2S(g_search);
+    // lowercase srch
+    for (auto& c : srch) c = (char)tolower((unsigned char)c);
+
+    vector<DiaryEntry*> out;
+    for (auto& e : g_entries) {
+        if (!folderFilter.empty() && e.folder != folderFilter) continue;
+        if (!srch.empty()) {
+            string title = e.title; for (auto& c : title) c = (char)tolower((unsigned char)c);
+            string body  = e.body;  for (auto& c : body)  c = (char)tolower((unsigned char)c);
+            if (title.find(srch) == string::npos && body.find(srch) == string::npos) continue;
+        }
+        out.push_back(&e);
+    }
+    return out;
+}
+
+// Edit state
+static DiaryEntry g_edit;
+static bool  g_editIsNew = true;
+static int   g_editFocus = 0; // 0=none,1=title,2=body,3=folder,4=tags
+static int   g_bodyScroll= 0;
+static bool  g_hovSave   = false;
+static bool  g_hovBack   = false;
+static bool  g_hovDelBtn = false;
+static int   g_hovMood   = -1; // 0-4
+static int   g_hovFolder2= -1; // folder chip hover in edit
+static bool  g_showFolderInput = false;
+static wchar_t g_newFolder[64] = {};
+static bool  g_hovAddFolder = false;
+
+// Layout cache
+static float g_cx, g_cy, g_cw, g_ch;
+static const float TOOLBAR_H = 52.f;
+static const float CARD_H    = 84.f;
+static const float CARD_GAP  = 8.f;
+static const float PAD       = 16.f;
+
+// Mood labels + chars
+static const wchar_t* MOOD_ICON[] = { L"😊", L"😢", L"😠", L"😌", L"😐" };
+static const wchar_t* MOOD_LBL[]  = { L"Happy", L"Sad", L"Angry", L"Calm", L"Neutral" };
+static const char*    MOOD_KEY[]  = { "happy", "sad", "angry", "calm", "neutral" };
+static const Color    MOOD_CLR[]  = { MoodHappy, MoodSad, MoodAngry, MoodCalmC, MoodNeutl };
+
+// ============================================================
+// DRAW HELPERS
+// ============================================================
+static void DrawText_(Graphics& g, const wchar_t* text, const Font* font,
+                      RectF rect, StringAlignment ha, StringAlignment va, const Brush* br,
+                      StringTrimming trim = StringTrimmingEllipsisCharacter) {
+    StringFormat sf;
+    sf.SetAlignment(ha); sf.SetLineAlignment(va);
+    sf.SetTrimming(trim);
+    sf.SetFormatFlags(StringFormatFlagsLineLimit);
+    g.DrawString(text, -1, font, rect, &sf, br);
+}
+
+static Color MoodColor(const string& mood) {
+    for (int i = 0; i < 5; i++)
+        if (mood == MOOD_KEY[i]) return MOOD_CLR[i];
+    return TextGray;
+}
+
+// ============================================================
+// TOOLBAR (common: back btn in edit, new + search in list)
+// ============================================================
+static void DrawToolbar(Graphics& g, const FontFamily& ff) {
+    Font fBold(&ff, 15, FontStyleBold, UnitPixel);
+    Font fNorm(&ff, 13, FontStyleRegular, UnitPixel);
+    Font fSm  (&ff, 12, FontStyleRegular, UnitPixel);
+
+    // Toolbar background
+    SolidBrush bSurf(Surface);
+    g.FillRectangle(&bSurf, g_cx, g_cy, g_cw, TOOLBAR_H);
+    Pen pBrd(Divider, 1.f);
+    g.DrawLine(&pBrd, g_cx, g_cy + TOOLBAR_H, g_cx + g_cw, g_cy + TOOLBAR_H);
+
+    SolidBrush bDark(TextDark);
+    SolidBrush bGray(TextGray);
+    SolidBrush bWhite(Color(255,255,255,255));
+    SolidBrush bPrim(Primary);
+    SolidBrush bPrimHov(PrimaryDk);
+    SolidBrush bDanger(Danger);
+
+    if (g_view == DiaryView::List) {
+        // Title
+        DrawText_(&g, L"📔  Personal Diary", &fBold,
+                  RectF(g_cx + PAD, g_cy + 2, g_cw * 0.4f, TOOLBAR_H - 4),
+                  StringAlignmentNear, StringAlignmentCenter, &bDark);
+
+        // Search box
+        float sW = min(260.f, g_cw * 0.35f);
+        float sX = g_cx + g_cw - PAD - 110.f - sW - 8.f;
+        Pen pSrch(g_searchFocus ? Primary : Divider, g_searchFocus ? 2.f : 1.f);
+        FillRR(g, &bSurf, &pSrch, sX, g_cy + 10, sW, 32, 16);
+        DrawText_(&g, g_search[0] ? g_search : L"🔍  Search entries…", &fNorm,
+                  RectF(sX + 10, g_cy + 10, sW - 16, 32),
+                  StringAlignmentNear, StringAlignmentCenter,
+                  g_search[0] ? &bDark : &bGray);
+
+        // "+ New Entry" button
+        float btnX = g_cx + g_cw - PAD - 110.f;
+        SolidBrush& bBtn = g_hovNew ? bPrimHov : bPrim;
+        FillRR(g, &bBtn, nullptr, btnX, g_cy + 10, 108, 32, 16);
+        DrawText_(&g, L"+ New Entry", &fSm,
+                  RectF(btnX, g_cy + 10, 108, 32),
+                  StringAlignmentCenter, StringAlignmentCenter, &bWhite);
+    } else {
+        // Back button
+        SolidBrush bBackBg(g_hovBack ? CardHov : Surface);
+        FillRR(g, &bBackBg, nullptr, g_cx + PAD, g_cy + 12, 32, 28, 8);
+        FontFamily ffIc(L"Segoe MDL2 Assets");
+        Font fIc(&ffIc, 14, FontStyleRegular, UnitPixel);
+        DrawText_(&g, L"\xE80F", &fIc,
+                  RectF(g_cx + PAD, g_cy + 12, 32, 28),
+                  StringAlignmentCenter, StringAlignmentCenter, &bDark);
+
+        // Title
+        const wchar_t* titleText = g_editIsNew ? L"New Entry" : L"Edit Entry";
+        DrawText_(&g, titleText, &fBold,
+                  RectF(g_cx + PAD + 40, g_cy + 2, g_cw * 0.5f, TOOLBAR_H - 4),
+                  StringAlignmentNear, StringAlignmentCenter, &bDark);
+
+        // Save button
+        float sX = g_cx + g_cw - PAD - 90;
+        SolidBrush& bSav = g_hovSave ? bPrimHov : bPrim;
+        FillRR(g, &bSav, nullptr, sX, g_cy + 12, 88, 28, 14);
+        DrawText_(&g, L"💾  Save", &fSm,
+                  RectF(sX, g_cy + 12, 88, 28),
+                  StringAlignmentCenter, StringAlignmentCenter, &bWhite);
+
+        // Delete button (only when editing existing)
+        if (!g_editIsNew) {
+            float dX = sX - 90;
+            SolidBrush bDelBg(g_hovDelBtn ? Danger : Color(255,255,235,235));
+            Pen pDelBrd(Danger, 1.f);
+            FillRR(g, &bDelBg, &pDelBrd, dX, g_cy + 12, 82, 28, 14);
+            SolidBrush bDelTxt(g_hovDelBtn ? Color(255,255,255,255) : Danger);
+            DrawText_(&g, L"🗑 Delete", &fSm,
+                      RectF(dX, g_cy + 12, 82, 28),
+                      StringAlignmentCenter, StringAlignmentCenter, &bDelTxt);
+        }
+    }
+}
+
+// ============================================================
+// FOLDER BAR (list view)
+// ============================================================
+static vector<RectF> g_folderRects;
+static void DrawFolderBar(Graphics& g, const FontFamily& ff) {
+    Font fSm(&ff, 12, FontStyleRegular, UnitPixel);
+    Font fSmB(&ff, 12, FontStyleBold, UnitPixel);
+    g_folderRects.clear();
+
+    float barY = g_cy + TOOLBAR_H;
+    SolidBrush bBarBg(Surface);
+    g.FillRectangle(&bBarBg, g_cx, barY, g_cw, 38.f);
+    Pen pBrd(Divider, 1.f);
+    g.DrawLine(&pBrd, g_cx, barY + 38, g_cx + g_cw, barY + 38);
+
+    float x = g_cx + PAD;
+    for (int i = 0; i < (int)g_folders.size(); i++) {
+        wstring lbl = S2W(g_folders[i]);
+        // Measure
+        RectF bounds(0, 0, 0, 0);
+        g.MeasureString(lbl.c_str(), -1, &fSm, PointF(0, 0), &bounds);
+        float w = bounds.Width + 24.f;
+        if (x + w > g_cx + g_cw - PAD) break; // too many — truncate
+
+        RectF rect(x, barY + 5, w, 28.f);
+        bool active = (g_selFolder == i);
+        if (active) {
+            SolidBrush bAct(Primary);
+            FillRR(g, &bAct, nullptr, rect.X, rect.Y, rect.Width, rect.Height, 14);
+            SolidBrush bTxt(Color(255,255,255,255));
+            DrawText_(&g, lbl.c_str(), &fSmB, rect,
+                      StringAlignmentCenter, StringAlignmentCenter, &bTxt);
+        } else {
+            SolidBrush bChip(TagBg);
+            FillRR(g, &bChip, nullptr, rect.X, rect.Y, rect.Width, rect.Height, 14);
+            SolidBrush bTxt(Primary);
+            DrawText_(&g, lbl.c_str(), &fSm, rect,
+                      StringAlignmentCenter, StringAlignmentCenter, &bTxt);
+        }
+        g_folderRects.push_back(rect);
+        x += w + 8.f;
+    }
+}
+
+// ============================================================
+// ENTRY CARD (list view)
+// ============================================================
+static void DrawEntryCard(Graphics& g, const FontFamily& ff,
+                          const DiaryEntry& e,
+                          float cx, float cy, float cw,
+                          bool hovered, bool pendingDel) {
+    Font fTitle(&ff, 14, FontStyleBold,    UnitPixel);
+    Font fBody (&ff, 12, FontStyleRegular, UnitPixel);
+    Font fMeta (&ff, 11, FontStyleRegular, UnitPixel);
+
+    Color bgCol = hovered ? CardHov : Surface;
+    if (pendingDel) bgCol = Color(255, 255, 240, 240);
+    SolidBrush bBg(bgCol);
+    Pen pBrd(hovered ? Primary : Divider, hovered ? 1.5f : 1.f);
+    FillRR(g, &bBg, &pBrd, cx, cy, cw, CARD_H - CARD_GAP, 10);
+
+    SolidBrush bDark(TextDark);
+    SolidBrush bGray(TextGray);
+
+    float padX = 14.f, padY = 10.f;
+    float inner = cw - padX * 2;
+
+    // Mood dot
+    if (!e.mood.empty()) {
+        Color mc = MoodColor(e.mood);
+        SolidBrush bMood(mc);
+        g.FillEllipse(&bMood, cx + cw - padX - 10.f, cy + padY + 2, 10.f, 10.f);
+    }
+
+    // Title
+    wstring title = e.title.empty() ? S2W(e.date) : S2W(e.title);
+    DrawText_(&g, title.c_str(), &fTitle,
+              RectF(cx + padX, cy + padY, inner - 20, 20),
+              StringAlignmentNear, StringAlignmentNear, &bDark);
+
+    // Body preview (first line)
+    wstring preview = S2W(e.body);
+    // truncate newlines for preview
+    for (auto& c : preview) if (c == L'\n') c = L' ';
+    DrawText_(&g, preview.c_str(), &fBody,
+              RectF(cx + padX, cy + padY + 22, inner, 18),
+              StringAlignmentNear, StringAlignmentNear, &bGray);
+
+    // Date + folder
+    wstring meta = S2W(e.date);
+    if (!e.folder.empty() && e.folder != "General") meta += L"  •  " + S2W(e.folder);
+    DrawText_(&g, meta.c_str(), &fMeta,
+              RectF(cx + padX, cy + padY + 43, inner, 16),
+              StringAlignmentNear, StringAlignmentNear, &bGray);
+
+    // Delete confirmation row
+    if (pendingDel) {
+        SolidBrush bDangerBr(Danger);
+        DrawText_(&g, L"🗑 Tap again to confirm delete", &fMeta,
+                  RectF(cx + padX, cy + CARD_H - CARD_GAP - 18, inner, 16),
+                  StringAlignmentNear, StringAlignmentNear, &bDangerBr);
+    }
+}
+
+// ============================================================
+// LIST VIEW DRAW
+// ============================================================
+static float g_listContentH = 0;
+static const float FOLDER_BAR_H = 38.f;
+
+void DrawDiaryListView(Graphics& g, const FontFamily& ff) {
+    auto filtered = FilteredEntries();
+
+    float areaY = g_cy + TOOLBAR_H + FOLDER_BAR_H;
+    float areaH = g_ch - TOOLBAR_H - FOLDER_BAR_H;
+
+    // Content height
+    g_listContentH = filtered.size() * (CARD_H + CARD_GAP) + PAD * 2;
+
+    // Clipping
+    Region oldClip; g.GetClip(&oldClip);
+    g.SetClip(RectF(g_cx, areaY, g_cw, areaH));
+
+    SolidBrush bBg(Bg);
+    g.FillRectangle(&bBg, g_cx, areaY, g_cw, areaH);
+
+    if (filtered.empty()) {
+        Font fMid(&ff, 15, FontStyleRegular, UnitPixel);
+        SolidBrush bGray(TextGray);
+        DrawText_(&g, L"No diary entries yet.\nTap \"+ New Entry\" to start writing.",
+                  &fMid, RectF(g_cx, areaY, g_cw, areaH),
+                  StringAlignmentCenter, StringAlignmentCenter, &bGray, StringTrimmingNone);
+    }
+
+    float cardX = g_cx + PAD;
+    float cardW = g_cw - PAD * 2;
+    float y     = areaY + PAD - g_listScroll;
+
+    for (int i = 0; i < (int)filtered.size(); i++) {
+        if (y + CARD_H > areaY && y < areaY + areaH) {
+            DrawEntryCard(g, ff, *filtered[i], cardX, y, cardW,
+                          g_hovCard == i, g_delId == filtered[i]->id);
+        }
+        y += CARD_H + CARD_GAP;
+    }
+
+    g.SetClip(&oldClip);
+
+    // Scroll indicator
+    if (g_listContentH > areaH) {
+        float trackH   = areaH;
+        float thumbH   = max(30.f, trackH * areaH / g_listContentH);
+        float maxScroll= g_listContentH - areaH;
+        float thumbY   = areaY + (g_listScroll / maxScroll) * (trackH - thumbH);
+        SolidBrush bThumb(Color(180, 180, 185, 200));
+        g.FillRectangle(&bThumb, g_cx + g_cw - 5, thumbY, 4, thumbH);
+    }
+}
+
+// ============================================================
+// EDIT VIEW DRAW
+// ============================================================
+static vector<RectF> g_moodRects;
+static vector<RectF> g_folderChipRects;
+static RectF g_titleRect, g_bodyRect, g_folderInputRect, g_tagsRect;
+static RectF g_saveRect, g_backRect, g_delRect, g_addFolderRect;
+
+void DrawDiaryEditView(Graphics& g, const FontFamily& ff) {
+    g_moodRects.clear(); g_folderChipRects.clear();
+
+    Font fLabel(&ff, 11, FontStyleBold,    UnitPixel);
+    Font fInput(&ff, 14, FontStyleRegular, UnitPixel);
+    Font fInputB(&ff,14, FontStyleBold,    UnitPixel);
+    Font fSm   (&ff, 12, FontStyleRegular, UnitPixel);
+
+    SolidBrush bBg(Bg);
+    g.FillRectangle(&bBg, g_cx, g_cy + TOOLBAR_H, g_cw, g_ch - TOOLBAR_H);
+
+    SolidBrush bDark(TextDark);
+    SolidBrush bGray(TextGray);
+    SolidBrush bSurf(Surface);
+    SolidBrush bPrim(Primary);
+    SolidBrush bAccent(Accent);
+    SolidBrush bWhite(Color(255,255,255,255));
+
+    float y    = g_cy + TOOLBAR_H + PAD;
+    float left = g_cx + PAD;
+    float w    = g_cw - PAD * 2;
+
+    // ── Date (auto)
+    {
+        Font fDate(&ff, 11, FontStyleItalic, UnitPixel);
+        wstring ds = S2W(g_edit.date.empty() ? CurrentDate() : g_edit.date);
+        DrawText_(&g, (L"📅  " + ds).c_str(), &fDate,
+                  RectF(left, y, w, 18), StringAlignmentNear, StringAlignmentNear, &bGray);
+        y += 24.f;
+    }
+
+    // ── Mood selector
+    DrawText_(&g, L"MOOD", &fLabel, RectF(left, y, w, 16),
+              StringAlignmentNear, StringAlignmentNear, &bGray);
+    y += 20.f;
+    float moodW = min(w / 5.f - 6.f, 64.f);
+    for (int i = 0; i < 5; i++) {
+        float mx = left + i * (moodW + 6.f);
+        bool active = (g_edit.mood == MOOD_KEY[i]);
+        bool hov    = (g_hovMood == i);
+        Color bgC = active ? MOOD_CLR[i] : (hov ? CardHov : Surface);
+        SolidBrush bM(bgC);
+        Pen pM(active ? Color(0,0,0,0) : Divider, 1.f);
+        FillRR(g, &bM, &pM, mx, y, moodW, 36, 10);
+        // emoji + label
+        Font fIco(&ff, 16, FontStyleRegular, UnitPixel);
+        DrawText_(&g, MOOD_ICON[i], &fIco, RectF(mx, y, moodW, 20),
+                  StringAlignmentCenter, StringAlignmentCenter, &bDark);
+        DrawText_(&g, MOOD_LBL[i], &fSm, RectF(mx, y + 18, moodW, 18),
+                  StringAlignmentCenter, StringAlignmentCenter, &bDark);
+        g_moodRects.push_back(RectF(mx, y, moodW, 36));
+    }
+    y += 44.f;
+
+    // ── Title
+    DrawText_(&g, L"TITLE", &fLabel, RectF(left, y, w, 16),
+              StringAlignmentNear, StringAlignmentNear, &bGray);
+    y += 20.f;
+    bool tFocus = (g_editFocus == 1);
+    Pen pTBrd(tFocus ? Primary : Divider, tFocus ? 2.f : 1.f);
+    FillRR(g, &bSurf, &pTBrd, left, y, w, 40, 8);
+    wstring titleTxt = S2W(g_edit.title);
+    if (tFocus) titleTxt += L"│"; // cursor
+    DrawText_(&g, titleTxt.empty() ? L"Entry title…" : titleTxt.c_str(), &fInputB,
+              RectF(left + 10, y, w - 16, 40),
+              StringAlignmentNear, StringAlignmentCenter,
+              titleTxt.empty() ? &bGray : &bDark);
+    g_titleRect = RectF(left, y, w, 40); y += 50.f;
+
+    // ── Body
+    DrawText_(&g, L"CONTENT", &fLabel, RectF(left, y, w, 16),
+              StringAlignmentNear, StringAlignmentNear, &bGray);
+    y += 20.f;
+    float bodyH = g_ch - y - g_cy - PAD - 80.f; // leave room for folder+tags
+    if (bodyH < 80.f) bodyH = 80.f;
+    bool bFocus = (g_editFocus == 2);
+    Pen pBBrd(bFocus ? Primary : Divider, bFocus ? 2.f : 1.f);
+    FillRR(g, &bSurf, &pBBrd, left, y, w, bodyH, 8);
+
+    // Draw body text with scroll
+    Region oldClip; g.GetClip(&oldClip);
+    g.SetClip(RectF(left, y, w, bodyH));
+    wstring bodyTxt = S2W(g_edit.body);
+    if (bFocus) bodyTxt += L"│";
+    Font fBodyIn(&ff, 13, FontStyleRegular, UnitPixel);
+    DrawText_(&g, bodyTxt.empty() ? L"Write your thoughts…" : bodyTxt.c_str(),
+              &fBodyIn, RectF(left + 10, y + 8 - g_bodyScroll, w - 20, bodyH * 10),
+              StringAlignmentNear, StringAlignmentNear,
+              bodyTxt.empty() ? &bGray : &bDark, StringTrimmingNone);
+    g.SetClip(&oldClip);
+    g_bodyRect = RectF(left, y, w, bodyH); y += bodyH + 12.f;
+
+    // ── Folder chips
+    DrawText_(&g, L"FOLDER", &fLabel, RectF(left, y, 80, 16),
+              StringAlignmentNear, StringAlignmentNear, &bGray);
+    y += 20.f;
+    float fx = left;
+    // existing folders
+    vector<string> knownFolders = { "General", "Work", "Personal", "Study" };
+    for (auto& e : g_entries)
+        if (find(knownFolders.begin(), knownFolders.end(), e.folder) == knownFolders.end())
+            knownFolders.push_back(e.folder);
+
+    for (int i = 0; i < (int)knownFolders.size(); i++) {
+        wstring lbl = S2W(knownFolders[i]);
+        RectF bounds(0,0,0,0);
+        g.MeasureString(lbl.c_str(), -1, &fSm, PointF(0,0), &bounds);
+        float cw2 = bounds.Width + 20.f;
+        if (fx + cw2 > left + w - 40) break;
+        bool active2 = (g_edit.folder == knownFolders[i]);
+        bool hov2    = (g_hovFolder2 == i);
+        Color bgF  = active2 ? Primary : (hov2 ? CardHov : TagBg);
+        SolidBrush bFChip(bgF);
+        FillRR(g, &bFChip, nullptr, fx, y, cw2, 28, 14);
+        SolidBrush bFTxt(active2 ? Color(255,255,255,255) : Primary);
+        DrawText_(&g, lbl.c_str(), &fSm, RectF(fx, y, cw2, 28),
+                  StringAlignmentCenter, StringAlignmentCenter, &bFTxt);
+        g_folderChipRects.push_back(RectF(fx, y, cw2, 28));
+        // store label in parallel
+        fx += cw2 + 6.f;
+    }
+
+    // "+ New" folder chip
+    bool hov3 = g_hovAddFolder;
+    SolidBrush bAddF(hov3 ? Accent : Surface);
+    Pen pAddF(Accent, 1.5f);
+    FillRR(g, &bAddF, &pAddF, fx, y, 60, 28, 14);
+    SolidBrush bAddFTxt(hov3 ? Color(255,255,255,255) : Accent);
+    DrawText_(&g, L"+ New", &fSm, RectF(fx, y, 60, 28),
+              StringAlignmentCenter, StringAlignmentCenter, &bAddFTxt);
+    g_addFolderRect = RectF(fx, y, 60, 28);
+    y += 38.f;
+
+    // New folder input (if visible)
+    if (g_showFolderInput) {
+        bool ffocus = (g_editFocus == 3);
+        Pen pFI(ffocus ? Accent : Divider, ffocus ? 2.f : 1.f);
+        FillRR(g, &bSurf, &pFI, left, y, w * 0.6f, 32, 8);
+        wstring nf = g_newFolder;
+        if (ffocus) nf += L"│";
+        DrawText_(&g, nf.empty() ? L"New folder name…" : nf.c_str(),
+                  &fSm, RectF(left + 8, y, w * 0.6f - 12, 32),
+                  StringAlignmentNear, StringAlignmentCenter,
+                  nf.empty() ? &bGray : &bDark);
+        g_folderInputRect = RectF(left, y, w * 0.6f, 32);
+
+        // Confirm button
+        float cfX = left + w * 0.6f + 8;
+        SolidBrush bCf(Accent);
+        FillRR(g, &bCf, nullptr, cfX, y, 60, 32, 8);
+        DrawText_(&g, L"Add", &fSm, RectF(cfX, y, 60, 32),
+                  StringAlignmentCenter, StringAlignmentCenter, &bWhite);
+        y += 42.f;
+    }
+
+    // ── Tags
+    DrawText_(&g, L"TAGS (comma separated)", &fLabel, RectF(left, y, w, 16),
+              StringAlignmentNear, StringAlignmentNear, &bGray);
+    y += 20.f;
+    bool tgFocus = (g_editFocus == 4);
+    Pen pTgBrd(tgFocus ? Primary : Divider, tgFocus ? 2.f : 1.f);
+    FillRR(g, &bSurf, &pTgBrd, left, y, w, 32, 8);
+    wstring tagsTxt = S2W(g_edit.tags);
+    if (tgFocus) tagsTxt += L"│";
+    DrawText_(&g, tagsTxt.empty() ? L"e.g. work, ideas, family…" : tagsTxt.c_str(),
+              &fSm, RectF(left + 8, y, w - 12, 32),
+              StringAlignmentNear, StringAlignmentCenter,
+              tagsTxt.empty() ? &bGray : &bDark);
+    g_tagsRect = RectF(left, y, w, 32);
+}
+
+// ============================================================
+// PUBLIC: DrawGeminiTab  (called from tab_special.cpp)
+// ============================================================
+void DrawGeminiTab(Graphics& g, float cx, float cy, float cw, float ch) {
+    if (!g_loaded) LoadEntries();
+    g_cx = cx; g_cy = cy; g_cw = cw; g_ch = ch;
+
+    g.SetSmoothingMode(SmoothingModeAntiAlias);
+    g.SetTextRenderingHint(TextRenderingHintClearTypeGridFit);
+
+    FontFamily ff(L"Segoe UI");
+
+    // Main bg
+    SolidBrush bBg(Bg);
+    g.FillRectangle(&bBg, cx, cy, cw, ch);
+
+    DrawToolbar(g, ff);
+
+    if (g_view == DiaryView::List) {
+        RebuildFolders();
+        DrawFolderBar(g, ff);
+        DrawDiaryListView(g, ff);
+    } else {
+        DrawDiaryEditView(g, ff);
+    }
+}
+
+// ============================================================
+// PUBLIC: ShowGeminiControls  (no Win32 overlays needed)
+// ============================================================
+void ShowGeminiControls(bool show) {
+    (void)show; // Pure GDI — nothing to show/hide
+}
+
+// ============================================================
+// PUBLIC: ResizeGeminiControls
+// ============================================================
+void ResizeGeminiControls(int cx, int cy, int cw, int ch) {
+    g_cx = (float)cx; g_cy = (float)cy;
+    g_cw = (float)cw; g_ch = (float)ch;
+}
+
+// ============================================================
+// PUBLIC: InitGeminiControls
+// ============================================================
+void InitGeminiControls(HWND parent) {
+    (void)parent;
+    LoadEntries();
+}
+
+// ============================================================
+// MOUSE MOVE
+// ============================================================
+void ProcessGeminiMouseMove(float x, float y) {
+    if (g_view == DiaryView::List) {
+        bool old_new = g_hovNew;
+        // New button rect (approx — recomputed from g_cx/cw)
+        float btnX = g_cx + g_cw - PAD - 110.f;
+        g_hovNew = (x >= btnX && x <= btnX + 108 && y >= g_cy + 10 && y <= g_cy + 42);
+
+        // Card hover
+        auto filtered = FilteredEntries();
+        int  oldCard = g_hovCard;
+        g_hovCard = -1;
+        float areaY = g_cy + TOOLBAR_H + FOLDER_BAR_H;
+        float areaH = g_ch - TOOLBAR_H - FOLDER_BAR_H;
+        float cardX = g_cx + PAD, cardW = g_cw - PAD * 2;
+        float yy = areaY + PAD - g_listScroll;
+        for (int i = 0; i < (int)filtered.size(); i++) {
+            if (x >= cardX && x <= cardX + cardW && y >= yy && y <= yy + CARD_H - CARD_GAP)
+                g_hovCard = i;
+            yy += CARD_H + CARD_GAP;
+        }
+
+        if (old_new != g_hovNew || oldCard != g_hovCard)
+            if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
+
+    } else {
+        // Edit view
+        bool oldSave = g_hovSave, oldBack = g_hovBack, oldDel = g_hovDelBtn;
+        float sX = g_cx + g_cw - PAD - 90;
+        g_hovSave   = (x >= sX && x <= sX + 88 && y >= g_cy + 12 && y <= g_cy + 40);
+        g_hovBack   = (x >= g_cx + PAD && x <= g_cx + PAD + 32 && y >= g_cy + 12 && y <= g_cy + 40);
+        if (!g_editIsNew) {
+            float dX = sX - 90;
+            g_hovDelBtn = (x >= dX && x <= dX + 82 && y >= g_cy + 12 && y <= g_cy + 40);
+        }
+
+        // Mood hover
+        int oldMood = g_hovMood; g_hovMood = -1;
+        for (int i = 0; i < (int)g_moodRects.size(); i++)
+            if (g_moodRects[i].Contains(x, y)) { g_hovMood = i; break; }
+
+        // Folder chip hover
+        int oldF2 = g_hovFolder2; g_hovFolder2 = -1;
+        for (int i = 0; i < (int)g_folderChipRects.size(); i++)
+            if (g_folderChipRects[i].Contains(x, y)) { g_hovFolder2 = i; break; }
+
+        bool oldAddF = g_hovAddFolder;
+        g_hovAddFolder = g_addFolderRect.Contains(x, y);
+
+        if (oldSave != g_hovSave || oldBack != g_hovBack || oldDel != g_hovDelBtn ||
+            oldMood != g_hovMood || oldF2 != g_hovFolder2 || oldAddF != g_hovAddFolder)
+            if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
+    }
+}
+
+// ============================================================
+// SCROLL (list view)
+// ============================================================
+void ProcessDiaryMouseWheel(int delta) {
+    if (g_view != DiaryView::List) return;
+    float areaH = g_ch - TOOLBAR_H - FOLDER_BAR_H;
+    float maxScroll = max(0.f, g_listContentH - areaH);
+    g_listScroll = (int)max(0.f, min((float)g_listScroll - delta * 0.3f, maxScroll));
+    if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
+}
+
+// ============================================================
+// KEYBOARD
+// ============================================================
+void ProcessDiaryChar(wchar_t c) {
+    if (g_view != DiaryView::Edit) return;
+    auto AppendChar = [](string& s, wchar_t c) {
+        char buf[4] = {};
+        WideCharToMultiByte(CP_UTF8, 0, &c, 1, buf, 4, NULL, NULL);
+        s += buf;
+    };
+    if (g_editFocus == 1) {
+        if (c == L'\b') { if (!g_edit.title.empty()) { wstring ws = S2W(g_edit.title); if (!ws.empty()) ws.pop_back(); g_edit.title = W2S(ws); } }
+        else if (c >= L' ') AppendChar(g_edit.title, c);
+    } else if (g_editFocus == 2) {
+        if (c == L'\b') { if (!g_edit.body.empty()) { wstring ws = S2W(g_edit.body); if (!ws.empty()) ws.pop_back(); g_edit.body = W2S(ws); } }
+        else if (c >= L' ' || c == L'\r' || c == L'\n') { if (c == L'\r') c = L'\n'; AppendChar(g_edit.body, c); }
+    } else if (g_editFocus == 3) { // new folder input
+        if (c == L'\b') { int len = (int)wcslen(g_newFolder); if (len > 0) g_newFolder[len-1] = L'\0'; }
+        else if (c >= L' ' && wcslen(g_newFolder) < 62) { int len = (int)wcslen(g_newFolder); g_newFolder[len] = c; g_newFolder[len+1] = L'\0'; }
+    } else if (g_editFocus == 4) {
+        if (c == L'\b') { if (!g_edit.tags.empty()) { wstring ws = S2W(g_edit.tags); if (!ws.empty()) ws.pop_back(); g_edit.tags = W2S(ws); } }
+        else if (c >= L' ') AppendChar(g_edit.tags, c);
+    } else if (g_view == DiaryView::List && g_searchFocus) {
+        int len = (int)wcslen(g_search);
+        if (c == L'\b') { if (len > 0) g_search[len-1] = L'\0'; }
+        else if (c >= L' ' && len < 254) { g_search[len] = c; g_search[len+1] = L'\0'; }
+    }
+    if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
+}
+
+void ProcessDiaryKeyDown(WPARAM vk) {
+    if (vk == VK_ESCAPE) {
+        if (g_view == DiaryView::Edit) { g_view = DiaryView::List; g_editFocus = 0; }
+        else if (g_searchFocus) { g_searchFocus = false; wmemset(g_search, 0, 256); }
+        if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
+    }
+}
+
+// ============================================================
+// MOUSE CLICK
+// ============================================================
+void ProcessGeminiMouseClick(float x, float y) {
+    if (!g_loaded) LoadEntries();
+
+    if (g_view == DiaryView::List) {
+        // Toolbar: New entry
+        float btnX = g_cx + g_cw - PAD - 110.f;
+        if (x >= btnX && x <= btnX + 108 && y >= g_cy + 10 && y <= g_cy + 42) {
+            g_editIsNew = true;
+            g_edit = DiaryEntry();
+            g_edit.id        = (long long)time(NULL) * 1000 + rand() % 1000;
+            g_edit.date      = CurrentDate();
+            g_edit.timestamp = (long long)time(NULL);
+            g_edit.folder    = "General";
+            g_edit.mood      = "neutral";
+            g_editFocus = 2; g_bodyScroll = 0;
+            g_showFolderInput = false; memset(g_newFolder, 0, sizeof(g_newFolder));
+            g_hovMood = -1; g_hovFolder2 = -1;
+            g_view = DiaryView::Edit;
+            if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
+            return;
+        }
+
+        // Folder bar
+        for (int i = 0; i < (int)g_folderRects.size(); i++) {
+            if (g_folderRects[i].Contains(x, y)) {
+                g_selFolder = i; g_listScroll = 0;
+                if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
+                return;
             }
         }
 
-        function addTextAttachment(textData) {
-            attachments.push({ id: Date.now(), type: 'text', data: textData });
-            renderAttachments();
+        // Search box
+        float sW = min(260.f, g_cw * 0.35f);
+        float sX = g_cx + g_cw - PAD - 110.f - sW - 8.f;
+        if (x >= sX && x <= sX + sW && y >= g_cy + 10 && y <= g_cy + 42) {
+            g_searchFocus = true;
+            if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
+            return;
+        }
+        g_searchFocus = false;
+
+        // Card click
+        auto filtered = FilteredEntries();
+        float areaY = g_cy + TOOLBAR_H + FOLDER_BAR_H;
+        float cardX = g_cx + PAD, cardW = g_cw - PAD * 2;
+        float yy = areaY + PAD - g_listScroll;
+        for (int i = 0; i < (int)filtered.size(); i++) {
+            if (x >= cardX && x <= cardX + cardW && y >= yy && y <= yy + CARD_H - CARD_GAP) {
+                // Delete confirm
+                if (g_delId == filtered[i]->id) {
+                    DeleteEntry(g_delId);
+                    g_delId = -1;
+                } else if (x >= cardX + cardW - 40 && x <= cardX + cardW && y >= yy + 4 && y <= yy + 24) {
+                    // right-side delete zone (only if no card edit needed)
+                    g_delId = filtered[i]->id;
+                } else {
+                    // Open for edit
+                    g_delId = -1;
+                    g_editIsNew = false;
+                    g_edit = *filtered[i];
+                    g_editFocus = 2; g_bodyScroll = 0;
+                    g_showFolderInput = false; memset(g_newFolder, 0, sizeof(g_newFolder));
+                    g_hovMood = -1; g_hovFolder2 = -1;
+                    g_view = DiaryView::Edit;
+                }
+                if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
+                return;
+            }
+            yy += CARD_H + CARD_GAP;
+        }
+        // click elsewhere — cancel delete
+        g_delId = -1;
+        if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
+
+    } else { // Edit view
+        // Back
+        if (x >= g_cx + PAD && x <= g_cx + PAD + 32 && y >= g_cy + 12 && y <= g_cy + 40) {
+            g_view = DiaryView::List; g_editFocus = 0;
+            if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
+            return;
         }
 
-        function addImageAttachment(file) {
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                attachments.push({ id: Date.now(), type: 'image', data: e.target.result, file: file });
-                renderAttachments();
-            };
-            reader.readAsDataURL(file);
+        // Save
+        float sX = g_cx + g_cw - PAD - 90;
+        if (x >= sX && x <= sX + 88 && y >= g_cy + 12 && y <= g_cy + 40) {
+            if (g_edit.title.empty()) g_edit.title = g_edit.date;
+            if (g_edit.date.empty())  g_edit.date  = CurrentDate();
+            g_edit.timestamp = (long long)time(NULL);
+            UpsertEntry(g_edit);
+            g_view = DiaryView::List;
+            if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
+            return;
         }
 
-        chatInput.addEventListener('paste', (e) => {
-            const items = (e.clipboardData || window.clipboardData).items;
-            for (let item of items) {
-                if (item.type.indexOf('image') !== -1) {
-                    e.preventDefault();
-                    addImageAttachment(item.getAsFile());
+        // Delete (edit existing)
+        if (!g_editIsNew) {
+            float dX = sX - 90;
+            if (x >= dX && x <= dX + 82 && y >= g_cy + 12 && y <= g_cy + 40) {
+                DeleteEntry(g_edit.id);
+                g_view = DiaryView::List;
+                if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
+                return;
+            }
+        }
+
+        // Mood
+        for (int i = 0; i < (int)g_moodRects.size(); i++) {
+            if (g_moodRects[i].Contains(x, y)) {
+                g_edit.mood = MOOD_KEY[i];
+                if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
+                return;
+            }
+        }
+
+        // Title field
+        if (g_titleRect.Contains(x, y)) { g_editFocus = 1; if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE); return; }
+        // Body field
+        if (g_bodyRect.Contains(x, y))  { g_editFocus = 2; if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE); return; }
+        // Tags field
+        if (g_tagsRect.Contains(x, y))  { g_editFocus = 4; if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE); return; }
+
+        // Folder chips
+        {
+            vector<string> knownFolders = { "General", "Work", "Personal", "Study" };
+            for (auto& e : g_entries)
+                if (find(knownFolders.begin(), knownFolders.end(), e.folder) == knownFolders.end())
+                    knownFolders.push_back(e.folder);
+            for (int i = 0; i < (int)g_folderChipRects.size() && i < (int)knownFolders.size(); i++) {
+                if (g_folderChipRects[i].Contains(x, y)) {
+                    g_edit.folder = knownFolders[i];
+                    g_showFolderInput = false;
+                    if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
                     return;
                 }
             }
-            let text = (e.clipboardData || window.clipboardData).getData('text');
-            if (text.length > 300) { 
-                e.preventDefault(); 
-                addTextAttachment(text); 
-            }
-        });
-
-        inputContainer.addEventListener('dragover', (e) => { e.preventDefault(); inputContainer.classList.add('dragover'); });
-        inputContainer.addEventListener('dragleave', (e) => { e.preventDefault(); inputContainer.classList.remove('dragover'); });
-        inputContainer.addEventListener('drop', (e) => {
-            e.preventDefault(); inputContainer.classList.remove('dragover');
-            for(let file of e.dataTransfer.files) {
-                if (file.type.startsWith('image/')) addImageAttachment(file);
-            }
-        });
-
-        document.getElementById('file-input').addEventListener('change', function(e) {
-            for(let file of this.files) { if (file.type.startsWith('image/')) addImageAttachment(file); }
-            this.value = ''; 
-        });
-
-        function renderAttachments() {
-            attachmentArea.innerHTML = '';
-            attachments.forEach(att => {
-                let innerContent = att.type === 'text' 
-                    ? `<div class="text-card-content">${att.data.substring(0, 80)}...</div><div class="text-card-label">PASTED</div>`
-                    : `<img src="${att.data}" class="img-card-preview"><div class="text-card-label">IMAGE</div>`;
-                attachmentArea.innerHTML += `
-                    <div class="file-card">
-                        <button class="remove-btn" onclick="removeAttachment(${att.id})">&#x2715;</button>
-                        ${innerContent}
-                    </div>`;
-            });
-            toggleSendButton();
         }
 
-        window.removeAttachment = function(id) {
-            attachments = attachments.filter(a => a.id !== id);
-            renderAttachments();
+        // Add folder chip
+        if (g_addFolderRect.Contains(x, y)) {
+            g_showFolderInput = !g_showFolderInput;
+            if (g_showFolderInput) { g_editFocus = 3; memset(g_newFolder, 0, sizeof(g_newFolder)); }
+            if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
+            return;
         }
 
-        sendBtn.addEventListener('click', async () => {
-            if (!sendBtn.classList.contains('active')) return;
-
-            let promptText = chatInput.value.trim();
-            let hasImages = attachments.filter(a => a.type === 'image');
-            let hasTextAtts = attachments.filter(a => a.type === 'text');
-            
-            let finalPrompt = promptText;
-            hasTextAtts.forEach(t => { finalPrompt += "\n\n[Context]:\n" + t.data; });
-            if (!finalPrompt && hasImages.length > 0) finalPrompt = "Analyze this image.";
-
-            let userMsgHtml = `<div class="msg user-msg"><div>${promptText}</div>`;
-            hasTextAtts.forEach(t => { userMsgHtml += `<div style="font-size:12px; color:#888; background:#222; padding:5px; margin-top:5px; border-radius:5px;">[ Attached Text ]</div>`; });
-            hasImages.forEach(img => { userMsgHtml += `<img src="${img.data}" class="sent-img">`; });
-            userMsgHtml += `</div>`;
-            
-            chatHistory.innerHTML += userMsgHtml;
-            chatHistory.scrollTop = chatHistory.scrollHeight;
-
-            chatInput.value = '';
-            chatInput.style.height = '24px';
-            attachments = [];
-            renderAttachments();
-            thinkingIndicator.style.display = "block";
-
-            let messagesPayload = [];
-            if (hasImages.length > 0) {
-                let contentArray = [{ type: "text", text: finalPrompt }];
-                hasImages.forEach(img => {
-                    contentArray.push({ type: "image_url", image_url: { url: img.data } });
-                });
-                messagesPayload.push({ role: "user", content: contentArray });
-            } else {
-                messagesPayload.push({ role: "user", content: finalPrompt });
-            }
-
-            try {
-                const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-                    method: "POST",
-                    headers: { "Authorization": `Bearer ${API_KEY}`, "Content-Type": "application/json" },
-                    body: JSON.stringify({ model: MODEL_NAME, messages: messagesPayload })
-                });
-
-                const data = await response.json();
-                thinkingIndicator.style.display = "none";
-
-                if (response.ok) {
-                    chatHistory.innerHTML += `<div class="msg ai-msg">${data.choices[0].message.content}</div>`;
-                } else {
-                    chatHistory.innerHTML += `<div class="msg ai-msg" style="color:#ff4d4d;">Error: ${JSON.stringify(data.error.message)}</div>`;
+        // New folder confirm button
+        if (g_showFolderInput) {
+            float cfX = g_folderInputRect.X + g_folderInputRect.Width + 8;
+            if (x >= cfX && x <= cfX + 60 && y >= g_folderInputRect.Y && y <= g_folderInputRect.Y + 32) {
+                if (wcslen(g_newFolder) > 0) {
+                    g_edit.folder = W2S(g_newFolder);
+                    g_showFolderInput = false; g_editFocus = 2;
                 }
-            } catch (error) {
-                thinkingIndicator.style.display = "none";
-                chatHistory.innerHTML += `<div class="msg ai-msg" style="color:#ff4d4d;">Network Error.</div>`;
+                if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
+                return;
             }
-            chatHistory.scrollTop = chatHistory.scrollHeight;
-        });
-
-        chatInput.addEventListener("keydown", function(e) {
-            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendBtn.click(); }
-        });
-    </script>
-</body>
-</html>)HTML";
-
-// Helper function to build the full HTML string at runtime.
-// Call this instead of using PREMIUM_UI_HTML directly.
-static std::wstring GetPremiumUIHtml() {
-    return std::wstring(HTML_PART1) + HTML_PART2;
-}
-
-// --- Global States ---
-static float s_contentX = 0, s_contentY = 0, s_contentW = 800, s_contentH = 600;
-extern HWND hParentWnd; 
-extern float g_scaleFactor; 
-
-static int g_webViewMode = 0; // 0 = Home, 1 = Local Premium AI, 2 = Web Browser
-static bool hoverLaunchBtn = false;
-static bool hoverChatLaunchBtn = false; 
-static bool hoverCloseBtn = false;
-static bool hoverBackBtn = false;
-static bool hoverHomeBtn = false; 
-static bool hoverPopOutBtn = false;
-static bool isPoppedOut = false;   
-static HWND hPopOutWnd = NULL;     
-
-// --- WebView2 Global Pointers ---
-static ComPtr<ICoreWebView2Controller> webViewController;
-static ComPtr<ICoreWebView2> webView;
-
-// --- Colors ---
-static const Color GClrWhite(255, 255, 255, 255);    
-static const Color GClrAppTeal(255, 12, 168, 176);   
-static const Color GClrTealHover(255, 30, 185, 195); 
-static const Color GClrTextDark(255, 40, 40, 40);    
-static const Color GClrDanger(255, 230, 60, 60);     
-
-static GraphicsPath* GetGeminiRoundRect(RectF rect, int radius) {
-    GraphicsPath* path = new GraphicsPath();
-    float d = radius * 2.0f;
-    path->AddArc(rect.X, rect.Y, d, d, 180.0f, 90.0f);
-    path->AddArc(rect.X + rect.Width - d, rect.Y, d, d, 270.0f, 90.0f);
-    path->AddArc(rect.X + rect.Width - d, rect.Y + rect.Height - d, d, d, 0.0f, 90.0f);
-    path->AddArc(rect.X, rect.Y + rect.Height - d, d, d, 90.0f, 90.0f);
-    path->CloseFigure(); return path;
-}
-
-// [KEEP PopOutWndProc EXACTLY SAME AS BEFORE]
-LRESULT CALLBACK PopOutWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
-    return DefWindowProc(hWnd, message, wParam, lParam);
-}
-
-// --- Controller Completed Handler ---
-class ControllerCompletedHandler : public ICoreWebView2CreateCoreWebView2ControllerCompletedHandler {
-    ULONG m_refCount = 1;
-public:
-    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override {
-        if (!ppv) return E_POINTER;
-        static const IID IID_ICoreWebView2CreateCoreWebView2ControllerCompletedHandler_Local = { 0x6c4819f3, 0xc9b7, 0x4260, { 0x81, 0x27, 0xc9, 0xf5, 0xbd, 0xe7, 0xf6, 0x8c } };
-        // FIX [C2065]: 'IID_IUnknown_Local' was undeclared. Use standard IID_IUnknown from <objbase.h>.
-        if (riid == IID_IUnknown || riid == IID_ICoreWebView2CreateCoreWebView2ControllerCompletedHandler_Local) { *ppv = this; AddRef(); return S_OK; }
-        *ppv = nullptr; return E_NOINTERFACE;
-    }
-    ULONG STDMETHODCALLTYPE AddRef() override { return InterlockedIncrement(&m_refCount); }
-    ULONG STDMETHODCALLTYPE Release() override { ULONG r = InterlockedDecrement(&m_refCount); if (r == 0) delete this; return r; }
-    
-    HRESULT STDMETHODCALLTYPE Invoke(HRESULT result, ICoreWebView2Controller* controller) override {
-        if (controller != nullptr) {
-            webViewController = controller;
-            webViewController->get_CoreWebView2(&webView);
-            webViewController->put_IsVisible(TRUE);
-
-            // Load Content based on Selected Mode
-            if (g_webViewMode == 1) {
-                std::wstring html = GetPremiumUIHtml();
-                webView->NavigateToString(html.c_str());
-            } else if (g_webViewMode == 2) {
-                webView->Navigate(L"https://gemini.google.com/?authuser=0");
-            }
+            // Folder input field focus
+            if (g_folderInputRect.Contains(x, y)) { g_editFocus = 3; if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE); return; }
         }
-        return S_OK;
-    }
-};
 
-class EnvCompletedHandler : public ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler {
-    ULONG m_refCount = 1;
-public:
-    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) override {
-        if (!ppv) return E_POINTER;
-        static const IID IID_ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler_Local = { 0x4e8a3389, 0xc9d8, 0x4bd2, { 0xb6, 0xb5, 0x12, 0x4f, 0xee, 0x6c, 0xc1, 0x4d } };
-        // FIX [C2065]: 'IID_IUnknown_Local' was undeclared. Use standard IID_IUnknown from <objbase.h>.
-        if (riid == IID_IUnknown || riid == IID_ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler_Local) { *ppv = this; AddRef(); return S_OK; }
-        *ppv = nullptr; return E_NOINTERFACE;
-    }
-    ULONG STDMETHODCALLTYPE AddRef() override { return InterlockedIncrement(&m_refCount); }
-    ULONG STDMETHODCALLTYPE Release() override { ULONG r = InterlockedDecrement(&m_refCount); if (r == 0) delete this; return r; }
-    HRESULT STDMETHODCALLTYPE Invoke(HRESULT result, ICoreWebView2Environment* env) override {
-        if (env != nullptr) {
-            env->CreateCoreWebView2Controller(hParentWnd, new ControllerCompletedHandler());
-        }
-        return S_OK;
-    }
-};
-
-// =========================================================================
-// Main UI Functions
-// =========================================================================
-
-void InitGeminiControls(HWND parent) { hParentWnd = parent; }
-
-void ShowGeminiControls(bool show) {
-    if (show && hParentWnd != NULL && !isPoppedOut) { InvalidateRect(hParentWnd, NULL, TRUE); }
-    if (webViewController != nullptr && !isPoppedOut) { webViewController->put_IsVisible((show && g_webViewMode > 0) ? TRUE : FALSE); }
-}
-
-void ResizeGeminiControls(int cx, int cy, int cw, int ch) {
-    s_contentX = (float)cx; s_contentY = (float)cy; s_contentW = (float)cw; s_contentH = (float)ch;
-    
-    if (webViewController != nullptr && g_webViewMode > 0 && !isPoppedOut) {
-        RECT bounds;
-        bounds.left = (LONG)(cx * g_scaleFactor);
-        bounds.top = (LONG)((cy + 30) * g_scaleFactor); 
-        bounds.right = (LONG)((cx + cw) * g_scaleFactor);
-        bounds.bottom = (LONG)((cy + ch) * g_scaleFactor);
-        webViewController->put_Bounds(bounds);
+        g_editFocus = 0;
+        if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
     }
 }
 
-void DrawGeminiTab(Graphics& g, float cx, float cy, float cw, float ch) {
-    s_contentX = cx; s_contentY = cy; s_contentW = cw; s_contentH = ch;
-
-    FontFamily ff(L"Segoe UI"); 
-    FontFamily ffIcon(L"Segoe MDL2 Assets"); 
-    Font fH1(&ff, 28, FontStyleBold, UnitPixel); 
-    Font fBold(&ff, 14, FontStyleBold, UnitPixel);
-    Font fNormal(&ff, 14, FontStyleRegular, UnitPixel); 
-    Font fIcons(&ffIcon, 14, FontStyleRegular, UnitPixel); 
-    
-    SolidBrush bBg(GClrWhite); 
-    SolidBrush bText(GClrTextDark); 
-    SolidBrush bWhite(GClrWhite);
-    
-    StringFormat fC; fC.SetAlignment(StringAlignmentCenter); fC.SetLineAlignment(StringAlignmentCenter);
-
-    g.FillRectangle(&bBg, cx, cy, cw, ch);
-
-    // --- STATE 1: HOME MENU ---
-    if (g_webViewMode == 0) {
-        g.DrawString(L"RasFocus AI Hub", -1, &fH1, RectF(cx, cy + (ch/2) - 130, cw, 40), &fC, &bText);
-        g.DrawString(L"Select an option below", -1, &fNormal, RectF(cx, cy + (ch/2) - 90, cw, 30), &fC, &bText);
-
-        float btnW = 280.0f; float btnH = 50.0f;
-        float btnX = cx + (cw - btnW) / 2.0f; 
-        
-        float btnY1 = cy + (ch / 2.0f) - 30.0f;
-        RectF btnRect1(btnX, btnY1, btnW, btnH);
-        GraphicsPath* bp1 = GetGeminiRoundRect(btnRect1, 25);
-        SolidBrush btnBrush1(hoverChatLaunchBtn ? GClrTealHover : GClrAppTeal);
-        g.FillPath(&btnBrush1, bp1); delete bp1;
-        g.DrawString(L"Chat with AI (Premium UI)", -1, &fBold, btnRect1, &fC, &bWhite);
-
-        float btnY2 = btnY1 + 70.0f;
-        RectF btnRect2(btnX, btnY2, btnW, btnH);
-        GraphicsPath* bp2 = GetGeminiRoundRect(btnRect2, 25);
-        SolidBrush btnBrush2(hoverLaunchBtn ? GClrTealHover : Color(255, 100, 100, 100)); 
-        g.FillPath(&btnBrush2, bp2); delete bp2;
-        g.DrawString(L"Open AI Web Browser", -1, &fBold, btnRect2, &fC, &bWhite);
-    } 
-    // --- STATE 2 & 3: RUNNING MODE ---
-    else if (!isPoppedOut) {
-        SolidBrush bNavBg(GClrAppTeal);
-        g.FillRectangle(&bNavBg, cx, cy, cw, 30.0f); 
-
-        float startX = cx + 5; 
-        
-        // Back to Menu Button
-        RectF homeRect(startX, cy + 2, 30, 26); SolidBrush bHome(hoverHomeBtn ? GClrTealHover : GClrAppTeal);
-        g.FillRectangle(&bHome, homeRect); g.DrawString(L"\xE80F", -1, &fIcons, homeRect, &fC, &bWhite); 
-
-        // Close Button
-        RectF closeRect(cx + cw - 35, cy + 2, 30, 26); SolidBrush bClose(hoverCloseBtn ? GClrDanger : Color(255, 180, 40, 40));
-        g.FillRectangle(&bClose, closeRect); g.DrawString(L"\xE8BB", -1, &fIcons, closeRect, &fC, &bWhite); 
-    }
-}
-
-void ProcessGeminiMouseMove(float x, float y) {
-    if (g_webViewMode == 0) {
-        float btnW = 280.0f; float btnH = 50.0f;
-        float btnX = s_contentX + (s_contentW - btnW) / 2.0f; 
-        float btnY1 = s_contentY + (s_contentH / 2.0f) - 30.0f;
-        float btnY2 = btnY1 + 70.0f;
-
-        bool prevChat = hoverChatLaunchBtn; bool prevWeb = hoverLaunchBtn;
-        hoverChatLaunchBtn = RectF(btnX, btnY1, btnW, btnH).Contains(x, y);
-        hoverLaunchBtn = RectF(btnX, btnY2, btnW, btnH).Contains(x, y);
-
-        if ((prevChat != hoverChatLaunchBtn || prevWeb != hoverLaunchBtn) && hParentWnd != NULL) { 
-            InvalidateRect(hParentWnd, NULL, TRUE); 
-        }
-    } else if (!isPoppedOut) {
-        bool prevHome = hoverHomeBtn; bool prevClose = hoverCloseBtn;
-        hoverHomeBtn = RectF(s_contentX + 5, s_contentY + 2, 30, 26).Contains(x, y);
-        hoverCloseBtn = RectF(s_contentX + s_contentW - 35, s_contentY + 2, 30, 26).Contains(x, y);
-
-        if (prevHome != hoverHomeBtn || prevClose != hoverCloseBtn) {
-            if (hParentWnd != NULL) InvalidateRect(hParentWnd, NULL, TRUE);
-        }
-    }
-}
-
-void ProcessGeminiMouseClick(float x, float y) {
-    if (g_webViewMode == 0) {
-        float btnW = 280.0f; float btnH = 50.0f;
-        float btnX = s_contentX + (s_contentW - btnW) / 2.0f; 
-        float btnY1 = s_contentY + (s_contentH / 2.0f) - 30.0f;
-        float btnY2 = btnY1 + 70.0f;
-
-        if (RectF(btnX, btnY1, btnW, btnH).Contains(x, y)) {
-            g_webViewMode = 1; // Local AI Mode
-        } else if (RectF(btnX, btnY2, btnW, btnH).Contains(x, y)) {
-            g_webViewMode = 2; // Web Browser Mode
-        }
-
-        if (g_webViewMode > 0) {
-            if (webView == nullptr) {
-                CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
-                std::wstring userDataFolder = L"C:\\Users\\" + std::wstring(_wgetenv(L"USERNAME")) + L"\\AppData\\Local\\RasFocus\\User_Data";
-                auto options = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
-                CreateCoreWebView2EnvironmentWithOptions(nullptr, userDataFolder.c_str(), options.Get(), new EnvCompletedHandler());
-            } else {
-                if (g_webViewMode == 1) {
-                    std::wstring html = GetPremiumUIHtml();
-                    webView->NavigateToString(html.c_str());
-                }
-                else webView->Navigate(L"https://gemini.google.com/?authuser=0");
-                webViewController->put_IsVisible(TRUE);
-            }
-            if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
-        }
-    } 
-    else if (!isPoppedOut) {
-        // Home Button (Go back to Menu)
-        if (RectF(s_contentX + 5, s_contentY + 2, 30, 26).Contains(x, y)) {
-            g_webViewMode = 0;
-            if (webViewController) webViewController->put_IsVisible(FALSE);
-            if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
-        }
-        // Close Button
-        else if (RectF(s_contentX + s_contentW - 35, s_contentY + 2, 30, 26).Contains(x, y)) {
-            if (webViewController != nullptr) { webViewController->Close(); webViewController = nullptr; webView = nullptr; }
-            g_webViewMode = 0;
-            if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
-        }
-    }
-}
-
-void ProcessGeminiCommand(int id, int code) {}
+void ProcessGeminiCommand(int id, int code) { (void)id; (void)code; }
