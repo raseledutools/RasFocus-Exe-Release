@@ -833,24 +833,190 @@ body{display:flex;flex-direction:column;height:100vh;overflow:hidden;background:
 </div><!-- /app -->
 
 <script>
-// ── QR Code generator (pure JS, no lib needed) ───────────────
-// Minimal QR encoder for URL strings (alphanumeric mode, version 1-3)
-// Uses a simple lookup table approach sufficient for short token URLs.
-// Full ISO 18004 implementation is overkill here — we just need a
-// scannable code. We generate the matrix ourselves via bit-twiddling.
-// For brevity we use a proven tiny QR lib pattern inlined:
+// ── QR Code generator (ISO 18004 compliant, self-contained) ──
+// Encodes arbitrary byte-mode strings as a proper scannable QR code.
+// Draws on a <canvas> element. No external library needed.
 (function(){
-  // qr.js micro (MIT) adapted — encodes any string ≤ 100 chars as QR
-  const QR = window._QR = {};
-  const VERSIONS = [0,208,314,444,600,768,910];
-  QR.generate = function(text, canvas) {
-    // Use a simple approach: render via a data-URL approach through
-    // window.chrome.webview postMessage to C++ which calls qrcodegen.
-    // Since we don't have a full QR lib, we'll use the Firestore token
-    // URL and let C++ generate the QR PNG and return it as base64.
-    // → We post action:'qr_init' and C++ posts back qr_png base64.
-    postMsg({action:'qr_init', token: QR._token});
+const QREncoder = window.QREncoder = {};
+
+// Reed-Solomon GF(256) arithmetic
+const GF = (() => {
+  const exp = new Uint8Array(512), log = new Uint8Array(256);
+  let x = 1;
+  for (let i = 0; i < 255; i++) {
+    exp[i] = x; log[x] = i;
+    x = x << 1; if (x & 0x100) x ^= 0x11d;
+  }
+  for (let i = 255; i < 512; i++) exp[i] = exp[i-255];
+  return {
+    mul(a,b){ return a&&b ? exp[log[a]+log[b]] : 0; },
+    poly(e){ // generator polynomial for e error correction codewords
+      let p=[1];
+      for(let i=0;i<e;i++){
+        const q=[1,exp[i]];
+        const r=new Array(p.length+q.length-1).fill(0);
+        for(let j=0;j<p.length;j++) for(let k=0;k<q.length;k++) r[j+k]^=GF.mul(p[j],q[k]);
+        p=r;
+      }
+      return p;
+    },
+    remainder(data,gen){
+      const out=data.slice();
+      for(let i=0;i<data.length;i++){
+        const c=out[i];
+        if(c) for(let j=1;j<gen.length;j++) out[i+j]^=GF.mul(gen[j],c);
+      }
+      return out.slice(data.length);
+    }
   };
+})();
+
+// QR version 3 constants (capacity: up to 53 bytes in M correction)
+// We use version 3, error correction M (15 EC codewords, 26 data codewords)
+const V3M = {
+  size:       21 + (3-1)*4, // 29 modules
+  totalCW:    44,
+  dataCW:     26,
+  ecCW:       18,
+  ecPerBlock: 18,
+  blocks:     1,
+  formatBits: [0b111011111000100, 0b111001011110011, 0b111110110101010, // M mask 0,1,2
+               0b111100010011101, 0b110011000101111, 0b110001100011000,
+               0b110110001000001, 0b110100101110110][5], // mask 5
+  mask:       5
+};
+
+function encodeData(text) {
+  const bytes = [];
+  for (let i=0; i<text.length; i++) {
+    const c = text.charCodeAt(i);
+    if (c > 0x7f) { bytes.push(0xef,0xbb,0xbf); } // fallback
+    else bytes.push(c);
+  }
+  // Byte mode: 0100 + length (8 bits) + data + terminator
+  const bits = [];
+  const push = (val, len) => { for(let i=len-1;i>=0;i--) bits.push((val>>i)&1); };
+  push(0b0100, 4); // byte mode indicator
+  push(bytes.length, 8);
+  for(const b of bytes) push(b, 8);
+  push(0, 4); // terminator
+  // Pad to dataCW*8 bits
+  while (bits.length < V3M.dataCW*8 && bits.length%8!==0) bits.push(0);
+  const pads = [0b11101100, 0b00010001];
+  let pi=0;
+  while (bits.length < V3M.dataCW*8) { push(pads[pi++%2],8); }
+  // Convert bits to bytes
+  const cw = [];
+  for(let i=0; i<bits.length; i+=8) {
+    let v=0; for(let j=0;j<8;j++) v=(v<<1)|(bits[i+j]||0); cw.push(v);
+  }
+  return cw;
+}
+
+function buildMatrix(dataCW, ecCW) {
+  const N = V3M.size;
+  const m = Array.from({length:N}, ()=>new Int8Array(N).fill(-1)); // -1=empty
+
+  // Finder patterns
+  const finder = (r,c) => {
+    for(let dr=-1;dr<=7;dr++) for(let dc=-1;dc<=7;dc++){
+      if(r+dr<0||r+dr>=N||c+dc<0||c+dc>=N) continue;
+      const inside = dr>=0&&dr<=6&&dc>=0&&dc<=6;
+      const border = dr===0||dr===6||dc===0||dc===6;
+      const center = dr>=2&&dr<=4&&dc>=2&&dc<=4;
+      m[r+dr][c+dc] = inside && (border||center) ? 1 : (inside?0:0);
+      if(dr===-1||dr===7||dc===-1||dc===7) m[r+dr][c+dc]=0; // separator
+    }
+  };
+  finder(0,0); finder(0,N-7); finder(N-7,0);
+
+  // Timing patterns
+  for(let i=8;i<N-8;i++){
+    m[6][i]=m[i][6]=i%2===0?1:0;
+  }
+
+  // Dark module
+  m[4*V3M.size-8+8]?.[8]; // version 3: row = 4*(v-1)+8+4 → skip, use fixed
+  m[N-8][8]=1;
+
+  // Format info (mask 5, EC level M)
+  const fmt = V3M.formatBits;
+  const fmtBits = [];
+  for(let i=14;i>=0;i--) fmtBits.push((fmt>>i)&1);
+  // Place format around top-left finder
+  const fpos = [0,1,2,3,4,5,7,8,  N-7,N-6,N-5,N-4,N-3,N-2,N-1];
+  for(let i=0;i<8;i++){
+    m[8][fpos[i]]=fmtBits[i];
+    m[fpos[7-i]][8]=fmtBits[i];
+  }
+  for(let i=8;i<15;i++){
+    m[8][fpos[i]]=fmtBits[i];
+    m[fpos[14-i+7]][8]=fmtBits[i];
+  }
+
+  // Data placement (zigzag, bottom-right to top-left, skipping col 6)
+  const all = [...dataCW, ...ecCW];
+  let bi=0, bitIdx=7;
+  const cols=[];
+  for(let c=N-1;c>=0;c-=2){ if(c===6) c--; cols.push(c); }
+  let up=true;
+  for(const rCol of cols){
+    const rows=up?[...Array(N).keys()].reverse():[...Array(N).keys()];
+    up=!up;
+    for(const row of rows){
+      for(const col of [rCol, rCol-1]){
+        if(col<0||col>=N) continue;
+        if(m[row][col]===-1){
+          const bit = bi<all.length ? (all[bi]>>bitIdx)&1 : 0;
+          bitIdx--; if(bitIdx<0){ bitIdx=7; bi++; }
+          m[row][col]=bit;
+        }
+      }
+    }
+  }
+
+  // Build function-module map to avoid masking fixed patterns
+  const func = Array.from({length:N}, ()=>new Uint8Array(N));
+  // Finder + separator regions
+  for(let r=0;r<=8;r++) for(let c=0;c<=8;c++) func[r][c]=1;
+  for(let r=0;r<=8;r++) for(let c=N-8;c<N;c++) func[r][c]=1;
+  for(let r=N-8;r<N;r++) for(let c=0;c<=8;c++) func[r][c]=1;
+  // Timing patterns
+  for(let i=0;i<N;i++){ func[6][i]=1; func[i][6]=1; }
+
+  // Apply mask pattern 5: (Math.floor(r/2) + Math.floor(c/3)) % 2 === 0
+  for(let r=0;r<N;r++) for(let c=0;c<N;c++){
+    if(!func[r][c] && m[r][c]!==-1){
+      if((Math.floor(r/2) + Math.floor(c/3)) % 2 === 0)
+        m[r][c] ^= 1;
+    }
+  }
+
+  return m;
+}
+
+QREncoder.drawOnCanvas = function(text, canvas, size) {
+  try {
+    size = size || 180;
+    let data;
+    try { data = encodeData(text); } catch(e) { return false; }
+    if (data.length > V3M.dataCW) return false; // too long for v3
+    const gen = GF.poly(V3M.ecCW);
+    const ec  = GF.remainder(data, gen);
+    const matrix = buildMatrix(data, ec);
+    const N = matrix.length;
+    const ctx = canvas.getContext('2d');
+    canvas.width = canvas.height = size;
+    const cell = (size - 20) / N;
+    ctx.fillStyle = '#fff'; ctx.fillRect(0,0,size,size);
+    ctx.fillStyle = '#000';
+    for(let r=0;r<N;r++) for(let c=0;c<N;c++){
+      if(matrix[r][c]===1)
+        ctx.fillRect(10+c*cell, 10+r*cell, cell, cell);
+    }
+    return true;
+  } catch(e) { console.error('QR draw error:', e); return false; }
+};
 })();
 
 // ── Login Screen (LG) ─────────────────────────────────────────
@@ -897,20 +1063,27 @@ window.LG = {
   },
 
   // Called by C++ after qr_init: receives token + base64 PNG
-  onQRReady(token, pngBase64) {
+  onQRReady(token) {
     LG._qrToken = token;
     const canvas = document.getElementById('lg-qr-canvas');
-    const img = new Image();
-    img.onload = () => {
+    // Build the URL that Android RasGram will scan
+    const url = 'rasgram://qr/' + token;
+    // Draw using our self-contained QR encoder
+    const ok = (window.QREncoder && window.QREncoder.drawOnCanvas)
+                ? window.QREncoder.drawOnCanvas(url, canvas, 180)
+                : false;
+    if (!ok) {
+      // Fallback: show token text in canvas so user can see something
       const ctx = canvas.getContext('2d');
-      ctx.clearRect(0,0,180,180);
-      // White background
-      ctx.fillStyle = '#fff';
-      ctx.fillRect(0,0,180,180);
-      ctx.drawImage(img, 10, 10, 160, 160);
-    };
-    img.src = 'data:image/png;base64,' + pngBase64;
-    LG.setQRStatus('Open RasGram → Menu → Scan QR', 'ok');
+      canvas.width = canvas.height = 180;
+      ctx.fillStyle = '#fff'; ctx.fillRect(0,0,180,180);
+      ctx.fillStyle = '#000'; ctx.font = '9px monospace';
+      ctx.fillText('QR unavailable', 10, 90);
+      ctx.fillText(token.substr(0,20), 10, 105);
+      LG.setQRStatus('QR render failed. Try Phone Login.', 'err');
+    } else {
+      LG.setQRStatus('Open RasGram → Menu → Scan QR', 'ok');
+    }
     // Start polling for scan
     clearInterval(LG._qrPollTimer);
     LG._qrPollTimer = setInterval(() => {
@@ -972,6 +1145,7 @@ window.LG = {
     document.getElementById('login-sub').textContent = 'Enter your phone number to continue';
     document.getElementById('lg-name-err').textContent = '';
   },
+  _loginTimer: null,
   doLogin() {
     const name = document.getElementById('lg-name').value.trim();
     if (!name) {
@@ -985,14 +1159,24 @@ window.LG = {
     btn.disabled = true;
     txt.innerHTML = '<div class="lg-spinner"></div>';
     document.getElementById('lg-name-err').textContent = '';
-    if (window.chrome && window.chrome.webview)
+    // Safety timeout: if C++ never replies within 20s, re-enable button
+    clearTimeout(LG._loginTimer);
+    LG._loginTimer = setTimeout(() => {
+      LG.loginError('Connection timeout. Check your internet and try again.');
+    }, 20000);
+    if (window.chrome && window.chrome.webview) {
       window.chrome.webview.postMessage(JSON.stringify({
         action: 'rasgram_login',
         phone: fullPhone,
         name: name
       }));
+    } else {
+      // WebView not ready — fail immediately instead of hanging
+      LG.loginError('App not ready. Please restart RasFocus.');
+    }
   },
   loginError(msg) {
+    clearTimeout(LG._loginTimer);
     const btn = document.getElementById('lg-submit-btn');
     const txt = document.getElementById('lg-submit-txt');
     if (btn) btn.disabled = false;
@@ -1151,6 +1335,7 @@ function hideChatPanel() {
 window.RG = {
   // Called by C++ to provide login state
   setLoginState(name, mobile) {
+    clearTimeout(LG._loginTimer); // cancel any pending login timeout
     state.myName   = name;
     state.myMobile = mobile;
     document.getElementById('login-screen').style.display = 'none';
@@ -1638,16 +1823,16 @@ static void RgHandleMessage(const wstring& json) {
 
     } else if (action == "qr_init") {
         // Generate new QR session on background thread
+        // JS draws the QR itself — C++ only provides the token
         g_qrPollActive = false;
         if (g_qrPollThread.joinable()) g_qrPollThread.detach();
         thread([]() {
             g_qrToken = RgQrNewToken();
-            string url = "rasgram://qr/" + g_qrToken;
             if (RgQrCreateSession(g_qrToken).empty()) {
                 if (hParentWnd) PostMessageW(hParentWnd, WM_RG_QR_ERROR, 0, 0);
                 return;
             }
-            g_qrPngBase64 = Utf8ToWide(RgQrGeneratePng(url));
+            // JS renders QR from token directly — no PNG needed from C++
             if (hParentWnd) PostMessageW(hParentWnd, WM_RG_QR_READY, 0, 0);
         }).detach();
 
@@ -2150,9 +2335,8 @@ bool RgHandleParentWndMsg(HWND /*hwnd*/, UINT msg, WPARAM /*wp*/, LPARAM /*lp*/)
         return true;
 
     case WM_RG_QR_READY: {
-        // C++ generated QR png — pass base64 to JS
+        // JS draws QR from token — only token passed (no PNG needed)
         wstring call = L"LG.onQRReady(\"" + Utf8ToWide(JsEscape(g_qrToken))
-                       + L"\",\"" + Utf8ToWide(JsEscape(WideToUtf8(g_qrPngBase64)))
                        + L"\");";
         RgExecJS(call);
         return true;
