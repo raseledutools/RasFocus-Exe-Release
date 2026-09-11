@@ -819,6 +819,7 @@ static void DrawLoginScreen(Graphics& g, float cx, float cy,
         g.DrawString(L"Start Messaging", -1, &fBtn3,
                      RectF(cardX, curY, cardW, btnH), &fmtC, &btnTxt3);
         g_loginBtnRect = { cardX, curY, cardW, btnH };
+        }
     }
 
     // E2E badge at bottom
