@@ -637,17 +637,50 @@ body{display:flex;flex-direction:column;height:100vh;overflow:hidden;background:
 @keyframes spin{to{transform:rotate(360deg)}}
 .lg-step-phone,.lg-step-name{display:none}
 .lg-step-phone.active,.lg-step-name.active{display:block}
-/* QR Login Tab */
-.lg-tabs{display:flex;margin-bottom:20px;border-radius:12px;overflow:hidden;border:1px solid #2A3942}
-.lg-tab{flex:1;padding:10px;text-align:center;cursor:pointer;color:#8696A0;font-size:13px;font-weight:600;background:none;border:none;transition:background .15s}
-.lg-tab.active{background:#00A884;color:#000}
-.qr-wrap{display:flex;flex-direction:column;align-items:center;gap:14px;padding:8px 0}
-.qr-canvas{border-radius:12px;background:#fff;padding:10px;width:180px;height:180px}
-.qr-status{font-size:12px;color:#8696A0;text-align:center}
-.qr-status.ok{color:#00A884}
-.qr-status.err{color:#EA0038}
+/* ── Telegram-style QR + Phone login ── */
+#tg-qr-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;
+               min-height:100%;padding:40px 24px 32px;box-sizing:border-box}
+#tg-qr-canvas-wrap{background:#fff;border-radius:20px;padding:20px;
+                    box-shadow:0 4px 32px rgba(0,0,0,.35);position:relative}
+#tg-qr-canvas-wrap canvas{display:block;border-radius:8px}
+#tg-qr-logo{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+             width:52px;height:52px;border-radius:50%;background:#0B141A;
+             display:flex;align-items:center;justify-content:center;
+             box-shadow:0 2px 8px rgba(0,0,0,.4)}
+#tg-qr-logo svg{width:28px;height:28px;fill:none;stroke:#00A884;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+#tg-qr-title{margin-top:28px;font-size:20px;font-weight:700;color:#E9EDEF;text-align:center}
+#tg-qr-steps{margin-top:20px;display:flex;flex-direction:column;gap:12px;width:100%;max-width:320px}
+.tg-step{display:flex;align-items:flex-start;gap:14px}
+.tg-step-num{width:28px;height:28px;border-radius:50%;background:#2A3942;color:#00A884;
+             font-size:13px;font-weight:700;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.tg-step-txt{font-size:13px;color:#8696A0;line-height:1.5;padding-top:5px}
+.tg-step-txt b{color:#E9EDEF}
+#tg-qr-status{margin-top:14px;font-size:12px;color:#8696A0;text-align:center;min-height:18px}
+#tg-qr-status.ok{color:#00A884}
+#tg-qr-status.err{color:#EA0038}
+#tg-qr-divider{width:100%;max-width:320px;margin-top:28px;display:flex;align-items:center;gap:12px}
+#tg-qr-divider::before,#tg-qr-divider::after{content:'';flex:1;height:1px;background:#2A3942}
+#tg-qr-divider span{font-size:11px;color:#8696A0;white-space:nowrap}
+.tg-link-btn{background:none;border:none;cursor:pointer;color:#00A884;font-size:13px;
+              font-weight:600;letter-spacing:.5px;text-transform:uppercase;
+              padding:10px 0;margin-top:4px;transition:color .15s}
+.tg-link-btn:hover{color:#00c49a}
+#ph-screen{display:none;flex-direction:column;align-items:center;
+            min-height:100%;padding:40px 24px 32px;box-sizing:border-box}
+#ph-back-btn{align-self:flex-start;background:none;border:none;color:#8696A0;
+              font-size:13px;cursor:pointer;padding:0 0 20px;display:flex;align-items:center;gap:6px}
+#ph-back-btn:hover{color:#E9EDEF}
+#ph-logo-wrap{width:80px;height:80px;border-radius:50%;background:#00A884;
+               display:flex;align-items:center;justify-content:center;
+               box-shadow:0 6px 24px rgba(0,168,132,.3)}
+#ph-logo-wrap svg{width:40px;height:40px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+#ph-title{margin-top:24px;font-size:24px;font-weight:800;color:#E9EDEF;text-align:center}
+#ph-sub{margin-top:8px;font-size:13px;color:#8696A0;text-align:center;line-height:1.6;max-width:300px}
+#ph-card{margin-top:32px;width:100%;max-width:400px;background:rgba(31,44,52,.82);
+          border-radius:20px;border:1px solid rgba(42,57,66,.5);
+          box-shadow:0 8px 32px rgba(0,0,0,.3);padding:24px;box-sizing:border-box}
 .qr-refresh{background:none;border:1px solid #2A3942;border-radius:10px;color:#8696A0;
-             font-size:12px;padding:6px 16px;cursor:pointer;margin-top:4px;transition:border-color .15s}
+             font-size:12px;padding:6px 16px;cursor:pointer;margin-top:8px;transition:border-color .15s}
 .qr-refresh:hover{border-color:#00A884;color:#00A884}
 
 /* input bar */
@@ -692,36 +725,61 @@ body{display:flex;flex-direction:column;height:100vh;overflow:hidden;background:
   <div id="login-deco-top"></div>
   <div id="login-deco-bot"></div>
 
-  <div id="login-logo-wrap">
-    <!-- Send / paper-plane icon matching APK's Icons.Default.Send -->
-    <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-  </div>
+  <!-- ── SCREEN A: QR Login (Telegram style, default) ── -->
+  <div id="tg-qr-screen">
 
-  <div id="login-title">RasGram</div>
-  <div id="login-tagline">Simple. Secure. Reliable.</div>
-  <div id="login-sub" id="login-sub-text">Enter your phone number to continue</div>
-
-  <div id="login-card">
-
-    <!-- TAB BAR: QR | Phone -->
-    <div class="lg-tabs">
-      <button class="lg-tab active" id="tab-qr-btn"   onclick="LG.switchTab('qr')">📱 QR Login</button>
-      <button class="lg-tab"        id="tab-ph-btn"   onclick="LG.switchTab('phone')">☎ Phone</button>
-    </div>
-
-    <!-- QR TAB -->
-    <div id="tab-qr" style="display:block">
-      <div class="qr-wrap">
-        <canvas id="lg-qr-canvas" class="qr-canvas" width="180" height="180"></canvas>
-        <div class="qr-status" id="lg-qr-status">Open RasGram on your phone → tap ⋮ → Scan QR</div>
-        <button class="qr-refresh" onclick="LG.refreshQR()">🔄 Refresh QR</button>
+    <!-- QR canvas with logo overlay -->
+    <div id="tg-qr-canvas-wrap">
+      <canvas id="lg-qr-canvas" width="240" height="240"></canvas>
+      <div id="tg-qr-logo">
+        <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
       </div>
     </div>
 
-    <!-- PHONE TAB -->
-    <div id="tab-ph" style="display:none">
-      <!-- STEP 0: Phone -->
-      <div class="lg-step-phone active" id="step-phone">
+    <div id="tg-qr-title">Log in to RasGram by QR Code</div>
+
+    <div id="tg-qr-steps">
+      <div class="tg-step">
+        <div class="tg-step-num">1</div>
+        <div class="tg-step-txt">Open <b>RasGram</b> on your phone</div>
+      </div>
+      <div class="tg-step">
+        <div class="tg-step-num">2</div>
+        <div class="tg-step-txt">Go to <b>Menu ⋮ → Linked Devices (QR)</b></div>
+      </div>
+      <div class="tg-step">
+        <div class="tg-step-num">3</div>
+        <div class="tg-step-txt">Point your phone at this screen to confirm login</div>
+      </div>
+    </div>
+
+    <div id="tg-qr-status"></div>
+    <button class="qr-refresh" onclick="LG.refreshQR()" style="margin-top:4px">🔄 Refresh QR</button>
+
+    <div id="tg-qr-divider"><span>OR</span></div>
+
+    <button class="tg-link-btn" onclick="LG.showPhoneScreen()">LOG IN BY PHONE NUMBER</button>
+
+  </div><!-- /tg-qr-screen -->
+
+  <!-- ── SCREEN B: Phone + OTP ── -->
+  <div id="ph-screen">
+
+    <button id="ph-back-btn" onclick="LG.showQrScreen()">
+      ← Back to QR Login
+    </button>
+
+    <div id="ph-logo-wrap">
+      <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </div>
+
+    <div id="ph-title">RasGram</div>
+    <div id="ph-sub">Enter your phone number to receive a verification code via RasGram</div>
+
+    <div id="ph-card">
+
+      <!-- STEP 0: Phone input -->
+      <div id="step-phone" style="display:block">
         <div class="lg-label">Phone Number</div>
         <div class="lg-row" style="position:relative">
           <button class="lg-country-btn" onclick="LG.toggleDrop()" id="lg-drop-btn">
@@ -729,7 +787,7 @@ body{display:flex;flex-direction:column;height:100vh;overflow:hidden;background:
             <span id="lg-code">+880</span>
             <span style="color:#8696A0;font-size:12px">▾</span>
           </button>
-          <div id="lg-drop" class="lg-country-drop" style="display:none;position:absolute;top:56px;left:0">
+          <div id="lg-drop" class="lg-country-drop" style="display:none;position:absolute;top:56px;left:0;z-index:99">
             <div onclick="LG.selectCountry('+880','🇧🇩')">🇧🇩  +880</div>
             <div onclick="LG.selectCountry('+1','🇺🇸')">🇺🇸  +1</div>
             <div onclick="LG.selectCountry('+44','🇬🇧')">🇬🇧  +44</div>
@@ -747,11 +805,11 @@ body{display:flex;flex-direction:column;height:100vh;overflow:hidden;background:
         </button>
       </div>
 
-      <!-- STEP 1: OTP Code -->
+      <!-- STEP 1: OTP verify -->
       <div id="step-otp" style="display:none">
         <div class="lg-label">Verification Code</div>
         <div style="font-size:12px;color:#8696A0;margin-bottom:12px;line-height:1.6">
-          A 5-digit code was sent to your RasGram on<br>
+          A 5-digit code was sent to your RasGram app on<br>
           <span id="lg-otp-phone-lbl" style="color:#00A884;font-weight:600"></span>
         </div>
         <input id="lg-otp-input" class="lg-input"
@@ -773,18 +831,20 @@ body{display:flex;flex-direction:column;height:100vh;overflow:hidden;background:
           </button>
         </div>
       </div>
-    </div><!-- /tab-ph -->
 
-  </div>
+    </div><!-- /ph-card -->
 
-  <div class="lg-badge">
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00A884" stroke-width="2"
-         stroke-linecap="round" stroke-linejoin="round">
-      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-      <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-    </svg>
-    End-to-end encrypted
-  </div>
+    <div class="lg-badge" style="margin-top:28px">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00A884" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+        <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+      </svg>
+      End-to-end encrypted
+    </div>
+
+  </div><!-- /ph-screen -->
+
 </div>
 
 <!-- MAIN APP (hidden until logged in) -->
@@ -1042,14 +1102,27 @@ window.LG = {
   _qrPollTimer: null,
   _qrRefreshTimer: null,
 
-  // ── Tab switching ────────────────────────────────────────────
+  // ── Screen switching (Telegram style) ───────────────────────
+  showQrScreen() {
+    document.getElementById('tg-qr-screen').style.display = 'flex';
+    document.getElementById('ph-screen').style.display    = 'none';
+    LG.startQR();
+  },
+
+  showPhoneScreen() {
+    LG.stopQR();
+    document.getElementById('tg-qr-screen').style.display = 'none';
+    document.getElementById('ph-screen').style.display    = 'flex';
+    // reset to phone step
+    document.getElementById('step-phone').style.display = 'block';
+    document.getElementById('step-otp').style.display   = 'none';
+    document.getElementById('lg-phone').value = '';
+    document.getElementById('lg-phone-err').textContent = '';
+  },
+
+  // ── legacy alias kept for any remaining calls ────────────────
   switchTab(tab) {
-    document.getElementById('tab-qr').style.display  = (tab === 'qr')    ? 'block' : 'none';
-    document.getElementById('tab-ph').style.display  = (tab === 'phone')  ? 'block' : 'none';
-    document.getElementById('tab-qr-btn').classList.toggle('active', tab === 'qr');
-    document.getElementById('tab-ph-btn').classList.toggle('active', tab === 'phone');
-    if (tab === 'qr') LG.startQR();
-    else              LG.stopQR();
+    if (tab === 'qr') LG.showQrScreen(); else LG.showPhoneScreen();
   },
 
   // ── QR flow ─────────────────────────────────────────────────
@@ -1122,9 +1195,10 @@ window.LG = {
   },
 
   setQRStatus(msg, cls) {
-    const el = document.getElementById('lg-qr-status');
+    const el = document.getElementById('tg-qr-status');
+    if (!el) return;
     el.textContent = msg;
-    el.className = 'qr-status' + (cls ? ' ' + cls : '');
+    el.className = (cls ? cls : '');
   },
 
   qrError(msg) {
@@ -1182,7 +1256,6 @@ window.LG = {
     document.getElementById('step-phone').style.display = 'none';
     document.getElementById('step-otp').style.display  = 'block';
     document.getElementById('lg-otp-phone-lbl').textContent = LG._otpPhone;
-    document.getElementById('login-sub').textContent = 'Check your RasGram for the code';
     document.getElementById('lg-otp-err').textContent = '';
     document.getElementById('lg-otp-input').value = '';
     document.getElementById('lg-otp-input').focus();
@@ -1260,7 +1333,6 @@ window.LG = {
     document.getElementById('step-otp').style.display  = 'none';
     document.getElementById('step-phone').style.display = 'block';
     document.getElementById('step-phone').classList.add('active');
-    document.getElementById('login-sub').textContent = 'Enter your phone number to continue';
     document.getElementById('lg-phone-err').textContent = '';
     document.getElementById('lg-otp-err').textContent  = '';
     const btn = document.getElementById('lg-phone-btn');
@@ -1433,7 +1505,9 @@ window.RG = {
   showNotLoggedIn() {
     document.getElementById('login-screen').style.display = 'flex';
     document.getElementById('app').style.display = 'none';
-    // Auto-start QR on the default tab
+    // Always start on QR screen
+    document.getElementById('tg-qr-screen').style.display = 'flex';
+    document.getElementById('ph-screen').style.display    = 'none';
     setTimeout(() => LG.startQR(), 100);
   },
 
