@@ -434,8 +434,7 @@ static void DrawLoginScreen(Graphics& g, float cx, float cy,
         }
         if (phFocus) {
             // Cursor
-            SizeF sz;
-            RectF lr;
+            RectF sz;
             g.MeasureString(phText.c_str(), -1, &fInput,
                             PointF(rowX+cBtnW+20.0f, curY + rowH/2.0f - 8.0f), &sz);
             SolidBrush cur(RgC::Teal);
@@ -586,7 +585,7 @@ static void DrawLoginScreen(Graphics& g, float cx, float cy,
             g.DrawString(nameStr.c_str(), -1, &fInput2,
                          RectF(cardX+16, curY, cardW-20, rowH), &fmtL, &white);
             if (focus) {
-                SizeF sz;
+                RectF sz;
                 g.MeasureString(nameStr.c_str(), -1, &fInput2,
                                 PointF(cardX+16, curY+14), &sz);
                 SolidBrush cur(RgC::Teal);
@@ -759,7 +758,7 @@ static void DrawChatListPanel(Graphics& g, float px, float py,
 
         // Online dot
         SolidBrush onlineDot(RgC::Online);
-        g.FillEllipse(&onlineDot, avX+avSz-10, avY+avSz-10, 10, 10);
+        g.FillEllipse(&onlineDot, avX+avSz-10.0f, avY+avSz-10.0f, 10.0f, 10.0f);
 
         // Name
         float textX = avX + avSz + 12.0f;
@@ -839,7 +838,7 @@ static void DrawEmptyState(Graphics& g, float px, float py,
     float midY = py + ph/2.0f;
 
     SolidBrush iconBg(Color(30,0,168,132));
-    g.FillEllipse(&iconBg, midX-60, midY-80, 120, 120);
+    g.FillEllipse(&iconBg, midX-60.0f, midY-80.0f, 120.0f, 120.0f);
 
     Font fBig(&ff, 52, FontStyleRegular, UnitPixel);
     SolidBrush teal(RgC::Teal);
@@ -887,7 +886,7 @@ static void DrawMessagePanel(Graphics& g, float px, float py,
     SolidBrush dotBr(Color(10,255,255,255));
     for (float dy = py; dy < py+ph; dy += 28) {
         for (float dx = px; dx < px+pw; dx += 28) {
-            g.FillEllipse(&dotBr, dx, dy, 3, 3);
+            g.FillEllipse(&dotBr, dx, dy, 3.0f, 3.0f);
         }
     }
 
@@ -904,7 +903,7 @@ static void DrawMessagePanel(Graphics& g, float px, float py,
 
         // Online dot
         SolidBrush onlineDot(RgC::Online);
-        g.FillEllipse(&onlineDot, avX+avSz-8, avY+avSz-8, 9, 9);
+        g.FillEllipse(&onlineDot, avX+avSz-8.0f, avY+avSz-8.0f, 9.0f, 9.0f);
 
         Font fName(&ff, 14, FontStyleBold, UnitPixel);
         SolidBrush white(RgC::TextPrim);
@@ -1099,7 +1098,7 @@ static void DrawMessagePanel(Graphics& g, float px, float py,
             g.DrawString(msgStr.c_str(), -1, &fMsgIn,
                          RectF(tfX+14, tfY, tfW-20, tfH), &fmtL, &white2);
             if (focus) {
-                SizeF sz;
+                RectF sz;
                 g.MeasureString(msgStr.c_str(), -1, &fMsgIn,
                                 PointF(tfX+14, tfY+8), &sz);
                 SolidBrush cur(RgC::Teal);
@@ -1478,3 +1477,4 @@ bool RgHandleParentWndMsg(HWND, UINT, WPARAM, LPARAM)
 
 void RgNotify_Destroy()        {}
 void RgNet_StopIncomingCallPolling() {}
+
