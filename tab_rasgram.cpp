@@ -10,21 +10,27 @@
 // Architecture: All drawing via GDI+, all input via WM_LBUTTONDOWN / WM_CHAR
 // No external dependencies beyond GDI+ and Win32 API
 
-#include "tab_rasgram.h"
-
+// MSVC: must define these before any windows header
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
+#include <objidl.h>   // IStream, ISequentialStream — required before gdiplus.h
+#include <ole2.h>     // PROPID and OLE types
 #include <gdiplus.h>
+#pragma comment(lib, "gdiplus.lib")
+
+#include "tab_rasgram.h"
+
 #include <string>
 #include <vector>
 #include <algorithm>
 #include <sstream>
 #include <ctime>
 #include <cmath>
-
-#pragma comment(lib, "gdiplus.lib")
 
 using namespace Gdiplus;
 using namespace std;
