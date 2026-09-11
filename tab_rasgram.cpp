@@ -2029,9 +2029,12 @@ static void RgHandleMessage(const wstring& json) {
         if (phone.empty() || name.empty()) return;
         thread([phone, name]() {
             string uid = "user_" + phone;
-            RgNet_Init(phone, name, uid, "");
+            // ── g_loggedInUserUid set করা MUST — না হলে DrawRasGramTab প্রতি
+            // WM_PAINT এ showNotLoggedIn() call করে login screen ফিরিয়ে আনে ──
+            g_loggedInUserUid = uid;
             g_myMobile = phone;
             g_myName_w = Utf8ToWide(name);
+            RgNet_Init(phone, name, uid, g_loggedInIdToken);
             RgNet_SetOnline(true);
             RgNet_StopChatListPolling();
             RgNet_StartChatListPolling([](const vector<RgChatPreview>& chats) {
@@ -2184,7 +2187,10 @@ static void RgHandleMessage(const wstring& json) {
             // Init network and login
             g_myMobile = phone;
             g_myName_w = Utf8ToWide(name);
-            RgNet_Init(phone, name, uid, "");
+            // ── g_loggedInUserUid set করা MUST — না হলে DrawRasGramTab প্রতি
+            // WM_PAINT এ showNotLoggedIn() call করে login screen ফিরিয়ে আনে ──
+            g_loggedInUserUid = phone;
+            RgNet_Init(phone, name, phone, g_loggedInIdToken);
             RgNet_SetOnline(true);
             RgNet_StopChatListPolling();
             RgNet_StartChatListPolling([](const vector<RgChatPreview>& chats) {
@@ -2560,12 +2566,25 @@ void DrawRasGramTab(Graphics& g, float cx, float cy, float cw, float ch) {
     // Reposition on resize / layout change
     RgPositionWebView();
 
-    // Login state sync
-    if (g_loggedInUserUid.empty()) {
-        // If webview is ready, show not-logged-in screen
-        if (g_wvReady) RgExecJS(L"RG.showNotLoggedIn();");
-    } else {
-        InitRasGramDesktop();
+    // Login state sync — g_wvReady ছাড়া JS call করা অর্থহীন।
+    // s_lastSyncedUid দিয়ে track করি কোন UID এর জন্য last sync হয়েছিল।
+    // এতে প্রতি WM_PAINT এ showNotLoggedIn()/InitRasGramDesktop() বারবার
+    // call হয় না — login success এর পরে screen ফিরে আসার bug থাকে না।
+    static string s_lastSyncedUid;   // "" = last shown: not-logged-in
+    if (g_wvReady) {
+        if (g_loggedInUserUid.empty()) {
+            if (s_lastSyncedUid != "") {
+                // logged out (or first load): show login screen once
+                s_lastSyncedUid = "";
+                RgExecJS(L"RG.showNotLoggedIn();");
+            }
+        } else {
+            if (s_lastSyncedUid != g_loggedInUserUid) {
+                // new login (or uid changed): init once for this uid
+                s_lastSyncedUid = g_loggedInUserUid;
+                InitRasGramDesktop();
+            }
+        }
     }
 
     // WebView2 draws itself — GDI+ only needs a placeholder background
