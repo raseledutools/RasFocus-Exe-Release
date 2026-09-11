@@ -2,10 +2,11 @@
 // RasGram Desktop — Pure Win32 GDI+ Implementation (NO WebView2)
 // Replaces the WebView2-based tab_rasgram.cpp for the 3rd sub-tab of Special Tab
 //
-// Design: Telegram-style dark messaging UI
+// Design: Telegram/WhatsApp-style dark messaging UI
 //   Left panel  : Chat list with search
 //   Right panel : Message thread + input bar
-//   Login screen: Phone number + OTP flow
+//   Login screen: QR code scan (like WhatsApp Web / Telegram Desktop)
+//                 OR phone number fallback
 //
 // Architecture: All drawing via GDI+, all input via WM_LBUTTONDOWN / WM_CHAR
 // No external dependencies beyond GDI+ and Win32 API
@@ -120,9 +121,20 @@ static const float SEARCH_H    =  52.0f;
 enum class RgScreen { Login, App };
 static RgScreen g_screen = RgScreen::Login;
 
-// Login step
+// Login mode — QR scan (default, like WhatsApp/Telegram) or phone fallback
+enum class LoginMode { QR, Phone };
+static LoginMode g_loginMode = LoginMode::QR;
+
+// Login step for phone fallback
 enum class LoginStep { Phone, OTP, Name };
 static LoginStep g_loginStep = LoginStep::Phone;
+
+// QR code state
+// We draw a fake QR pattern; in production this token would come from the server.
+// A background timer refreshes it every 60 s (simulated by g_qrRefreshTick).
+static DWORD  g_qrRefreshTick = 0;   // GetTickCount() snapshot of last refresh
+static bool   g_qrScanned     = false; // set true to simulate phone-scanned event
+static int    g_qrDotSeed     = 0x4A7F3C1B; // pseudo-random seed for QR pattern
 
 // Input buffers
 static wchar_t g_phoneInput [16] = {};
@@ -144,9 +156,12 @@ static float g_chatScrollMax = 0.0f;
 static int  g_hovChat = -1;
 static int  g_hovMsg  = -1;
 static bool g_hovSend = false;
-static bool g_hovLoginBtn = false;
-static bool g_hovLanBtn   = false;
-static bool g_hovBack     = false;
+static bool g_hovLoginBtn    = false;
+static bool g_hovLanBtn      = false;
+static bool g_hovBack        = false;
+static bool g_hovPhoneLink   = false;  // "Use phone number" link on QR screen
+static bool g_hovQrRefresh   = false;  // "Refresh QR" button
+static bool g_hovQrBack      = false;  // "← QR" back link on phone fallback
 
 // Country selector
 static struct Country { const wchar_t* flag; const wchar_t* code; } g_countries[] = {
@@ -181,6 +196,10 @@ static vector<HRect> g_countryDropRects;
 static HRect         g_lanBtnRect;
 static HRect         g_backBtnRect;
 static vector<HRect> g_msgRects;
+// QR screen hit-rects
+static HRect         g_qrPhoneLinkRect;  // "Use phone number" on QR screen
+static HRect         g_qrRefreshRect;    // "Refresh" under QR
+static HRect         g_qrBackLinkRect;   // "← Scan QR" on phone fallback screen
 
 // ═══════════════════════════════════════════════════════════════
 // HELPER UTILITIES
@@ -314,6 +333,63 @@ static void DrawTicks(Graphics& g, float x, float y, bool read,
 // LOGIN SCREEN
 // ═══════════════════════════════════════════════════════════════
 
+// ── QR code pixel drawing helper ──────────────────────────────
+// Draws a minimal look-alike QR code using a deterministic pseudo-random
+// pattern + fixed finder squares.  In a real build this bitmap would come
+// from the server (PNG bytes rendered via GDI+).
+static void DrawQRCode(Graphics& g, float qx, float qy, float qSz, int seed)
+{
+    const int CELLS = 25;          // grid size
+    float cell = qSz / (float)CELLS;
+
+    // White background
+    SolidBrush bgW(Color(255,255,255,255));
+    g.FillRectangle(&bgW, qx, qy, qSz, qSz);
+
+    SolidBrush dark(Color(255, 14, 22, 33));
+
+    // ── Finder squares (3 corners, like every QR code) ──
+    auto DrawFinder = [&](int col, int row) {
+        // outer 7x7
+        g.FillRectangle(&dark, qx + col*cell, qy + row*cell, 7*cell, 7*cell);
+        SolidBrush bw(Color(255,255,255,255));
+        g.FillRectangle(&bw,   qx + (col+1)*cell, qy + (row+1)*cell, 5*cell, 5*cell);
+        g.FillRectangle(&dark, qx + (col+2)*cell, qy + (row+2)*cell, 3*cell, 3*cell);
+    };
+    DrawFinder(0, 0);                  // top-left
+    DrawFinder(CELLS - 7, 0);          // top-right
+    DrawFinder(0, CELLS - 7);          // bottom-left
+
+    // ── Data region: pseudo-random dots ──
+    int s = seed ^ 0xDEADBEEF;
+    for (int r = 0; r < CELLS; r++) {
+        for (int c = 0; c < CELLS; c++) {
+            // Skip finder regions
+            bool inTL = (r < 8 && c < 8);
+            bool inTR = (r < 8 && c >= CELLS - 8);
+            bool inBL = (r >= CELLS - 8 && c < 8);
+            // Timing strips (row/col 6)
+            bool timing = (r == 6 || c == 6);
+            if (inTL || inTR || inBL) continue;
+            if (timing) {
+                if (((r + c) & 1) == 0)
+                    g.FillRectangle(&dark, qx + c*cell, qy + r*cell, cell, cell);
+                continue;
+            }
+            // LCG step
+            s = s * 1664525 + 1013904223;
+            if (((s >> 17) & 1) && !((s >> 21) & 3)) {
+                g.FillRectangle(&dark, qx + c*cell, qy + r*cell, cell, cell);
+            }
+        }
+    }
+
+    // Thin border around the whole QR
+    Pen qBorder(Color(255, 42, 57, 66), 1.0f);
+    g.DrawRectangle(&qBorder, qx, qy, qSz, qSz);
+}
+
+// ── Main login screen ─────────────────────────────────────────
 static void DrawLoginScreen(Graphics& g, float cx, float cy,
                              float cw, float ch)
 {
@@ -329,275 +405,412 @@ static void DrawLoginScreen(Graphics& g, float cx, float cy,
     SolidBrush bgBr(RgC::BgLogin);
     g.FillRectangle(&bgBr, cx, cy, cw, ch);
 
-    // Subtle radial glow at top centre
+    // Subtle radial glow top-centre
     {
         float gx = cx + cw / 2.0f - 200.0f;
         float gy = cy - 60.0f;
         for (int i = 5; i >= 0; i--) {
-            float rad = 200.0f + i * 30.0f;
-            float alpha = 8.0f - i * 1.2f;
-            SolidBrush glowBr(Color((BYTE)max(0.0f,alpha), 0, 168, 132));
-            g.FillEllipse(&glowBr, gx + 200.0f - rad, gy + rad/2.0f - rad/2.0f, rad*2.0f, rad);
+            float rad   = 200.0f + i * 30.0f;
+            float alpha = 8.0f   - i * 1.2f;
+            SolidBrush glowBr(Color((BYTE)max(0.0f, alpha), 0, 168, 132));
+            g.FillEllipse(&glowBr,
+                          gx + 200.0f - rad, gy + rad/2.0f - rad/2.0f,
+                          rad * 2.0f, rad);
         }
     }
 
     float midX  = cx + cw / 2.0f;
-    float cardW = min(400.0f, cw - 40.0f);
-    float cardX = midX - cardW / 2.0f;
-
-    float curY = cy + 48.0f;
-
-    // ── Logo circle ──
-    float logoSz = 80.0f;
-    SolidBrush logoBg(RgC::Teal);
-    g.FillEllipse(&logoBg, midX - logoSz/2.0f, curY, logoSz, logoSz);
-
-    // Telegram-style paper-plane icon drawn manually
-    {
-        Pen planePen(Color(255,255,255,255), 2.5f);
-        planePen.SetLineJoin(LineJoinRound);
-        planePen.SetLineCap(LineCapRound, LineCapRound, DashCapRound);
-        float px = midX - 18.0f, py = curY + 22.0f;
-        // Body
-        PointF pts[] = {
-            { px,       py + 18.0f },
-            { px + 36.0f, py },
-            { px + 6.0f,  py + 12.0f },
-            { px + 6.0f,  py + 24.0f },
-            { px + 14.0f, py + 18.0f },
-            { px + 36.0f, py },
-        };
-        g.DrawLines(&planePen, pts, 4);
-    }
-    curY += logoSz + 20.0f;
-
-    // App name
-    Font fTitle(&ff, 28, FontStyleBold, UnitPixel);
     SolidBrush white(RgC::TextPrim);
-    g.DrawString(L"RasGram", -1, &fTitle,
-                 RectF(cx, curY, cw, 40.0f), &fmtC, &white);
-    curY += 44.0f;
-
-    // Tagline
-    Font fTag(&ff, 13, FontStyleRegular, UnitPixel);
     SolidBrush teal(RgC::Teal);
     SolidBrush muted(RgC::TextSec);
 
-    if (g_loginStep == LoginStep::Phone) {
-        g.DrawString(L"বাংলাদেশের সেরা মেসেজিং অ্যাপ", -1, &fTag,
-                     RectF(cx, curY, cw, 24.0f), &fmtC, &teal);
-        curY += 32.0f;
+    // ══════════════════════════════════════════════════════
+    // MODE A — QR Scan screen (default, like WhatsApp Web /
+    //          Telegram Desktop)
+    // ══════════════════════════════════════════════════════
+    if (g_loginMode == LoginMode::QR) {
 
-        g.DrawString(L"আপনার ফোন নম্বর দিন", -1, &fTag,
-                     RectF(cx, curY, cw, 22.0f), &fmtC, &muted);
-        curY += 34.0f;
+        // Auto-refresh seed every 60 s
+        DWORD now = GetTickCount();
+        if (g_qrRefreshTick == 0) g_qrRefreshTick = now;
+        DWORD elapsed = now - g_qrRefreshTick;
+        bool  expired = (elapsed > 60000);
 
-        // ── Phone row: country button + phone input ──
-        float rowH  = 52.0f;
-        float cBtnW = 90.0f;
-        float phW   = cardW - cBtnW - 10.0f;
-        float rowX  = cardX;
-
-        // Country button
-        Color cBtnBg = g_showCountry ? RgC::TealDim : RgC::BgCard;
-        SolidBrush cBtnBr(cBtnBg);
-        FillRR(g, &cBtnBr, rowX, curY, cBtnW, rowH, 12.0f);
-        Pen cBtnBorder(RgC::Border, 1.0f);
-        DrawRR(g, &cBtnBorder, rowX, curY, cBtnW, rowH, 12.0f);
-
-        Font fCBtn(&ff, 13, FontStyleRegular, UnitPixel);
-        wstring cLabel = wstring(g_countries[g_selCountry].flag) +
-                         L" " + g_countries[g_selCountry].code;
-        g.DrawString(cLabel.c_str(), -1, &fCBtn,
-                     RectF(rowX + 6, curY, cBtnW - 6, rowH), &fmtL, &white);
-
-        g_countryBtnRect = { rowX, curY, cBtnW, rowH };
-
-        // Phone input
-        bool phFocus = (g_activeInput == 1);
-        Color phBg = RgC::BgInput;
-        SolidBrush phBr(phBg);
-        FillRR(g, &phBr, rowX + cBtnW + 10.0f, curY, phW, rowH, 12.0f);
-        Pen phBorder(phFocus ? RgC::Teal : RgC::Border, phFocus ? 1.8f : 1.0f);
-        DrawRR(g, &phBorder, rowX + cBtnW + 10.0f, curY, phW, rowH, 12.0f);
-
-        Font fInput(&ff, 14, FontStyleRegular, UnitPixel);
-        wstring phText(g_phoneInput);
-        if (phText.empty()) {
-            g.DrawString(L"Phone number", -1, &fInput,
-                         RectF(rowX+cBtnW+20.0f, curY, phW-20.0f, rowH),
-                         &fmtL, &muted);
-        } else {
-            g.DrawString(phText.c_str(), -1, &fInput,
-                         RectF(rowX+cBtnW+20.0f, curY, phW-20.0f, rowH),
-                         &fmtL, &white);
+        // ── Logo ──
+        float curY = cy + 28.0f;
+        float logoSz = 60.0f;
+        SolidBrush logoBg(RgC::Teal);
+        g.FillEllipse(&logoBg, midX - logoSz/2.0f, curY, logoSz, logoSz);
+        {
+            Pen planePen(Color(255,255,255,255), 2.0f);
+            planePen.SetLineJoin(LineJoinRound);
+            planePen.SetLineCap(LineCapRound, LineCapRound, DashCapRound);
+            float px = midX - 13.0f, py = curY + 16.0f;
+            PointF pts[] = {
+                { px,         py + 13.0f },
+                { px + 26.0f, py         },
+                { px + 4.0f,  py + 9.0f  },
+                { px + 4.0f,  py + 18.0f },
+            };
+            g.DrawLines(&planePen, pts, 4);
         }
-        if (phFocus) {
-            // Cursor
-            RectF sz;
-            g.MeasureString(phText.c_str(), -1, &fInput,
-                            PointF(rowX+cBtnW+20.0f, curY + rowH/2.0f - 8.0f), &sz);
-            SolidBrush cur(RgC::Teal);
-            g.FillRectangle(&cur, rowX+cBtnW+20.0f + sz.Width, curY+14.0f, 2.0f, 24.0f);
-        }
+        curY += logoSz + 12.0f;
 
-        g_inputRect = { rowX + cBtnW + 10.0f, curY, phW, rowH };
+        // ── App name ──
+        Font fTitle(&ff, 24, FontStyleBold, UnitPixel);
+        g.DrawString(L"RasGram", -1, &fTitle,
+                     RectF(cx, curY, cw, 34.0f), &fmtC, &white);
+        curY += 38.0f;
 
-        // Country dropdown
-        if (g_showCountry) {
-            g_countryDropRects.clear();
-            float dropY = curY + rowH + 4.0f;
-            float dropH = 44.0f * 6.0f;
-            SolidBrush dropBg(Color(255,28,40,51));
-            FillRR(g, &dropBg, rowX, dropY, cBtnW + 10.0f, dropH, 8.0f);
-            Pen dropBorder(RgC::Border, 1.0f);
-            DrawRR(g, &dropBorder, rowX, dropY, cBtnW + 10.0f, dropH, 8.0f);
-            for (int i = 0; i < 6; i++) {
-                float iy = dropY + i * 44.0f;
-                if (g_hovCountry[i]) {
-                    SolidBrush hov(Color(40,0,168,132));
-                    FillRR(g, &hov, rowX, iy, cBtnW + 10.0f, 44.0f, 4.0f);
-                }
-                wstring lbl = wstring(g_countries[i].flag) +
-                              L"  " + g_countries[i].code;
-                g.DrawString(lbl.c_str(), -1, &fCBtn,
-                             RectF(rowX+8, iy, cBtnW, 44.0f), &fmtL, &white);
-                g_countryDropRects.push_back({ rowX, iy, (float)(cBtnW+10), 44.0f });
-            }
-        }
-
-        curY += rowH + 18.0f;
-
-        // Error
-        if (!g_loginError.empty()) {
-            Font fErr(&ff, 11, FontStyleRegular, UnitPixel);
-            SolidBrush red(Color(255,234,0,56));
-            g.DrawString(g_loginError.c_str(), -1, &fErr,
-                         RectF(cardX, curY, cardW, 20.0f), &fmtL, &red);
-            curY += 24.0f;
-        }
-
-        // Continue button
-        float btnH = 52.0f;
-        bool hov   = g_hovLoginBtn;
-        SolidBrush btnBg(hov ? RgC::TealHov : RgC::Teal);
-        FillRR(g, &btnBg, cardX, curY, cardW, btnH, 14.0f);
-        Font fBtn(&ff, 15, FontStyleBold, UnitPixel);
-        g.DrawString(L"Continue", -1, &fBtn,
-                     RectF(cardX, curY, cardW, btnH), &fmtC,
-                     &SolidBrush(Color(255,0,0,0)));
-        g_loginBtnRect = { cardX, curY, cardW, btnH };
-        curY += btnH + 24.0f;
-
-    } else if (g_loginStep == LoginStep::OTP) {
-
-        g.DrawString(L"Verification Code", -1, &fTag,
-                     RectF(cx, curY, cw, 24.0f), &fmtC, &teal);
-        curY += 28.0f;
-
-        wstring subText = L"Code sent to RasGram on  " + g_loginOtpPhone;
-        Font fSub(&ff, 12, FontStyleRegular, UnitPixel);
-        g.DrawString(subText.c_str(), -1, &fSub,
-                     RectF(cx, curY, cw, 22.0f), &fmtC, &muted);
+        // ── Instruction text ──
+        Font fInstr(&ff, 13, FontStyleRegular, UnitPixel);
+        g.DrawString(L"ফোন থেকে স্ক্যান করুন", -1, &fInstr,
+                     RectF(cx, curY, cw, 22.0f), &fmtC, &teal);
         curY += 30.0f;
 
-        // Back button
-        Font fBack(&ff, 12, FontStyleRegular, UnitPixel);
-        SolidBrush backBr(g_hovBack ? RgC::TealHov : RgC::TextSec);
-        g.DrawString(L"← Back", -1, &fBack,
-                     RectF(cardX, curY, 80.0f, 26.0f), &fmtL, &backBr);
-        g_backBtnRect = { cardX, curY, 80.0f, 26.0f };
-        curY += 34.0f;
+        // ── QR code card ──
+        float qSz    = min(200.0f, cw * 0.42f);
+        float qCardP = 14.0f;
+        float qCardSz = qSz + qCardP * 2.0f;
+        float qCardX  = midX - qCardSz / 2.0f;
 
-        // 5-digit OTP boxes
-        float boxW  = 48.0f, boxH = 58.0f, gap = 10.0f;
-        float totalW = 5 * boxW + 4 * gap;
-        float startX = midX - totalW / 2.0f;
-        wstring otp(g_otpInput);
+        SolidBrush cardBg(Color(255, 23, 33, 43));
+        FillRR(g, &cardBg, qCardX, curY, qCardSz, qCardSz, 12.0f);
+        Pen cardBorder(expired ? Color(180,234,67,56) : RgC::Border, 1.5f);
+        DrawRR(g, &cardBorder, qCardX, curY, qCardSz, qCardSz, 12.0f);
 
-        for (int i = 0; i < 5; i++) {
-            float bx = startX + i * (boxW + gap);
-            bool filled = (i < (int)otp.size());
-            bool active = (g_activeInput == 2) && (i == (int)otp.size() || (i == 4 && (int)otp.size() == 5));
+        if (!expired) {
+            // Draw QR
+            DrawQRCode(g, qCardX + qCardP, curY + qCardP, qSz, g_qrDotSeed);
 
-            Color bbg = filled ? RgC::BgCard : RgC::BgInput;
-            SolidBrush bboxBg(bbg);
-            FillRR(g, &bboxBg, bx, curY, boxW, boxH, 8.0f);
-            Pen bboxBorder(active ? RgC::Teal : (filled ? RgC::TealDim : RgC::Border),
-                          active ? 2.0f : 1.0f);
-            DrawRR(g, &bboxBorder, bx, curY, boxW, boxH, 8.0f);
+            // Corner accent marks (like WhatsApp desktop)
+            float acL = 10.0f, acT = 3.0f;
+            Pen acPen(RgC::Teal, 3.0f);
+            acPen.SetLineCap(LineCapSquare, LineCapSquare, DashCapRound);
+            float qx = qCardX + qCardP, qy2 = curY + qCardP;
+            // top-left
+            g.DrawLine(&acPen, qx,      qy2,      qx + acL, qy2);
+            g.DrawLine(&acPen, qx,      qy2,      qx,       qy2 + acL);
+            // top-right
+            g.DrawLine(&acPen, qx+qSz,  qy2,      qx+qSz-acL, qy2);
+            g.DrawLine(&acPen, qx+qSz,  qy2,      qx+qSz,  qy2 + acL);
+            // bottom-left
+            g.DrawLine(&acPen, qx,      qy2+qSz,  qx+acL,  qy2+qSz);
+            g.DrawLine(&acPen, qx,      qy2+qSz,  qx,      qy2+qSz-acL);
+            // bottom-right
+            g.DrawLine(&acPen, qx+qSz,  qy2+qSz,  qx+qSz-acL, qy2+qSz);
+            g.DrawLine(&acPen, qx+qSz,  qy2+qSz,  qx+qSz, qy2+qSz-acL);
 
-            if (filled) {
-                // Show bullet
-                Font fDot(&ff, 28, FontStyleBold, UnitPixel);
-                g.DrawString(L"•", -1, &fDot,
-                             RectF(bx, curY, boxW, boxH), &fmtC, &white);
-            }
+            // Progress bar (expires in 60 s)
+            float prog = 1.0f - (float)elapsed / 60000.0f;
+            float barW  = qCardSz - 24.0f;
+            float barX  = qCardX + 12.0f;
+            float barY  = curY + qCardSz - 8.0f;
+            SolidBrush barBg(Color(255,32,46,58));
+            g.FillRectangle(&barBg, barX, barY, barW, 3.0f);
+            SolidBrush barFg(RgC::Teal);
+            g.FillRectangle(&barFg, barX, barY, barW * prog, 3.0f);
+
+        } else {
+            // Expired overlay
+            SolidBrush expOv(Color(200, 11, 20, 26));
+            g.FillRectangle(&expOv, qCardX + qCardP, curY + qCardP, qSz, qSz);
+
+            Font fExpT(&ff, 13, FontStyleBold, UnitPixel);
+            SolidBrush expRed(Color(255,234,67,56));
+            g.DrawString(L"QR মেয়াদ শেষ", -1, &fExpT,
+                         RectF(qCardX, curY + qCardSz/2.0f - 28.0f, qCardSz, 24.0f),
+                         &fmtC, &expRed);
+
+            // Refresh button
+            bool rhov = g_hovQrRefresh;
+            SolidBrush rfBg(rhov ? RgC::TealHov : RgC::Teal);
+            float rfW = 110.0f, rfH = 34.0f;
+            float rfX = qCardX + (qCardSz - rfW) / 2.0f;
+            float rfY = curY + qCardSz / 2.0f + 4.0f;
+            FillRR(g, &rfBg, rfX, rfY, rfW, rfH, 8.0f);
+            Font fRf(&ff, 12, FontStyleBold, UnitPixel);
+            g.DrawString(L"↻  Refresh", -1, &fRf,
+                         RectF(rfX, rfY, rfW, rfH), &fmtC,
+                         &SolidBrush(Color(255,0,0,0)));
+            g_qrRefreshRect = { rfX, rfY, rfW, rfH };
         }
-        g_inputRect = { startX, curY, totalW, boxH };
-        curY += boxH + 20.0f;
 
-        // Error
-        if (!g_loginError.empty()) {
-            Font fErr(&ff, 11, FontStyleRegular, UnitPixel);
-            SolidBrush red(Color(255,234,0,56));
-            g.DrawString(g_loginError.c_str(), -1, &fErr,
-                         RectF(cardX, curY, cardW, 20.0f), &fmtC, &red);
-            curY += 24.0f;
+        curY += qCardSz + 16.0f;
+
+        // ── Instructions (3 steps like WhatsApp) ──
+        Font fStep(&ff, 11, FontStyleRegular, UnitPixel);
+        struct StepLine { const wchar_t* num; const wchar_t* txt; };
+        StepLine steps[] = {
+            { L"1", L"ফোনে RasGram খুলুন" },
+            { L"2", L"Settings → Linked Devices" },
+            { L"3", L"Link a Device" },
+        };
+        float sW  = min(280.0f, cw - 40.0f);
+        float sX  = midX - sW / 2.0f;
+        for (auto& s : steps) {
+            // bullet circle
+            SolidBrush sBullet(RgC::BgCard);
+            g.FillEllipse(&sBullet, sX, curY + 2.0f, 18.0f, 18.0f);
+            Pen sBorder(RgC::Teal, 1.0f);
+            g.DrawEllipse(&sBorder, sX, curY + 2.0f, 18.0f, 18.0f);
+            g.DrawString(s.num, -1, &fStep,
+                         RectF(sX, curY + 2.0f, 18.0f, 18.0f), &fmtC, &teal);
+            g.DrawString(s.txt, -1, &fStep,
+                         RectF(sX + 24.0f, curY, sW - 24.0f, 22.0f), &fmtL, &muted);
+            curY += 26.0f;
         }
+        curY += 6.0f;
 
-        // Verify button
-        float btnH = 52.0f;
-        bool hov   = g_hovLoginBtn && (int)otp.size() == 5;
-        bool ready = (int)otp.size() == 5;
-        SolidBrush btnBg2(ready ? (hov ? RgC::TealHov : RgC::Teal)
-                                : Color(255,42,57,66));
-        FillRR(g, &btnBg2, cardX, curY, cardW, btnH, 14.0f);
-        Font fBtn(&ff, 15, FontStyleBold, UnitPixel);
-        SolidBrush btnTxt(ready ? Color(255,0,0,0) : RgC::TextMuted);
-        g.DrawString(L"Verify", -1, &fBtn,
-                     RectF(cardX, curY, cardW, btnH), &fmtC, &btnTxt);
-        g_loginBtnRect = { cardX, curY, cardW, btnH };
+        // ── "Use phone number instead" link ──
+        Font fLink(&ff, 12, FontStyleRegular, UnitPixel);
+        SolidBrush linkBr(g_hovPhoneLink ? RgC::TealHov : RgC::Teal);
+        float lW = 220.0f;
+        float lX = midX - lW / 2.0f;
+        g.DrawString(L"📱  ফোন নম্বর দিয়ে লগইন করুন", -1, &fLink,
+                     RectF(lX, curY, lW, 22.0f), &fmtC, &linkBr);
+        g_qrPhoneLinkRect = { lX, curY, lW, 22.0f };
+        curY += 22.0f;
 
-    } else { // Name step
-        g.DrawString(L"Your Name", -1, &fTag,
-                     RectF(cx, curY, cw, 24.0f), &fmtC, &teal);
-        curY += 28.0f;
+    }
+    // ══════════════════════════════════════════════════════
+    // MODE B — Phone-number fallback
+    // ══════════════════════════════════════════════════════
+    else {
 
-        Font fSub(&ff, 12, FontStyleRegular, UnitPixel);
-        g.DrawString(L"আপনার নাম দিন — বন্ধুরা এটাই দেখবে", -1, &fSub,
-                     RectF(cx, curY, cw, 22.0f), &fmtC, &muted);
+        float curY  = cy + 28.0f;
+        float cardW = min(380.0f, cw - 40.0f);
+        float cardX = midX - cardW / 2.0f;
+
+        // ── Logo (smaller) ──
+        float logoSz = 56.0f;
+        SolidBrush logoBg(RgC::Teal);
+        g.FillEllipse(&logoBg, midX - logoSz/2.0f, curY, logoSz, logoSz);
+        {
+            Pen planePen(Color(255,255,255,255), 2.0f);
+            planePen.SetLineJoin(LineJoinRound);
+            float px = midX - 12.0f, py = curY + 14.0f;
+            PointF pts[] = {
+                { px,         py + 12.0f },
+                { px + 24.0f, py         },
+                { px + 4.0f,  py + 8.0f  },
+                { px + 4.0f,  py + 17.0f },
+            };
+            g.DrawLines(&planePen, pts, 4);
+        }
+        curY += logoSz + 10.0f;
+
+        Font fTitle(&ff, 22, FontStyleBold, UnitPixel);
+        g.DrawString(L"RasGram", -1, &fTitle,
+                     RectF(cx, curY, cw, 32.0f), &fmtC, &white);
+        curY += 36.0f;
+
+        // ← Back to QR link
+        Font fBackLink(&ff, 12, FontStyleRegular, UnitPixel);
+        SolidBrush backLinkBr(g_hovQrBack ? RgC::TealHov : RgC::TextSec);
+        g.DrawString(L"← QR দিয়ে লগইন করুন", -1, &fBackLink,
+                     RectF(cardX, curY, 200.0f, 24.0f), &fmtL, &backLinkBr);
+        g_qrBackLinkRect = { cardX, curY, 200.0f, 24.0f };
         curY += 32.0f;
 
-        float rowH = 52.0f;
-        bool focus = (g_activeInput == 3);
-        SolidBrush inBg(RgC::BgInput);
-        FillRR(g, &inBg, cardX, curY, cardW, rowH, 12.0f);
-        Pen inBorder(focus ? RgC::Teal : RgC::Border, focus ? 1.8f : 1.0f);
-        DrawRR(g, &inBorder, cardX, curY, cardW, rowH, 12.0f);
+        Font fTag(&ff, 13, FontStyleRegular, UnitPixel);
 
-        Font fInput2(&ff, 14, FontStyleRegular, UnitPixel);
-        wstring nameStr(g_nameInput);
-        if (nameStr.empty()) {
-            g.DrawString(L"Your full name", -1, &fInput2,
-                         RectF(cardX+16, curY, cardW-20, rowH), &fmtL, &muted);
-        } else {
-            g.DrawString(nameStr.c_str(), -1, &fInput2,
-                         RectF(cardX+16, curY, cardW-20, rowH), &fmtL, &white);
-            if (focus) {
-                RectF sz;
-                g.MeasureString(nameStr.c_str(), -1, &fInput2,
-                                PointF(cardX+16, curY+14), &sz);
-                SolidBrush cur(RgC::Teal);
-                g.FillRectangle(&cur, cardX+16+sz.Width, curY+14, 2.0f, 24.0f);
+        if (g_loginStep == LoginStep::Phone) {
+            g.DrawString(L"বাংলাদেশের সেরা মেসেজিং অ্যাপ", -1, &fTag,
+                         RectF(cx, curY, cw, 24.0f), &fmtC, &teal);
+            curY += 30.0f;
+            g.DrawString(L"আপনার ফোন নম্বর দিন", -1, &fTag,
+                         RectF(cx, curY, cw, 22.0f), &fmtC, &muted);
+            curY += 32.0f;
+
+            float rowH  = 52.0f;
+            float cBtnW = 90.0f;
+            float phW   = cardW - cBtnW - 10.0f;
+            float rowX  = cardX;
+
+            // Country button
+            Color cBtnBg = g_showCountry ? RgC::TealDim : RgC::BgCard;
+            SolidBrush cBtnBr(cBtnBg);
+            FillRR(g, &cBtnBr, rowX, curY, cBtnW, rowH, 12.0f);
+            Pen cBtnBorder(RgC::Border, 1.0f);
+            DrawRR(g, &cBtnBorder, rowX, curY, cBtnW, rowH, 12.0f);
+            Font fCBtn(&ff, 13, FontStyleRegular, UnitPixel);
+            wstring cLabel = wstring(g_countries[g_selCountry].flag) +
+                             L" " + g_countries[g_selCountry].code;
+            g.DrawString(cLabel.c_str(), -1, &fCBtn,
+                         RectF(rowX + 6, curY, cBtnW - 6, rowH), &fmtL, &white);
+            g_countryBtnRect = { rowX, curY, cBtnW, rowH };
+
+            // Phone input
+            bool phFocus = (g_activeInput == 1);
+            SolidBrush phBr(RgC::BgInput);
+            FillRR(g, &phBr, rowX + cBtnW + 10.0f, curY, phW, rowH, 12.0f);
+            Pen phBorder(phFocus ? RgC::Teal : RgC::Border, phFocus ? 1.8f : 1.0f);
+            DrawRR(g, &phBorder, rowX + cBtnW + 10.0f, curY, phW, rowH, 12.0f);
+            Font fInput(&ff, 14, FontStyleRegular, UnitPixel);
+            wstring phText(g_phoneInput);
+            if (phText.empty()) {
+                g.DrawString(L"Phone number", -1, &fInput,
+                             RectF(rowX+cBtnW+20.0f, curY, phW-20.0f, rowH), &fmtL, &muted);
+            } else {
+                g.DrawString(phText.c_str(), -1, &fInput,
+                             RectF(rowX+cBtnW+20.0f, curY, phW-20.0f, rowH), &fmtL, &white);
             }
-        }
-        g_inputRect = { cardX, curY, cardW, rowH };
-        curY += rowH + 18.0f;
+            if (phFocus) {
+                RectF sz;
+                g.MeasureString(phText.c_str(), -1, &fInput,
+                                PointF(rowX+cBtnW+20.0f, curY+rowH/2.0f-8.0f), &sz);
+                SolidBrush cur(RgC::Teal);
+                g.FillRectangle(&cur, rowX+cBtnW+20.0f+sz.Width, curY+14.0f, 2.0f, 24.0f);
+            }
+            g_inputRect = { rowX + cBtnW + 10.0f, curY, phW, rowH };
 
-        float btnH = 52.0f;
-        bool ready = (int)wcslen(g_nameInput) > 1;
-        bool hov   = g_hovLoginBtn && ready;
+            // Country dropdown
+            if (g_showCountry) {
+                g_countryDropRects.clear();
+                float dropY = curY + rowH + 4.0f;
+                float dropH = 44.0f * 6.0f;
+                SolidBrush dropBg(Color(255,28,40,51));
+                FillRR(g, &dropBg, rowX, dropY, cBtnW + 10.0f, dropH, 8.0f);
+                Pen dropBorder(RgC::Border, 1.0f);
+                DrawRR(g, &dropBorder, rowX, dropY, cBtnW + 10.0f, dropH, 8.0f);
+                for (int i = 0; i < 6; i++) {
+                    float iy = dropY + i * 44.0f;
+                    if (g_hovCountry[i]) {
+                        SolidBrush hov(Color(40,0,168,132));
+                        FillRR(g, &hov, rowX, iy, cBtnW + 10.0f, 44.0f, 4.0f);
+                    }
+                    wstring lbl = wstring(g_countries[i].flag) +
+                                  L"  " + g_countries[i].code;
+                    g.DrawString(lbl.c_str(), -1, &fCBtn,
+                                 RectF(rowX+8, iy, cBtnW, 44.0f), &fmtL, &white);
+                    g_countryDropRects.push_back({ rowX, iy, (float)(cBtnW+10), 44.0f });
+                }
+            }
+            curY += rowH + 18.0f;
+
+            if (!g_loginError.empty()) {
+                Font fErr(&ff, 11, FontStyleRegular, UnitPixel);
+                SolidBrush red(Color(255,234,0,56));
+                g.DrawString(g_loginError.c_str(), -1, &fErr,
+                             RectF(cardX, curY, cardW, 20.0f), &fmtL, &red);
+                curY += 24.0f;
+            }
+
+            float btnH = 52.0f;
+            bool hov   = g_hovLoginBtn;
+            SolidBrush btnBg(hov ? RgC::TealHov : RgC::Teal);
+            FillRR(g, &btnBg, cardX, curY, cardW, btnH, 14.0f);
+            Font fBtn(&ff, 15, FontStyleBold, UnitPixel);
+            g.DrawString(L"Continue", -1, &fBtn,
+                         RectF(cardX, curY, cardW, btnH), &fmtC,
+                         &SolidBrush(Color(255,0,0,0)));
+            g_loginBtnRect = { cardX, curY, cardW, btnH };
+            curY += btnH + 24.0f;
+
+        } else if (g_loginStep == LoginStep::OTP) {
+
+            Font fTag2(&ff, 13, FontStyleRegular, UnitPixel);
+            g.DrawString(L"Verification Code", -1, &fTag2,
+                         RectF(cx, curY, cw, 24.0f), &fmtC, &teal);
+            curY += 28.0f;
+
+            wstring subText = L"Code sent to RasGram on  " + g_loginOtpPhone;
+            Font fSub(&ff, 12, FontStyleRegular, UnitPixel);
+            g.DrawString(subText.c_str(), -1, &fSub,
+                         RectF(cx, curY, cw, 22.0f), &fmtC, &muted);
+            curY += 30.0f;
+
+            Font fBack(&ff, 12, FontStyleRegular, UnitPixel);
+            SolidBrush backBr(g_hovBack ? RgC::TealHov : RgC::TextSec);
+            g.DrawString(L"← Back", -1, &fBack,
+                         RectF(cardX, curY, 80.0f, 26.0f), &fmtL, &backBr);
+            g_backBtnRect = { cardX, curY, 80.0f, 26.0f };
+            curY += 34.0f;
+
+            float boxW  = 48.0f, boxH = 58.0f, gap = 10.0f;
+            float totalW = 5 * boxW + 4 * gap;
+            float startX = midX - totalW / 2.0f;
+            wstring otp(g_otpInput);
+
+            for (int i = 0; i < 5; i++) {
+                float bx = startX + i * (boxW + gap);
+                bool filled = (i < (int)otp.size());
+                bool active = (g_activeInput == 2) &&
+                              (i == (int)otp.size() || (i==4 && (int)otp.size()==5));
+                SolidBrush bboxBg(filled ? RgC::BgCard : RgC::BgInput);
+                FillRR(g, &bboxBg, bx, curY, boxW, boxH, 8.0f);
+                Pen bboxBorder(active ? RgC::Teal : (filled ? RgC::TealDim : RgC::Border),
+                               active ? 2.0f : 1.0f);
+                DrawRR(g, &bboxBorder, bx, curY, boxW, boxH, 8.0f);
+                if (filled) {
+                    Font fDot(&ff, 28, FontStyleBold, UnitPixel);
+                    g.DrawString(L"•", -1, &fDot,
+                                 RectF(bx, curY, boxW, boxH), &fmtC, &white);
+                }
+            }
+            g_inputRect = { startX, curY, totalW, boxH };
+            curY += boxH + 20.0f;
+
+            if (!g_loginError.empty()) {
+                Font fErr(&ff, 11, FontStyleRegular, UnitPixel);
+                SolidBrush red(Color(255,234,0,56));
+                g.DrawString(g_loginError.c_str(), -1, &fErr,
+                             RectF(cardX, curY, cardW, 20.0f), &fmtC, &red);
+                curY += 24.0f;
+            }
+
+            float btnH = 52.0f;
+            bool ready = (int)otp.size() == 5;
+            bool hov   = g_hovLoginBtn && ready;
+            SolidBrush btnBg2(ready ? (hov ? RgC::TealHov : RgC::Teal)
+                                    : Color(255,42,57,66));
+            FillRR(g, &btnBg2, cardX, curY, cardW, btnH, 14.0f);
+            Font fBtn(&ff, 15, FontStyleBold, UnitPixel);
+            SolidBrush btnTxt(ready ? Color(255,0,0,0) : RgC::TextMuted);
+            g.DrawString(L"Verify", -1, &fBtn,
+                         RectF(cardX, curY, cardW, btnH), &fmtC, &btnTxt);
+            g_loginBtnRect = { cardX, curY, cardW, btnH };
+
+        } else { // Name step
+            Font fTag3(&ff, 13, FontStyleRegular, UnitPixel);
+            g.DrawString(L"Your Name", -1, &fTag3,
+                         RectF(cx, curY, cw, 24.0f), &fmtC, &teal);
+            curY += 28.0f;
+
+            Font fSub(&ff, 12, FontStyleRegular, UnitPixel);
+            g.DrawString(L"আপনার নাম দিন — বন্ধুরা এটাই দেখবে", -1, &fSub,
+                         RectF(cx, curY, cw, 22.0f), &fmtC, &muted);
+            curY += 32.0f;
+
+            float rowH = 52.0f;
+            bool focus = (g_activeInput == 3);
+            SolidBrush inBg(RgC::BgInput);
+            FillRR(g, &inBg, cardX, curY, cardW, rowH, 12.0f);
+            Pen inBorder(focus ? RgC::Teal : RgC::Border, focus ? 1.8f : 1.0f);
+            DrawRR(g, &inBorder, cardX, curY, cardW, rowH, 12.0f);
+            Font fInput2(&ff, 14, FontStyleRegular, UnitPixel);
+            wstring nameStr(g_nameInput);
+            if (nameStr.empty()) {
+                g.DrawString(L"Your full name", -1, &fInput2,
+                             RectF(cardX+16, curY, cardW-20, rowH), &fmtL, &muted);
+            } else {
+                g.DrawString(nameStr.c_str(), -1, &fInput2,
+                             RectF(cardX+16, curY, cardW-20, rowH), &fmtL, &white);
+                if (focus) {
+                    RectF sz;
+                    g.MeasureString(nameStr.c_str(), -1, &fInput2,
+                                    PointF(cardX+16, curY+14), &sz);
+                    SolidBrush cur(RgC::Teal);
+                    g.FillRectangle(&cur, cardX+16+sz.Width, curY+14, 2.0f, 24.0f);
+                }
+            }
+            g_inputRect = { cardX, curY, cardW, rowH };
+            curY += rowH + 18.0f;
+
+            float btnH = 52.0f;
+            bool ready = (int)wcslen(g_nameInput) > 1;
+            bool hov   = g_hovLoginBtn && ready;
         SolidBrush btnBg3(ready ? (hov ? RgC::TealHov : RgC::Teal)
                                 : Color(255,42,57,66));
         FillRR(g, &btnBg3, cardX, curY, cardW, btnH, 14.0f);
@@ -1474,6 +1687,3 @@ bool RgHandleParentWndMsg(HWND, UINT, WPARAM, LPARAM)
 {
     return false;
 }
-
-
-
