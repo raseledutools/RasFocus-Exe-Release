@@ -59,6 +59,7 @@ using namespace std;
 // ── Externals ────────────────────────────────────────────────
 extern HWND    hParentWnd;
 extern string  g_loggedInUserUid;
+extern string  g_loggedInIdToken;   // Firebase Auth ID token for Firestore QR/chat
 extern wstring g_loggedInName;
 extern wstring g_loggedInEmail;
 extern float   g_scaleFactor;   // DPI scale (1.0 on 96dpi, 1.25 on 120dpi, etc.)
@@ -2490,7 +2491,7 @@ void InitRasGramDesktop() {
     // Resolve mobile from Firestore chat_users (uid → mobile).
     // EXE logs in with email+password; Android stores chat_users/{mobile} with uid field.
     // We need the mobile to query pvt_msg_* collections correctly.
-    RgNet_Init("", WideToUtf8(g_myName_w), g_loggedInUserUid, "");
+    RgNet_Init("", WideToUtf8(g_myName_w), g_loggedInUserUid, g_loggedInIdToken);
     if (g_wvReady) RgExecJS(L"RG.showNotLoggedIn();"); // show loading state
 
     string capturedUid = g_loggedInUserUid;
@@ -2504,7 +2505,7 @@ void InitRasGramDesktop() {
             size_t atPos = emailUtf8.find('@');
             g_myMobile = (atPos != string::npos) ? emailUtf8.substr(0, atPos) : g_loggedInUserUid;
         }
-        RgNet_Init(g_myMobile, WideToUtf8(g_myName_w), g_loggedInUserUid, "");
+        RgNet_Init(g_myMobile, WideToUtf8(g_myName_w), g_loggedInUserUid, g_loggedInIdToken);
         RgNet_SetOnline(true);
 
         if (g_wvReady) RgSendLoginState();

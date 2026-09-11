@@ -53,6 +53,7 @@ bool    g_isPremiumUser    = false;
 wstring g_loggedInEmail    = L"";
 wstring g_loggedInName     = L"";
 string  g_loggedInUserUid  = "";
+string  g_loggedInIdToken  = "";   // Firebase Auth ID token — RasGram Firestore QR/chat এর জন্য
 string  g_currentPackage   = "FREE_BASIC"; // প্যাকেজের নাম সেভ রাখার জন্য
 bool    g_openCheckoutAfterLogin = false; // signup → auto-login → checkout
 
@@ -480,6 +481,7 @@ void __cdecl SignUpThread(void* param) {
         g_loggedInEmail   = emailW;
         g_loggedInName    = nameW;
         g_loggedInUserUid = res.localId;
+        g_loggedInIdToken = res.idToken;   // QR/chat Firestore auth এর জন্য
 
         s_su_success   = true;
         s_su_statusMsg = L"";
@@ -719,6 +721,7 @@ void __cdecl GoogleSignInThread(void* param) {
         MultiByteToWideChar(CP_UTF8, 0, res.email.c_str(), -1, emailW, 511);
         g_loggedInEmail   = emailW;
         g_loggedInUserUid = res.localId;
+        g_loggedInIdToken = res.idToken;   // QR/chat Firestore auth এর জন্য
 
         s_statusMsg = isPremium
             ? L"Google sign-in successful! Premium active."
@@ -1000,6 +1003,7 @@ void __cdecl LoginThread(void* param) {
         MultiByteToWideChar(CP_UTF8, 0, res.email.c_str(), -1, emailW, 511);
         g_loggedInEmail   = emailW;
         g_loggedInUserUid = res.localId;
+        g_loggedInIdToken = res.idToken;   // QR/chat Firestore auth এর জন্য
 
         if (data->saveLogin) {
             wchar_t passW[512] = {};
@@ -2049,6 +2053,7 @@ void ProcessAccountsMouseClick(float x, float y, HWND hWnd) {
             g_loggedInEmail   = L"";
             g_loggedInName    = L"";
             g_loggedInUserUid = "";
+            g_loggedInIdToken = "";
             g_isPremiumUser   = false;
             g_currentPackage  = "FREE_BASIC";
             ZeroMemory(s_email,    sizeof(s_email));
