@@ -112,6 +112,9 @@ static string         g_qrScannedName;
 static atomic<bool>   g_qrPollActive{false};
 static thread         g_qrPollThread;
 
+// OTP (phone-code) login state
+static string         g_otpErrMsg;        // last error to show JS
+
 // Video frame (latest decoded frame from remote peer)
 static mutex          g_videoMtx;
 static vector<BYTE>   g_videoFrame;
@@ -736,24 +739,37 @@ body{display:flex;flex-direction:column;height:100vh;overflow:hidden;background:
           </div>
           <input id="lg-phone" class="lg-input" type="tel" placeholder="Phone number" maxlength="11"
                  oninput="this.value=this.value.replace(/\D/g,'')"
-                 onkeydown="if(event.key==='Enter')LG.nextToName()" style="flex:1">
+                 onkeydown="if(event.key==='Enter')LG.sendOtp()" style="flex:1">
         </div>
         <div class="lg-error" id="lg-phone-err"></div>
-        <button class="lg-btn" onclick="LG.nextToName()">Continue</button>
+        <button class="lg-btn" id="lg-phone-btn" onclick="LG.sendOtp()">
+          <span id="lg-phone-txt">Continue</span>
+        </button>
       </div>
 
-      <!-- STEP 1: Name -->
-      <div class="lg-step-name" id="step-name">
-        <div class="lg-label">Your Name</div>
-        <input id="lg-name" class="lg-input" style="width:100%" type="text" placeholder="Enter your name" maxlength="25"
-               oninput="document.getElementById('lg-name-count').textContent=this.value.length+'/25'"
-               onkeydown="if(event.key==='Enter')LG.doLogin()">
-        <div class="lg-char-count" id="lg-name-count">0/25</div>
-        <div class="lg-error" id="lg-name-err"></div>
-        <div class="lg-back-row">
+      <!-- STEP 1: OTP Code -->
+      <div id="step-otp" style="display:none">
+        <div class="lg-label">Verification Code</div>
+        <div style="font-size:12px;color:#8696A0;margin-bottom:12px;line-height:1.6">
+          A 5-digit code was sent to your RasGram on<br>
+          <span id="lg-otp-phone-lbl" style="color:#00A884;font-weight:600"></span>
+        </div>
+        <input id="lg-otp-input" class="lg-input"
+               style="width:100%;letter-spacing:10px;font-size:24px;font-weight:700;text-align:center;padding:12px 8px"
+               type="text" inputmode="numeric" placeholder="·····" maxlength="5"
+               oninput="this.value=this.value.replace(/\D/g,'');if(this.value.length===5)LG.verifyOtp()"
+               onkeydown="if(event.key==='Enter')LG.verifyOtp()">
+        <div class="lg-error" id="lg-otp-err"></div>
+        <div class="lg-back-row" style="margin-top:14px">
           <button class="lg-btn-back" onclick="LG.backToPhone()">Back</button>
-          <button class="lg-btn-main" id="lg-submit-btn" onclick="LG.doLogin()">
-            <span id="lg-submit-txt">Continue</span>
+          <button class="lg-btn-main" id="lg-otp-btn" onclick="LG.verifyOtp()">
+            <span id="lg-otp-txt">Verify</span>
+          </button>
+        </div>
+        <div style="margin-top:14px;text-align:center">
+          <button class="qr-refresh" id="lg-resend-btn" onclick="LG.resendOtp()"
+                  style="background:none;border:none;color:#8696A0;font-size:12px;cursor:pointer">
+            Resend code
           </button>
         </div>
       </div>
@@ -1127,62 +1143,135 @@ window.LG = {
     document.getElementById('lg-code').textContent = code;
     document.getElementById('lg-drop').style.display = 'none';
   },
-  nextToName() {
+  _loginTimer: null,
+  _otpPhone: '',
+  _resendTimer: null,
+
+  // ── Step 0 → send OTP ────────────────────────────────────────
+  sendOtp() {
     const phone = document.getElementById('lg-phone').value.trim();
     if (phone.length < 9) {
       document.getElementById('lg-phone-err').textContent = 'Enter a valid phone number';
       return;
     }
     document.getElementById('lg-phone-err').textContent = '';
-    document.getElementById('step-phone').classList.remove('active');
-    document.getElementById('step-name').classList.add('active');
-    document.getElementById('login-sub').textContent = 'What should we call you?';
-    document.getElementById('lg-name').focus();
-  },
-  backToPhone() {
-    document.getElementById('step-name').classList.remove('active');
-    document.getElementById('step-phone').classList.add('active');
-    document.getElementById('login-sub').textContent = 'Enter your phone number to continue';
-    document.getElementById('lg-name-err').textContent = '';
-  },
-  _loginTimer: null,
-  doLogin() {
-    const name = document.getElementById('lg-name').value.trim();
-    if (!name) {
-      document.getElementById('lg-name-err').textContent = 'Enter your name';
-      return;
-    }
-    const phone = document.getElementById('lg-phone').value.trim();
-    const fullPhone = this._code + phone;
-    const btn = document.getElementById('lg-submit-btn');
-    const txt = document.getElementById('lg-submit-txt');
+    this._otpPhone = this._code + phone;
+    const btn = document.getElementById('lg-phone-btn');
+    const txt = document.getElementById('lg-phone-txt');
     btn.disabled = true;
     txt.innerHTML = '<div class="lg-spinner"></div>';
-    document.getElementById('lg-name-err').textContent = '';
-    // Safety timeout: if C++ never replies within 20s, re-enable button
     clearTimeout(LG._loginTimer);
-    LG._loginTimer = setTimeout(() => {
-      LG.loginError('Connection timeout. Check your internet and try again.');
-    }, 20000);
+    LG._loginTimer = setTimeout(() =>
+      LG._phoneErr('Timeout. Check internet and try again.'), 25000);
     if (window.chrome && window.chrome.webview) {
-      window.chrome.webview.postMessage(JSON.stringify({
-        action: 'rasgram_login',
-        phone: fullPhone,
-        name: name
-      }));
+      window.chrome.webview.postMessage(JSON.stringify(
+        { action: 'otp_send', phone: LG._otpPhone }));
     } else {
-      // WebView not ready — fail immediately instead of hanging
-      LG.loginError('App not ready. Please restart RasFocus.');
+      LG._phoneErr('App not ready. Restart RasFocus.');
     }
   },
-  loginError(msg) {
+
+  // Called by C++ after code sent to phone
+  onOtpSent() {
     clearTimeout(LG._loginTimer);
-    const btn = document.getElementById('lg-submit-btn');
-    const txt = document.getElementById('lg-submit-txt');
+    const btn = document.getElementById('lg-phone-btn');
+    const txt = document.getElementById('lg-phone-txt');
+    btn.disabled = false;
+    txt.textContent = 'Continue';
+    document.getElementById('step-phone').classList.remove('active');
+    document.getElementById('step-phone').style.display = 'none';
+    document.getElementById('step-otp').style.display  = 'block';
+    document.getElementById('lg-otp-phone-lbl').textContent = LG._otpPhone;
+    document.getElementById('login-sub').textContent = 'Check your RasGram for the code';
+    document.getElementById('lg-otp-err').textContent = '';
+    document.getElementById('lg-otp-input').value = '';
+    document.getElementById('lg-otp-input').focus();
+    LG._startResendTimer();
+  },
+
+  _startResendTimer() {
+    const btn = document.getElementById('lg-resend-btn');
+    btn.disabled = true;
+    let s = 30;
+    btn.textContent = 'Resend code (' + s + 's)';
+    clearInterval(LG._resendTimer);
+    LG._resendTimer = setInterval(() => {
+      s--;
+      if (s <= 0) { clearInterval(LG._resendTimer); btn.disabled = false; btn.textContent = 'Resend code'; }
+      else btn.textContent = 'Resend code (' + s + 's)';
+    }, 1000);
+  },
+
+  resendOtp() {
+    document.getElementById('lg-otp-err').textContent = '';
+    document.getElementById('lg-otp-input').value = '';
+    if (window.chrome && window.chrome.webview)
+      window.chrome.webview.postMessage(JSON.stringify(
+        { action: 'otp_send', phone: LG._otpPhone }));
+    LG._startResendTimer();
+  },
+
+  _phoneErr(msg) {
+    clearTimeout(LG._loginTimer);
+    const btn = document.getElementById('lg-phone-btn');
+    const txt = document.getElementById('lg-phone-txt');
+    if (btn) { btn.disabled = false; }
+    if (txt) txt.textContent = 'Continue';
+    document.getElementById('lg-phone-err').textContent = msg;
+  },
+
+  // ── Step 1 → verify OTP ──────────────────────────────────────
+  verifyOtp() {
+    const code = document.getElementById('lg-otp-input').value.trim();
+    if (code.length !== 5) {
+      document.getElementById('lg-otp-err').textContent = 'Enter the 5-digit code';
+      return;
+    }
+    document.getElementById('lg-otp-err').textContent = '';
+    const btn = document.getElementById('lg-otp-btn');
+    const txt = document.getElementById('lg-otp-txt');
+    btn.disabled = true;
+    txt.innerHTML = '<div class="lg-spinner"></div>';
+    clearTimeout(LG._loginTimer);
+    LG._loginTimer = setTimeout(() =>
+      LG.otpVerifyError('Timeout. Check internet and try again.'), 25000);
+    if (window.chrome && window.chrome.webview) {
+      window.chrome.webview.postMessage(JSON.stringify(
+        { action: 'otp_verify', phone: LG._otpPhone, code: code }));
+    } else {
+      LG.otpVerifyError('App not ready. Restart RasFocus.');
+    }
+  },
+
+  otpVerifyError(msg) {
+    clearTimeout(LG._loginTimer);
+    const btn = document.getElementById('lg-otp-btn');
+    const txt = document.getElementById('lg-otp-txt');
+    if (btn) btn.disabled = false;
+    if (txt) txt.textContent = 'Verify';
+    document.getElementById('lg-otp-err').textContent = msg || 'Invalid code. Try again.';
+    document.getElementById('lg-otp-input').value = '';
+    document.getElementById('lg-otp-input').focus();
+  },
+
+  backToPhone() {
+    clearTimeout(LG._loginTimer);
+    clearInterval(LG._resendTimer);
+    document.getElementById('step-otp').style.display  = 'none';
+    document.getElementById('step-phone').style.display = 'block';
+    document.getElementById('step-phone').classList.add('active');
+    document.getElementById('login-sub').textContent = 'Enter your phone number to continue';
+    document.getElementById('lg-phone-err').textContent = '';
+    document.getElementById('lg-otp-err').textContent  = '';
+    const btn = document.getElementById('lg-phone-btn');
+    const txt = document.getElementById('lg-phone-txt');
     if (btn) btn.disabled = false;
     if (txt) txt.textContent = 'Continue';
-    const err = document.getElementById('lg-name-err');
-    if (err) err.textContent = msg || 'Login failed. Try again.';
+  },
+
+  loginError(msg) {
+    clearTimeout(LG._loginTimer);
+    LG.otpVerifyError(msg);
   }
 };
 // Auto-start QR when login screen shows (QR tab is default)
@@ -1780,6 +1869,9 @@ static void RgQrDeleteSession(const string& token) {
 #define WM_RG_QR_READY   (WM_USER + 76)
 #define WM_RG_QR_SCANNED (WM_USER + 77)
 #define WM_RG_QR_ERROR   (WM_USER + 78)
+#define WM_RG_OTP_SENT   (WM_USER + 79)   // code sent to Android → show OTP step
+#define WM_RG_OTP_OK     (WM_USER + 80)   // code verified → login
+#define WM_RG_OTP_ERR    (WM_USER + 81)   // error string in g_otpErrMsg
 
 // ── Handle message from JS ────────────────────────────────────
 static void RgHandleMessage(const wstring& json) {
@@ -1898,6 +1990,140 @@ static void RgHandleMessage(const wstring& json) {
             RgNet_StopLan();
             { lock_guard<mutex> lk(g_lanPeersMtx); g_lanPeers.clear(); }
         }
+
+    } else if (action == "otp_send") {
+        // ── Step 1: generate 5-digit code, write to Firestore otp_sessions,
+        //    then send it as a RasGram message to the user's own chat.
+        string phone = ParseJsField(j, "phone");
+        if (phone.empty()) {
+            RgExecJS(L"LG._phoneErr('Invalid phone number.');");
+            return;
+        }
+        thread([phone]() {
+            // Generate random 5-digit code (10000–99999)
+            srand((unsigned)time(nullptr) ^ (unsigned)(uintptr_t)&phone);
+            int code = 10000 + rand() % 90000;
+            string codeStr = to_string(code);
+            long long expiresAt = (long long)time(nullptr) + 120; // 2 minutes
+
+            // Write otp_sessions/{phone}
+            string otpPayload =
+                "{"fields":{"
+                ""code":{"stringValue":"" + codeStr + ""},"
+                ""expiresAt":{"integerValue":"" + to_string(expiresAt) + ""}"
+                "}}";
+            string otpPath = "/v1/projects/" RG_FIREBASE_PROJECT
+                             "/databases/(default)/documents/otp_sessions/" + phone;
+            string otpResp = RgFirestorePost("PATCH", otpPath, otpPayload);
+            if (otpResp.empty()) {
+                g_otpErrMsg = "Could not send code. Check internet.";
+                if (hParentWnd) PostMessageW(hParentWnd, WM_RG_OTP_ERR, 0, 0);
+                return;
+            }
+
+            // Send the code as a message in the user's self-chat
+            // chatId = generateChatId(phone, phone) = phone_phone (self-chat)
+            // We send from "RasGram" system (senderMobile = "rasgram_system")
+            // so it shows up as a special contact in the user's chat list.
+            string chatId = phone + "_rasgram_system";
+            // Alphabetically sort
+            if (string("rasgram_system") < phone)
+                chatId = "rasgram_system_" + phone;
+
+            long long ts = (long long)time(nullptr) * 1000LL;
+            string msgPayload =
+                "{"fields":{"
+                ""chatId":{"stringValue":"" + chatId + ""},"
+                ""senderMobile":{"stringValue":"rasgram_system"},"
+                ""senderName":{"stringValue":"RasGram"},"
+                ""text":{"stringValue":"Your RasFocus PC login code is: " + codeStr + "\n\nValid for 2 minutes. Do not share this code."},"
+                ""timestamp":{"integerValue":"" + to_string(ts) + ""},"
+                ""timeString":{"stringValue":"now"},"
+                ""read":{"booleanValue":false},"
+                ""delivered":{"booleanValue":true},"
+                ""isDeleted":{"booleanValue":false},"
+                ""isCallLog":{"booleanValue":false}"
+                "}}";
+            string collection = "pvt_msg_" + chatId;
+            string msgPath = "/v1/projects/" RG_FIREBASE_PROJECT
+                             "/databases/(default)/documents/" + collection;
+            RgFirestorePost("POST", msgPath, msgPayload);
+
+            // Tell JS: show OTP step
+            if (hParentWnd) PostMessageW(hParentWnd, WM_RG_OTP_SENT, 0, 0);
+        }).detach();
+
+    } else if (action == "otp_verify") {
+        // ── Step 2: verify the code, then look up name from chat_users and login
+        string phone    = ParseJsField(j, "phone");
+        string codeStr  = ParseJsField(j, "code");
+        if (phone.empty() || codeStr.empty()) {
+            RgExecJS(L"LG.otpVerifyError('Invalid request.');");
+            return;
+        }
+        thread([phone, codeStr]() {
+            // Read otp_sessions/{phone}
+            string otpPath = "/v1/projects/" RG_FIREBASE_PROJECT
+                             "/databases/(default)/documents/otp_sessions/" + phone;
+            string otpDoc = RgFirestoreGet(otpPath);
+            if (otpDoc.empty()) {
+                g_otpErrMsg = "Code expired or not found. Request a new one.";
+                if (hParentWnd) PostMessageW(hParentWnd, WM_RG_OTP_ERR, 0, 0);
+                return;
+            }
+            string storedCode  = ParseJsField(otpDoc, "code");
+            string expiresAtStr = ParseJsField(otpDoc, "expiresAt");
+            long long expiresAt = expiresAtStr.empty() ? 0 : stoll(expiresAtStr);
+            if (storedCode != codeStr) {
+                g_otpErrMsg = "Incorrect code. Try again.";
+                if (hParentWnd) PostMessageW(hParentWnd, WM_RG_OTP_ERR, 0, 0);
+                return;
+            }
+            if ((long long)time(nullptr) > expiresAt) {
+                g_otpErrMsg = "Code expired. Request a new one.";
+                if (hParentWnd) PostMessageW(hParentWnd, WM_RG_OTP_ERR, 0, 0);
+                return;
+            }
+
+            // Delete used session
+            RgFirestorePost("DELETE", otpPath, "");
+
+            // Look up name from chat_users/{phone}
+            string userPath = "/v1/projects/" RG_FIREBASE_PROJECT
+                              "/databases/(default)/documents/chat_users/" + phone;
+            string userDoc = RgFirestoreGet(userPath);
+            string name = userDoc.empty() ? "" : ParseJsField(userDoc, "name");
+            if (name.empty()) name = phone; // fallback if new user
+
+            // Register / update chat_users entry
+            string uid = phone; // EXE users use phone as uid
+            string userPayload =
+                "{"fields":{"
+                ""uid":{"stringValue":"" + JsEscape(uid) + ""},"
+                ""name":{"stringValue":"" + JsEscape(name) + ""},"
+                ""mobile":{"stringValue":"" + JsEscape(phone) + ""},"
+                ""isOnline":{"booleanValue":true}"
+                "}}";
+            RgFirestorePost("PATCH", userPath, userPayload);
+
+            // Init network and login
+            g_myMobile = phone;
+            g_myName_w = Utf8ToWide(name);
+            RgNet_Init(phone, name, uid, "");
+            RgNet_SetOnline(true);
+            RgNet_StopChatListPolling();
+            RgNet_StartChatListPolling([](const vector<RgChatPreview>& chats) {
+                { lock_guard<mutex> lk(g_chatsMtx); g_chats = chats; }
+                RgPushChatsToUI();
+            });
+            if (!g_notifyReady && hParentWnd) {
+                RgNotify_Init(hParentWnd);
+                g_notifyReady = true;
+            }
+            g_pendingLoginName  = Utf8ToWide(name);
+            g_pendingLoginPhone = Utf8ToWide(phone);
+            if (hParentWnd) PostMessageW(hParentWnd, WM_RG_LOGIN_OK, 0, 0);
+        }).detach();
 
     } else if (action == "rasgram_login") {
         // User submitted phone+name from the login screen.
@@ -2354,6 +2580,19 @@ bool RgHandleParentWndMsg(HWND /*hwnd*/, UINT msg, WPARAM /*wp*/, LPARAM /*lp*/)
     case WM_RG_QR_ERROR:
         RgExecJS(L"LG.qrError('Could not create QR. Check internet.');");
         return true;
+
+    case WM_RG_OTP_SENT:
+        RgExecJS(L"LG.onOtpSent();");
+        return true;
+
+    case WM_RG_OTP_ERR: {
+        wstring errCall = L"LG._phoneErr('" + Utf8ToWide(JsEscape(g_otpErrMsg)) + L"');";
+        // If we're on OTP step already (verify failed), use otpVerifyError instead
+        // JS loginError routes to the right function
+        wstring errCall2 = L"LG.loginError('" + Utf8ToWide(JsEscape(g_otpErrMsg)) + L"');";
+        RgExecJS(errCall2);
+        return true;
+    }
 
     default:
         return false;
