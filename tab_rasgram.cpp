@@ -1475,6 +1475,5 @@ bool RgHandleParentWndMsg(HWND, UINT, WPARAM, LPARAM)
     return false;
 }
 
-void RgNotify_Destroy()        {}
-void RgNet_StopIncomingCallPolling() {}
+
 
