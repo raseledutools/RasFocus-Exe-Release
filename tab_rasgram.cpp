@@ -2008,9 +2008,9 @@ static void RgHandleMessage(const wstring& json) {
 
             // Write otp_sessions/{phone}
             string otpPayload =
-                "{"fields":{"
-                ""code":{"stringValue":"" + codeStr + ""},"
-                ""expiresAt":{"integerValue":"" + to_string(expiresAt) + ""}"
+                "{\"fields\":{"
+                "\"code\":{\"stringValue\":\"" + codeStr + "\"},"
+                "\"expiresAt\":{\"integerValue\":\"" + to_string(expiresAt) + "\"}"
                 "}}";
             string otpPath = "/v1/projects/" RG_FIREBASE_PROJECT
                              "/databases/(default)/documents/otp_sessions/" + phone;
@@ -2032,17 +2032,17 @@ static void RgHandleMessage(const wstring& json) {
 
             long long ts = (long long)time(nullptr) * 1000LL;
             string msgPayload =
-                "{"fields":{"
-                ""chatId":{"stringValue":"" + chatId + ""},"
-                ""senderMobile":{"stringValue":"rasgram_system"},"
-                ""senderName":{"stringValue":"RasGram"},"
-                ""text":{"stringValue":"Your RasFocus PC login code is: " + codeStr + "\n\nValid for 2 minutes. Do not share this code."},"
-                ""timestamp":{"integerValue":"" + to_string(ts) + ""},"
-                ""timeString":{"stringValue":"now"},"
-                ""read":{"booleanValue":false},"
-                ""delivered":{"booleanValue":true},"
-                ""isDeleted":{"booleanValue":false},"
-                ""isCallLog":{"booleanValue":false}"
+                "{\"fields\":{"
+                "\"chatId\":{\"stringValue\":\"" + chatId + "\"},"
+                "\"senderMobile\":{\"stringValue\":\"rasgram_system\"},"
+                "\"senderName\":{\"stringValue\":\"RasGram\"},"
+                "\"text\":{\"stringValue\":\"Your RasFocus PC login code is: " + codeStr + "\\n\\nValid for 2 minutes. Do not share this code.\"},"
+                "\"timestamp\":{\"integerValue\":\"" + to_string(ts) + "\"},"
+                "\"timeString\":{\"stringValue\":\"now\"},"
+                "\"read\":{\"booleanValue\":false},"
+                "\"delivered\":{\"booleanValue\":true},"
+                "\"isDeleted\":{\"booleanValue\":false},"
+                "\"isCallLog\":{\"booleanValue\":false}"
                 "}}";
             string collection = "pvt_msg_" + chatId;
             string msgPath = "/v1/projects/" RG_FIREBASE_PROJECT
@@ -2098,11 +2098,11 @@ static void RgHandleMessage(const wstring& json) {
             // Register / update chat_users entry
             string uid = phone; // EXE users use phone as uid
             string userPayload =
-                "{"fields":{"
-                ""uid":{"stringValue":"" + JsEscape(uid) + ""},"
-                ""name":{"stringValue":"" + JsEscape(name) + ""},"
-                ""mobile":{"stringValue":"" + JsEscape(phone) + ""},"
-                ""isOnline":{"booleanValue":true}"
+                "{\"fields\":{"
+                "\"uid\":{\"stringValue\":\"" + JsEscape(uid) + "\"},"
+                "\"name\":{\"stringValue\":\"" + JsEscape(name) + "\"},"
+                "\"mobile\":{\"stringValue\":\"" + JsEscape(phone) + "\"},"
+                "\"isOnline\":{\"booleanValue\":true}"
                 "}}";
             RgFirestorePost("PATCH", userPath, userPayload);
 
