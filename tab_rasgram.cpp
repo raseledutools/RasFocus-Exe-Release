@@ -1397,7 +1397,6 @@ void DrawRasGramTab(Graphics& g, float cx, float cy, float cw, float ch)
         RgQrStatus st = RgQr_Poll();
         if (st == RgQrStatus::Confirmed) {
             const RgQrUser& u = RgQr_GetUser();
-            // Set logged-in identity from phone confirmation
             g_loggedInUserUid = u.uid;
             g_myMobile = wstring(u.mobile.begin(), u.mobile.end());
             wstring wname(u.name.begin(), u.name.end());
@@ -1407,6 +1406,10 @@ void DrawRasGramTab(Graphics& g, float cx, float cy, float cw, float ch)
             g_qrSessionStarted = false;
             g_screen = RgScreen::App;
             PopulateDemoChats();
+            Invalidate();   // force repaint → switch to chat screen
+        } else if (st == RgQrStatus::Waiting) {
+            // Polling active — keep repainting every ~200ms so poll runs
+            Invalidate();
         }
     }
 

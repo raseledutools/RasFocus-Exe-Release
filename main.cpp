@@ -2176,6 +2176,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (wp == 1001) {
             ProcessFamilyLinkTimer(wp, hWnd);           // Firebase poll ticker (every 5s)
             FamilyLink_EnforceParentCommands(hWnd); // apply all parent commands
+            // RasGram QR poll — repaint triggers DrawRasGramTab → RgQr_Poll()
+            InvalidateRect(hWnd, NULL, FALSE);
         }
         break;
     }
