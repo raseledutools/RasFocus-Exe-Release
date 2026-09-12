@@ -216,7 +216,8 @@ void RgQr_StartSession() {
     // Build QR matrix using official Nayuki library
     RgQrMatrix mat;
     try {
-        QrCode qr = QrCode::encodeText(token.c_str(), QrCode::Ecc::MEDIUM);
+        std::string qrData = "rasgram://qr/" + token;   // phone expects this prefix
+        QrCode qr = QrCode::encodeText(qrData.c_str(), QrCode::Ecc::MEDIUM);
         int sz = qr.getSize();
         mat.size = sz;
         mat.cells.assign(sz, vector<bool>(sz));
