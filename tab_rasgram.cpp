@@ -369,58 +369,50 @@ static void DrawQRCode(Graphics& g, float qx, float qy, float qSz)
     int   N    = mat.size;
     float cell = qSz / (float)N;
 
-    SolidBrush dark(Color(255, 10, 10, 10));   // near-black modules
-    Color      darkC(255, 10, 10, 10);
+    SolidBrush dark(Color(255, 10, 10, 10));
 
-    // ── Helper: is this cell inside a finder pattern? ─────
-    // Finder squares: top-left (0-6), top-right (N-7..N-1, row 0-6),
-    //                 bottom-left (col 0-6, row N-7..N-1)
+    // ── Helper: is this cell inside a finder pattern (7×7 + 1 separator)? ─────
     auto inFinder = [&](int r, int c) -> bool {
-        if (r <= 8 && c <= 8)             return true;   // TL + separator
-        if (r <= 8 && c >= N-8)           return true;   // TR + separator
-        if (r >= N-8 && c <= 8)           return true;   // BL + separator
+        if (r < 8 && c < 8)           return true;   // TL (0-6) + separator row/col 7
+        if (r < 8 && c >= N-8)        return true;   // TR + separator
+        if (r >= N-8 && c < 8)        return true;   // BL + separator
         return false;
     };
 
     // ── Draw data modules as small rounded squares ────────
-    float mod  = cell * 0.85f;             // module size (85% of cell = small gap)
-    float off  = (cell - mod) * 0.5f;     // centering offset
-    float rad  = mod * 0.25f;             // corner radius
+    float mod  = cell * 0.85f;
+    float off  = (cell - mod) * 0.5f;
+    float rad  = mod * 0.25f;
 
     for (int r = 0; r < N; r++) {
         for (int c = 0; c < N; c++) {
             if (!mat.cells[r][c]) continue;
-            if (inFinder(r, c))   continue;   // drawn separately below
+            if (inFinder(r, c))   continue;
             float mx = qx + c * cell + off;
             float my = qy + r * cell + off;
             FillRoundRect(g, &dark, mx, my, mod, mod, rad);
         }
     }
 
-    // ── Draw finder patterns (rounded, WhatsApp style) ────
-    // Each finder: 7×7 outer ring (dark), 5×5 inner (white), 3×3 center (dark)
+    // ── Draw finder patterns LAST (over data) ────────────
+    // 7×7 outer (dark) → 5×5 inner (white) → 3×3 center (dark)
     auto DrawFinder = [&](float fx, float fy) {
-        float outer = cell * 7.0f;
-        float inner = cell * 5.0f;
-        float center= cell * 3.0f;
-        float iOff  = cell;          // 1 cell inset
-        float cOff  = cell * 2.0f;  // 2 cells inset
-        float outerR = cell * 1.2f;
-        float innerR = cell * 0.8f;
-        float centR  = cell * 0.6f;
+        float outer  = cell * 7.0f;
+        float inner  = cell * 5.0f;
+        float center = cell * 3.0f;
+        float outerR = cell * 1.0f;
+        float innerR = cell * 0.7f;
+        float centR  = cell * 0.5f;
 
-        // outer dark rounded square
-        FillRoundRect(g, &dark, fx, fy, outer, outer, outerR);
-        // inner white
-        SolidBrush white(Color(255,255,255,255));
-        FillRoundRect(g, &white, fx+iOff, fy+iOff, inner, inner, innerR);
-        // center dark
-        FillRoundRect(g, &dark, fx+cOff, fy+cOff, center, center, centR);
+        FillRoundRect(g, &dark, fx,            fy,            outer,  outer,  outerR);
+        SolidBrush w(Color(255,255,255,255));
+        FillRoundRect(g, &w,    fx + cell,     fy + cell,     inner,  inner,  innerR);
+        FillRoundRect(g, &dark, fx + cell*2,   fy + cell*2,   center, center, centR);
     };
 
-    DrawFinder(qx,                      qy);                       // top-left
-    DrawFinder(qx + (N-7)*cell,         qy);                       // top-right
-    DrawFinder(qx,                      qy + (N-7)*cell);          // bottom-left
+    DrawFinder(qx,               qy);               // top-left
+    DrawFinder(qx + (N-7)*cell,  qy);               // top-right
+    DrawFinder(qx,               qy + (N-7)*cell);  // bottom-left
 
     g.SetSmoothingMode(SmoothingModeDefault);
 }
