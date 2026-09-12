@@ -1,6 +1,6 @@
-BUILD STATUS: FAILED (exit code 2)
-Time: 2026-09-12 11:04:52 UTC
-Run: https://github.com/raseledutools/RasFocus-Exe-Release/actions/runs/34690047587
+BUILD STATUS: SUCCESS
+Time: 2026-09-12 11:13:02 UTC
+Run: https://github.com/raseledutools/RasFocus-Exe-Release/actions/runs/34690384595
 
 === Compiler Output ===
 Microsoft (R) C/C++ Optimizing Compiler Version 19.51.36256 for x64
@@ -172,7 +172,6 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
 tab_deep_study.cpp
 tab_adult.cpp(219): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\codecvt(34): note: see declaration of 'std::codecvt_utf8' (compiling source file tab_adult.cpp)
-tab_special.cpp
 tab_adult.cpp(219): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>::codecvt_utf8': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
 tab_adult.cpp(233): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\codecvt(34): note: see declaration of 'std::codecvt_utf8' (compiling source file tab_adult.cpp)
@@ -184,6 +183,7 @@ tab_adult.cpp(289): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::code
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\codecvt(34): note: see declaration of 'std::codecvt_utf8' (compiling source file tab_adult.cpp)
 tab_adult.cpp(289): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>::codecvt_utf8': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
 tab_adult.cpp(331): warning C4244: 'argument': conversion from 'int' to 'Gdiplus::REAL', possible loss of data
+tab_special.cpp
 tab_adult.cpp(406): warning C4996: 'std::codecvt_utf8<wchar_t,1114111,(std::codecvt_mode)0>': warning STL4017: std::wbuffer_convert, std::wstring_convert, and the <codecvt> header (containing std::codecvt_mode, std::codecvt_utf8, std::codecvt_utf16, and std::codecvt_utf8_utf16) are deprecated in C++17. (The std::codecvt class template is NOT deprecated.) The C++ Standard doesn't provide equivalent non-deprecated functionality; consider using MultiByteToWideChar() and WideCharToMultiByte() from <Windows.h> instead. You can define _SILENCE_CXX17_CODECVT_HEADER_DEPRECATION_WARNING or _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS to suppress this warning.
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\codecvt(34): note: see declaration of 'std::codecvt_utf8' (compiling source file tab_adult.cpp)
 tab_adult.cpp(400): warning C4996: 'localtime': This function or variable may be unsafe. Consider using localtime_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
@@ -267,6 +267,7 @@ C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231
             _SizeTy=std::+::_Size_type
         ] (compiling source file accounts.cpp)
 rasgram_net.cpp
+rasgram_qr_session.cpp
 rasgram_net.cpp(267): warning C4996: 'localtime': This function or variable may be unsafe. Consider using localtime_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): warning C4244: '=': conversion from 'wchar_t' to 'char', possible loss of data (compiling source file rasgram_net.cpp)
 C:\Program Files\Microsoft Visual Studio\18\Enterprise\VC\Tools\MSVC\14.51.36231\include\xutility(5094): note: the template instantiation context (the oldest one first) is (compiling source file rasgram_net.cpp)
@@ -369,15 +370,9 @@ tab_phone_remote_relay.obj
 pc_screen_streamer.obj 
 tab_rasgram.obj 
 rasgram_net.obj 
+rasgram_qr_session.obj 
 resources.res 
 libcpmt.lib(xlock.obj) : warning LNK4078: multiple '.voltbl' sections found with different attributes (00101A00)
-tab_rasgram.obj : error LNK2001: unresolved external symbol "struct RgQrMatrix const & __cdecl RgQr_GetMatrix(void)" (?RgQr_GetMatrix@@YAAEBURgQrMatrix@@XZ)
-tab_rasgram.obj : error LNK2001: unresolved external symbol "unsigned long __cdecl RgQr_ElapsedMs(void)" (?RgQr_ElapsedMs@@YAKXZ)
-tab_rasgram.obj : error LNK2001: unresolved external symbol "enum RgQrStatus __cdecl RgQr_Poll(void)" (?RgQr_Poll@@YA?AW4RgQrStatus@@XZ)
-tab_rasgram.obj : error LNK2001: unresolved external symbol "void __cdecl RgQr_Init(class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> > const &,class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> > const &,class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> > const &)" (?RgQr_Init@@YAXAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@00@Z)
-tab_rasgram.obj : error LNK2001: unresolved external symbol "void __cdecl RgQr_StartSession(void)" (?RgQr_StartSession@@YAXXZ)
-tab_rasgram.obj : error LNK2001: unresolved external symbol "enum RgQrStatus __cdecl RgQr_GetStatus(void)" (?RgQr_GetStatus@@YA?AW4RgQrStatus@@XZ)
-tab_rasgram.obj : error LNK2001: unresolved external symbol "struct RgQrUser const & __cdecl RgQr_GetUser(void)" (?RgQr_GetUser@@YAAEBURgQrUser@@XZ)
-tab_rasgram.obj : error LNK2001: unresolved external symbol "void __cdecl RgQr_Clear(void)" (?RgQr_Clear@@YAXXZ)
-RasFocus.exe : fatal error LNK1120: 8 unresolved externals
+Generating code
+Finished generating code
 
