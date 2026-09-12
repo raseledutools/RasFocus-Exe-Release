@@ -122,10 +122,11 @@ static string ParseStr(const string& json, const string& field) {
     return tryPat("\"" + field + "\":\"");
 }
 
-// ── Firestore path builder ────────────────────────────────────
+// ── Firestore path builder (with API key) ────────────────────
 static string FsPath(const string& collection, const string& docId) {
     return "/v1/projects/" + s_projectId +
-           "/databases/(default)/documents/" + collection + "/" + docId;
+           "/databases/(default)/documents/" + collection + "/" + docId +
+           "?key=" + s_apiKey;
 }
 
 // ── Token generator (32 hex chars via CryptGenRandom) ────────
