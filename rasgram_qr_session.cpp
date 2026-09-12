@@ -195,7 +195,7 @@ static vector<vector<bool>> Encode(const string& text) {
     // Format info data (before BCH): 00 000 = 0x00, BCH = 0x14 → full = 0x0014
     // XOR mask 0x5412: result = 0x5406
     // Bit positions: top-left 6-module strip + top-right strip + bottom-left
-    static const uint16_t FORMAT = 0x5406u; // ECC-M, mask 0, XORed
+    static const uint16_t FORMAT = 0x5412u; // ECC-M, mask 0, XORed with 101010000010010
     auto putFmtBit = [&](int r, int c, int bitIdx) {
         bool dark = (FORMAT >> bitIdx) & 1;
         mat[r][c] = dark; func[r][c] = true;
@@ -263,8 +263,9 @@ static const DWORD POLL_INTERVAL_MS = 2000;  // 2 s
 // ============================================================
 // HELPERS — HTTP / FIRESTORE REST (WinINet)
 // ============================================================
-static string HttpPost(const string& host, const string& path,
-                       const string& body, const string& extraHeaders = "") {
+static string HttpRequest(const string& method, const string& host,
+                          const string& path, const string& body = "",
+                          const string& extraHeaders = "") {
     string resp;
     HINTERNET hI = InternetOpenA("RasGram-QR/1.0",
                       INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
@@ -274,13 +275,15 @@ static string HttpPost(const string& host, const string& path,
                       INTERNET_DEFAULT_HTTPS_PORT,
                       NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
     if (hC) {
-        HINTERNET hR = HttpOpenRequestA(hC, "POST", path.c_str(), NULL, NULL, NULL,
+        HINTERNET hR = HttpOpenRequestA(hC, method.c_str(), path.c_str(),
+                          NULL, NULL, NULL,
                           INTERNET_FLAG_SECURE | INTERNET_FLAG_RELOAD |
                           INTERNET_FLAG_NO_CACHE_WRITE, 0);
         if (hR) {
             string hdrs = "Content-Type: application/json\r\n" + extraHeaders;
             HttpSendRequestA(hR, hdrs.c_str(), (DWORD)hdrs.size(),
-                             (LPVOID)body.c_str(), (DWORD)body.size());
+                             body.empty() ? NULL : (LPVOID)body.c_str(),
+                             (DWORD)body.size());
             char buf[4096]; DWORD n = 0;
             while (InternetReadFile(hR, buf, sizeof(buf)-1, &n) && n > 0) {
                 buf[n] = 0; resp += buf;
@@ -293,30 +296,13 @@ static string HttpPost(const string& host, const string& path,
     return resp;
 }
 
+static string HttpPost(const string& host, const string& path,
+                       const string& body, const string& extraHeaders = "") {
+    return HttpRequest("POST", host, path, body, extraHeaders);
+}
+
 static string HttpGet(const string& host, const string& path) {
-    string resp;
-    HINTERNET hI = InternetOpenA("RasGram-QR/1.0",
-                      INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
-    if (!hI) return resp;
-    HINTERNET hC = InternetConnectA(hI, host.c_str(),
-                      INTERNET_DEFAULT_HTTPS_PORT,
-                      NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
-    if (hC) {
-        HINTERNET hR = HttpOpenRequestA(hC, "GET", path.c_str(), NULL, NULL, NULL,
-                          INTERNET_FLAG_SECURE | INTERNET_FLAG_RELOAD |
-                          INTERNET_FLAG_NO_CACHE_WRITE, 0);
-        if (hR) {
-            HttpSendRequestA(hR, NULL, 0, NULL, 0);
-            char buf[4096]; DWORD n = 0;
-            while (InternetReadFile(hR, buf, sizeof(buf)-1, &n) && n > 0) {
-                buf[n] = 0; resp += buf;
-            }
-            InternetCloseHandle(hR);
-        }
-        InternetCloseHandle(hC);
-    }
-    InternetCloseHandle(hI);
-    return resp;
+    return HttpRequest("GET", host, path);
 }
 
 static string ParseStr(const string& json, const string& field) {
@@ -383,10 +369,9 @@ static bool WriteSession(const string& token) {
         "\"expiryAt\":{\"integerValue\":\"" + to_string(epochMs + SESSION_TTL_MS) + "\"}"
         "}}";
 
-    // PATCH (create or overwrite) document
+    // PATCH (create or overwrite) Firestore document
     string path = FsPath("qr_sessions", token);
-    string resp = HttpPost(s_firestoreHost, path + "?", body);
-    // A successful Firestore PATCH returns the document JSON (contains "name")
+    string resp = HttpRequest("PATCH", s_firestoreHost, path, body);
     return resp.find("\"name\"") != string::npos ||
            resp.find(token) != string::npos;
 }
