@@ -1473,7 +1473,7 @@ void ProcessRasGramMouseClick(float x, float y)
         // QR mode: Refresh button
         if (g_loginMode == LoginMode::QR && HitTest(g_qrRefreshRect, x, y)) {
             RgQr_Clear();
-            RgQr_StartSession();
+            g_qrSessionStarted = false;   // force re-init on next draw
             Invalidate(); return;
         }
 
