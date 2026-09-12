@@ -331,19 +331,34 @@ static void DrawTicks(Graphics& g, float x, float y, bool read,
 // ═══════════════════════════════════════════════════════════════
 
 // ── Real QR code renderer (uses RgQrMatrix from rasgram_qr_session) ──
+// ── Rounded rectangle helper (GDI+ path) ────────────────────
+static void FillRoundRect(Graphics& g, Brush* br,
+                           float x, float y, float w, float h, float r) {
+    GraphicsPath path;
+    path.AddArc(x,         y,         r*2, r*2, 180, 90);
+    path.AddArc(x+w-r*2,  y,         r*2, r*2, 270, 90);
+    path.AddArc(x+w-r*2,  y+h-r*2,   r*2, r*2,   0, 90);
+    path.AddArc(x,         y+h-r*2,   r*2, r*2,  90, 90);
+    path.CloseFigure();
+    g.FillPath(br, &path);
+}
+
 static void DrawQRCode(Graphics& g, float qx, float qy, float qSz)
 {
     const RgQrMatrix& mat = RgQr_GetMatrix();
 
-    // White background
-    SolidBrush bgW(Color(255,255,255,255));
-    g.FillRectangle(&bgW, qx, qy, qSz, qSz);
+    g.SetSmoothingMode(SmoothingModeAntiAlias);
+
+    // ── Quiet zone: white rounded background ──
+    float qz   = qSz * 0.04f;                 // ~4% quiet zone each side
+    float total = qSz + qz * 2.0f;
+    SolidBrush bgW(Color(255, 255, 255, 255));
+    FillRoundRect(g, &bgW, qx - qz, qy - qz, total, total, 10.0f);
 
     if (!mat.ready || mat.size == 0) {
-        // Still generating — show spinner text
         FontFamily ff(L"Segoe UI");
         Font f(&ff, 11, FontStyleRegular, UnitPixel);
-        SolidBrush muted(Color(255,134,150,160));
+        SolidBrush muted(Color(255, 134, 150, 160));
         StringFormat fmt;
         fmt.SetAlignment(StringAlignmentCenter);
         fmt.SetLineAlignment(StringAlignmentCenter);
@@ -351,18 +366,63 @@ static void DrawQRCode(Graphics& g, float qx, float qy, float qSz)
         return;
     }
 
-    float cell = qSz / (float)mat.size;
-    SolidBrush dark(Color(255, 14, 22, 33));
+    int   N    = mat.size;
+    float cell = qSz / (float)N;
 
-    for (int r = 0; r < mat.size; r++) {
-        for (int c = 0; c < mat.size; c++) {
-            if (mat.cells[r][c]) {
-                g.FillRectangle(&dark,
-                    qx + c * cell, qy + r * cell,
-                    cell + 0.5f,   cell + 0.5f);   // +0.5 avoids gaps at small sizes
-            }
+    SolidBrush dark(Color(255, 10, 10, 10));   // near-black modules
+    Color      darkC(255, 10, 10, 10);
+
+    // ── Helper: is this cell inside a finder pattern? ─────
+    // Finder squares: top-left (0-6), top-right (N-7..N-1, row 0-6),
+    //                 bottom-left (col 0-6, row N-7..N-1)
+    auto inFinder = [&](int r, int c) -> bool {
+        if (r <= 8 && c <= 8)             return true;   // TL + separator
+        if (r <= 8 && c >= N-8)           return true;   // TR + separator
+        if (r >= N-8 && c <= 8)           return true;   // BL + separator
+        return false;
+    };
+
+    // ── Draw data modules as small rounded squares ────────
+    float mod  = cell * 0.85f;             // module size (85% of cell = small gap)
+    float off  = (cell - mod) * 0.5f;     // centering offset
+    float rad  = mod * 0.25f;             // corner radius
+
+    for (int r = 0; r < N; r++) {
+        for (int c = 0; c < N; c++) {
+            if (!mat.cells[r][c]) continue;
+            if (inFinder(r, c))   continue;   // drawn separately below
+            float mx = qx + c * cell + off;
+            float my = qy + r * cell + off;
+            FillRoundRect(g, &dark, mx, my, mod, mod, rad);
         }
     }
+
+    // ── Draw finder patterns (rounded, WhatsApp style) ────
+    // Each finder: 7×7 outer ring (dark), 5×5 inner (white), 3×3 center (dark)
+    auto DrawFinder = [&](float fx, float fy) {
+        float outer = cell * 7.0f;
+        float inner = cell * 5.0f;
+        float center= cell * 3.0f;
+        float iOff  = cell;          // 1 cell inset
+        float cOff  = cell * 2.0f;  // 2 cells inset
+        float outerR = cell * 1.2f;
+        float innerR = cell * 0.8f;
+        float centR  = cell * 0.6f;
+
+        // outer dark rounded square
+        FillRoundRect(g, &dark, fx, fy, outer, outer, outerR);
+        // inner white
+        SolidBrush white(Color(255,255,255,255));
+        FillRoundRect(g, &white, fx+iOff, fy+iOff, inner, inner, innerR);
+        // center dark
+        FillRoundRect(g, &dark, fx+cOff, fy+cOff, center, center, centR);
+    };
+
+    DrawFinder(qx,                      qy);                       // top-left
+    DrawFinder(qx + (N-7)*cell,         qy);                       // top-right
+    DrawFinder(qx,                      qy + (N-7)*cell);          // bottom-left
+
+    g.SetSmoothingMode(SmoothingModeDefault);
 }
 
 // ── Main login screen ─────────────────────────────────────────
@@ -448,8 +508,8 @@ static void DrawLoginScreen(Graphics& g, float cx, float cy,
         curY += 30.0f;
 
         // ── QR code card ──
-        float qSz    = min(200.0f, cw * 0.42f);
-        float qCardP = 14.0f;
+        float qSz    = min(210.0f, cw * 0.44f);
+        float qCardP = 18.0f;
         float qCardSz = qSz + qCardP * 2.0f;
         float qCardX  = midX - qCardSz / 2.0f;
 
