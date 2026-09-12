@@ -26,6 +26,7 @@
 
 #include "tab_rasgram.h"
 #include "rasgram_qr_session.h"
+#include "rasgram_net.h"          // RgNet_Init, RgNet_FetchContacts, RgNet_StartChatListPolling
 
 #include <string>
 #include <vector>
@@ -131,7 +132,12 @@ enum class LoginStep { Phone, OTP, Name };
 static LoginStep g_loginStep = LoginStep::Phone;
 
 // QR code state — real session via rasgram_qr_session
-static bool   g_qrSessionStarted = false;   // RgQr_StartSession() called once
+static bool   g_qrSessionStarted  = false;   // RgQr_StartSession() called once
+
+// Network state
+static bool   g_netInitDone       = false;   // RgNet_Init() called once after QR confirm
+static bool   g_chatPollStarted   = false;   // RgNet_StartChatListPolling() called once
+static string g_qrIdToken;                   // idToken received from phone scan
 
 // Input buffers
 static wchar_t g_phoneInput [16] = {};
@@ -1402,11 +1408,66 @@ void DrawRasGramTab(Graphics& g, float cx, float cy, float cw, float ch)
             wstring wname(u.name.begin(), u.name.end());
             g_myName   = wname.empty() ? L"User" : wname;
             g_loggedInName = g_myName;
+            g_qrIdToken    = u.idToken;
+
+            // ── Wire up real network layer (only once) ───────────────
+            if (!g_netInitDone) {
+                RgNet_Init(u.mobile, u.name, u.uid, u.idToken);
+                g_netInitDone = true;
+            }
+
             RgQr_Clear();
             g_qrSessionStarted = false;
             g_screen = RgScreen::App;
-            PopulateDemoChats();
-            Invalidate();   // force repaint → switch to chat screen
+
+            // ── Load real chats from Firestore (async) ───────────────
+            if (!g_chatPollStarted) {
+                g_chatPollStarted = true;
+
+                // Helper lambda: RgChatPreview → local RgChat
+                auto applyPreviews = [](const vector<RgChatPreview>& previews) {
+                    g_chats.clear();
+                    int seed = 1;
+                    for (auto& p : previews) {
+                        RgChat c;
+                        c.id         = wstring(p.contactMobile.begin(),  p.contactMobile.end());
+                        c.name       = wstring(p.contactName.begin(),    p.contactName.end());
+                        c.mobile     = c.id;
+                        c.lastMsg    = wstring(p.lastMessageText.begin(), p.lastMessageText.end());
+                        c.lastTime   = wstring(p.lastTimeString.begin(), p.lastTimeString.end());
+                        c.unread     = p.unreadCount;
+                        c.avatarSeed = seed++;
+                        g_chats.push_back(c);
+                    }
+                    if (g_chats.empty()) PopulateDemoChats();  // fallback
+                    Invalidate();
+                };
+
+                // One-shot fetch so list appears immediately after login
+                RgNet_FetchContacts(applyPreviews);
+
+                // Keep polling every 5 s for new messages / new chats
+                RgNet_StartChatListPolling([](const vector<RgChatPreview>& previews) {
+                    if (previews.empty()) return;
+                    g_chats.clear();
+                    int seed = 1;
+                    for (auto& p : previews) {
+                        RgChat c;
+                        c.id         = wstring(p.contactMobile.begin(),  p.contactMobile.end());
+                        c.name       = wstring(p.contactName.begin(),    p.contactName.end());
+                        c.mobile     = c.id;
+                        c.lastMsg    = wstring(p.lastMessageText.begin(), p.lastMessageText.end());
+                        c.lastTime   = wstring(p.lastTimeString.begin(), p.lastTimeString.end());
+                        c.unread     = p.unreadCount;
+                        c.avatarSeed = seed++;
+                        g_chats.push_back(c);
+                    }
+                    Invalidate();
+                });
+            }
+
+            PopulateDemoChats();  // placeholder shown while Firestore async loads
+            Invalidate();         // force repaint → switch to chat screen
         } else if (st == RgQrStatus::Waiting) {
             // Polling active — keep repainting every ~200ms so poll runs
             Invalidate();
@@ -1484,22 +1545,34 @@ static void DoSendMessage()
     if (wcslen(g_msgInput) == 0) return;
     if (g_openChatIdx < 0) return;
 
+    wstring textW(g_msgInput);
+
+    // ── Optimistic local insert (show immediately) ────────────
     RgMessage msg;
-    msg.id      = L"m_new_" + to_wstring(GetTickCount64());
-    msg.text    = wstring(g_msgInput);
-    msg.isMine  = true;
-    msg.isRead  = false;
-    msg.timeStr = TimeNow();
+    msg.id         = L"pending_" + to_wstring(GetTickCount64());
+    msg.text       = textW;
+    msg.isMine     = true;
+    msg.isRead     = false;
+    msg.timeStr    = TimeNow();
     msg.senderName = g_myName;
+    msg.isPending  = true;
     g_messages.push_back(msg);
 
-    // Update last message in chat list
     g_chats[g_openChatIdx].lastMsg  = msg.text;
     g_chats[g_openChatIdx].lastTime = msg.timeStr;
 
     ZeroMemory(g_msgInput, sizeof(g_msgInput));
-    g_msgScrollY = 999999.0f; // scroll to bottom
+    g_msgScrollY = 999999.0f;
     Invalidate();
+
+    // ── Send to Firestore via rasgram_net (async, fire & forget) ──
+    if (g_netInitDone && g_openChatIdx < (int)g_chats.size()) {
+        string myMob    (g_myMobile.begin(),                    g_myMobile.end());
+        string theirMob (g_chats[g_openChatIdx].mobile.begin(), g_chats[g_openChatIdx].mobile.end());
+        string text8    (textW.begin(),                         textW.end());
+        string chatId   = RgBuildChatId(myMob, theirMob);
+        RgNet_SendText(chatId, text8, theirMob);
+    }
 }
 
 void ProcessRasGramMouseClick(float x, float y)
@@ -1607,7 +1680,66 @@ void ProcessRasGramMouseClick(float x, float y)
                 g_openChatIdx = i;
                 g_chats[i].unread = 0;
                 g_msgScrollY = 999999.0f;
-                LoadDemoMessages(i);
+
+                if (g_netInitDone) {
+                    // ── Real messages from Firestore ───────────────────
+                    string myMob(g_myMobile.begin(), g_myMobile.end());
+                    string theirMob(g_chats[i].mobile.begin(), g_chats[i].mobile.end());
+                    string chatId = RgBuildChatId(myMob, theirMob);
+
+                    // Clear while loading
+                    g_messages.clear();
+                    Invalidate();
+
+                    RgNet_FetchMessages(chatId, [](const vector<RgMessage>& msgs) {
+                        g_messages.clear();
+                        string myMobA(g_myMobile.begin(), g_myMobile.end());
+                        for (auto& m : msgs) {
+                            if (m.isDeleted) continue;
+                            RgMessage local;
+                            local.id         = wstring(m.id.begin(), m.id.end());
+                            local.text       = wstring(m.text.begin(), m.text.end());
+                            local.senderName = wstring(m.senderName.begin(), m.senderName.end());
+                            local.isMine     = (m.senderMobile == myMobA);
+                            local.isRead     = m.read;
+                            local.timeStr    = wstring(m.timeString.begin(), m.timeString.end());
+                            local.isPending  = m.isPending;
+                            g_messages.push_back(local);
+                        }
+                        if (g_messages.empty()) LoadDemoMessages(g_openChatIdx); // fallback
+                        g_msgScrollY = 999999.0f;
+                        Invalidate();
+                    });
+
+                    // Also start real-time polling for new messages
+                    RgNet_StopMessagePolling();
+                    RgNet_StartMessagePolling(chatId, 0,
+                        [](const RgMessage& m) {
+                            if (m.isDeleted) return;
+                            string myMobA(g_myMobile.begin(), g_myMobile.end());
+                            RgMessage local;
+                            local.id         = wstring(m.id.begin(), m.id.end());
+                            local.text       = wstring(m.text.begin(), m.text.end());
+                            local.senderName = wstring(m.senderName.begin(), m.senderName.end());
+                            local.isMine     = (m.senderMobile == myMobA);
+                            local.isRead     = m.read;
+                            local.timeStr    = wstring(m.timeString.begin(), m.timeString.end());
+                            local.isPending  = m.isPending;
+                            // Avoid duplicates
+                            for (auto& ex : g_messages)
+                                if (ex.id == local.id) return;
+                            g_messages.push_back(local);
+                            g_msgScrollY = 999999.0f;
+                            if (g_openChatIdx >= 0 && g_openChatIdx < (int)g_chats.size()) {
+                                g_chats[g_openChatIdx].lastMsg  = local.text;
+                                g_chats[g_openChatIdx].lastTime = local.timeStr;
+                            }
+                            Invalidate();
+                        });
+                } else {
+                    // Not logged in via QR yet — show demo messages
+                    LoadDemoMessages(i);
+                }
             }
             g_activeInput = 4;
             Invalidate(); return;
