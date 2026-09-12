@@ -25,6 +25,7 @@
 #pragma comment(lib, "gdiplus.lib")
 
 #include "tab_rasgram.h"
+#include "rasgram_qr_session.h"
 
 #include <string>
 #include <vector>
@@ -129,12 +130,8 @@ static LoginMode g_loginMode = LoginMode::QR;
 enum class LoginStep { Phone, OTP, Name };
 static LoginStep g_loginStep = LoginStep::Phone;
 
-// QR code state
-// We draw a fake QR pattern; in production this token would come from the server.
-// A background timer refreshes it every 60 s (simulated by g_qrRefreshTick).
-static DWORD  g_qrRefreshTick = 0;   // GetTickCount() snapshot of last refresh
-static bool   g_qrScanned     = false; // set true to simulate phone-scanned event
-static int    g_qrDotSeed     = 0x4A7F3C1B; // pseudo-random seed for QR pattern
+// QR code state — real session via rasgram_qr_session
+static bool   g_qrSessionStarted = false;   // RgQr_StartSession() called once
 
 // Input buffers
 static wchar_t g_phoneInput [16] = {};
@@ -333,60 +330,39 @@ static void DrawTicks(Graphics& g, float x, float y, bool read,
 // LOGIN SCREEN
 // ═══════════════════════════════════════════════════════════════
 
-// ── QR code pixel drawing helper ──────────────────────────────
-// Draws a minimal look-alike QR code using a deterministic pseudo-random
-// pattern + fixed finder squares.  In a real build this bitmap would come
-// from the server (PNG bytes rendered via GDI+).
-static void DrawQRCode(Graphics& g, float qx, float qy, float qSz, int seed)
+// ── Real QR code renderer (uses RgQrMatrix from rasgram_qr_session) ──
+static void DrawQRCode(Graphics& g, float qx, float qy, float qSz)
 {
-    const int CELLS = 25;          // grid size
-    float cell = qSz / (float)CELLS;
+    const RgQrMatrix& mat = RgQr_GetMatrix();
 
     // White background
     SolidBrush bgW(Color(255,255,255,255));
     g.FillRectangle(&bgW, qx, qy, qSz, qSz);
 
+    if (!mat.ready || mat.size == 0) {
+        // Still generating — show spinner text
+        FontFamily ff(L"Segoe UI");
+        Font f(&ff, 11, FontStyleRegular, UnitPixel);
+        SolidBrush muted(Color(255,134,150,160));
+        StringFormat fmt;
+        fmt.SetAlignment(StringAlignmentCenter);
+        fmt.SetLineAlignment(StringAlignmentCenter);
+        g.DrawString(L"...", -1, &f, RectF(qx, qy, qSz, qSz), &fmt, &muted);
+        return;
+    }
+
+    float cell = qSz / (float)mat.size;
     SolidBrush dark(Color(255, 14, 22, 33));
 
-    // ── Finder squares (3 corners, like every QR code) ──
-    auto DrawFinder = [&](int col, int row) {
-        // outer 7x7
-        g.FillRectangle(&dark, qx + col*cell, qy + row*cell, 7*cell, 7*cell);
-        SolidBrush bw(Color(255,255,255,255));
-        g.FillRectangle(&bw,   qx + (col+1)*cell, qy + (row+1)*cell, 5*cell, 5*cell);
-        g.FillRectangle(&dark, qx + (col+2)*cell, qy + (row+2)*cell, 3*cell, 3*cell);
-    };
-    DrawFinder(0, 0);                  // top-left
-    DrawFinder(CELLS - 7, 0);          // top-right
-    DrawFinder(0, CELLS - 7);          // bottom-left
-
-    // ── Data region: pseudo-random dots ──
-    int s = seed ^ 0xDEADBEEF;
-    for (int r = 0; r < CELLS; r++) {
-        for (int c = 0; c < CELLS; c++) {
-            // Skip finder regions
-            bool inTL = (r < 8 && c < 8);
-            bool inTR = (r < 8 && c >= CELLS - 8);
-            bool inBL = (r >= CELLS - 8 && c < 8);
-            // Timing strips (row/col 6)
-            bool timing = (r == 6 || c == 6);
-            if (inTL || inTR || inBL) continue;
-            if (timing) {
-                if (((r + c) & 1) == 0)
-                    g.FillRectangle(&dark, qx + c*cell, qy + r*cell, cell, cell);
-                continue;
-            }
-            // LCG step
-            s = s * 1664525 + 1013904223;
-            if (((s >> 17) & 1) && !((s >> 21) & 3)) {
-                g.FillRectangle(&dark, qx + c*cell, qy + r*cell, cell, cell);
+    for (int r = 0; r < mat.size; r++) {
+        for (int c = 0; c < mat.size; c++) {
+            if (mat.cells[r][c]) {
+                g.FillRectangle(&dark,
+                    qx + c * cell, qy + r * cell,
+                    cell + 0.5f,   cell + 0.5f);   // +0.5 avoids gaps at small sizes
             }
         }
     }
-
-    // Thin border around the whole QR
-    Pen qBorder(Color(255, 42, 57, 66), 1.0f);
-    g.DrawRectangle(&qBorder, qx, qy, qSz, qSz);
 }
 
 // ── Main login screen ─────────────────────────────────────────
@@ -430,11 +406,14 @@ static void DrawLoginScreen(Graphics& g, float cx, float cy,
     // ══════════════════════════════════════════════════════
     if (g_loginMode == LoginMode::QR) {
 
-        // Auto-refresh seed every 60 s
-        DWORD now = GetTickCount();
-        if (g_qrRefreshTick == 0) g_qrRefreshTick = now;
-        DWORD elapsed = now - g_qrRefreshTick;
-        bool  expired = (elapsed > 60000);
+        // Start real QR session on first draw
+        if (!g_qrSessionStarted) {
+            RgQr_Init("AIzaSyBVl3BuW6gfmp_K2IMYd1rbvLEA2l0yinA");
+            RgQr_StartSession();
+            g_qrSessionStarted = true;
+        }
+        DWORD elapsed = RgQr_ElapsedMs();
+        bool  expired = (RgQr_GetStatus() == RgQrStatus::Expired);
 
         // ── Logo ──
         float curY = cy + 28.0f;
@@ -481,7 +460,7 @@ static void DrawLoginScreen(Graphics& g, float cx, float cy,
 
         if (!expired) {
             // Draw QR
-            DrawQRCode(g, qCardX + qCardP, curY + qCardP, qSz, g_qrDotSeed);
+            DrawQRCode(g, qCardX + qCardP, curY + qCardP, qSz);
 
             // Corner accent marks (like WhatsApp desktop)
             float acL = 10.0f, acT = 3.0f;
@@ -1361,6 +1340,24 @@ void DrawRasGramTab(Graphics& g, float cx, float cy, float cw, float ch)
         PopulateDemoChats();
     }
 
+    // QR session poll (every draw, ~200 ms via InvalidateRect)
+    if (g_screen == RgScreen::Login && g_loginMode == LoginMode::QR && g_qrSessionStarted) {
+        RgQrStatus st = RgQr_Poll();
+        if (st == RgQrStatus::Confirmed) {
+            const RgQrUser& u = RgQr_GetUser();
+            // Set logged-in identity from phone confirmation
+            g_loggedInUserUid = u.uid;
+            g_myMobile = wstring(u.mobile.begin(), u.mobile.end());
+            wstring wname(u.name.begin(), u.name.end());
+            g_myName   = wname.empty() ? L"User" : wname;
+            g_loggedInName = g_myName;
+            RgQr_Clear();
+            g_qrSessionStarted = false;
+            g_screen = RgScreen::App;
+            PopulateDemoChats();
+        }
+    }
+
     if (g_screen == RgScreen::Login) {
         DrawLoginScreen(g, cx, cy, cw, ch);
         return;
@@ -1470,6 +1467,13 @@ void ProcessRasGramMouseClick(float x, float y)
                 }
             }
             g_showCountry = false;
+            Invalidate(); return;
+        }
+
+        // QR mode: Refresh button
+        if (g_loginMode == LoginMode::QR && HitTest(g_qrRefreshRect, x, y)) {
+            RgQr_Clear();
+            RgQr_StartSession();
             Invalidate(); return;
         }
 
