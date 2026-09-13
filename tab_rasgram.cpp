@@ -86,7 +86,7 @@ namespace RgC {
 // DATA STRUCTURES
 // ═══════════════════════════════════════════════════════════════
 
-struct RgMessage {
+struct LocalMsg {
     wstring id;
     wstring text;
     wstring senderName;
@@ -96,7 +96,7 @@ struct RgMessage {
     bool    isPending = false;
 };
 
-struct RgChat {
+struct LocalChat {
     wstring id;
     wstring name;
     wstring mobile;
@@ -180,8 +180,8 @@ static bool g_showCountry = false;
 static bool g_hovCountry[6] = {};
 
 // Conversation data
-static vector<RgChat>    g_chats;
-static vector<RgMessage> g_messages;
+static vector<LocalChat> g_chats;
+static vector<LocalMsg>  g_messages;
 static int               g_openChatIdx = -1;
 static wstring           g_myMobile;
 static wstring           g_myName;
@@ -1424,12 +1424,12 @@ void DrawRasGramTab(Graphics& g, float cx, float cy, float cw, float ch)
             if (!g_chatPollStarted) {
                 g_chatPollStarted = true;
 
-                // Helper lambda: RgChatPreview → local RgChat
+                // Helper lambda: RgChatPreview → local LocalChat
                 auto applyPreviews = [](const vector<RgChatPreview>& previews) {
                     g_chats.clear();
                     int seed = 1;
                     for (auto& p : previews) {
-                        RgChat c;
+                        LocalChat c;
                         c.id         = wstring(p.contactMobile.begin(),  p.contactMobile.end());
                         c.name       = wstring(p.contactName.begin(),    p.contactName.end());
                         c.mobile     = c.id;
@@ -1452,7 +1452,7 @@ void DrawRasGramTab(Graphics& g, float cx, float cy, float cw, float ch)
                     g_chats.clear();
                     int seed = 1;
                     for (auto& p : previews) {
-                        RgChat c;
+                        LocalChat c;
                         c.id         = wstring(p.contactMobile.begin(),  p.contactMobile.end());
                         c.name       = wstring(p.contactName.begin(),    p.contactName.end());
                         c.mobile     = c.id;
@@ -1548,7 +1548,7 @@ static void DoSendMessage()
     wstring textW(g_msgInput);
 
     // ── Optimistic local insert (show immediately) ────────────
-    RgMessage msg;
+    LocalMsg msg;
     msg.id         = L"pending_" + to_wstring(GetTickCount64());
     msg.text       = textW;
     msg.isMine     = true;
@@ -1700,7 +1700,7 @@ void ProcessRasGramMouseClick(float x, float y)
                         string myMobA(g_myMobile.begin(), g_myMobile.end());
                         for (auto& m : msgs) {
                             if (m.isDeleted) continue;
-                            RgMessage local;
+                            LocalMsg local;
                             local.id         = wstring(m.id.begin(), m.id.end());
                             local.text       = wstring(m.text.begin(), m.text.end());
                             local.senderName = wstring(m.senderName.begin(), m.senderName.end());
@@ -1721,7 +1721,7 @@ void ProcessRasGramMouseClick(float x, float y)
                         [](const RgMessage& m) {
                             if (m.isDeleted) return;
                             string myMobA(g_myMobile.begin(), g_myMobile.end());
-                            RgMessage local;
+                            LocalMsg local;
                             local.id         = wstring(m.id.begin(), m.id.end());
                             local.text       = wstring(m.text.begin(), m.text.end());
                             local.senderName = wstring(m.senderName.begin(), m.senderName.end());
