@@ -27,6 +27,10 @@
 #include "rasgram_net.h"
 #include <windows.h>
 #include <wininet.h>
+#include <wincrypt.h>    // CryptAcquireContext, CryptHashData — SHA-256 for E2EE key
+#include <bcrypt.h>      // BCryptEncrypt / BCryptDecrypt — AES-CBC E2EE (same as Android)
+#pragma comment(lib, "bcrypt.lib")
+#pragma comment(lib, "crypt32.lib")
 #include <mmsystem.h>
 #include <mmdeviceapi.h>
 #include <audioclient.h>
@@ -271,6 +275,163 @@ string RgFormatTime(long long timestampMs) {
     return buf;
 }
 
+// ============================================================
+// E2EE: AES-128-CBC  (matches Android AESCrypto exactly)
+// key+iv = SHA-256(chatId + SALT), split 16+16 bytes
+// output format: "E2EE:" + Base64(ciphertext)
+// ============================================================
+static const char* RG_E2EE_SALT = "RasGram_E2EE_Secret_Salt_2026";
+
+static void RgE2EE_GetKeyIv(const string& chatId,
+                              BYTE key[16], BYTE iv[16]) {
+    // SHA-256(chatId + SALT) via CryptoAPI
+    string data = chatId + RG_E2EE_SALT;
+    HCRYPTPROV hProv = 0;
+    HCRYPTHASH hHash = 0;
+    CryptAcquireContextA(&hProv, NULL, NULL, PROV_RSA_AES, CRYPT_VERIFYCONTEXT);
+    CryptCreateHash(hProv, CALG_SHA_256, 0, 0, &hHash);
+    CryptHashData(hHash, (BYTE*)data.c_str(), (DWORD)data.size(), 0);
+    BYTE hash[32]; DWORD hashLen = 32;
+    CryptGetHashParam(hHash, HP_HASHVAL, hash, &hashLen, 0);
+    CryptDestroyHash(hHash);
+    CryptReleaseContext(hProv, 0);
+    memcpy(key, hash,      16);
+    memcpy(iv,  hash + 16, 16);
+}
+
+// Base64 encode (RFC 4648, same as Android Base64.DEFAULT)
+static string RgBase64Encode(const BYTE* data, DWORD len) {
+    static const char* B64 =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    string out;
+    for (DWORD i = 0; i < len; i += 3) {
+        DWORD rem = len - i;
+        BYTE b0 = data[i], b1 = rem>1?data[i+1]:0, b2 = rem>2?data[i+2]:0;
+        out += B64[b0>>2];
+        out += B64[((b0&3)<<4)|(b1>>4)];
+        out += rem>1 ? B64[((b1&0xF)<<2)|(b2>>6)] : '=';
+        out += rem>2 ? B64[b2&0x3F] : '=';
+    }
+    return out;
+}
+
+// Base64 decode
+static vector<BYTE> RgBase64Decode(const string& s) {
+    static const int T[256] = {
+        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+        -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,62,-1,-1,-1,63,
+        52,53,54,55,56,57,58,59,60,61,-1,-1,-1,-1,-1,-1,
+        -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,
+        15,16,17,18,19,20,21,22,23,24,25,-1,-1,-1,-1,-1,
+        -1,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,
+        41,42,43,44,45,46,47,48,49,50,51,-1,-1,-1,-1,-1,
+    };
+    vector<BYTE> out;
+    int val = 0, bits = -8;
+    for (unsigned char c : s) {
+        if (c >= 256 || T[c] == -1) { if (c == '=') break; continue; }
+        val = (val << 6) + T[c]; bits += 6;
+        if (bits >= 0) { out.push_back((BYTE)(val >> bits)); bits -= 8; }
+    }
+    return out;
+}
+
+// Encrypt plain text → "E2EE:<base64>" (AES-128-CBC + PKCS5 padding via BCrypt)
+static string RgE2EE_Encrypt(const string& chatId, const string& plain) {
+    if (plain.empty()) return plain;
+    BYTE key[16], iv[16];
+    RgE2EE_GetKeyIv(chatId, key, iv);
+
+    BCRYPT_ALG_HANDLE hAlg = NULL;
+    BCRYPT_KEY_HANDLE hKey = NULL;
+    if (!BCRYPT_SUCCESS(BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_AES_ALGORITHM, NULL, 0)))
+        return plain;
+    BCryptSetProperty(hAlg, BCRYPT_CHAINING_MODE,
+                      (PUCHAR)BCRYPT_CHAIN_MODE_CBC,
+                      (ULONG)((wcslen(BCRYPT_CHAIN_MODE_CBC)+1)*sizeof(wchar_t)), 0);
+
+    BCRYPT_KEY_DATA_BLOB_HEADER* blob;
+    DWORD blobSz = sizeof(BCRYPT_KEY_DATA_BLOB_HEADER) + 16;
+    vector<BYTE> keyBlob(blobSz);
+    blob = (BCRYPT_KEY_DATA_BLOB_HEADER*)keyBlob.data();
+    blob->dwMagic   = BCRYPT_KEY_DATA_BLOB_MAGIC;
+    blob->dwVersion = BCRYPT_KEY_DATA_BLOB_VERSION1;
+    blob->cbKeyData = 16;
+    memcpy(keyBlob.data() + sizeof(*blob), key, 16);
+    BCryptImportKey(hAlg, NULL, BCRYPT_KEY_DATA_BLOB, &hKey,
+                    NULL, 0, keyBlob.data(), blobSz, 0);
+
+    // PKCS5 padding
+    DWORD blkSz = 0, dummy = 0;
+    BCryptGetProperty(hAlg, BCRYPT_BLOCK_LENGTH, (PUCHAR)&blkSz, sizeof(blkSz), &dummy, 0);
+    DWORD padLen = blkSz - ((DWORD)plain.size() % blkSz);
+    vector<BYTE> padded(plain.begin(), plain.end());
+    for (DWORD i = 0; i < padLen; i++) padded.push_back((BYTE)padLen);
+
+    vector<BYTE> ivCopy(iv, iv+16);
+    DWORD outLen = 0;
+    BCryptEncrypt(hKey, padded.data(), (ULONG)padded.size(),
+                  NULL, ivCopy.data(), 16, NULL, 0, &outLen, BCRYPT_BLOCK_PADDING);
+    vector<BYTE> cipher(outLen);
+    BCryptEncrypt(hKey, padded.data(), (ULONG)padded.size(),
+                  NULL, ivCopy.data(), 16, cipher.data(), outLen, &outLen, 0);
+
+    BCryptDestroyKey(hKey);
+    BCryptCloseAlgorithmProvider(hAlg, 0);
+
+    return "E2EE:" + RgBase64Encode(cipher.data(), outLen);
+}
+
+// Decrypt "E2EE:<base64>" → plain text
+static string RgE2EE_Decrypt(const string& chatId, const string& enc) {
+    if (enc.empty() || enc.substr(0,5) != "E2EE:") return enc;
+    BYTE key[16], iv[16];
+    RgE2EE_GetKeyIv(chatId, key, iv);
+
+    string b64 = enc.substr(5);
+    // strip whitespace/newlines Android Base64.DEFAULT may add
+    b64.erase(remove_if(b64.begin(), b64.end(), [](char c){return c=='\n'||c=='\r';}), b64.end());
+    vector<BYTE> cipher = RgBase64Decode(b64);
+    if (cipher.empty()) return "🔓 (Decryption failed)";
+
+    BCRYPT_ALG_HANDLE hAlg = NULL;
+    BCRYPT_KEY_HANDLE hKey = NULL;
+    if (!BCRYPT_SUCCESS(BCryptOpenAlgorithmProvider(&hAlg, BCRYPT_AES_ALGORITHM, NULL, 0)))
+        return enc;
+    BCryptSetProperty(hAlg, BCRYPT_CHAINING_MODE,
+                      (PUCHAR)BCRYPT_CHAIN_MODE_CBC,
+                      (ULONG)((wcslen(BCRYPT_CHAIN_MODE_CBC)+1)*sizeof(wchar_t)), 0);
+
+    DWORD blobSz = sizeof(BCRYPT_KEY_DATA_BLOB_HEADER) + 16;
+    vector<BYTE> keyBlob(blobSz);
+    auto* blob = (BCRYPT_KEY_DATA_BLOB_HEADER*)keyBlob.data();
+    blob->dwMagic = BCRYPT_KEY_DATA_BLOB_MAGIC;
+    blob->dwVersion = BCRYPT_KEY_DATA_BLOB_VERSION1;
+    blob->cbKeyData = 16;
+    memcpy(keyBlob.data() + sizeof(*blob), key, 16);
+    BCryptImportKey(hAlg, NULL, BCRYPT_KEY_DATA_BLOB, &hKey,
+                    NULL, 0, keyBlob.data(), blobSz, 0);
+
+    vector<BYTE> ivCopy(iv, iv+16);
+    DWORD outLen = 0;
+    BCryptDecrypt(hKey, cipher.data(), (ULONG)cipher.size(),
+                  NULL, ivCopy.data(), 16, NULL, 0, &outLen, BCRYPT_BLOCK_PADDING);
+    vector<BYTE> plain(outLen);
+    BCryptDecrypt(hKey, cipher.data(), (ULONG)cipher.size(),
+                  NULL, ivCopy.data(), 16, plain.data(), outLen, &outLen, 0);
+
+    BCryptDestroyKey(hKey);
+    BCryptCloseAlgorithmProvider(hAlg, 0);
+
+    // Remove PKCS5 padding
+    if (outLen > 0) {
+        BYTE pad = plain[outLen-1];
+        if (pad <= 16) outLen -= pad;
+    }
+    return string((char*)plain.data(), outLen);
+}
+
 string RgBuildChatId(const string& mobileA, const string& mobileB) {
     // Android: generateChatId = if (m1 < m2) "${m1}_${m2}" else "${m2}_${m1}"
     // Collection name = "pvt_msg_{chatId}"
@@ -332,17 +493,15 @@ void RgNet_Shutdown() {
 // ============================================================
 void RgNet_SetOnline(bool online) {
     if (g_myMobile.empty()) return;
-    // Update users/{myMobile}/isOnline in Firestore
-    string path    = RgBuildPath("users", g_myMobile);
-    long long now  = NowMs();
+    // Android uses chat_users/{mobile}  with field  "lastActive" (epoch ms)
+    // NOT "users" collection, NOT "isOnline"/"lastSeen" fields
+    string path = RgBuildPath("chat_users", g_myMobile);
+    long long now = NowMs();
     string payload = "{\"fields\":{"
-        "\"isOnline\":{\"booleanValue\":" + string(online ? "true" : "false") + "},"
-        "\"lastSeen\":{\"integerValue\":\"" + to_string(now) + "\"}"
+        "\"lastActive\":{\"integerValue\":\"" + to_string(now) + "\"}"
         "}}";
-    // Fire & forget on background thread
     thread([path, payload]() {
-        RgFirestorePost("PATCH", path + "?updateMask.fieldPaths=isOnline"
-                                        "&updateMask.fieldPaths=lastSeen", payload);
+        RgFirestorePost("PATCH", path + "?updateMask.fieldPaths=lastActive", payload);
     }).detach();
 }
 
@@ -570,9 +729,17 @@ static vector<RgMessage> ParseMessages(const string& json) {
         m.chatId         = RgParseField(block, "chatId");
         m.senderMobile   = RgParseField(block, "senderMobile");
         m.senderName     = RgParseField(block, "senderName");
-        m.text           = RgParseField(block, "text");
+        // Decrypt E2EE text — Android AESCrypto.decrypt(chatId, encryptedText)
+        {
+            string rawText = RgParseField(block, "text");
+            m.text = RgE2EE_Decrypt(m.chatId, rawText);
+        }
         m.timestamp      = RgParseIntField(block, "timestamp");
-        m.timeString     = RgFormatTime(m.timestamp);
+        // Prefer the stored timeString (already formatted by sender)
+        {
+            string ts2 = RgParseField(block, "timeString");
+            m.timeString = ts2.empty() ? RgFormatTime(m.timestamp) : ts2;
+        }
         m.fileUrl        = RgParseField(block, "fileUrl");
         m.fileName       = RgParseField(block, "fileName");
         m.fileType       = RgParseField(block, "fileType");
@@ -585,9 +752,13 @@ static vector<RgMessage> ParseMessages(const string& json) {
         m.callType       = RgParseField(block, "callType");
         m.isDeleted      = RgParseBoolField(block, "isDeleted");
         m.replyToId      = RgParseField(block, "replyToId");
-        m.replyToText    = RgParseField(block, "replyToText");
+        // Decrypt reply quote text as well
+        {
+            string rawReply = RgParseField(block, "replyToText");
+            m.replyToText = RgE2EE_Decrypt(m.chatId, rawReply);
+        }
         m.replyToSender  = RgParseField(block, "replyToSender");
-        m.duration       = (int)RgParseIntField(block, "durationSecs");
+        m.duration       = (int)RgParseIntField(block, "duration");  // Android field is "duration" not "durationSecs"
         m.deliveredViaLan= RgParseBoolField(block, "deliveredViaLan");
 
         if (!m.id.empty() && !m.isDeleted)
@@ -653,43 +824,84 @@ void RgNet_StopMessagePolling() {
 // ============================================================
 // SEND MESSAGE
 // ============================================================
+// Escape a plain string for embedding inside a JSON string value
+static string JsonEscape(const string& s) {
+    string out;
+    for (unsigned char c : s) {
+        if      (c == '"')  out += "\\\"";
+        else if (c == '\\') out += "\\\\";
+        else if (c == '\n') out += "\\n";
+        else if (c == '\r') out += "\\r";
+        else if (c < 0x20)  { /* skip control chars */ }
+        else                out += (char)c;
+    }
+    return out;
+}
+
 void RgNet_SendText(const string& chatId,
                     const string& text,
                     const string& receiverMobile) {
     if (g_myMobile.empty() || chatId.empty() || text.empty()) return;
-    thread([chatId, text, receiverMobile]() {
+    string myMob  = g_myMobile;
+    string myName = g_myName;
+    thread([chatId, text, receiverMobile, myMob, myName]() {
         long long ts = NowMs();
         string timeStr = RgFormatTime(ts);
 
-        // Escape text for JSON
-        string escaped;
-        for (char c : text) {
-            if (c == '"') escaped += "\\\"";
-            else if (c == '\\') escaped += "\\\\";
-            else if (c == '\n') escaped += "\\n";
-            else escaped += c;
-        }
+        // ── Encrypt exactly as Android AESCrypto.encrypt(chatId, text) ──
+        // Output: "E2EE:<base64>"  — Android will decrypt transparently
+        string encText = RgE2EE_Encrypt(chatId, text);
 
-        // Build Firestore document
-        string payload = "{\"fields\":{"
-            "\"chatId\":{\"stringValue\":\"" + chatId + "\"},"
-            "\"senderMobile\":{\"stringValue\":\"" + g_myMobile + "\"},"
-            "\"senderName\":{\"stringValue\":\"" + g_myName + "\"},"
-            "\"text\":{\"stringValue\":\"" + escaped + "\"},"
-            "\"timestamp\":{\"integerValue\":\"" + to_string(ts) + "\"},"
-            "\"timeString\":{\"stringValue\":\"" + timeStr + "\"},"
-            "\"read\":{\"booleanValue\":false},"
-            "\"delivered\":{\"booleanValue\":true},"
-            "\"isDeleted\":{\"booleanValue\":false},"
-            "\"isCallLog\":{\"booleanValue\":false}"
-            "}}";
+        // ── Build Firestore document matching Android sendMessage() exactly ──
+        // Fields: text(encrypted), senderMobile, receiverMobile, timestamp,
+        //         timeString, fileUrl, fileName, fileType, reaction,
+        //         read, delivered, isCallLog, isDeleted, isForwarded,
+        //         isStarred, replyToId, replyToText, replyToSender, duration
+        auto strF  = [](const string& k, const string& v) -> string {
+            return "\"" + k + "\":{\"stringValue\":\"" + JsonEscape(v) + "\"},";
+        };
+        auto boolF = [](const string& k, bool v) -> string {
+            return "\"" + k + "\":{\"booleanValue\":" + (v?"true":"false") + "},";
+        };
+        auto intF  = [](const string& k, long long v) -> string {
+            return "\"" + k + "\":{\"integerValue\":\"" + to_string(v) + "\"},";
+        };
+        auto nullF = [](const string& k) -> string {
+            return "\"" + k + "\":{\"nullValue\":null},";
+        };
 
-        // POST to pvt_msg_{chatId} collection — matches Android path exactly
+        string fields =
+            strF ("text",           encText)        // AES-encrypted, "E2EE:..."
+            + strF ("senderMobile",   myMob)
+            + strF ("senderName",     myName)
+            + strF ("receiverMobile", receiverMobile)
+            + intF ("timestamp",      ts)
+            + strF ("timeString",     timeStr)
+            + nullF("fileUrl")
+            + nullF("fileName")
+            + nullF("fileType")
+            + nullF("reaction")
+            + boolF("read",         false)
+            + boolF("delivered",    false)
+            + boolF("isCallLog",    false)
+            + boolF("isDeleted",    false)
+            + boolF("isForwarded",  false)
+            + boolF("isStarred",    false)
+            + nullF("replyToId")
+            + nullF("replyToText")
+            + nullF("replyToSender")
+            + intF ("duration",       0);
+
+        // Remove trailing comma from last field
+        if (!fields.empty() && fields.back() == ',') fields.pop_back();
+
+        string payload = "{\"fields\":{" + fields + "}}";
+
+        // POST to pvt_msg_{chatId} — same collection Android uses
         string collection = RgChatCollection(chatId);
         string path = "/v1/projects/" RG_FIREBASE_PROJECT
                       "/databases/(default)/documents/" + collection;
         RgFirestorePost("POST", path, payload);
-        // Android does not use chat_previews sub-collection — no further writes needed.
     }).detach();
 }
 
