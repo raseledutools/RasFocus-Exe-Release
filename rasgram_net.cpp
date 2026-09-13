@@ -646,10 +646,17 @@ static vector<RgChatPreview> FetchChatListFromChatUsers() {
                 string mblock = msgResp.substr(mp, blockEnd2 == string::npos
                                                ? msgResp.size() - mp
                                                : blockEnd2 - mp);
-                cp.lastMessageText   = RgParseField(mblock, "text");
+                // chatId needed for decryption
+                string previewChatId = RgBuildChatId(g_myMobile, mobile);
+                string rawText       = RgParseField(mblock, "text");
+                cp.lastMessageText   = RgE2EE_Decrypt(previewChatId, rawText);
                 cp.lastMessageSender = RgParseField(mblock, "senderMobile");
                 cp.lastTimestamp     = RgParseIntField(mblock, "timestamp");
-                cp.lastTimeString    = RgFormatTime(cp.lastTimestamp);
+                // Use the stored timeString from Firestore (same format Android shows)
+                {
+                    string ts2 = RgParseField(mblock, "timeString");
+                    cp.lastTimeString = ts2.empty() ? RgFormatTime(cp.lastTimestamp) : ts2;
+                }
                 cp.lastFileType      = RgParseField(mblock, "fileType");
                 cp.lastIsCallLog     = RgParseBoolField(mblock, "isCallLog");
                 // unread: messages where read==false && senderMobile != myMobile
@@ -906,10 +913,50 @@ void RgNet_SendText(const string& chatId,
 }
 
 void RgNet_MarkRead(const string& chatId, const string& myMobile) {
-    // chatId is now pure "mobileA_mobileB" (no pvt_msg_ prefix)
-    // Android does not use chat_previews for read status — just a no-op for now.
-    // Real unread count comes from message polling.
-    (void)chatId; (void)myMobile;
+    // Android query: pvt_msg_{chatId} where senderMobile != myMobile AND read == false
+    // Then patches each doc: { read: true }
+    // We replicate this via Firestore REST: list → filter → PATCH each unread doc.
+    if (chatId.empty() || myMobile.empty()) return;
+    thread([chatId, myMobile]() {
+        string collection = RgChatCollection(chatId);
+        string listPath   = "/v1/projects/" RG_FIREBASE_PROJECT
+                            "/databases/(default)/documents/" + collection
+                            + "?pageSize=300";
+        string resp = RgFirestoreGet(listPath);
+        if (resp.empty() || resp.find("\"documents\"") == string::npos) return;
+
+        // Walk all docs and patch those where read==false && senderMobile != myMobile
+        size_t pos = 0;
+        while (true) {
+            size_t np = resp.find("\"name\":", pos);
+            if (np == string::npos) break;
+            size_t blockEnd = resp.find("\"name\":", np + 7);
+            string block = resp.substr(np, blockEnd == string::npos
+                                           ? resp.size() - np
+                                           : blockEnd - np);
+            pos = blockEnd == string::npos ? resp.size() : blockEnd;
+
+            bool read       = RgParseBoolField(block, "read");
+            string sender   = RgParseField(block,     "senderMobile");
+            if (read || sender == myMobile) continue;  // already read, or my own message
+
+            // Extract full document path from "name" field
+            size_t q1 = block.find('"');          // opening "
+            size_t q2 = block.find('"', q1 + 1); // skip "name":
+            size_t q3 = block.find('"', q2 + 1);
+            size_t q4 = block.find('"', q3 + 1);
+            if (q3 == string::npos || q4 == string::npos) continue;
+            string docName = block.substr(q3 + 1, q4 - q3 - 1);
+            // docName looks like "projects/.../databases/(default)/documents/pvt_msg_.../DOCID"
+            // Firestore REST PATCH path = /v1/{docName}
+            size_t projPos = docName.find("projects/");
+            if (projPos == string::npos) continue;
+            string patchPath = "/v1/" + docName.substr(projPos)
+                               + "?updateMask.fieldPaths=read";
+            string payload = "{\"fields\":{\"read\":{\"booleanValue\":true}}}";
+            RgFirestorePost("PATCH", patchPath, payload);
+        }
+    }).detach();
 }
 
 // ============================================================

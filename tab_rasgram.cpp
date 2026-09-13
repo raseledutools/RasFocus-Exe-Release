@@ -1687,6 +1687,10 @@ void ProcessRasGramMouseClick(float x, float y)
                     string theirMob(g_chats[i].mobile.begin(), g_chats[i].mobile.end());
                     string chatId = RgBuildChatId(myMob, theirMob);
 
+                    // Mark unread messages as read (async) — updates Firestore
+                    // so Android unread badge also clears
+                    RgNet_MarkRead(chatId, myMob);
+
                     // Clear while loading
                     g_messages.clear();
                     Invalidate();
