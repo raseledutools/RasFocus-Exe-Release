@@ -1005,4 +1005,3 @@ void ProcessStatisticsMouseClick(float mx, float my, float cx, float cy, float c
     }
     (void)cw;
 }
-CPPEOF
