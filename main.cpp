@@ -2574,6 +2574,23 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         break;
     }
 
+    case WM_RBUTTONDOWN: {
+        POINT pt = { GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
+        // lp is client coords for WM_RBUTTONDOWN
+        float x = pt.x / g_scaleFactor;
+        float y = pt.y / g_scaleFactor;
+        if (selectedTab == 12) {
+            ProcessFileManagerRightClick(x, y, hWnd);
+        } else if (selectedTab == 3) {
+            // Special tab — if file-manager sub-tab active
+            extern int sf_activeSubTab;
+            if (sf_activeSubTab == 0) {
+                ProcessFileManagerRightClick(x, y, hWnd);
+            }
+        }
+        break;
+    }
+
     case WM_MOUSEWHEEL: {
         POINT pt = { GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
         ScreenToClient(hWnd, &pt);
