@@ -19,6 +19,7 @@
 #include "image_viewer.h"
 
 #include <windows.h>
+#include <windowsx.h>   // GET_X_LPARAM, GET_Y_LPARAM
 #include <gdiplus.h>
 #include <string>
 #include <vector>
@@ -287,10 +288,10 @@ static void OnPaint(HWND hWnd) {
 
     // ── Toolbar background ────────────────────────────────────
     SolidBrush bToolbar(Color(255, 28, 28, 32));
-    g.FillRectangle(&bToolbar, 0, 0, (float)W, (float)TOOLBAR_H);
+    g.FillRectangle(&bToolbar, 0.0f, 0.0f, (float)W, (float)TOOLBAR_H);
     // separator line
     Pen pLine(Color(255, 60, 60, 70), 1.0f);
-    g.DrawLine(&pLine, 0, TOOLBAR_H, W, TOOLBAR_H);
+    g.DrawLine(&pLine, 0.0f, (float)TOOLBAR_H, (float)W, (float)TOOLBAR_H);
 
     // ── Toolbar buttons ───────────────────────────────────────
     for (int i = 0; i < BTN_COUNT; i++) {
@@ -390,7 +391,7 @@ static void OnPaint(HWND hWnd) {
     SolidBrush bSbBg(Color(255, 22, 22, 28));
     g.FillRectangle(&bSbBg, 0.0f, sbY, (float)W, (float)STATUSBAR_H);
     Pen pSbLine(Color(255, 50, 50, 60), 1.0f);
-    g.DrawLine(&pSbLine, 0, (int)sbY, W, (int)sbY);
+    g.DrawLine(&pSbLine, 0.0f, sbY, (float)W, sbY);
 
     if (iv.img && iv.img->GetLastStatus() == Ok) {
         wchar_t statusBuf[256];
