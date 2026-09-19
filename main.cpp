@@ -49,6 +49,7 @@ HWND hParentWnd = NULL;
 #include "tab_special.h"
 #include "tab_file_manager.h"  // ← File Manager Plus Tab
 #include "tab_statistics.h"
+#include "image_viewer.h"       // ← Native GDI+ Image Viewer
 #include "tab_family_link.h"
 #include "tab_phone_remote.h"
 #include "pc_screen_streamer.h" // ← Phone Remote Tab Header
@@ -538,9 +539,15 @@ void RegisterFileAssociation(const string& ext, const string& progId, const stri
 
 void SetupDefaultViewer() {
     RegisterFileAssociation(".pdf",  "RasFocus.PDF",   "RasFocus+ PDF Document");
+    // Image formats — all handled by the native GDI+ viewer
     RegisterFileAssociation(".jpg",  "RasFocus.Image", "RasFocus+ Image File");
-    RegisterFileAssociation(".png",  "RasFocus.Image", "RasFocus+ Image File");
     RegisterFileAssociation(".jpeg", "RasFocus.Image", "RasFocus+ Image File");
+    RegisterFileAssociation(".png",  "RasFocus.Image", "RasFocus+ Image File");
+    RegisterFileAssociation(".gif",  "RasFocus.Image", "RasFocus+ Image File");
+    RegisterFileAssociation(".bmp",  "RasFocus.Image", "RasFocus+ Image File");
+    RegisterFileAssociation(".webp", "RasFocus.Image", "RasFocus+ Image File");
+    RegisterFileAssociation(".tiff", "RasFocus.Image", "RasFocus+ Image File");
+    RegisterFileAssociation(".tif",  "RasFocus.Image", "RasFocus+ Image File");
     SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, NULL, NULL);
 }
 
@@ -2716,15 +2723,35 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
 
     int argc; LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
     g_isPureViewerMode = false; wstring viewerUrl = L"", viewerTitle = L"";
+    bool g_isImageFile = false; // true when the argument is an image for our native viewer
+
+    // Helper: check if a path ends with one of our image extensions
+    auto IsImageArgument = [](const wstring& lower) -> bool {
+        auto endsWith = [&](const wchar_t* suf) {
+            size_t sl = wcslen(suf);
+            return lower.length() >= sl &&
+                   lower.substr(lower.length() - sl) == suf;
+        };
+        return endsWith(L".jpg")  || endsWith(L".jpeg") ||
+               endsWith(L".png")  || endsWith(L".gif")  ||
+               endsWith(L".bmp")  || endsWith(L".webp") ||
+               endsWith(L".tiff") || endsWith(L".tif");
+    };
 
     if (argv && argc > 1) {
         for (int i = 1; i < argc; ++i) {
             wstring arg = argv[i], argLower = arg;
             for (auto& k : argLower) k = towlower(k);
-            if (argLower == L"-minibrowser") { g_isPureViewerMode = true; viewerUrl = L"https://www.google.com"; viewerTitle = L"RasFocus+ Mini Browser"; break; }
-            else if (argLower.length() > 4 && argLower.substr(argLower.length()-4) == L".pdf") { g_isPureViewerMode = true; viewerUrl = arg; viewerTitle = L"RasFocus+ PDF Viewer"; break; }
-            else if (argLower.length() > 4 && (argLower.substr(argLower.length()-4) == L".jpg" || argLower.substr(argLower.length()-4) == L".png" || argLower.substr(argLower.length()-5) == L".jpeg")) { g_isPureViewerMode = true; viewerUrl = arg; viewerTitle = L"RasFocus+ Photo Viewer"; break; }
-            else if (argLower.find(L"http://") == 0 || argLower.find(L"https://") == 0) { g_isPureViewerMode = true; viewerUrl = arg; viewerTitle = L"RasFocus+ Web Viewer"; break; }
+            if (argLower == L"-minibrowser") {
+                g_isPureViewerMode = true; viewerUrl = L"https://www.google.com"; viewerTitle = L"RasFocus+ Mini Browser"; break;
+            } else if (argLower.length() > 4 && argLower.substr(argLower.length()-4) == L".pdf") {
+                g_isPureViewerMode = true; viewerUrl = arg; viewerTitle = L"RasFocus+ PDF Viewer"; break;
+            } else if (IsImageArgument(argLower)) {
+                // Native image viewer — launch it separately, don't show main window
+                g_isPureViewerMode = true; g_isImageFile = true; viewerUrl = arg; viewerTitle = L"RasFocus+ Photo Viewer"; break;
+            } else if (argLower.find(L"http://") == 0 || argLower.find(L"https://") == 0) {
+                g_isPureViewerMode = true; viewerUrl = arg; viewerTitle = L"RasFocus+ Web Viewer"; break;
+            }
         }
     }
     if (argv) LocalFree(argv);
@@ -2789,11 +2816,25 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
     string cmdLine(lpCmdLine);
     if (g_isPureViewerMode) {
         if (viewerUrl.find(L".pdf") != wstring::npos) {
+            // PDF → built-in PDF workspace tab
             selectedTab = 6;
             currentWorkspacePdf = viewerUrl;
             ShowWindow(hWnd, SW_SHOWMAXIMIZED);
             SetForegroundWindow(hWnd);
+        } else if (g_isImageFile) {
+            // Image → native GDI+ full-screen viewer (own window, own thread)
+            // Hide the main RasFocus window completely; only the viewer appears.
+            ShowWindow(hWnd, SW_HIDE);
+            LaunchImageViewer(viewerUrl);
+            // The viewer runs its own message loop in a thread.
+            // We still need our own message pump so the process stays alive.
+            MSG imgMsg;
+            while (GetMessage(&imgMsg, NULL, 0, 0)) {
+                TranslateMessage(&imgMsg);
+                DispatchMessage(&imgMsg);
+            }
         } else {
+            // URL / minibrowser → WebView popup
             ShowWindow(hWnd, SW_HIDE);
             LaunchMiniBrowser(viewerUrl, viewerTitle);
         }
