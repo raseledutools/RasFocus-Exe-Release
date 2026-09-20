@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <gdiplus.h>
 #include <string>
+#include <vector>
 
 void DrawFileManagerTab(Gdiplus::Graphics& g, float cx, float cy, float cw, float ch);
 void ProcessFileManagerMouseMove(float x, float y);
