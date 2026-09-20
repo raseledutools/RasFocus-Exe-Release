@@ -512,30 +512,68 @@ string GetExePath() {
     return string(path);
 }
 
+// Helper: write a single registry string value (creates key if needed)
+static void RegWriteStr(HKEY root, const string& keyPath, const string& valueName, const string& data) {
+    HKEY hKey;
+    if (RegCreateKeyExA(root, keyPath.c_str(), 0, NULL,
+            REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
+        RegSetValueExA(hKey, valueName.empty() ? NULL : valueName.c_str(),
+                       0, REG_SZ, (const BYTE*)data.c_str(), (DWORD)(data.length() + 1));
+        RegCloseKey(hKey);
+    }
+}
+
 void RegisterFileAssociation(const string& ext, const string& progId, const string& desc) {
     string exePath = GetExePath();
-    string command = "\"" + exePath + "\" \"%1\"";
-    HKEY hKey;
-    string extPath = "Software\\Classes\\" + ext;
-    if (RegCreateKeyExA(HKEY_CURRENT_USER, extPath.c_str(), 0, NULL, REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
-        RegSetValueExA(hKey, "", 0, REG_SZ, (const BYTE*)progId.c_str(), (DWORD)(progId.length() + 1));
-        RegCloseKey(hKey);
-    }
-    string progIdPath = "Software\\Classes\\" + progId;
-    if (RegCreateKeyExA(HKEY_CURRENT_USER, progIdPath.c_str(), 0, NULL, REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
-        RegSetValueExA(hKey, "", 0, REG_SZ, (const BYTE*)desc.c_str(), (DWORD)(desc.length() + 1));
-        RegCloseKey(hKey);
-    }
-    string iconPath = progIdPath + "\\DefaultIcon";
-    if (RegCreateKeyExA(HKEY_CURRENT_USER, iconPath.c_str(), 0, NULL, REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
-        RegSetValueExA(hKey, "", 0, REG_SZ, (const BYTE*)exePath.c_str(), (DWORD)(exePath.length() + 1));
-        RegCloseKey(hKey);
-    }
-    string cmdPath = progIdPath + "\\shell\\open\\command";
-    if (RegCreateKeyExA(HKEY_CURRENT_USER, cmdPath.c_str(), 0, NULL, REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
-        RegSetValueExA(hKey, "", 0, REG_SZ, (const BYTE*)command.c_str(), (DWORD)(command.length() + 1));
-        RegCloseKey(hKey);
-    }
+    string command  = "\"" + exePath + "\" \"%1\"";
+
+    // ── 1. Map extension → ProgId ─────────────────────────────
+    string extBase = "Software\\Classes\\" + ext;
+    RegWriteStr(HKEY_CURRENT_USER, extBase, "", progId);
+
+    // ── 2. ProgId description, icon, open command ─────────────
+    string pidBase = "Software\\Classes\\" + progId;
+    RegWriteStr(HKEY_CURRENT_USER, pidBase, "", desc);
+    RegWriteStr(HKEY_CURRENT_USER, pidBase + "\\DefaultIcon",      "", exePath + ",0");
+    RegWriteStr(HKEY_CURRENT_USER, pidBase + "\\shell\\open\\command", "", command);
+
+    // ── 3. Thumbnail handler ──────────────────────────────────
+    // Windows built-in GDI+ thumbnail provider CLSID.
+    // Registering this under our ProgId tells Explorer to use
+    // Windows' own image thumbnailer for files opened by RasFocus.
+    // Works for jpg/jpeg/png/gif/bmp/tiff — all GDI+ formats.
+    const string thumbCLSID = "{E357FCCD-A995-4576-B01F-234630154E96}";
+
+    // Under ProgId  (used when RasFocus.Image IS the current default)
+    RegWriteStr(HKEY_CURRENT_USER,
+        pidBase + "\\ShellEx\\{E357FCCD-A995-4576-B01F-234630154E96}",
+        "", thumbCLSID);
+
+    // Under SystemFileAssociations\<ext>  (works regardless of default app)
+    string sfa = "Software\\Classes\\SystemFileAssociations\\" + ext;
+    RegWriteStr(HKEY_CURRENT_USER,
+        sfa + "\\ShellEx\\{E357FCCD-A995-4576-B01F-234630154E96}",
+        "", thumbCLSID);
+
+    // ── 4. Preview handler (Details pane "Preview") ───────────
+    // Windows built-in image preview handler CLSID
+    const string previewCLSID = "{FFE2A43C-56B9-4bf5-9A79-CC6D4285608A}";
+
+    RegWriteStr(HKEY_CURRENT_USER,
+        pidBase + "\\ShellEx\\{8895b1c6-b41f-4c1c-a562-0d564250836f}",
+        "", previewCLSID);
+    RegWriteStr(HKEY_CURRENT_USER,
+        sfa + "\\ShellEx\\{8895b1c6-b41f-4c1c-a562-0d564250836f}",
+        "", previewCLSID);
+
+    // ── 5. "perceivedtype" — tells Explorer this is an image ──
+    RegWriteStr(HKEY_CURRENT_USER, extBase, "PerceivedType", "image");
+    RegWriteStr(HKEY_CURRENT_USER, extBase, "Content Type",
+        (ext == ".png")  ? "image/png"  :
+        (ext == ".gif")  ? "image/gif"  :
+        (ext == ".bmp")  ? "image/bmp"  :
+        (ext == ".webp") ? "image/webp" :
+        (ext == ".tiff" || ext == ".tif") ? "image/tiff" : "image/jpeg");
 }
 
 // Register "Merge PDFs with RasFocus+" right-click menu for ALL .pdf files in Explorer.
@@ -582,9 +620,14 @@ void SetupDefaultViewer() {
     RegisterFileAssociation(".webp", "RasFocus.Image", "RasFocus+ Image File");
     RegisterFileAssociation(".tiff", "RasFocus.Image", "RasFocus+ Image File");
     RegisterFileAssociation(".tif",  "RasFocus.Image", "RasFocus+ Image File");
+    RegisterFileAssociation(".ico",  "RasFocus.Image", "RasFocus+ Image File");
+
     // Right-click context menu for merging PDFs from Explorer
     RegisterPdfExplorerMenu();
+
+    // Notify Explorer: associations changed → thumbnail cache will be rebuilt
     SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, NULL, NULL);
+    SHChangeNotify(SHCNE_UPDATEIMAGE,  SHCNF_IDLIST, NULL, NULL);
 }
 
 // ==========================================
