@@ -54,9 +54,9 @@ static const int      TOOLBAR_H     = 48;
 static const int      STATUSBAR_H   = 22;
 static const float    ZOOM_MIN      = 0.05f;
 static const float    ZOOM_MAX      = 32.0f;
-static const float    ANIM_SPEED    = 0.20f;   // lerp factor
+static const float    ANIM_SPEED    = 0.12f;   // lerp factor — lower = smoother decel
 static const int      ANIM_TIMER    = 1;
-static const int      ANIM_MS       = 10;
+static const int      ANIM_MS       = 8;    // ~125fps for buttery smooth animation
 
 // Continuous mode
 static const int      STRIP_GAP     = 16;      // px between images
@@ -147,6 +147,16 @@ struct IVState {
     // --- window ---
     HWND       hWnd      = nullptr;
     ULONG_PTR  gdipToken = 0;
+
+    // --- touch / pointer (2-finger pinch + scroll) ---
+    // We use WM_POINTER for Win8+ precision touchpad & touch screen
+    bool     touch1Active = false, touch2Active = false;
+    DWORD    touch1Id = 0,         touch2Id = 0;
+    float    touch1X  = 0, touch1Y = 0;
+    float    touch2X  = 0, touch2Y = 0;
+    float    touchInitDist = 0;      // distance when pinch started
+    float    touchInitZoom = 1.0f;   // zoom when pinch started
+    float    touchLastMidX = 0, touchLastMidY = 0;  // for 2-finger pan/scroll
 };
 static IVState iv;
 
@@ -760,12 +770,13 @@ static bool AnimTick() {
     float dz=iv.zoomTarget-iv.zoom;
     float dx=iv.panXTarget-iv.panX, dy=iv.panYTarget-iv.panY;
     float ds=iv.scrollYTarget-iv.scrollY;
-    bool moving=(fabsf(dz)>0.0003f||fabsf(dx)>0.3f||fabsf(dy)>0.3f||fabsf(ds)>0.3f);
+    bool moving=(fabsf(dz)>0.0001f||fabsf(dx)>0.15f||fabsf(dy)>0.15f||fabsf(ds)>0.15f);
     if (!moving){
         iv.zoom=iv.zoomTarget; iv.panX=iv.panXTarget; iv.panY=iv.panYTarget;
         iv.scrollY=iv.scrollYTarget;
         return false;
     }
+    // Exponential ease-out: closer to target = slower = natural deceleration
     float s=ANIM_SPEED;
     iv.zoom    +=dz*s; iv.panX+=dx*s; iv.panY+=dy*s; iv.scrollY+=ds*s;
     return true;
@@ -867,22 +878,145 @@ static LRESULT CALLBACK IV_WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lP
         RECT ia; GetImgArea(ia);
         float ax=(float)pt.x, ay=(float)(pt.y-ia.top);
 
+        // Precision touchpad sends WM_MOUSEWHEEL with small deltas — treat same as trackpad
+        // delta is in units of WHEEL_DELTA (120). Fractional deltas = high-precision device.
+        float pixelScroll = (float)delta * (120.0f / WHEEL_DELTA) * 1.0f;
+
         if (iv.continuousMode) {
             if (ctrl) {
-                // Ctrl+wheel = zoom in strip mode
-                float f=(delta>0)?1.12f:1.0f/1.12f;
+                float f=(delta>0)?1.10f:1.0f/1.10f;
                 StripZoom(iv.zoomTarget*f, ax, ay);
             } else {
-                // Plain scroll = scroll strip (smooth, like PDF)
-                float pixels = (float)delta * 0.8f;  // 120 delta -> 96px scroll
-                iv.scrollYTarget -= pixels;
+                // PDF-style: scroll the strip
+                iv.scrollYTarget -= pixelScroll;
                 ClampScroll();
                 StartAnim();
             }
         } else {
-            // Single mode: always zoom (no Ctrl needed)
-            float f=(delta>0)?1.15f:1.0f/1.15f;
-            SingleZoom(iv.zoomTarget*f, ax, ay);
+            if (ctrl) {
+                // Ctrl+wheel = zoom in single mode
+                float f=(delta>0)?1.12f:1.0f/1.12f;
+                SingleZoom(iv.zoomTarget*f, ax, ay);
+            } else if (iv.zoom > 1.01f) {
+                // Zoomed in: scroll vertically (pan), like a PDF reader
+                float panAmt = pixelScroll * 0.9f;
+                iv.panYTarget += panAmt;
+                StartAnim();
+            } else {
+                // Not zoomed: go prev/next image with scroll (natural page-turn)
+                static int wheelAcc = 0;
+                wheelAcc += delta;
+                if (wheelAcc >= WHEEL_DELTA && !iv.files.empty()) {
+                    wheelAcc = 0;
+                    iv.index=(iv.index-1+(int)iv.files.size())%(int)iv.files.size();
+                    LoadCurrentImage();
+                } else if (wheelAcc <= -WHEEL_DELTA && !iv.files.empty()) {
+                    wheelAcc = 0;
+                    iv.index=(iv.index+1)%(int)iv.files.size();
+                    LoadCurrentImage();
+                }
+            }
+        }
+        return 0;
+    }
+
+    // Precision touchpad horizontal scroll (two-finger swipe left/right in single mode)
+    case WM_MOUSEHWHEEL: {
+        int delta=GET_WHEEL_DELTA_WPARAM(wParam);
+        if (!iv.continuousMode && iv.zoom > 1.01f) {
+            float pixelScroll = (float)delta * 1.0f;
+            iv.panXTarget -= pixelScroll;
+            StartAnim();
+        }
+        return 0;
+    }
+
+    // ── WM_POINTER: 2-finger pinch-to-zoom + 2-finger scroll ──────────────────
+    // Works for touch screens AND Windows precision touchpad (Win8.1+)
+    case WM_POINTERDOWN: {
+        UINT32 pid = GET_POINTERID_WPARAM(wParam);
+        POINT  pt2 = {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+        ScreenToClient(hWnd, &pt2);
+        RECT ia2; GetImgArea(ia2);
+        float fx = (float)pt2.x, fy = (float)(pt2.y - ia2.top);
+        if (!iv.touch1Active) {
+            iv.touch1Active=true; iv.touch1Id=pid;
+            iv.touch1X=fx; iv.touch1Y=fy;
+            iv.touchInitZoom=iv.zoomTarget;
+            iv.touchLastMidX=fx; iv.touchLastMidY=fy;
+        } else if (!iv.touch2Active && pid!=iv.touch1Id) {
+            iv.touch2Active=true; iv.touch2Id=pid;
+            iv.touch2X=fx; iv.touch2Y=fy;
+            // Record initial distance and midpoint for pinch
+            float dx=iv.touch2X-iv.touch1X, dy=iv.touch2Y-iv.touch1Y;
+            iv.touchInitDist=sqrtf(dx*dx+dy*dy);
+            if(iv.touchInitDist<1.0f) iv.touchInitDist=1.0f;
+            iv.touchInitZoom=iv.zoomTarget;
+            iv.touchLastMidX=(iv.touch1X+iv.touch2X)*0.5f;
+            iv.touchLastMidY=(iv.touch1Y+iv.touch2Y)*0.5f;
+        }
+        return 0;
+    }
+    case WM_POINTERUPDATE: {
+        UINT32 pid = GET_POINTERID_WPARAM(wParam);
+        POINT  pt2 = {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+        ScreenToClient(hWnd, &pt2);
+        RECT ia2; GetImgArea(ia2);
+        float fx=(float)pt2.x, fy=(float)(pt2.y-ia2.top);
+
+        if (pid==iv.touch1Id) { iv.touch1X=fx; iv.touch1Y=fy; }
+        else if (pid==iv.touch2Id) { iv.touch2X=fx; iv.touch2Y=fy; }
+        else return 0;
+
+        if (iv.touch1Active && iv.touch2Active) {
+            // ── Pinch: compute new zoom ──
+            float dx=iv.touch2X-iv.touch1X, dy=iv.touch2Y-iv.touch1Y;
+            float dist=sqrtf(dx*dx+dy*dy);
+            if(dist<1.0f) dist=1.0f;
+            float newZ = iv.touchInitZoom * (dist/iv.touchInitDist);
+            newZ = max(ZOOM_MIN, min(ZOOM_MAX, newZ));
+
+            float midX=(iv.touch1X+iv.touch2X)*0.5f;
+            float midY=(iv.touch1Y+iv.touch2Y)*0.5f;
+
+            // ── 2-finger pan delta (applied alongside zoom) ──
+            float panDX = midX - iv.touchLastMidX;
+            float panDY = midY - iv.touchLastMidY;
+            iv.touchLastMidX=midX; iv.touchLastMidY=midY;
+
+            if (iv.continuousMode) {
+                StripZoom(newZ, midX, midY);
+                iv.scrollYTarget -= panDY;
+                ClampScroll();
+            } else {
+                SingleZoom(newZ, midX, midY);
+                iv.panXTarget += panDX;
+                iv.panYTarget += panDY;
+            }
+            iv.zoom=iv.zoomTarget;
+            iv.panX=iv.panXTarget; iv.panY=iv.panYTarget;
+            iv.scrollY=iv.scrollYTarget;
+            InvalidateRect(hWnd,NULL,FALSE);
+        } else if (iv.touch1Active && !iv.touch2Active) {
+            // Single finger drag (same as mouse drag)
+            // handled by WM_MOUSEMOVE with dragging flag — do nothing extra here
+        }
+        return 0;
+    }
+    case WM_POINTERUP: {
+        UINT32 pid = GET_POINTERID_WPARAM(wParam);
+        if (pid==iv.touch1Id) {
+            iv.touch1Active=false; iv.touch1Id=0;
+            // If touch2 was also active, it becomes the new "first"
+            if (iv.touch2Active) {
+                iv.touch1Active=true; iv.touch1Id=iv.touch2Id;
+                iv.touch1X=iv.touch2X; iv.touch1Y=iv.touch2Y;
+                iv.touch2Active=false; iv.touch2Id=0;
+                iv.touchInitZoom=iv.zoomTarget;
+            }
+        } else if (pid==iv.touch2Id) {
+            iv.touch2Active=false; iv.touch2Id=0;
+            iv.touchInitZoom=iv.zoomTarget;
         }
         return 0;
     }
@@ -1042,6 +1176,10 @@ static DWORD WINAPI IV_Thread(LPVOID param) {
     if(!hWnd){DeleteCriticalSection(&iv.cacheCS);DeleteCriticalSection(&iv.stripCS);
               GdiplusShutdown(iv.gdipToken);iv.gdipToken=0;return 1;}
     iv.hWnd=hWnd;
+
+    // Enable WM_POINTER for precision touchpad (2-finger scroll/pinch) and touch screens
+    // This gives us raw pointer events separate from mouse emulation
+    EnableMouseInPointer(TRUE);
 
     // Load first image in single mode
     LoadCurrentImage();
