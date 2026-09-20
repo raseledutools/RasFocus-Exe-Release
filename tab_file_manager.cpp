@@ -63,6 +63,102 @@ static bool fm_hovSearch   = false;
 static std::vector<int> fm_selectedItems;   // indices of all selected items
 static int fm_lastClickedItem = -1;         // for Shift+click range select
 
+// --- View Mode ---
+static int  fm_viewMode    = 0;   // 0 = Details list, 1 = Grid/Thumbnail
+static bool fm_hovViewList = false;
+static bool fm_hovViewGrid = false;
+
+// --- Thumbnail Cache (async background load) ---
+// Key = full path, Value = loaded GDI+ Image (96x96 px)
+#include <map>
+#include <mutex>
+static std::map<std::wstring, Gdiplus::Image*> fm_thumbCache;
+static std::mutex                               fm_thumbMutex;
+static std::set<std::wstring>                   fm_thumbPending; // queued paths
+
+// Custom WM for thumb ready & async preview ready
+#define WM_FM_THUMB_READY   (WM_USER + 60)
+#define WM_FM_PREVIEW_READY (WM_USER + 61)
+
+struct ThumbJob { std::wstring path; };
+
+static DWORD WINAPI ThumbThread(LPVOID param) {
+    ThumbJob* job = (ThumbJob*)param;
+    std::wstring path = job->path;
+    delete job;
+
+    // Load full image then scale to thumbnail
+    Gdiplus::Image* full = Gdiplus::Image::FromFile(path.c_str());
+    if (!full || full->GetLastStatus() != Gdiplus::Ok) {
+        delete full;
+        std::lock_guard<std::mutex> lk(fm_thumbMutex);
+        fm_thumbPending.erase(path);
+        return 0;
+    }
+
+    int srcW = (int)full->GetWidth(), srcH = (int)full->GetHeight();
+    int THUMB = 96;
+    float scale = (float)THUMB / max(srcW, srcH);
+    int dw = max(1, (int)(srcW * scale));
+    int dh = max(1, (int)(srcH * scale));
+
+    // Create 96x96 bitmap, draw centered
+    Gdiplus::Bitmap* bmp = new Gdiplus::Bitmap(THUMB, THUMB, PixelFormat32bppARGB);
+    Gdiplus::Graphics tg(bmp);
+    tg.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
+    tg.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+    // Clear to light gray
+    tg.Clear(Gdiplus::Color(255, 240, 240, 242));
+    int ox = (THUMB - dw) / 2, oy = (THUMB - dh) / 2;
+    tg.DrawImage(full, ox, oy, dw, dh);
+    delete full;
+
+    {
+        std::lock_guard<std::mutex> lk(fm_thumbMutex);
+        auto it = fm_thumbCache.find(path);
+        if (it != fm_thumbCache.end()) { delete it->second; }
+        fm_thumbCache[path] = bmp;
+        fm_thumbPending.erase(path);
+    }
+
+    extern HWND hParentWnd;
+    if (hParentWnd) PostMessageW(hParentWnd, WM_FM_THUMB_READY, 0, 0);
+    return 0;
+}
+
+static void QueueThumb(const std::wstring& path) {
+    std::lock_guard<std::mutex> lk(fm_thumbMutex);
+    if (fm_thumbCache.count(path)) return;   // already cached
+    if (fm_thumbPending.count(path)) return; // already queued
+    fm_thumbPending.insert(path);
+    ThumbJob* job = new ThumbJob{path};
+    CreateThread(NULL, 0, ThumbThread, job, 0, NULL);
+}
+
+static void ClearThumbCache() {
+    std::lock_guard<std::mutex> lk(fm_thumbMutex);
+    for (auto& kv : fm_thumbCache) delete kv.second;
+    fm_thumbCache.clear();
+    fm_thumbPending.clear();
+}
+
+// Async preview load (so large images don't freeze UI)
+struct PreviewJob { std::wstring path; std::wstring ext; };
+static DWORD WINAPI PreviewThread(LPVOID param) {
+    PreviewJob* job = (PreviewJob*)param;
+    std::wstring path = job->path, ext = job->ext;
+    delete job;
+    Gdiplus::Image* img = Gdiplus::Image::FromFile(path.c_str());
+    // Store in a staging slot, swap on UI thread via WM
+    extern HWND hParentWnd;
+    extern Gdiplus::Image* fm_previewImageStaging;
+    extern std::wstring    fm_previewPathStaging;
+    fm_previewImageStaging = img;
+    fm_previewPathStaging  = path;
+    if (hParentWnd) PostMessageW(hParentWnd, WM_FM_PREVIEW_READY, 0, 0);
+    return 0;
+}
+
 // --- Clipboard State (Copy/Cut/Paste) ---
 enum class FmClipOp { None, Copy, Cut };
 static FmClipOp              fm_clipOp    = FmClipOp::None;
@@ -119,6 +215,10 @@ static bool IsWebViewExt(const wstring& ext) {
 }
 
 // Load/clear preview for a given file path
+// Staging for async preview load (written by PreviewThread, read on UI thread)
+Gdiplus::Image* fm_previewImageStaging = nullptr;
+std::wstring    fm_previewPathStaging;
+
 static void LoadPreview(const wstring& fullPath, const wstring& ext) {
     // Clear old state
     if (fm_previewImage) { delete fm_previewImage; fm_previewImage = nullptr; }
@@ -137,8 +237,11 @@ static void LoadPreview(const wstring& fullPath, const wstring& ext) {
 
     if (IsImageExt(ext)) {
         fm_previewType  = PreviewType::Image;
-        fm_previewImage = Image::FromFile(fullPath.c_str());
+        // Async load — show spinner until WM_FM_PREVIEW_READY fires
+        // (Old image stays until new one is ready)
         DestroyEmbeddedPreview();
+        PreviewJob* pj = new PreviewJob{fullPath, ext};
+        CreateThread(NULL, 0, PreviewThread, pj, 0, NULL);
 
     } else if (IsTextExt(ext)) {
         fm_previewType = PreviewType::Text;
@@ -811,6 +914,7 @@ static void RefreshLocalDir() {
     fm_hovItem      = -1;
     fm_selectedItems.clear();
     fm_lastClickedItem = -1;
+    ClearThumbCache();  // clear thumbnails when folder changes
 
     wstring search = fm_currentPath;
     if (search.back() != L'\\') search += L'\\';
@@ -995,6 +1099,27 @@ void DrawFileManagerTab(Graphics& g, float cx, float cy, float cw, float ch) {
             g.DrawString(L"\xE8A7  Open", -1, &fSmall, RectF(bx + 4.0f, btnY, oW - 8.0f, btnH), &fmtL, fm_hovOpen ? &bTeal : &bGray);
         }
 
+        // ---- View mode toggle (right side of toolbar) ----
+        {
+            float vBtnW = 32.0f;
+            float vBx = cx + cw - vBtnW*2 - 14.0f;
+            // List view button
+            bool listActive = (fm_viewMode == 0);
+            SolidBrush bVL((listActive || fm_hovViewList) ? Color(255, 220, 242, 255) : Color(255, 245, 248, 250));
+            Pen pVL((listActive || fm_hovViewList) ? Color(255, 0, 120, 200) : Color(255, 218, 225, 232), 1.0f);
+            FillRect_(g, &bVL, &pVL, vBx, btnY, vBtnW, btnH, 4.0f);
+            SolidBrush bVLIco(listActive ? Color(255,0,120,200) : Color(255,100,110,130));
+            g.DrawString(L"\xE8FD", -1, &fIconSm, RectF(vBx, btnY, vBtnW, btnH), &fmtC, &bVLIco);
+            vBx += vBtnW + 2.0f;
+            // Grid view button
+            bool gridActive = (fm_viewMode == 1);
+            SolidBrush bVG((gridActive || fm_hovViewGrid) ? Color(255, 220, 242, 255) : Color(255, 245, 248, 250));
+            Pen pVG((gridActive || fm_hovViewGrid) ? Color(255, 0, 120, 200) : Color(255, 218, 225, 232), 1.0f);
+            FillRect_(g, &bVG, &pVG, vBx, btnY, vBtnW, btnH, 4.0f);
+            SolidBrush bVGIco(gridActive ? Color(255,0,120,200) : Color(255,100,110,130));
+            g.DrawString(L"\xF0E2", -1, &fIconSm, RectF(vBx, btnY, vBtnW, btnH), &fmtC, &bVGIco);
+        }
+
         // ---- BREADCRUMB (height 32) ----
         float bcY = bodyY + tbH;
         float bcH = 32.0f;
@@ -1154,7 +1279,8 @@ void DrawFileManagerTab(Graphics& g, float cx, float cy, float cw, float ch) {
             SolidBrush bEmpty(Color(255, 160, 160, 160));
             g.DrawString(L"This folder is empty.", -1, &fSub,
                 RectF(flX, rowsY + rowsH / 2.0f - 12.0f, listW, 24.0f), &fmtC, &bEmpty);
-        } else {
+        } else if (fm_viewMode == 0) {
+            // ── DETAILS / LIST VIEW ──
             for (int i = fm_scrollOffset; i < (int)fm_items.size(); i++) {
                 float ry = rowsY + (i - fm_scrollOffset) * rowH;
                 if (ry >= rowsY + rowsH) break;   // strictly stop at bottom
@@ -1281,6 +1407,152 @@ void DrawFileManagerTab(Graphics& g, float cx, float cy, float cw, float ch) {
                     RectF(flX + c1W + c2W + c3W, ry, c4W - 6.0f, rowH), &fmtR, &bTypeTxt);
             }
             g.ResetClip();
+        }
+
+        // ================================================================
+        // GRID / THUMBNAIL VIEW  (fm_viewMode == 1)
+        // ================================================================
+        if (fm_viewMode == 1) {
+            // Thumbnail grid: 6 columns, square cells with image thumbnails
+            const float THUMB_SIZE  = 96.0f;
+            const float CELL_PAD    = 10.0f;
+            const float LABEL_H     = 36.0f;
+            const float CELL_W      = THUMB_SIZE + CELL_PAD * 2.0f;
+            const float CELL_H      = THUMB_SIZE + LABEL_H + CELL_PAD * 2.0f;
+
+            float gridX = flX;
+            float gridW = listW;  // total width for grid (same as list area)
+            int   nCols = max(1, (int)(gridW / CELL_W));
+            float cellStep = gridW / nCols;
+
+            int nItems = (int)fm_items.size();
+            int nRows  = (nItems + nCols - 1) / nCols;
+            // How many rows fit in the visible area
+            int visRows = max(1, (int)(rowsH / CELL_H) + 2);
+
+            // fm_scrollOffset is row-based in grid mode
+            int startRow = fm_scrollOffset;
+            int endRow   = min(nRows, startRow + visRows);
+
+            g.SetClip(RectF(flX, rowsY, gridW, rowsH));
+
+            FontFamily ffGUI(L"Segoe UI");
+            Font fThumbLabel(&ffGUI, 11, FontStyleRegular, UnitPixel);
+            FontFamily ffIco2(L"Segoe MDL2 Assets");
+            Font fThumbIco(&ffIco2, 36, FontStyleRegular, UnitPixel);
+            StringFormat sfC2; sfC2.SetAlignment(StringAlignmentCenter); sfC2.SetLineAlignment(StringAlignmentCenter);
+            StringFormat sfL2; sfL2.SetAlignment(StringAlignmentNear); sfL2.SetLineAlignment(StringAlignmentCenter);
+            sfL2.SetFormatFlags(StringFormatFlagsNoWrap);
+            StringFormat sfLT; sfLT.SetAlignment(StringAlignmentNear); sfLT.SetLineAlignment(StringAlignmentNear);
+            sfLT.SetFormatFlags(StringFormatFlagsNoWrap);
+
+            for (int row = startRow; row < endRow; row++) {
+                for (int col = 0; col < nCols; col++) {
+                    int idx2 = row * nCols + col;
+                    if (idx2 >= nItems) break;
+
+                    float cx2 = gridX + col * cellStep;
+                    float cy2 = rowsY + (row - startRow) * CELL_H;
+
+                    bool isSel2 = (fm_selectedItem == idx2) ||
+                                  (std::find(fm_selectedItems.begin(), fm_selectedItems.end(), idx2) != fm_selectedItems.end());
+                    bool isHov2 = (fm_hovItem == idx2);
+
+                    // Cell background
+                    if (isSel2) {
+                        SolidBrush bS(Color(255, 204, 232, 255));
+                        Pen pS(Color(255, 0, 120, 215), 1.5f);
+                        FillRect_(g, &bS, &pS, cx2 + 2.0f, cy2 + 2.0f, cellStep - 4.0f, CELL_H - 4.0f, 6.0f);
+                    } else if (isHov2) {
+                        SolidBrush bH(Color(255, 229, 243, 255));
+                        Pen pH(Color(255, 204, 232, 255), 1.0f);
+                        FillRect_(g, &bH, &pH, cx2 + 2.0f, cy2 + 2.0f, cellStep - 4.0f, CELL_H - 4.0f, 6.0f);
+                    }
+
+                    // Thumbnail image area
+                    float tx = cx2 + (cellStep - THUMB_SIZE) / 2.0f;
+                    float ty = cy2 + CELL_PAD;
+
+                    bool isDir2  = fm_items[idx2].second;
+                    wstring fp2  = fm_currentPath + fm_items[idx2].first;
+                    wstring nm2  = fm_items[idx2].first;
+                    wstring ext2; {
+                        size_t d2 = nm2.rfind(L'.');
+                        if (d2 != wstring::npos) { ext2 = nm2.substr(d2+1); for(auto& c:ext2) c=towlower(c); }
+                    }
+
+                    bool drewThumb = false;
+                    if (!isDir2 && IsImageExt(ext2)) {
+                        // Queue thumbnail load if not cached
+                        QueueThumb(fp2);
+                        std::lock_guard<std::mutex> lk(fm_thumbMutex);
+                        auto it = fm_thumbCache.find(fp2);
+                        if (it != fm_thumbCache.end() && it->second) {
+                            // Draw thumbnail centered in cell
+                            SolidBrush bThBg(Color(255, 248, 248, 250));
+                            Pen pThBrd(Color(200, 180, 190, 200), 1.0f);
+                            FillRect_(g, &bThBg, &pThBrd, tx, ty, THUMB_SIZE, THUMB_SIZE, 4.0f);
+                            // Center the actual bitmap (may be smaller if portrait)
+                            int bw = (int)it->second->GetWidth();
+                            int bh = (int)it->second->GetHeight();
+                            float bx2 = tx + (THUMB_SIZE - bw) / 2.0f;
+                            float by2 = ty + (THUMB_SIZE - bh) / 2.0f;
+                            g.SetClip(RectF(tx, ty, THUMB_SIZE, THUMB_SIZE));
+                            g.DrawImage(it->second, RectF(bx2, by2, (float)bw, (float)bh));
+                            g.ResetClip();
+                            g.SetClip(RectF(flX, rowsY, gridW, rowsH));
+                            drewThumb = true;
+                        }
+                    }
+
+                    if (!drewThumb) {
+                        // Folder or non-image or pending — draw icon
+                        SolidBrush bThBg(Color(255, 248, 248, 252));
+                        Pen pThBrd(Color(180, 200, 210, 220), 1.0f);
+                        FillRect_(g, &bThBg, &pThBrd, tx, ty, THUMB_SIZE, THUMB_SIZE, 4.0f);
+
+                        const wchar_t* ico2 = isDir2 ? L"\xED41" :
+                                              ext2==L"pdf"  ? L"\xEA90" :
+                                              ext2==L"mp4"||ext2==L"mkv"||ext2==L"avi" ? L"\xE8B2" :
+                                              ext2==L"mp3"||ext2==L"wav"||ext2==L"flac" ? L"\xEC4F" :
+                                              IsImageExt(ext2) ? L"\xEB9F" :   // loading...
+                                              L"\xE8A5";
+                        Color icoC2 = isDir2 ? Color(255,255,196,37) :
+                                      ext2==L"pdf" ? Color(255,220,38,38) :
+                                      IsImageExt(ext2) ? Color(255,120,150,220) :
+                                      Color(255,140,150,170);
+                        SolidBrush bIco2(icoC2);
+                        g.DrawString(ico2, -1, &fThumbIco, RectF(tx, ty, THUMB_SIZE, THUMB_SIZE), &sfC2, &bIco2);
+                    }
+
+                    // File name label below thumbnail
+                    float ly2 = ty + THUMB_SIZE + 2.0f;
+                    float lh2 = LABEL_H;
+                    SolidBrush bLbl(isSel2 ? Color(255,0,0,0) : Color(255,40,40,40));
+                    g.DrawString(nm2.c_str(), -1, &fThumbLabel,
+                        RectF(cx2 + 4.0f, ly2, cellStep - 8.0f, lh2),
+                        &sfLT, &bLbl);
+                }
+            }
+
+            g.ResetClip();
+
+            // Scrollbar for grid mode (row-based)
+            {
+                SolidBrush bTrack(Color(255, 240, 240, 240));
+                g.FillRectangle(&bTrack, sbX, rowsY, sbW, rowsH);
+                Pen pTrackBrd(Color(255, 200, 200, 200), 1.0f);
+                g.DrawLine(&pTrackBrd, sbX, rowsY, sbX, rowsY + rowsH);
+                if (nRows > visRows - 1) {
+                    float ratio2 = (float)(visRows - 1) / (float)nRows;
+                    float thumbH2 = max(20.0f, rowsH * ratio2);
+                    float maxOff2 = (float)(nRows - visRows + 1);
+                    float thumbY2 = rowsY + (rowsH - thumbH2) * ((float)startRow / maxOff2);
+                    thumbY2 = min(thumbY2, rowsY + rowsH - thumbH2);
+                    SolidBrush bSbTh(Color(255, 190, 190, 195));
+                    FillRect_(g, &bSbTh, nullptr, sbX + 2.0f, thumbY2, sbW - 4.0f, thumbH2, 3.0f);
+                }
+            }
         }
 
         // ================================================================
@@ -1703,6 +1975,7 @@ void ProcessFileManagerMouseMove(float x, float y) {
     fm_driveHovItem = -1;
     fm_hovTabLocal = fm_hovTabDrive = false;
     fm_hovUp = fm_hovRefresh = fm_hovNewFolder = fm_hovDelete = fm_hovOpen = false;
+    fm_hovViewList = fm_hovViewGrid = false;
     fm_hovItem = -1; fm_hovBreadcrumb = -1;
     fm_hovDriveSignIn = false; fm_driveHovItem = -1;
 
@@ -1748,6 +2021,15 @@ void ProcessFileManagerMouseMove(float x, float y) {
             bx += dW + 6.0f;
             float oW = 80.0f;
             if (PtIn(x, y, bx, btnY, oW, btnH)) fm_hovOpen = true;
+
+            // View toggle buttons (right side)
+            {
+                float vBtnW = 32.0f;
+                float vBx = g_fm_cx + g_fm_cw - vBtnW*2 - 14.0f;
+                float vBtnY = bodyY + (44.0f - 28.0f) / 2.0f;
+                if (PtIn(x, y, vBx, vBtnY, vBtnW, 28.0f))         fm_hovViewList = true;
+                if (PtIn(x, y, vBx + vBtnW + 2.0f, vBtnY, vBtnW, 28.0f)) fm_hovViewGrid = true;
+            }
         }
 
         // Breadcrumb
@@ -3353,6 +3635,25 @@ void ProcessFileManagerMouseClick(float x, float y, HWND hWnd) {
         float btnW = 36.0f, btnH = 28.0f, btnY = bodyY + (tbH - btnH) / 2.0f;
         float bx = cx + 10.0f;
 
+        // View toggle buttons click (right side of toolbar)
+        {
+            float vBtnW = 32.0f;
+            float vBx   = cx + cw - vBtnW*2 - 14.0f;
+            float vBtnY2 = bodyY + (tbH - 28.0f) / 2.0f;
+            if (PtIn(x, y, vBx, vBtnY2, vBtnW, 28.0f)) {
+                fm_viewMode = 0;  // list
+                fm_scrollOffset = 0;
+                if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
+                return;
+            }
+            if (PtIn(x, y, vBx + vBtnW + 2.0f, vBtnY2, vBtnW, 28.0f)) {
+                fm_viewMode = 1;  // grid
+                fm_scrollOffset = 0;
+                if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
+                return;
+            }
+        }
+
         // Up button
         if (PtIn(x, y, bx, btnY, btnW, btnH)) {
             wstring p = fm_currentPath;
@@ -3458,7 +3759,45 @@ void ProcessFileManagerMouseClick(float x, float y, HWND hWnd) {
             float listAreaWC = g_fm_cw; // full content width, no internal sidebar
             float previewWC  = fm_previewVisible ? (listAreaWC * PREVIEW_WIDTH_RATIO) : 0.0f;
             float fileListWC = listAreaWC - previewWC;
-            if (PtIn(x, y, flX, rowsY, fileListWC - sbWC, rowsH)) {
+            // Grid mode click detection
+        if (fm_viewMode == 1) {
+            float gridW2 = g_fm_cw;
+            int nColsG = max(1, (int)(gridW2 / (96.0f + 20.0f)));
+            float cellStepG = gridW2 / nColsG;
+            float cellHG = 96.0f + 36.0f + 20.0f;
+            if (PtIn(x, y, flX, rowsY, gridW2 - 16.0f, rowsH)) {
+                int col2 = (int)((x - flX) / cellStepG);
+                int row2 = (int)((y - rowsY) / cellHG) + fm_scrollOffset;
+                int idx2 = row2 * nColsG + col2;
+                if (col2 >= 0 && col2 < nColsG && idx2 >= 0 && idx2 < (int)fm_items.size()) {
+                    if (fm_selectedItem == idx2 && fm_items[idx2].second && fm_selectedItems.empty()) {
+                        // Double-click folder
+                        wstring dest2 = fm_currentPath + fm_items[idx2].first + L"\\";
+                        LoadPreview(L"", L"");
+                        NavigateFileManagerTo(dest2);
+                        if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
+                        return;
+                    } else if (fm_selectedItem == idx2 && !fm_items[idx2].second && fm_selectedItems.empty()) {
+                        // Double-click file → open
+                        wstring fp3 = fm_currentPath + fm_items[idx2].first;
+                        size_t d3 = fp3.rfind(L'.');
+                        wstring e3;
+                        if (d3 != wstring::npos) { e3 = fp3.substr(d3+1); for(auto& c:e3) c=towlower(c); }
+                        if (e3==L"jpg"||e3==L"jpeg"||e3==L"png"||e3==L"gif"||e3==L"bmp"||e3==L"webp"||e3==L"ico"||e3==L"tiff"||e3==L"tif")
+                            LaunchImageViewer(fp3);
+                        else
+                            ShellExecuteW(NULL, L"open", fp3.c_str(), NULL, NULL, SW_SHOWNORMAL);
+                        return;
+                    }
+                    fm_selectedItems.clear();
+                    fm_selectedItem = idx2;
+                    fm_lastClickedItem = idx2;
+                    if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
+                }
+            }
+        }
+
+        if (PtIn(x, y, flX, rowsY, fileListWC - sbWC, rowsH)) {
                 int idx = (int)((y - rowsY) / rowHC) + fm_scrollOffset;
                 if (idx >= 0 && idx < (int)fm_items.size()) {
                     if (fm_selectedItem == idx && fm_items[idx].second &&
@@ -3619,8 +3958,18 @@ void ProcessFileManagerMouseWheel(float x, float y, int delta) {
     int step = (delta > 0) ? -(3 * notches) : (3 * notches);
 
     if (fm_activeSubTab == 0) {
-        int maxScroll = max(0, (int)fm_items.size() - 1);
-        fm_scrollOffset = max(0, min(maxScroll, fm_scrollOffset + step));
+        if (fm_viewMode == 1) {
+            // Grid mode: scroll by rows
+            const float CELL_H_APPROX = 96.0f + 36.0f + 20.0f;
+            int nCols2 = max(1, (int)(g_fm_cw / (96.0f + 20.0f)));
+            int nRows2 = ((int)fm_items.size() + nCols2 - 1) / nCols2;
+            int visRows2 = max(1, (int)(g_fm_ch / CELL_H_APPROX));
+            int maxRowScroll = max(0, nRows2 - visRows2 + 1);
+            fm_scrollOffset = max(0, min(maxRowScroll, fm_scrollOffset + (step > 0 ? 1 : -1)));
+        } else {
+            int maxScroll = max(0, (int)fm_items.size() - 1);
+            fm_scrollOffset = max(0, min(maxScroll, fm_scrollOffset + step));
+        }
     } else {
         int maxScroll = max(0, (int)fm_driveItems.size() - 1);
         fm_driveScrollOff = max(0, min(maxScroll, fm_driveScrollOff + step));
