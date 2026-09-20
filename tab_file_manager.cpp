@@ -12,6 +12,7 @@
 #include <shlobj.h>
 #include <shellapi.h>
 #include <shlwapi.h>
+#include <exdisp.h>     // IShellDispatch, Folder, FolderItems
 #include <commdlg.h>
 #include <fstream>
 #include <algorithm>
@@ -23,6 +24,9 @@
 #include <cstdio>        // snprintf, fprintf
 #include <cstring>       // memcpy
 #include <cstdint>       // uint8_t
+#include <sstream>       // wstringstream
+#include <map>           // for PDF xref
+#include <set>           // for page number sets
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "wininet.lib")
 #pragma comment(lib, "ole32.lib")
@@ -57,6 +61,11 @@ static bool fm_hovSearch   = false;
 // --- Multi-Select State ---
 static std::vector<int> fm_selectedItems;   // indices of all selected items
 static int fm_lastClickedItem = -1;         // for Shift+click range select
+
+// --- Clipboard State (Copy/Cut/Paste) ---
+enum class FmClipOp { None, Copy, Cut };
+static FmClipOp              fm_clipOp    = FmClipOp::None;
+static std::vector<std::wstring> fm_clipPaths; // full paths of copied/cut files
 static int fm_hovBreadcrumb = -1;
 
 // --- Sub-tab hover ---
@@ -2182,6 +2191,861 @@ static void ImagesToPdf(const std::vector<std::wstring>& imgPaths, const std::ws
 // RIGHT-CLICK CONTEXT MENU  (dispatched from main.cpp WM_RBUTTONDOWN)
 // ============================================================
 
+// ============================================================
+// SIMPLE WIN32 INPUT DIALOG  (no resource file needed)
+// ============================================================
+
+struct InputDlgData { std::wstring prompt; std::wstring value; };
+
+static INT_PTR CALLBACK InputDlgProc(HWND hDlg, UINT msg, WPARAM wp, LPARAM lp) {
+    switch (msg) {
+    case WM_INITDIALOG: {
+        SetWindowLongPtrW(hDlg, DWLP_USER, lp);
+        InputDlgData* d = (InputDlgData*)lp;
+        SetDlgItemTextW(hDlg, 101, d->prompt.c_str());
+        SetDlgItemTextW(hDlg, 102, d->value.c_str());
+        // Select all text in edit so user can just type
+        SendDlgItemMessageW(hDlg, 102, EM_SETSEL, 0, -1);
+        return TRUE;
+    }
+    case WM_COMMAND:
+        if (LOWORD(wp) == IDOK) {
+            InputDlgData* d = (InputDlgData*)GetWindowLongPtrW(hDlg, DWLP_USER);
+            wchar_t buf[MAX_PATH] = {};
+            GetDlgItemTextW(hDlg, 102, buf, MAX_PATH);
+            d->value = buf;
+            EndDialog(hDlg, IDOK);
+        } else if (LOWORD(wp) == IDCANCEL) {
+            EndDialog(hDlg, IDCANCEL);
+        }
+        return TRUE;
+    case WM_CLOSE:
+        EndDialog(hDlg, IDCANCEL);
+        return TRUE;
+    }
+    return FALSE;
+}
+
+// Show a simple modal input dialog built at runtime (no .rc needed)
+static bool ShowInputBox(HWND hParent, const wchar_t* title,
+                         const wchar_t* prompt, std::wstring& inOut) {
+    // Build DLGTEMPLATE in memory
+    // Layout: static label (101) + edit (102) + OK + Cancel
+    struct alignas(WORD) DlgMem {
+        DLGTEMPLATE   hdr;
+        WORD          menu, cls, title_[1];
+        // items follow
+    };
+    // Use CreateWindowEx approach instead — simpler and no alignment headaches
+    HWND hDlg = CreateWindowExW(WS_EX_DLGMODALFRAME | WS_EX_TOPMOST,
+        L"#32770", title,
+        WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_SETFONT | DS_MODALFRAME,
+        0, 0, 420, 130, hParent, NULL, GetModuleHandleW(NULL), NULL);
+    if (!hDlg) return false;
+
+    // Center on parent
+    RECT pr; GetWindowRect(hParent, &pr);
+    RECT dr; GetWindowRect(hDlg, &dr);
+    int dx = pr.left + (pr.right - pr.left)/2 - (dr.right - dr.left)/2;
+    int dy = pr.top  + (pr.bottom - pr.top)/2  - (dr.bottom - dr.top)/2;
+    SetWindowPos(hDlg, NULL, dx, dy, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+
+    HFONT hFont = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
+
+    // Label
+    HWND hLbl = CreateWindowExW(0, L"STATIC", prompt,
+        WS_CHILD | WS_VISIBLE | SS_LEFT,
+        10, 10, 390, 18, hDlg, (HMENU)101, NULL, NULL);
+    SendMessageW(hLbl, WM_SETFONT, (WPARAM)hFont, TRUE);
+
+    // Edit
+    HWND hEdit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", inOut.c_str(),
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
+        10, 34, 390, 22, hDlg, (HMENU)102, NULL, NULL);
+    SendMessageW(hEdit, WM_SETFONT, (WPARAM)hFont, TRUE);
+    SendMessageW(hEdit, EM_SETSEL, 0, -1);
+
+    // OK button
+    HWND hOk = CreateWindowExW(0, L"BUTTON", L"OK",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
+        220, 68, 80, 26, hDlg, (HMENU)IDOK, NULL, NULL);
+    SendMessageW(hOk, WM_SETFONT, (WPARAM)hFont, TRUE);
+
+    // Cancel button
+    HWND hCan = CreateWindowExW(0, L"BUTTON", L"Cancel",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
+        312, 68, 80, 26, hDlg, (HMENU)IDCANCEL, NULL, NULL);
+    SendMessageW(hCan, WM_SETFONT, (WPARAM)hFont, TRUE);
+
+    SetFocus(hEdit);
+    ShowWindow(hDlg, SW_SHOW);
+    UpdateWindow(hDlg);
+
+    // Subclass dialog to capture WM_COMMAND from child buttons
+    struct DlgState { HWND hEdit; bool ok; bool done; };
+    static DlgState* s_state = nullptr;
+    static DlgState state;
+    state = { hEdit, false, false };
+    s_state = &state;
+
+    // Set a window proc on the dialog to catch WM_COMMAND
+    auto oldProc = (WNDPROC)SetWindowLongPtrW(hDlg, GWLP_WNDPROC,
+        (LONG_PTR)[](HWND h, UINT m, WPARAM w, LPARAM l) -> LRESULT {
+            if (m == WM_COMMAND) {
+                WORD id = LOWORD(w);
+                if (id == IDOK || id == IDCANCEL) {
+                    if (s_state) {
+                        if (id == IDOK) {
+                            wchar_t buf[MAX_PATH] = {};
+                            GetWindowTextW(s_state->hEdit, buf, MAX_PATH);
+                            // store result via SetPropW
+                            SetPropW(h, L"InputResult", (HANDLE)1);
+                        }
+                        s_state->done = true;
+                        s_state->ok   = (id == IDOK);
+                    }
+                    DestroyWindow(h);
+                    return 0;
+                }
+            }
+            if (m == WM_DESTROY) { s_state = nullptr; }
+            return DefWindowProcW(h, m, w, l);
+        });
+
+    // Handle Enter/Escape in the edit box via WM_KEYDOWN → forward to dialog as WM_COMMAND
+    // We store both hDlg and original proc in two separate properties
+    SetPropW(hEdit, L"ParentDlg", (HANDLE)hDlg);
+    static WNDPROC s_editOldProc = nullptr;
+    s_editOldProc = (WNDPROC)SetWindowLongPtrW(hEdit, GWLP_WNDPROC,
+        (LONG_PTR)[](HWND h, UINT m, WPARAM w, LPARAM l) -> LRESULT {
+            if (m == WM_KEYDOWN) {
+                HWND hD = (HWND)GetPropW(h, L"ParentDlg");
+                if (w == VK_RETURN) { PostMessageW(hD, WM_COMMAND, IDOK,     0); return 0; }
+                if (w == VK_ESCAPE) { PostMessageW(hD, WM_COMMAND, IDCANCEL, 0); return 0; }
+            }
+            return CallWindowProcW(s_editOldProc, h, m, w, l);
+        });
+
+    MSG msg;
+    while (!state.done && GetMessageW(&msg, NULL, 0, 0)) {
+        if (!IsWindow(hDlg)) break;
+        TranslateMessage(&msg);
+        DispatchMessageW(&msg);
+    }
+
+    bool ok = state.ok;
+    if (ok) {
+        wchar_t buf[MAX_PATH] = {};
+        GetWindowTextW(hEdit, buf, MAX_PATH);
+        inOut = buf;
+    }
+    s_state = nullptr;
+    return ok;
+}
+
+// ============================================================
+// RENAME
+// ============================================================
+
+static void RenameItem(HWND hWnd, const std::wstring& oldPath, const std::wstring& oldName) {
+    std::wstring newName = oldName;
+    if (!ShowInputBox(hWnd, L"Rename", L"New name:", newName)) return;
+    if (newName.empty() || newName == oldName) return;
+
+    // Find folder part of oldPath
+    std::wstring folder = oldPath.substr(0, oldPath.size() - oldName.size());
+    std::wstring newPath = folder + newName;
+
+    if (!MoveFileExW(oldPath.c_str(), newPath.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+        DWORD err = GetLastError();
+        std::wstring msg = L"Rename failed. Error: " + std::to_wstring(err);
+        MessageBoxW(hWnd, msg.c_str(), L"Error", MB_OK | MB_ICONERROR);
+    }
+    RefreshLocalDir();
+}
+
+// ============================================================
+// COPY / CUT / PASTE
+// ============================================================
+
+// Recursively copy a directory
+static bool CopyDirRecursive(const std::wstring& src, const std::wstring& dst) {
+    CreateDirectoryW(dst.c_str(), NULL);
+    std::wstring pattern = src + L"\\*";
+    WIN32_FIND_DATAW fd;
+    HANDLE h = FindFirstFileW(pattern.c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE) return true;
+    do {
+        if (wcscmp(fd.cFileName, L".") == 0 || wcscmp(fd.cFileName, L"..") == 0) continue;
+        std::wstring s = src + L"\\" + fd.cFileName;
+        std::wstring d = dst + L"\\" + fd.cFileName;
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            CopyDirRecursive(s, d);
+        } else {
+            CopyFileW(s.c_str(), d.c_str(), FALSE);
+        }
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+    return true;
+}
+
+static void PasteItems(HWND hWnd, const std::wstring& destFolder) {
+    if (fm_clipPaths.empty() || fm_clipOp == FmClipOp::None) return;
+
+    int errors = 0;
+    for (auto& src : fm_clipPaths) {
+        // Extract filename
+        std::wstring name = src;
+        size_t sl = name.rfind(L'\\');
+        if (sl != std::wstring::npos) name = name.substr(sl + 1);
+
+        std::wstring dst = destFolder + name;
+
+        // Avoid self-paste
+        if (_wcsicmp(src.c_str(), dst.c_str()) == 0) continue;
+
+        // If destination exists, make unique name
+        if (GetFileAttributesW(dst.c_str()) != INVALID_FILE_ATTRIBUTES) {
+            std::wstring base = name, ext;
+            size_t dot = name.rfind(L'.');
+            if (dot != std::wstring::npos) {
+                base = name.substr(0, dot);
+                ext  = name.substr(dot);   // includes '.'
+            }
+            int n = 2;
+            do {
+                dst = destFolder + base + L" (" + std::to_wstring(n++) + L")" + ext;
+            } while (GetFileAttributesW(dst.c_str()) != INVALID_FILE_ATTRIBUTES && n < 9999);
+        }
+
+        DWORD attr = GetFileAttributesW(src.c_str());
+        bool isDir = (attr != INVALID_FILE_ATTRIBUTES) && (attr & FILE_ATTRIBUTE_DIRECTORY);
+
+        bool ok = false;
+        if (fm_clipOp == FmClipOp::Cut) {
+            ok = (MoveFileExW(src.c_str(), dst.c_str(), MOVEFILE_REPLACE_EXISTING) != 0);
+        } else {
+            if (isDir) {
+                ok = CopyDirRecursive(src, dst);
+            } else {
+                ok = (CopyFileW(src.c_str(), dst.c_str(), FALSE) != 0);
+            }
+        }
+        if (!ok) errors++;
+    }
+
+    // After cut, clear clipboard
+    if (fm_clipOp == FmClipOp::Cut) {
+        fm_clipPaths.clear();
+        fm_clipOp = FmClipOp::None;
+    }
+
+    if (errors > 0) {
+        std::wstring msg = std::to_wstring(errors) + L" item(s) failed to paste.";
+        MessageBoxW(hWnd, msg.c_str(), L"Paste Error", MB_OK | MB_ICONWARNING);
+    }
+    RefreshLocalDir();
+}
+
+// ============================================================
+// ZIP / UNZIP  (Windows Shell IZipFolder — no external libs)
+// ============================================================
+
+static void ZipItems(HWND hWnd, const std::vector<std::wstring>& paths, const std::wstring& destFolder) {
+    // Pick output name from first item
+    std::wstring firstName = paths[0];
+    size_t sl = firstName.rfind(L'\\');
+    if (sl != std::wstring::npos) firstName = firstName.substr(sl + 1);
+    // Strip extension for default zip name
+    size_t dot = firstName.rfind(L'.');
+    std::wstring baseName = (dot != std::wstring::npos) ? firstName.substr(0, dot) : firstName;
+    if (paths.size() > 1) baseName = L"Archive";
+
+    std::wstring zipPath = destFolder + baseName + L".zip";
+    // Prompt user for output path
+    wchar_t buf[MAX_PATH];
+    wcscpy_s(buf, zipPath.c_str());
+    OPENFILENAMEW ofn = {};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner   = hWnd;
+    ofn.lpstrFilter = L"Zip Files\0*.zip\0All Files\0*.*\0";
+    ofn.lpstrFile   = buf;
+    ofn.nMaxFile    = MAX_PATH;
+    ofn.lpstrDefExt = L"zip";
+    ofn.lpstrTitle  = L"Save ZIP As";
+    ofn.Flags       = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
+    if (!GetSaveFileNameW(&ofn)) return;
+    zipPath = buf;
+
+    // Create empty zip file (PKZip local end-of-central-directory record only)
+    // Windows Shell requires an existing zip to copy into it via IShellItem
+    {
+        // Minimal valid empty ZIP: just end-of-central-directory record (22 bytes)
+        static const uint8_t emptyZip[] = {
+            0x50,0x4B,0x05,0x06, // EOCD signature
+            0,0,0,0,             // disk numbers
+            0,0,0,0,             // entries
+            0,0,0,0,             // central dir size
+            0,0,0,0,             // central dir offset
+            0,0                  // comment length
+        };
+        FILE* f = _wfopen(zipPath.c_str(), L"wb");
+        if (!f) { MessageBoxW(hWnd, L"Cannot create ZIP file.", L"Error", MB_OK | MB_ICONERROR); return; }
+        fwrite(emptyZip, 1, sizeof(emptyZip), f);
+        fclose(f);
+    }
+
+    // Use Shell namespace (IShellDispatch2) to add files to the zip
+    // This is available on Windows XP+ without external libraries
+    CoInitialize(NULL);
+    IShellDispatch* pShell = nullptr;
+    HRESULT hr = CoCreateInstance(CLSID_Shell, NULL, CLSCTX_INPROC_SERVER,
+                                  IID_IShellDispatch, (void**)&pShell);
+    if (FAILED(hr) || !pShell) {
+        MessageBoxW(hWnd, L"Shell dispatch unavailable.", L"Error", MB_OK | MB_ICONERROR);
+        return;
+    }
+
+    // Get Folder object for the zip file
+    VARIANT vZip; VariantInit(&vZip);
+    vZip.vt = VT_BSTR;
+    vZip.bstrVal = SysAllocString(zipPath.c_str());
+    Folder* pZipFolder = nullptr;
+    hr = pShell->NameSpace(vZip, &pZipFolder);
+    SysFreeString(vZip.bstrVal);
+
+    if (SUCCEEDED(hr) && pZipFolder) {
+        for (auto& srcPath : paths) {
+            VARIANT vSrc; VariantInit(&vSrc);
+            vSrc.vt = VT_BSTR;
+            vSrc.bstrVal = SysAllocString(srcPath.c_str());
+
+            // CopyHere with flags: 4=no dialog, 16=yes-to-all, 1024=no error UI
+            VARIANT vOpts; VariantInit(&vOpts);
+            vOpts.vt = VT_I4;
+            vOpts.lVal = 4 | 16 | 1024;
+            pZipFolder->CopyHere(vSrc, vOpts);
+            SysFreeString(vSrc.bstrVal);
+
+            // Shell copy is async — wait for it to finish
+            Sleep(500);
+            // Poll until item count increases (simple approach)
+            for (int t = 0; t < 30; t++) {
+                long cnt = 0;
+                FolderItems* pItems = nullptr;
+                if (SUCCEEDED(pZipFolder->Items(&pItems)) && pItems) {
+                    pItems->get_Count(&cnt);
+                    pItems->Release();
+                }
+                if (cnt > 0) break;
+                Sleep(200);
+            }
+        }
+        pZipFolder->Release();
+    }
+    pShell->Release();
+
+    MessageBoxW(hWnd, (L"ZIP created:\n" + zipPath).c_str(), L"Done", MB_OK | MB_ICONINFORMATION);
+    RefreshLocalDir();
+}
+
+static void UnzipItem(HWND hWnd, const std::wstring& zipPath, const std::wstring& destFolder) {
+    // Prompt for destination folder using SHBrowseForFolder
+    wchar_t destBuf[MAX_PATH] = {};
+    wcscpy_s(destBuf, destFolder.c_str());
+
+    BROWSEINFOW bi = {};
+    bi.hwndOwner = hWnd;
+    bi.lpszTitle = L"Extract to folder:";
+    bi.ulFlags   = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
+    // Pre-select current folder
+    bi.lParam    = (LPARAM)destFolder.c_str();
+    bi.lpfn = [](HWND hwnd, UINT msg, LPARAM, LPARAM lp) -> int {
+        if (msg == BFFM_INITIALIZED)
+            SendMessageW(hwnd, BFFM_SETSELECTIONW, TRUE, lp);
+        return 0;
+    };
+    LPITEMIDLIST pidl = SHBrowseForFolderW(&bi);
+    if (!pidl) return;
+    SHGetPathFromIDListW(pidl, destBuf);
+    CoTaskMemFree(pidl);
+
+    std::wstring extractTo = destBuf;
+    if (!extractTo.empty() && extractTo.back() != L'\\') extractTo += L'\\';
+
+    CoInitialize(NULL);
+    IShellDispatch* pShell = nullptr;
+    HRESULT hr = CoCreateInstance(CLSID_Shell, NULL, CLSCTX_INPROC_SERVER,
+                                  IID_IShellDispatch, (void**)&pShell);
+    if (FAILED(hr) || !pShell) {
+        MessageBoxW(hWnd, L"Shell dispatch unavailable.", L"Error", MB_OK | MB_ICONERROR);
+        return;
+    }
+
+    VARIANT vZip; VariantInit(&vZip);
+    vZip.vt = VT_BSTR; vZip.bstrVal = SysAllocString(zipPath.c_str());
+    Folder* pZipFolder = nullptr;
+    hr = pShell->NameSpace(vZip, &pZipFolder);
+    SysFreeString(vZip.bstrVal);
+
+    VARIANT vDest; VariantInit(&vDest);
+    vDest.vt = VT_BSTR; vDest.bstrVal = SysAllocString(extractTo.c_str());
+    Folder* pDestFolder = nullptr;
+    hr = pShell->NameSpace(vDest, &pDestFolder);
+    SysFreeString(vDest.bstrVal);
+
+    if (pZipFolder && pDestFolder) {
+        FolderItems* pItems = nullptr;
+        pZipFolder->Items(&pItems);
+        if (pItems) {
+            VARIANT vItems; VariantInit(&vItems);
+            vItems.vt = VT_DISPATCH;
+            vItems.pdispVal = pItems;
+
+            VARIANT vOpts; VariantInit(&vOpts);
+            vOpts.vt = VT_I4;
+            vOpts.lVal = 4 | 16 | 1024;  // no dialog, yes-to-all
+            pDestFolder->CopyHere(vItems, vOpts);
+            Sleep(1000);
+            pItems->Release();
+        }
+        pZipFolder->Release();
+        pDestFolder->Release();
+    }
+    pShell->Release();
+
+    MessageBoxW(hWnd, (L"Extracted to:\n" + extractTo).c_str(), L"Done", MB_OK | MB_ICONINFORMATION);
+    RefreshLocalDir();
+}
+
+// ============================================================
+// PDF SPLIT / EXTRACT PAGES  (raw byte-level PDF parser)
+// ============================================================
+
+// Minimal PDF parser — reads xref table, finds page objects, extracts them
+struct PdfPage {
+    int  objNum;
+    int  genNum;
+    long offset;      // byte offset of the object in source
+};
+
+// Find all occurrences of a string in a byte buffer
+static long FindBytes(const std::vector<uint8_t>& buf, const std::string& needle, long startPos = 0) {
+    if (needle.empty() || startPos < 0) return -1;
+    auto it = std::search(buf.begin() + startPos, buf.end(),
+                          needle.begin(), needle.end());
+    return (it == buf.end()) ? -1 : (long)(it - buf.begin());
+}
+
+// Get the byte range of one object "N G obj ... endobj"
+static bool GetObjRange(const std::vector<uint8_t>& buf, long offset,
+                        long& outStart, long& outEnd) {
+    // Find "endobj" after offset
+    std::string endObjTag = "endobj";
+    long endPos = FindBytes(buf, endObjTag, offset);
+    if (endPos < 0) return false;
+    outStart = offset;
+    outEnd   = endPos + (long)endObjTag.size();
+    return true;
+}
+
+// Parse the startxref value from the end of a PDF
+static long ParseStartXref(const std::vector<uint8_t>& buf) {
+    // Search backwards from end for "startxref"
+    std::string tag = "startxref";
+    long pos = (long)buf.size() - 1;
+    for (; pos >= (long)tag.size(); pos--) {
+        if (memcmp(buf.data() + pos - (long)tag.size() + 1,
+                   tag.c_str(), tag.size()) == 0) {
+            pos = pos - (long)tag.size() + 1;
+            break;
+        }
+    }
+    if (pos < 0) return -1;
+    // Skip past "startxref" and whitespace
+    long p = pos + (long)tag.size();
+    while (p < (long)buf.size() && (buf[p] == ' ' || buf[p] == '\r' || buf[p] == '\n')) p++;
+    long val = 0;
+    while (p < (long)buf.size() && buf[p] >= '0' && buf[p] <= '9')
+        val = val * 10 + (buf[p++] - '0');
+    return val;
+}
+
+// Parse xref table at given offset → map<objNum, fileOffset>
+static std::map<int,long> ParseXref(const std::vector<uint8_t>& buf, long xrefOffset) {
+    std::map<int,long> result;
+    long p = xrefOffset;
+    // Skip "xref" keyword
+    while (p < (long)buf.size() && (buf[p] == 'x' || buf[p] == 'r' || buf[p] == 'e' || buf[p] == 'f')) p++;
+    while (p < (long)buf.size() && (buf[p] == ' ' || buf[p] == '\r' || buf[p] == '\n')) p++;
+
+    // Parse subsections: "firstObj count\n"
+    while (p < (long)buf.size()) {
+        // Check for "trailer"
+        if (p + 7 < (long)buf.size() && memcmp(buf.data() + p, "trailer", 7) == 0) break;
+        // Read firstObj
+        if (buf[p] < '0' || buf[p] > '9') break;
+        int firstObj = 0;
+        while (p < (long)buf.size() && buf[p] >= '0' && buf[p] <= '9') firstObj = firstObj*10+(buf[p++]-'0');
+        while (p < (long)buf.size() && buf[p] == ' ') p++;
+        int count = 0;
+        while (p < (long)buf.size() && buf[p] >= '0' && buf[p] <= '9') count = count*10+(buf[p++]-'0');
+        while (p < (long)buf.size() && (buf[p] == '\r' || buf[p] == '\n')) p++;
+        // Read 'count' entries of 20 bytes each
+        for (int i = 0; i < count && p + 20 <= (long)buf.size(); i++, p += 20) {
+            long off = 0;
+            for (int c = 0; c < 10; c++) off = off*10 + (buf[p+c]-'0');
+            // gen num at p+11..p+16, flag at p+17
+            char flag = buf[p+17];
+            if (flag == 'n') result[firstObj + i] = off;
+        }
+    }
+    return result;
+}
+
+// Collect all objects that a page depends on (recursive via obj references)
+// We do a simple pass: find all "X Y R" references in the page object range
+static void CollectRefs(const std::vector<uint8_t>& src,
+                        const std::map<int,long>& xref,
+                        int objNum,
+                        std::set<int>& visited) {
+    if (visited.count(objNum)) return;
+    if (!xref.count(objNum))   return;
+    visited.insert(objNum);
+
+    long start, end;
+    if (!GetObjRange(src, xref.at(objNum), start, end)) return;
+
+    // Scan for "N M R" patterns
+    for (long i = start; i < end - 4; i++) {
+        // digit sequence followed by space, digit, space, 'R'
+        if (src[i] >= '1' && src[i] <= '9') {
+            long j = i;
+            int refObj = 0;
+            while (j < end && src[j] >= '0' && src[j] <= '9') refObj = refObj*10+(src[j++]-'0');
+            if (j < end && src[j] == ' ') {
+                j++;
+                // gen num
+                while (j < end && src[j] >= '0' && src[j] <= '9') j++;
+                if (j < end && src[j] == ' ') {
+                    j++;
+                    if (j < end && src[j] == 'R') {
+                        // found a reference
+                        CollectRefs(src, xref, refObj, visited);
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Write a subset of objects from src into a new PDF with remapped obj numbers
+static bool WritePdfSubset(const std::vector<uint8_t>& src,
+                           const std::map<int,long>& xref,
+                           int pagesRootObj,           // original obj num of /Pages
+                           const std::vector<int>& pageObjNums,  // original obj nums of pages to include
+                           const std::wstring& outPath) {
+    FILE* fOut = _wfopen(outPath.c_str(), L"wb");
+    if (!fOut) return false;
+
+    fprintf(fOut, "%%PDF-1.4\n");
+    fprintf(fOut, "%%%c%c%c%c\n", 0xE2, 0xE3, 0xCF, 0xD3);
+
+    // Collect all objects needed
+    std::set<int> needed;
+    for (int pg : pageObjNums) CollectRefs(src, xref, pg, needed);
+    // Also collect Pages root dependencies (MediaBox, Resources at root level)
+    CollectRefs(src, xref, pagesRootObj, needed);
+    // Remove pagesRootObj — we'll write a new one
+    needed.erase(pagesRootObj);
+
+    // Assign new object numbers
+    // 1 = Catalog, 2 = new Pages root, 3..N = existing objs, N+1..N+P = page objs (re-used from needed)
+    // Simpler: keep original obj nums but rewrite catalog and pages root
+    // new obj 1 = Catalog  → /Pages 2 0 R
+    // new obj 2 = Pages    → /Kids [page obj nums remapped]
+    // all other needed objs keep their original obj num + offset by 2 (to avoid collision with 1,2)
+    // Actually easiest: just remap all needed objs sequentially
+
+    std::map<int,int> remap;  // old → new
+    int nextNew = 3;
+    for (int o : needed) {
+        if (o != 1) remap[o] = nextNew++;
+    }
+    // Pages in order
+    for (int pg : pageObjNums) {
+        if (!remap.count(pg)) remap[pg] = nextNew++;
+    }
+    int totalObjs = nextNew;
+
+    // Write objects and track offsets
+    std::map<int,long> newOffsets;  // new obj num → file offset
+
+    // Helper to rewrite object bytes with remapped references
+    auto rewriteObj = [&](int newNum, const std::vector<uint8_t>& objBytes) {
+        newOffsets[newNum] = ftell(fOut);
+        fprintf(fOut, "%d 0 obj\n", newNum);
+        // Write content between "obj\n" and "endobj", remapping "X Y R"
+        // Find body (after first "obj\n")
+        size_t bodyStart = 0;
+        for (size_t i = 0; i + 3 < objBytes.size(); i++) {
+            if (objBytes[i]=='o'&&objBytes[i+1]=='b'&&objBytes[i+2]=='j') {
+                bodyStart = i + 3;
+                while (bodyStart < objBytes.size() && (objBytes[bodyStart]=='\r'||objBytes[bodyStart]=='\n'))
+                    bodyStart++;
+                break;
+            }
+        }
+        // Find end (before "endobj")
+        size_t bodyEnd = objBytes.size();
+        std::string endTag = "endobj";
+        for (size_t i = objBytes.size(); i >= endTag.size(); i--) {
+            if (memcmp(objBytes.data() + i - endTag.size(), endTag.c_str(), endTag.size()) == 0) {
+                bodyEnd = i - endTag.size();
+                break;
+            }
+        }
+        // Write body, substituting "OLD_N G R" → "NEW_N G R"
+        size_t i = bodyStart;
+        while (i < bodyEnd) {
+            // Check if we have "N M R" at position i
+            bool didRemap = false;
+            if (objBytes[i] >= '1' && objBytes[i] <= '9') {
+                size_t j = i;
+                int oldRef = 0;
+                while (j < bodyEnd && objBytes[j] >= '0' && objBytes[j] <= '9')
+                    oldRef = oldRef*10+(objBytes[j++]-'0');
+                if (j < bodyEnd && objBytes[j] == ' ') {
+                    size_t k = j+1;
+                    int gen = 0;
+                    while (k < bodyEnd && objBytes[k] >= '0' && objBytes[k] <= '9')
+                        gen = gen*10+(objBytes[k++]-'0');
+                    if (k < bodyEnd && objBytes[k] == ' ' && k+1 < bodyEnd && objBytes[k+1] == 'R') {
+                        // It's a reference
+                        int newRef = remap.count(oldRef) ? remap.at(oldRef) : oldRef;
+                        // Special cases: pagesRootObj → 2, catalog → 1
+                        if (oldRef == pagesRootObj) newRef = 2;
+                        fprintf(fOut, "%d %d R", newRef, gen);
+                        i = k + 2;
+                        didRemap = true;
+                    }
+                }
+            }
+            if (!didRemap) { fputc(objBytes[i], fOut); i++; }
+        }
+        fprintf(fOut, "\nendobj\n\n");
+    };
+
+    // Helper: extract raw bytes of one object from src
+    auto extractObjBytes = [&](int origNum) -> std::vector<uint8_t> {
+        long off = xref.at(origNum);
+        long start, end;
+        if (!GetObjRange(src, off, start, end)) return {};
+        return std::vector<uint8_t>(src.begin()+start, src.begin()+end);
+    };
+
+    // Obj 1 — Catalog
+    newOffsets[1] = ftell(fOut);
+    fprintf(fOut, "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n\n");
+
+    // Obj 2 — Pages root
+    newOffsets[2] = ftell(fOut);
+    fprintf(fOut, "2 0 obj\n<< /Type /Pages /Kids [");
+    for (size_t pi = 0; pi < pageObjNums.size(); pi++) {
+        if (pi > 0) fprintf(fOut, " ");
+        fprintf(fOut, "%d 0 R", remap.count(pageObjNums[pi]) ? remap.at(pageObjNums[pi]) : pageObjNums[pi]+2);
+    }
+    fprintf(fOut, "] /Count %zu >>\nendobj\n\n", pageObjNums.size());
+
+    // Non-page needed objects
+    for (int origNum : needed) {
+        if (origNum == 1 || origNum == pagesRootObj) continue;
+        if (!remap.count(origNum)) continue;
+        auto bytes = extractObjBytes(origNum);
+        if (!bytes.empty()) rewriteObj(remap.at(origNum), bytes);
+    }
+
+    // Page objects
+    for (int pg : pageObjNums) {
+        if (!remap.count(pg)) continue;
+        auto bytes = extractObjBytes(pg);
+        if (!bytes.empty()) rewriteObj(remap.at(pg), bytes);
+    }
+
+    // XRef
+    long xrefOff = ftell(fOut);
+    fprintf(fOut, "xref\n0 %d\n", totalObjs);
+    fprintf(fOut, "0000000000 65535 f \n");
+    for (int i = 1; i < totalObjs; i++) {
+        long off = newOffsets.count(i) ? newOffsets.at(i) : 0;
+        fprintf(fOut, "%010ld 00000 n \n", off);
+    }
+    fprintf(fOut, "trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%ld\n%%%%EOF\n",
+            totalObjs, xrefOff);
+    fclose(fOut);
+    return true;
+}
+
+// High-level: find /Pages and enumerate page obj nums
+static std::vector<int> GetPdfPageObjNums(const std::vector<uint8_t>& src,
+                                           const std::map<int,long>& xref,
+                                           int& outPagesRootObj) {
+    // Find the Catalog (/Type /Catalog)
+    int catalogObj = -1;
+    for (auto& kv : xref) {
+        long s, e;
+        if (!GetObjRange(src, kv.second, s, e)) continue;
+        std::string chunk(src.begin()+s, src.begin()+std::min(e, s+200));
+        if (chunk.find("/Type /Catalog") != std::string::npos ||
+            chunk.find("/Type/Catalog")  != std::string::npos) {
+            catalogObj = kv.first; break;
+        }
+    }
+    if (catalogObj < 0) return {};
+
+    // Find /Pages ref in catalog
+    long cs, ce;
+    if (!GetObjRange(src, xref.at(catalogObj), cs, ce)) return {};
+    std::string catStr(src.begin()+cs, src.begin()+ce);
+    size_t ppos = catStr.find("/Pages ");
+    if (ppos == std::string::npos) ppos = catStr.find("/Pages\n");
+    if (ppos == std::string::npos) return {};
+    ppos += 7; // skip "/Pages "
+    int pagesObj = 0;
+    while (ppos < catStr.size() && catStr[ppos] >= '0' && catStr[ppos] <= '9')
+        pagesObj = pagesObj*10+(catStr[ppos++]-'0');
+    outPagesRootObj = pagesObj;
+    if (!xref.count(pagesObj)) return {};
+
+    // BFS: collect all Page objects
+    std::vector<int> pageObjs;
+    std::vector<int> queue = {pagesObj};
+    std::set<int> visited;
+    while (!queue.empty()) {
+        int cur = queue.back(); queue.pop_back();
+        if (visited.count(cur)) continue;
+        visited.insert(cur);
+        if (!xref.count(cur)) continue;
+        long s, e;
+        if (!GetObjRange(src, xref.at(cur), s, e)) continue;
+        std::string chunk(src.begin()+s, src.begin()+e);
+        bool isPage  = (chunk.find("/Type /Page\n")  != std::string::npos ||
+                        chunk.find("/Type /Page\r")  != std::string::npos ||
+                        chunk.find("/Type /Page ")   != std::string::npos ||
+                        chunk.find("/Type/Page")     != std::string::npos);
+        bool isPages = (chunk.find("/Type /Pages")  != std::string::npos ||
+                        chunk.find("/Type/Pages")   != std::string::npos);
+        if (isPage) {
+            pageObjs.push_back(cur);
+        } else if (isPages) {
+            // Parse /Kids array
+            size_t kpos = chunk.find("/Kids");
+            if (kpos != std::string::npos) {
+                kpos += 5;
+                while (kpos < chunk.size() && chunk[kpos] != '[') kpos++;
+                kpos++; // skip '['
+                while (kpos < chunk.size() && chunk[kpos] != ']') {
+                    if (chunk[kpos] >= '0' && chunk[kpos] <= '9') {
+                        int kid = 0;
+                        while (kpos < chunk.size() && chunk[kpos] >= '0' && chunk[kpos] <= '9')
+                            kid = kid*10+(chunk[kpos++]-'0');
+                        queue.push_back(kid);
+                    } else { kpos++; }
+                }
+            }
+        }
+    }
+    return pageObjs;
+}
+
+// Parse page range string like "1,3-5,7" → set of 0-based page indices
+static std::set<int> ParsePageRange(const std::wstring& rangeStr, int pageCount) {
+    std::set<int> result;
+    std::wstringstream ss(rangeStr);
+    std::wstring token;
+    while (std::getline(ss, token, L',')) {
+        // Trim whitespace
+        while (!token.empty() && token.front() == L' ') token.erase(0,1);
+        while (!token.empty() && token.back()  == L' ') token.pop_back();
+        size_t dash = token.find(L'-');
+        if (dash != std::wstring::npos) {
+            int lo = _wtoi(token.substr(0, dash).c_str());
+            int hi = _wtoi(token.substr(dash+1).c_str());
+            for (int i = lo; i <= hi; i++)
+                if (i >= 1 && i <= pageCount) result.insert(i-1);
+        } else {
+            int pg = _wtoi(token.c_str());
+            if (pg >= 1 && pg <= pageCount) result.insert(pg-1);
+        }
+    }
+    return result;
+}
+
+static void SplitOrExtractPdf(HWND hWnd, const std::wstring& pdfPath, bool splitAll) {
+    // Load PDF
+    auto src = ReadFileBytes(pdfPath);
+    if (src.empty()) { MessageBoxW(hWnd, L"Cannot read PDF.", L"Error", MB_OK | MB_ICONERROR); return; }
+
+    long xrefOff = ParseStartXref(src);
+    if (xrefOff < 0) { MessageBoxW(hWnd, L"Cannot parse PDF (no startxref).", L"Error", MB_OK | MB_ICONERROR); return; }
+
+    auto xref = ParseXref(src, xrefOff);
+    if (xref.empty()) { MessageBoxW(hWnd, L"Cannot parse PDF xref.", L"Error", MB_OK | MB_ICONERROR); return; }
+
+    int pagesRootObj = -1;
+    auto allPages = GetPdfPageObjNums(src, xref, pagesRootObj);
+    if (allPages.empty()) { MessageBoxW(hWnd, L"No pages found in PDF.", L"Error", MB_OK | MB_ICONERROR); return; }
+
+    int pageCount = (int)allPages.size();
+
+    // Base name for output files
+    std::wstring basePath = pdfPath;
+    size_t dotPos = basePath.rfind(L'.');
+    if (dotPos != std::wstring::npos) basePath = basePath.substr(0, dotPos);
+
+    if (splitAll) {
+        // Split: one PDF per page
+        std::wstring msg = L"Split " + std::to_wstring(pageCount) + L" pages into separate PDFs?\nOutput: same folder as source.";
+        if (MessageBoxW(hWnd, msg.c_str(), L"Split PDF", MB_YESNO | MB_ICONQUESTION) != IDYES) return;
+
+        int ok = 0;
+        for (int i = 0; i < pageCount; i++) {
+            std::wstring outPath = basePath + L"_page" + std::to_wstring(i+1) + L".pdf";
+            if (WritePdfSubset(src, xref, pagesRootObj, {allPages[i]}, outPath)) ok++;
+        }
+        std::wstring done = std::to_wstring(ok) + L" of " + std::to_wstring(pageCount) + L" pages split.";
+        MessageBoxW(hWnd, done.c_str(), L"Split Complete", MB_OK | MB_ICONINFORMATION);
+
+    } else {
+        // Extract: ask for page range
+        std::wstring rangeHint = L"1-" + std::to_wstring(pageCount);
+        std::wstring rangeStr = rangeHint;
+        if (!ShowInputBox(hWnd, L"Extract Pages",
+            (L"PDF has " + std::to_wstring(pageCount) + L" pages.\nEnter page range (e.g. 1-3,5,7):").c_str(),
+            rangeStr)) return;
+
+        auto indices = ParsePageRange(rangeStr, pageCount);
+        if (indices.empty()) { MessageBoxW(hWnd, L"No valid pages in range.", L"Error", MB_OK | MB_ICONERROR); return; }
+
+        std::vector<int> selectedPages;
+        for (int idx : indices) selectedPages.push_back(allPages[idx]);
+
+        // Save dialog
+        std::wstring outPath = PromptSavePath(hWnd,
+            L"PDF Files\0*.pdf\0All Files\0*.*\0", L"pdf", L"Save Extracted Pages As");
+        if (outPath.empty()) return;
+
+        if (WritePdfSubset(src, xref, pagesRootObj, selectedPages, outPath)) {
+            ShellExecuteW(NULL, L"open", outPath.c_str(), NULL, NULL, SW_SHOWNORMAL);
+        } else {
+            MessageBoxW(hWnd, L"Failed to write output PDF.", L"Error", MB_OK | MB_ICONERROR);
+        }
+    }
+    RefreshLocalDir();
+}
+
+// ============================================================
+
 static std::wstring GetFileExt(const std::wstring& filename) {
     size_t dot = filename.rfind(L'.');
     if (dot == std::wstring::npos) return L"";
@@ -2263,41 +3127,86 @@ void ProcessFileManagerRightClick(float x, float y, HWND hWnd) {
     HMENU hMenu = CreatePopupMenu();
     if (!hMenu) return;
 
-    // Standard items always available when 1+ items selected
-    bool hasSel = !sel.empty() && !fm_items[sel[0]].second;
-
     enum CtxCmd {
-        CMD_OPEN      = 1,
-        CMD_DELETE    = 2,
-        CMD_MERGE_PDF = 3,
-        CMD_IMG_PDF   = 4,
-        CMD_COPY_PATH = 5,
-        CMD_RENAME    = 6,
+        CMD_OPEN        = 1,
+        CMD_RENAME      = 2,
+        CMD_COPY        = 3,
+        CMD_CUT         = 4,
+        CMD_PASTE       = 5,
+        CMD_DELETE      = 6,
+        CMD_COPY_PATH   = 7,
+        CMD_MERGE_PDF   = 8,
+        CMD_IMG_PDF     = 9,
+        CMD_PDF_SPLIT   = 10,
+        CMD_PDF_EXTRACT = 11,
+        CMD_ZIP         = 12,
+        CMD_UNZIP       = 13,
     };
 
-    // Open / Copy path
+    // --- Single item ---
     if (sel.size() == 1) {
         AppendMenuW(hMenu, MF_STRING, CMD_OPEN,      L"Open");
+        AppendMenuW(hMenu, MF_STRING, CMD_RENAME,    L"Rename");
         AppendMenuW(hMenu, MF_STRING, CMD_COPY_PATH, L"Copy path");
         AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
     }
 
-    // PDF Merge: 2+ PDFs selected
+    // --- Edit actions (Copy/Cut always, Paste when clipboard non-empty) ---
+    {
+        std::wstring copyLabel = sel.size() == 1
+            ? L"Copy \"" + fm_items[sel[0]].first + L"\""
+            : L"Copy " + std::to_wstring(sel.size()) + L" items";
+        std::wstring cutLabel = sel.size() == 1
+            ? L"Cut \"" + fm_items[sel[0]].first + L"\""
+            : L"Cut " + std::to_wstring(sel.size()) + L" items";
+        if (!sel.empty()) {
+            AppendMenuW(hMenu, MF_STRING, CMD_COPY, copyLabel.c_str());
+            AppendMenuW(hMenu, MF_STRING, CMD_CUT,  cutLabel.c_str());
+        }
+        if (fm_clipOp != FmClipOp::None && !fm_clipPaths.empty()) {
+            std::wstring pasteLabel = L"Paste here (" +
+                std::to_wstring(fm_clipPaths.size()) +
+                (fm_clipOp == FmClipOp::Cut ? L" item(s) — Move)" : L" item(s) — Copy)");
+            AppendMenuW(hMenu, MF_STRING, CMD_PASTE, pasteLabel.c_str());
+        }
+        if (!sel.empty() || (fm_clipOp != FmClipOp::None && !fm_clipPaths.empty()))
+            AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+    }
+
+    // --- Zip / Unzip ---
+    if (!sel.empty()) {
+        std::wstring zipLabel = sel.size() == 1
+            ? L"Zip \"" + fm_items[sel[0]].first + L"\""
+            : L"Zip " + std::to_wstring(sel.size()) + L" items";
+        AppendMenuW(hMenu, MF_STRING, CMD_ZIP, zipLabel.c_str());
+    }
+    // Unzip: only for .zip files
+    bool hasZip = false;
+    for (int s : sel) {
+        if (!fm_items[s].second && GetFileExt(fm_items[s].first) == L"zip") { hasZip = true; break; }
+    }
+    if (hasZip && sel.size() == 1)
+        AppendMenuW(hMenu, MF_STRING, CMD_UNZIP, L"Extract here...");
+    if (!sel.empty()) AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+
+    // --- PDF Tools ---
     if (pdfFiles.size() >= 2) {
-        std::wstring label = L"Merge " + std::to_wstring(pdfFiles.size()) + L" PDFs \u2192 single PDF";
-        AppendMenuW(hMenu, MF_STRING, CMD_MERGE_PDF, label.c_str());
-        AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+        std::wstring lbl = L"Merge " + std::to_wstring(pdfFiles.size()) + L" PDFs \u2192 single PDF";
+        AppendMenuW(hMenu, MF_STRING, CMD_MERGE_PDF, lbl.c_str());
     }
-
-    // Images to PDF: 1+ images selected
     if (!imgFiles.empty()) {
-        std::wstring label = L"Convert " + std::to_wstring(imgFiles.size()) +
-                             (imgFiles.size() == 1 ? L" image" : L" images") + L" \u2192 PDF";
-        AppendMenuW(hMenu, MF_STRING, CMD_IMG_PDF, label.c_str());
-        AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+        std::wstring lbl = L"Convert " + std::to_wstring(imgFiles.size()) +
+                           (imgFiles.size() == 1 ? L" image" : L" images") + L" \u2192 PDF";
+        AppendMenuW(hMenu, MF_STRING, CMD_IMG_PDF, lbl.c_str());
     }
+    if (pdfFiles.size() == 1 && sel.size() == 1) {
+        AppendMenuW(hMenu, MF_STRING, CMD_PDF_SPLIT,   L"Split PDF (one file per page)");
+        AppendMenuW(hMenu, MF_STRING, CMD_PDF_EXTRACT, L"Extract pages from PDF...");
+    }
+    if (pdfFiles.size() >= 1 || !imgFiles.empty())
+        AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
 
-    // Delete
+    // --- Delete ---
     if (!sel.empty()) {
         std::wstring delLabel = sel.size() == 1
             ? L"Delete \"" + fm_items[sel[0]].first + L"\""
@@ -2305,12 +3214,15 @@ void ProcessFileManagerRightClick(float x, float y, HWND hWnd) {
         AppendMenuW(hMenu, MF_STRING, CMD_DELETE, delLabel.c_str());
     }
 
+    // Show menu
     POINT pt; GetCursorPos(&pt);
     int cmd = TrackPopupMenu(hMenu, TPM_RETURNCMD | TPM_RIGHTBUTTON,
                              pt.x, pt.y, 0, hWnd, NULL);
     DestroyMenu(hMenu);
 
     switch (cmd) {
+
+    // ---- Open ----
     case CMD_OPEN:
         if (!sel.empty()) {
             std::wstring fp = fm_currentPath + fm_items[sel[0]].first;
@@ -2318,6 +3230,16 @@ void ProcessFileManagerRightClick(float x, float y, HWND hWnd) {
         }
         break;
 
+    // ---- Rename ----
+    case CMD_RENAME:
+        if (!sel.empty()) {
+            std::wstring oldName = fm_items[sel[0]].first;
+            std::wstring oldPath = fm_currentPath + oldName;
+            RenameItem(hWnd, oldPath, oldName);
+        }
+        break;
+
+    // ---- Copy path ----
     case CMD_COPY_PATH:
         if (!sel.empty()) {
             std::wstring fp = fm_currentPath + fm_items[sel[0]].first;
@@ -2336,6 +3258,29 @@ void ProcessFileManagerRightClick(float x, float y, HWND hWnd) {
         }
         break;
 
+    // ---- Copy ----
+    case CMD_COPY:
+        fm_clipPaths.clear();
+        for (int s : sel) fm_clipPaths.push_back(fm_currentPath + fm_items[s].first);
+        fm_clipOp = FmClipOp::Copy;
+        break;
+
+    // ---- Cut ----
+    case CMD_CUT:
+        fm_clipPaths.clear();
+        for (int s : sel) fm_clipPaths.push_back(fm_currentPath + fm_items[s].first);
+        fm_clipOp = FmClipOp::Cut;
+        break;
+
+    // ---- Paste ----
+    case CMD_PASTE: {
+        std::wstring dest = fm_currentPath;
+        if (dest.back() != L'\\') dest += L'\\';
+        PasteItems(hWnd, dest);
+        break;
+    }
+
+    // ---- Delete ----
     case CMD_DELETE:
         for (int s : sel) {
             std::wstring fp = fm_currentPath + fm_items[s].first;
@@ -2347,38 +3292,48 @@ void ProcessFileManagerRightClick(float x, float y, HWND hWnd) {
         RefreshLocalDir();
         break;
 
+    // ---- Zip ----
+    case CMD_ZIP: {
+        std::vector<std::wstring> paths;
+        for (int s : sel) paths.push_back(fm_currentPath + fm_items[s].first);
+        ZipItems(hWnd, paths, fm_currentPath);
+        break;
+    }
+
+    // ---- Unzip ----
+    case CMD_UNZIP:
+        if (!sel.empty()) {
+            std::wstring fp = fm_currentPath + fm_items[sel[0]].first;
+            UnzipItem(hWnd, fp, fm_currentPath);
+        }
+        break;
+
+    // ---- Merge PDFs ----
     case CMD_MERGE_PDF: {
         std::wstring outPath = PromptSavePath(hWnd,
-            L"PDF Files\0*.pdf\0All Files\0*.*\0",
-            L"pdf",
-            L"Save Merged PDF As");
+            L"PDF Files\0*.pdf\0All Files\0*.*\0", L"pdf", L"Save Merged PDF As");
         if (!outPath.empty()) {
-            // Sort pdf files to match display order (they were added in selection order)
-            // Re-collect in sorted selection order
             std::vector<std::wstring> ordered;
             for (int s : sel) {
-                std::wstring ext = GetFileExt(fm_items[s].first);
-                if (ext == L"pdf") ordered.push_back(fm_currentPath + fm_items[s].first);
+                if (GetFileExt(fm_items[s].first) == L"pdf")
+                    ordered.push_back(fm_currentPath + fm_items[s].first);
             }
             MergePDFsWithPowerShell(ordered, outPath);
-            // Open the result
             ShellExecuteW(NULL, L"open", outPath.c_str(), NULL, NULL, SW_SHOWNORMAL);
             RefreshLocalDir();
         }
         break;
     }
 
+    // ---- Images → PDF ----
     case CMD_IMG_PDF: {
         std::wstring outPath = PromptSavePath(hWnd,
-            L"PDF Files\0*.pdf\0All Files\0*.*\0",
-            L"pdf",
-            L"Save Images as PDF");
+            L"PDF Files\0*.pdf\0All Files\0*.*\0", L"pdf", L"Save Images as PDF");
         if (!outPath.empty()) {
-            // Collect images in sorted selection order
             std::vector<std::wstring> ordered;
             for (int s : sel) {
-                std::wstring ext = GetFileExt(fm_items[s].first);
-                if (IsImageExtW(ext)) ordered.push_back(fm_currentPath + fm_items[s].first);
+                if (IsImageExtW(GetFileExt(fm_items[s].first)))
+                    ordered.push_back(fm_currentPath + fm_items[s].first);
             }
             ImagesToPdf(ordered, outPath);
             ShellExecuteW(NULL, L"open", outPath.c_str(), NULL, NULL, SW_SHOWNORMAL);
@@ -2386,7 +3341,20 @@ void ProcessFileManagerRightClick(float x, float y, HWND hWnd) {
         }
         break;
     }
-    }
+
+    // ---- PDF Split (one file per page) ----
+    case CMD_PDF_SPLIT:
+        if (!pdfFiles.empty())
+            SplitOrExtractPdf(hWnd, pdfFiles[0], true);
+        break;
+
+    // ---- PDF Extract pages ----
+    case CMD_PDF_EXTRACT:
+        if (!pdfFiles.empty())
+            SplitOrExtractPdf(hWnd, pdfFiles[0], false);
+        break;
+
+    } // end switch
 
     if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
 }
