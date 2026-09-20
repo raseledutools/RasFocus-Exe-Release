@@ -2195,151 +2195,101 @@ static void ImagesToPdf(const std::vector<std::wstring>& imgPaths, const std::ws
 // SIMPLE WIN32 INPUT DIALOG  (no resource file needed)
 // ============================================================
 
-struct InputDlgData { std::wstring prompt; std::wstring value; };
+// Forward declarations needed by functions defined below PromptSavePath
+static std::wstring GetFileExt(const std::wstring& filename);
+static bool         IsImageExtW(const std::wstring& ext);
+static std::wstring PromptSavePath(HWND hWnd, const wchar_t* filter,
+                                   const wchar_t* defExt, const wchar_t* title);
 
-static INT_PTR CALLBACK InputDlgProc(HWND hDlg, UINT msg, WPARAM wp, LPARAM lp) {
-    switch (msg) {
-    case WM_INITDIALOG: {
-        SetWindowLongPtrW(hDlg, DWLP_USER, lp);
-        InputDlgData* d = (InputDlgData*)lp;
-        SetDlgItemTextW(hDlg, 101, d->prompt.c_str());
-        SetDlgItemTextW(hDlg, 102, d->value.c_str());
-        // Select all text in edit so user can just type
-        SendDlgItemMessageW(hDlg, 102, EM_SETSEL, 0, -1);
-        return TRUE;
-    }
-    case WM_COMMAND:
-        if (LOWORD(wp) == IDOK) {
-            InputDlgData* d = (InputDlgData*)GetWindowLongPtrW(hDlg, DWLP_USER);
-            wchar_t buf[MAX_PATH] = {};
-            GetDlgItemTextW(hDlg, 102, buf, MAX_PATH);
-            d->value = buf;
-            EndDialog(hDlg, IDOK);
-        } else if (LOWORD(wp) == IDCANCEL) {
-            EndDialog(hDlg, IDCANCEL);
+// Shared state for ShowInputBox static WndProcs
+struct FmInputBoxState { HWND hEdit; bool ok; bool done; };
+static FmInputBoxState g_inputState       = {};
+static WNDPROC         g_inputEditOldProc = nullptr;
+
+static LRESULT CALLBACK FmInputDlgProc(HWND h, UINT m, WPARAM w, LPARAM l) {
+    if (m == WM_COMMAND) {
+        WORD id = LOWORD(w);
+        if (id == IDOK || id == IDCANCEL) {
+            g_inputState.ok   = (id == IDOK);
+            g_inputState.done = true;
+            DestroyWindow(h);
+            return 0;
         }
-        return TRUE;
-    case WM_CLOSE:
-        EndDialog(hDlg, IDCANCEL);
-        return TRUE;
     }
-    return FALSE;
+    return DefWindowProcW(h, m, w, l);
 }
 
-// Show a simple modal input dialog built at runtime (no .rc needed)
+static LRESULT CALLBACK FmInputEditProc(HWND h, UINT m, WPARAM w, LPARAM l) {
+    if (m == WM_KEYDOWN) {
+        HWND hD = (HWND)GetPropW(h, L"ParentDlg");
+        if (hD) {
+            if (w == VK_RETURN) { PostMessageW(hD, WM_COMMAND, IDOK,     0); return 0; }
+            if (w == VK_ESCAPE) { PostMessageW(hD, WM_COMMAND, IDCANCEL, 0); return 0; }
+        }
+    }
+    return CallWindowProcW(g_inputEditOldProc, h, m, w, l);
+}
+
 static bool ShowInputBox(HWND hParent, const wchar_t* title,
                          const wchar_t* prompt, std::wstring& inOut) {
-    // Build DLGTEMPLATE in memory
-    // Layout: static label (101) + edit (102) + OK + Cancel
-    struct alignas(WORD) DlgMem {
-        DLGTEMPLATE   hdr;
-        WORD          menu, cls, title_[1];
-        // items follow
-    };
-    // Use CreateWindowEx approach instead — simpler and no alignment headaches
     HWND hDlg = CreateWindowExW(WS_EX_DLGMODALFRAME | WS_EX_TOPMOST,
         L"#32770", title,
-        WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_SETFONT | DS_MODALFRAME,
+        WS_POPUP | WS_CAPTION | WS_SYSMENU,
         0, 0, 420, 130, hParent, NULL, GetModuleHandleW(NULL), NULL);
     if (!hDlg) return false;
 
-    // Center on parent
-    RECT pr; GetWindowRect(hParent, &pr);
-    RECT dr; GetWindowRect(hDlg, &dr);
-    int dx = pr.left + (pr.right - pr.left)/2 - (dr.right - dr.left)/2;
-    int dy = pr.top  + (pr.bottom - pr.top)/2  - (dr.bottom - dr.top)/2;
-    SetWindowPos(hDlg, NULL, dx, dy, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+    RECT pr, dr;
+    GetWindowRect(hParent, &pr);
+    GetWindowRect(hDlg,    &dr);
+    SetWindowPos(hDlg, NULL,
+        pr.left + (pr.right-pr.left)/2 - (dr.right-dr.left)/2,
+        pr.top  + (pr.bottom-pr.top)/2 - (dr.bottom-dr.top)/2,
+        0, 0, SWP_NOSIZE | SWP_NOZORDER);
 
     HFONT hFont = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
 
-    // Label
     HWND hLbl = CreateWindowExW(0, L"STATIC", prompt,
-        WS_CHILD | WS_VISIBLE | SS_LEFT,
-        10, 10, 390, 18, hDlg, (HMENU)101, NULL, NULL);
+        WS_CHILD|WS_VISIBLE|SS_LEFT, 10,10,390,18, hDlg,(HMENU)101,NULL,NULL);
     SendMessageW(hLbl, WM_SETFONT, (WPARAM)hFont, TRUE);
 
-    // Edit
     HWND hEdit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", inOut.c_str(),
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
-        10, 34, 390, 22, hDlg, (HMENU)102, NULL, NULL);
+        WS_CHILD|WS_VISIBLE|WS_TABSTOP|ES_AUTOHSCROLL, 10,34,390,22,
+        hDlg,(HMENU)102,NULL,NULL);
     SendMessageW(hEdit, WM_SETFONT, (WPARAM)hFont, TRUE);
     SendMessageW(hEdit, EM_SETSEL, 0, -1);
 
-    // OK button
     HWND hOk = CreateWindowExW(0, L"BUTTON", L"OK",
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
-        220, 68, 80, 26, hDlg, (HMENU)IDOK, NULL, NULL);
+        WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_DEFPUSHBUTTON, 220,68,80,26,
+        hDlg,(HMENU)IDOK,NULL,NULL);
     SendMessageW(hOk, WM_SETFONT, (WPARAM)hFont, TRUE);
 
-    // Cancel button
     HWND hCan = CreateWindowExW(0, L"BUTTON", L"Cancel",
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-        312, 68, 80, 26, hDlg, (HMENU)IDCANCEL, NULL, NULL);
+        WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_PUSHBUTTON, 312,68,80,26,
+        hDlg,(HMENU)IDCANCEL,NULL,NULL);
     SendMessageW(hCan, WM_SETFONT, (WPARAM)hFont, TRUE);
 
+    g_inputState = { hEdit, false, false };
+    SetWindowLongPtrW(hDlg, GWLP_WNDPROC, (LONG_PTR)FmInputDlgProc);
+    SetPropW(hEdit, L"ParentDlg", (HANDLE)hDlg);
+    g_inputEditOldProc = (WNDPROC)SetWindowLongPtrW(hEdit, GWLP_WNDPROC,
+                                                      (LONG_PTR)FmInputEditProc);
     SetFocus(hEdit);
     ShowWindow(hDlg, SW_SHOW);
     UpdateWindow(hDlg);
 
-    // Subclass dialog to capture WM_COMMAND from child buttons
-    struct DlgState { HWND hEdit; bool ok; bool done; };
-    static DlgState* s_state = nullptr;
-    static DlgState state;
-    state = { hEdit, false, false };
-    s_state = &state;
-
-    // Set a window proc on the dialog to catch WM_COMMAND
-    auto oldProc = (WNDPROC)SetWindowLongPtrW(hDlg, GWLP_WNDPROC,
-        (LONG_PTR)[](HWND h, UINT m, WPARAM w, LPARAM l) -> LRESULT {
-            if (m == WM_COMMAND) {
-                WORD id = LOWORD(w);
-                if (id == IDOK || id == IDCANCEL) {
-                    if (s_state) {
-                        if (id == IDOK) {
-                            wchar_t buf[MAX_PATH] = {};
-                            GetWindowTextW(s_state->hEdit, buf, MAX_PATH);
-                            // store result via SetPropW
-                            SetPropW(h, L"InputResult", (HANDLE)1);
-                        }
-                        s_state->done = true;
-                        s_state->ok   = (id == IDOK);
-                    }
-                    DestroyWindow(h);
-                    return 0;
-                }
-            }
-            if (m == WM_DESTROY) { s_state = nullptr; }
-            return DefWindowProcW(h, m, w, l);
-        });
-
-    // Handle Enter/Escape in the edit box via WM_KEYDOWN → forward to dialog as WM_COMMAND
-    // We store both hDlg and original proc in two separate properties
-    SetPropW(hEdit, L"ParentDlg", (HANDLE)hDlg);
-    static WNDPROC s_editOldProc = nullptr;
-    s_editOldProc = (WNDPROC)SetWindowLongPtrW(hEdit, GWLP_WNDPROC,
-        (LONG_PTR)[](HWND h, UINT m, WPARAM w, LPARAM l) -> LRESULT {
-            if (m == WM_KEYDOWN) {
-                HWND hD = (HWND)GetPropW(h, L"ParentDlg");
-                if (w == VK_RETURN) { PostMessageW(hD, WM_COMMAND, IDOK,     0); return 0; }
-                if (w == VK_ESCAPE) { PostMessageW(hD, WM_COMMAND, IDCANCEL, 0); return 0; }
-            }
-            return CallWindowProcW(s_editOldProc, h, m, w, l);
-        });
-
     MSG msg;
-    while (!state.done && GetMessageW(&msg, NULL, 0, 0)) {
+    while (!g_inputState.done && GetMessageW(&msg, NULL, 0, 0)) {
         if (!IsWindow(hDlg)) break;
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
     }
 
-    bool ok = state.ok;
+    bool ok = g_inputState.ok;
     if (ok) {
         wchar_t buf[MAX_PATH] = {};
         GetWindowTextW(hEdit, buf, MAX_PATH);
         inOut = buf;
     }
-    s_state = nullptr;
     return ok;
 }
 
@@ -2560,11 +2510,14 @@ static void UnzipItem(HWND hWnd, const std::wstring& zipPath, const std::wstring
     bi.ulFlags   = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
     // Pre-select current folder
     bi.lParam    = (LPARAM)destFolder.c_str();
-    bi.lpfn = [](HWND hwnd, UINT msg, LPARAM, LPARAM lp) -> int {
-        if (msg == BFFM_INITIALIZED)
-            SendMessageW(hwnd, BFFM_SETSELECTIONW, TRUE, lp);
-        return 0;
+    struct BffCb {
+        static int CALLBACK Proc(HWND hwnd, UINT msg, LPARAM, LPARAM lp) {
+            if (msg == BFFM_INITIALIZED)
+                SendMessageW(hwnd, BFFM_SETSELECTIONW, TRUE, lp);
+            return 0;
+        }
     };
+    bi.lpfn = BffCb::Proc;
     LPITEMIDLIST pidl = SHBrowseForFolderW(&bi);
     if (!pidl) return;
     SHGetPathFromIDListW(pidl, destBuf);
@@ -2895,7 +2848,8 @@ static std::vector<int> GetPdfPageObjNums(const std::vector<uint8_t>& src,
     for (auto& kv : xref) {
         long s, e;
         if (!GetObjRange(src, kv.second, s, e)) continue;
-        std::string chunk(src.begin()+s, src.begin()+std::min(e, s+200));
+        long chunkEnd = (e - s < 200L) ? e : s + 200L;
+        std::string chunk(src.begin()+s, src.begin()+chunkEnd);
         if (chunk.find("/Type /Catalog") != std::string::npos ||
             chunk.find("/Type/Catalog")  != std::string::npos) {
             catalogObj = kv.first; break;
