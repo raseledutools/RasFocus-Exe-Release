@@ -11,3 +11,6 @@ void ProcessFileManagerRightClick(float x, float y, HWND hWnd);  // right-click 
 void NavigateFileManagerTo(const std::wstring& path);   // navigate sidebar/drive clicks
 // Call from WM_USER+50 handler in main message loop (Google Drive API response)
 void ProcessDriveApiResponse(const std::string& json);
+// Called from WinMain when launched with "-merge file1.pdf file2.pdf ..."
+// (Windows Explorer right-click → "Merge PDFs with RasFocus+")
+void RunExplorerPdfMerge(const std::vector<std::wstring>& pdfPaths);

@@ -27,6 +27,7 @@ HWND hParentWnd = NULL;
 #include <string>
 #include <iostream>
 #include <fstream>
+#include <set>
 #include <process.h>
 #include <wininet.h>
 #include <wincrypt.h>   // CryptBinaryToStringA — silent update Base64 encoding
@@ -537,6 +538,39 @@ void RegisterFileAssociation(const string& ext, const string& progId, const stri
     }
 }
 
+// Register "Merge PDFs with RasFocus+" right-click menu for ALL .pdf files in Explorer.
+// Uses SystemFileAssociations so it appears regardless of which app is the default PDF viewer.
+// MultiSelectModel = Player means Windows spawns one process per selected file UNLESS
+// we use a different approach — we register under SystemFileAssociations which passes
+// each file as a separate %1. We handle this by collecting all -merge instances via
+// a shared temp file written by each instance (see WinMain -merge handling).
+static void RegisterPdfExplorerMenu() {
+    string exePath = GetExePath();
+    // Command receives ONE file per invocation when MultiSelectModel = Player.
+    // We pass -merge so WinMain knows this is a merge request.
+    string command = "\"" + exePath + "\" -merge \"%1\"";
+    HKEY hKey;
+
+    // HKCU\Software\Classes\SystemFileAssociations\.pdf\shell\rfmerge
+    // This key appears on every .pdf right-click regardless of default viewer.
+    const char* base = "Software\\Classes\\SystemFileAssociations\\.pdf\\shell\\rfmerge";
+    if (RegCreateKeyExA(HKEY_CURRENT_USER, base, 0, NULL,
+            REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
+        const char* label = "Merge PDFs with RasFocus+";
+        RegSetValueExA(hKey, "",                  0, REG_SZ, (const BYTE*)label,     (DWORD)strlen(label) + 1);
+        // Player = Windows launches one process per file; we accumulate via temp list file
+        const char* msm = "Player";
+        RegSetValueExA(hKey, "MultiSelectModel",  0, REG_SZ, (const BYTE*)msm,       (DWORD)strlen(msm) + 1);
+        RegCloseKey(hKey);
+    }
+    string cmdPath = string(base) + "\\command";
+    if (RegCreateKeyExA(HKEY_CURRENT_USER, cmdPath.c_str(), 0, NULL,
+            REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
+        RegSetValueExA(hKey, "", 0, REG_SZ, (const BYTE*)command.c_str(), (DWORD)command.length() + 1);
+        RegCloseKey(hKey);
+    }
+}
+
 void SetupDefaultViewer() {
     RegisterFileAssociation(".pdf",  "RasFocus.PDF",   "RasFocus+ PDF Document");
     // Image formats — all handled by the native GDI+ viewer
@@ -548,6 +582,8 @@ void SetupDefaultViewer() {
     RegisterFileAssociation(".webp", "RasFocus.Image", "RasFocus+ Image File");
     RegisterFileAssociation(".tiff", "RasFocus.Image", "RasFocus+ Image File");
     RegisterFileAssociation(".tif",  "RasFocus.Image", "RasFocus+ Image File");
+    // Right-click context menu for merging PDFs from Explorer
+    RegisterPdfExplorerMenu();
     SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, NULL, NULL);
 }
 
@@ -2755,20 +2791,84 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
                endsWith(L".tiff") || endsWith(L".tif");
     };
 
+    // Collect -merge PDF paths (may be called once per file by Explorer's MultiSelectModel=Player)
+    vector<wstring> g_mergePdfPaths;
+
     if (argv && argc > 1) {
+        bool isMergeMode = false;
         for (int i = 1; i < argc; ++i) {
             wstring arg = argv[i], argLower = arg;
             for (auto& k : argLower) k = towlower(k);
-            if (argLower == L"-minibrowser") {
+            if (argLower == L"-merge") { isMergeMode = true; continue; }
+            if (isMergeMode) {
+                // accumulate all PDF args
+                g_mergePdfPaths.push_back(arg);
+            } else if (argLower == L"-minibrowser") {
                 g_isPureViewerMode = true; viewerUrl = L"https://www.google.com"; viewerTitle = L"RasFocus+ Mini Browser"; break;
             } else if (argLower.length() > 4 && argLower.substr(argLower.length()-4) == L".pdf") {
                 g_isPureViewerMode = true; viewerUrl = arg; viewerTitle = L"RasFocus+ PDF Viewer"; break;
             } else if (IsImageArgument(argLower)) {
-                // Native image viewer — launch it separately, don't show main window
                 g_isPureViewerMode = true; g_isImageFile = true; viewerUrl = arg; viewerTitle = L"RasFocus+ Photo Viewer"; break;
             } else if (argLower.find(L"http://") == 0 || argLower.find(L"https://") == 0) {
                 g_isPureViewerMode = true; viewerUrl = arg; viewerTitle = L"RasFocus+ Web Viewer"; break;
             }
+        }
+
+        // -merge mode: accumulate paths via a temp list file, then merge when all collected
+        if (isMergeMode && !g_mergePdfPaths.empty()) {
+            g_isPureViewerMode = true;
+
+            // Shared temp file path (all instances of this multi-select write here)
+            wchar_t tempDir[MAX_PATH]; GetTempPathW(MAX_PATH, tempDir);
+            wstring listFile = wstring(tempDir) + L"RasFocus_merge_list.txt";
+
+            // Append our file to the shared list
+            FILE* f = _wfopen(listFile.c_str(), L"a");
+            if (f) {
+                for (auto& p : g_mergePdfPaths) {
+                    fwprintf(f, L"%s\n", p.c_str());
+                }
+                fclose(f);
+            }
+
+            // Wait a moment for other Explorer instances to also write their file
+            // (Explorer launches all instances nearly simultaneously)
+            Sleep(800);
+
+            // Try to acquire a named mutex — only the first instance to survive the
+            // sleep proceeds; others exit silently.
+            HANDLE hMergeMutex = CreateMutexA(NULL, TRUE, "RasFocus_PdfMerge_Mutex");
+            if (GetLastError() == ERROR_ALREADY_EXISTS) {
+                // Another instance is already doing the merge — just exit
+                if (hMergeMutex) CloseHandle(hMergeMutex);
+                if (argv) LocalFree(argv);
+                return 0;
+            }
+
+            // We are the "leader" instance — read the accumulated list
+            vector<wstring> allPdfs;
+            FILE* fr = _wfopen(listFile.c_str(), L"r");
+            if (fr) {
+                wchar_t lineBuf[MAX_PATH];
+                while (fgetws(lineBuf, MAX_PATH, fr)) {
+                    wstring line = lineBuf;
+                    while (!line.empty() && (line.back() == L'\n' || line.back() == L'\r' || line.back() == L' '))
+                        line.pop_back();
+                    if (!line.empty()) allPdfs.push_back(line);
+                }
+                fclose(fr);
+            }
+            DeleteFileW(listFile.c_str());
+            if (hMergeMutex) { ReleaseMutex(hMergeMutex); CloseHandle(hMergeMutex); }
+
+            // Deduplicate while preserving order
+            vector<wstring> uniquePdfs;
+            set<wstring> seen;
+            for (auto& p : allPdfs) {
+                wstring pl = p; for (auto& c : pl) c = towlower(c);
+                if (!seen.count(pl)) { seen.insert(pl); uniquePdfs.push_back(p); }
+            }
+            g_mergePdfPaths = uniquePdfs;
         }
     }
     if (argv) LocalFree(argv);
@@ -2832,8 +2932,13 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
 
     string cmdLine(lpCmdLine);
     if (g_isPureViewerMode) {
-        if (viewerUrl.find(L".pdf") != wstring::npos) {
-            // PDF → built-in PDF workspace tab
+        if (!g_mergePdfPaths.empty()) {
+            // PDF merge launched from Explorer right-click — no main window needed
+            ShowWindow(hWnd, SW_HIDE);
+            RunExplorerPdfMerge(g_mergePdfPaths);
+            return 0;
+        } else if (viewerUrl.find(L".pdf") != wstring::npos) {
+            // PDF — open in built-in PDF workspace tab
             selectedTab = 6;
             currentWorkspacePdf = viewerUrl;
             ShowWindow(hWnd, SW_SHOWMAXIMIZED);

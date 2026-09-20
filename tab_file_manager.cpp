@@ -3599,3 +3599,65 @@ void ProcessFileManagerMouseWheel(float x, float y, int delta) {
     extern HWND hParentWnd;
     if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE); // FALSE = no erase → no flicker
 }
+
+// ============================================================
+// EXPLORER RIGHT-CLICK MERGE ENTRY POINT
+// Called from WinMain with "-merge file1.pdf file2.pdf ..."
+// ============================================================
+void RunExplorerPdfMerge(const std::vector<std::wstring>& pdfPaths) {
+    if (pdfPaths.size() < 2) {
+        MessageBoxW(NULL,
+            L"Please select 2 or more PDF files in Explorer,\n"
+            L"then right-click \u2192 \"Merge PDFs with RasFocus+\".",
+            L"RasFocus+ \u2014 PDF Merge", MB_ICONINFORMATION | MB_OK | MB_TOPMOST);
+        return;
+    }
+
+    // Build default output path: same folder as first PDF
+    std::wstring firstPath = pdfPaths[0];
+    size_t sl = firstPath.find_last_of(L"\\/");
+    std::wstring dir      = (sl != std::wstring::npos) ? firstPath.substr(0, sl + 1) : L"";
+    std::wstring baseName = (sl != std::wstring::npos) ? firstPath.substr(sl + 1)    : firstPath;
+    size_t dot = baseName.rfind(L'.');
+    if (dot != std::wstring::npos) baseName = baseName.substr(0, dot);
+    std::wstring outPath = dir + L"Merged_" + baseName + L".pdf";
+
+    // Avoid overwriting an existing file
+    {
+        int n = 2;
+        std::wstring candidate = outPath;
+        while (GetFileAttributesW(candidate.c_str()) != INVALID_FILE_ATTRIBUTES)
+            candidate = dir + L"Merged_" + baseName + L"_" + std::to_wstring(n++) + L".pdf";
+        outPath = candidate;
+    }
+
+    // Run the merge (PowerShell / C# inline — same function used inside the app)
+    MergePDFsWithPowerShell(pdfPaths, outPath);
+
+    // Check if output was created
+    if (GetFileAttributesW(outPath.c_str()) != INVALID_FILE_ATTRIBUTES) {
+        std::wstring outName = outPath.substr(outPath.find_last_of(L"\\/") + 1);
+        std::wstring msg = L"Successfully merged " + std::to_wstring(pdfPaths.size()) +
+                           L" PDFs \u2192\n\n" + outName +
+                           L"\n\nSaved in the same folder as the source files.\n"
+                           L"Click OK to open the folder.";
+        MessageBoxW(NULL, msg.c_str(), L"RasFocus+ \u2014 PDF Merge Done",
+                    MB_ICONINFORMATION | MB_OK | MB_TOPMOST);
+
+        // Highlight output file in Explorer
+        ITEMIDLIST* pidl = NULL;
+        if (SUCCEEDED(SHParseDisplayName(outPath.c_str(), NULL, &pidl, 0, NULL))) {
+            SHOpenFolderAndSelectItems(pidl, 0, NULL, 0);
+            CoTaskMemFree(pidl);
+        }
+    } else {
+        MessageBoxW(NULL,
+            L"PDF merge failed.\n\nPossible reasons:\n"
+            L"\u2022 One or more files are encrypted / password-protected\n"
+            L"\u2022 A file is corrupt or not a valid PDF\n"
+            L"\u2022 No write permission in the output folder\n"
+            L"\u2022 PowerShell execution is restricted on this PC",
+            L"RasFocus+ \u2014 PDF Merge Error",
+            MB_ICONERROR | MB_OK | MB_TOPMOST);
+    }
+}
