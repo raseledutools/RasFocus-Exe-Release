@@ -1511,12 +1511,12 @@ void DrawFileManagerTab(Graphics& g, float cx, float cy, float cw, float ch) {
                         Pen pThBrd(Color(180, 200, 210, 220), 1.0f);
                         FillRect_(g, &bThBg, &pThBrd, tx, ty, THUMB_SIZE, THUMB_SIZE, 4.0f);
 
-                        const wchar_t* ico2 = isDir2       ? L"\xED41" :
-                                              ext2==L"pdf"  ? L"\xEA90" :
-                                              ext2==L"mp4"||ext2==L"mkv"||ext2==L"avi"   ? L"\xE8B2" :
-                                              ext2==L"mp3"||ext2==L"wav"||ext2==L"flac"  ? L"\xEC4F" :
-                                              IsImageExt(ext2)                            ? L"\xEB9F" :
-                                              L"\xE8A5";
+                        const wchar_t* ico2 = isDir2                                   ? L"\uED41" :
+                                              ext2==L"pdf"                              ? L"\uEA90" :
+                                              ext2==L"mp4"||ext2==L"mkv"||ext2==L"avi" ? L"\uE8B2" :
+                                              ext2==L"mp3"||ext2==L"wav"||ext2==L"flac"? L"\uEC4F" :
+                                              IsImageExt(ext2)                          ? L"\uEB9F" :
+                                                                                          L"\uE8A5";
                         Color icoC2 = isDir2 ? Color(255,255,196,37) :
                                       ext2==L"pdf" ? Color(255,220,38,38) :
                                       IsImageExt(ext2) ? Color(255,120,150,220) :
