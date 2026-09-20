@@ -36,6 +36,7 @@
 
 // Preview WebView2 embedded panel
 #include "browser/mini_browser.h"
+#include "image_viewer.h"
 
 using namespace Gdiplus;
 using namespace std;
@@ -3180,7 +3181,15 @@ void ProcessFileManagerRightClick(float x, float y, HWND hWnd) {
     case CMD_OPEN:
         if (!sel.empty()) {
             std::wstring fp = fm_currentPath + fm_items[sel[0]].first;
-            ShellExecuteW(NULL, L"open", fp.c_str(), NULL, NULL, SW_SHOWNORMAL);
+            {
+                size_t _dot = fp.rfind(L'.');
+                std::wstring _ext;
+                if (_dot != std::wstring::npos) { _ext = fp.substr(_dot+1); for (auto& _c : _ext) _c = towlower(_c); }
+                if (_ext==L"jpg"||_ext==L"jpeg"||_ext==L"png"||_ext==L"gif"||_ext==L"bmp"||_ext==L"webp"||_ext==L"ico"||_ext==L"tiff"||_ext==L"tif")
+                    LaunchImageViewer(fp);
+                else
+                    ShellExecuteW(NULL, L"open", fp.c_str(), NULL, NULL, SW_SHOWNORMAL);
+            }
         }
         break;
 
@@ -3399,7 +3408,15 @@ void ProcessFileManagerMouseClick(float x, float y, HWND hWnd) {
             if (PtIn(x, y, bx, btnY, oW, btnH)) {
                 if (fm_selectedItem >= 0) {
                     wstring fullPath = fm_currentPath + fm_items[fm_selectedItem].first;
-                    ShellExecuteW(NULL, L"open", fullPath.c_str(), NULL, NULL, SW_SHOWNORMAL);
+                    {
+                        size_t _dot = fullPath.rfind(L'.');
+                        wstring _ext;
+                        if (_dot != wstring::npos) { _ext = fullPath.substr(_dot+1); for (auto& _c : _ext) _c = towlower(_c); }
+                        if (_ext==L"jpg"||_ext==L"jpeg"||_ext==L"png"||_ext==L"gif"||_ext==L"bmp"||_ext==L"webp"||_ext==L"ico"||_ext==L"tiff"||_ext==L"tif")
+                            LaunchImageViewer(fullPath);
+                        else
+                            ShellExecuteW(NULL, L"open", fullPath.c_str(), NULL, NULL, SW_SHOWNORMAL);
+                    }
                 }
                 return;
             }
@@ -3451,6 +3468,18 @@ void ProcessFileManagerMouseClick(float x, float y, HWND hWnd) {
                         LoadPreview(L"", L"");
                         NavigateFileManagerTo(dest);
                         if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
+                        return;
+                    } else if (fm_selectedItem == idx && !fm_items[idx].second &&
+                               fm_selectedItems.empty()) {
+                        // Double-click on file → open it
+                        wstring fullPath2 = fm_currentPath + fm_items[idx].first;
+                        size_t _dot = fullPath2.rfind(L'.');
+                        wstring _ext;
+                        if (_dot != wstring::npos) { _ext = fullPath2.substr(_dot+1); for (auto& _c : _ext) _c = towlower(_c); }
+                        if (_ext==L"jpg"||_ext==L"jpeg"||_ext==L"png"||_ext==L"gif"||_ext==L"bmp"||_ext==L"webp"||_ext==L"ico"||_ext==L"tiff"||_ext==L"tif")
+                            LaunchImageViewer(fullPath2);
+                        else
+                            ShellExecuteW(NULL, L"open", fullPath2.c_str(), NULL, NULL, SW_SHOWNORMAL);
                         return;
                     }
 
