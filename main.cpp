@@ -2775,6 +2775,30 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         break;
     }
 
+    case WM_USER + 60: {
+        // WM_FM_THUMB_READY: a thumbnail finished loading in the background
+        // Just repaint — the grid drawing will pick it up from the cache
+        InvalidateRect(hWnd, NULL, FALSE);
+        break;
+    }
+
+    case WM_USER + 61: {
+        // WM_FM_PREVIEW_READY: async image preview finished loading
+        // Swap staging image into the live preview slot
+        extern Gdiplus::Image* fm_previewImage;
+        extern Gdiplus::Image* fm_previewImageStaging;
+        extern std::wstring    fm_previewPathStaging;
+        extern std::wstring    fm_previewPath;
+        if (fm_previewImageStaging) {
+            delete fm_previewImage;
+            fm_previewImage         = fm_previewImageStaging;
+            fm_previewPath          = fm_previewPathStaging;
+            fm_previewImageStaging  = nullptr;
+        }
+        InvalidateRect(hWnd, NULL, FALSE);
+        break;
+    }
+
     // ── RasGram cross-thread messages (WM_USER+70…73) ──────────
     case WM_USER + 70:  // WM_RG_INCOMING_CALL
     case WM_USER + 71:  // WM_RG_CALL_ENDED
