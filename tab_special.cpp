@@ -52,6 +52,10 @@ static vector<SideRect> g_quickRects;   // quick-access items
 static vector<SideRect> g_driveRects;   // drive items
 static SideRect          g_gdriveRect;  // google drive item
 
+// Path caches — populated each draw, used by click handler
+static vector<wstring>   g_quickPaths;  // path for each quick-access row
+static vector<wstring>   g_drivePaths;  // path for each drive row
+
 // Motivational quotes
 static vector<wstring> quotesEng = {
     L"\"Don't watch the clock; do what it does. Keep going.\" - Sam Levenson",
@@ -170,6 +174,8 @@ static void DrawSidebar(Graphics& g,
 {
     g_quickRects.clear();
     g_driveRects.clear();
+    g_quickPaths.clear();
+    g_drivePaths.clear();
 
     // Fonts
     Font fSm (&ff,   12, FontStyleRegular, UnitPixel);
@@ -244,6 +250,7 @@ static void DrawSidebar(Graphics& g,
         g.DrawString(qa[i].label, -1, &fSm,   RectF(sx+padX+24.0f,   ry, sw-padX*2-24, rowH), &fmtL, &bDark);
 
         g_quickRects.push_back({sx, ry, sw, rowH});
+        g_quickPaths.push_back(qa[i].path);   // cache path for click handler
         curY += rowH;
     }
 
@@ -308,6 +315,7 @@ static void DrawSidebar(Graphics& g,
         }
 
         g_driveRects.push_back({sx, ry, sw, rowH});
+        g_drivePaths.push_back(drives[di]);    // cache path for click handler
         curY += rowH;
     }
 
@@ -573,34 +581,40 @@ void ProcessSpecialFeatureMouseClick(float x, float y) {
     float contentX = (sf_activeSubTab == 0) ? (g_cx + g_sideW) : g_cx;
 
     // ---- Sidebar quick-access clicks (only for File Manager tab) ----
-    if (sf_activeSubTab == 0 && x >= g_cx && x < g_cx + g_sideW) {
+    if (x >= g_cx && x < g_cx + g_sideW) {
         // Quick access items
         for (int i=0; i<(int)g_quickRects.size(); i++) {
             auto& r = g_quickRects[i];
             if (x>=r.x && x<r.x+r.w && y>=r.y && y<r.y+r.h) {
-                // Switch to File Manager tab and navigate
+                // Switch to File Manager tab and navigate to the clicked path
                 if (sf_activeSubTab != 0) HideInactiveOverlays(0);
                 sf_activeSubTab = 0;
+                if (i < (int)g_quickPaths.size() && !g_quickPaths[i].empty())
+                    NavigateFileManagerTo(g_quickPaths[i]);
                 if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
                 return;
             }
         }
-        // Drive items — switch to file manager
+        // Drive items — navigate to that drive
         for (int i=0; i<(int)g_driveRects.size(); i++) {
             auto& r = g_driveRects[i];
             if (x>=r.x && x<r.x+r.w && y>=r.y && y<r.y+r.h) {
                 if (sf_activeSubTab != 0) HideInactiveOverlays(0);
                 sf_activeSubTab = 0;
+                if (i < (int)g_drivePaths.size() && !g_drivePaths[i].empty())
+                    NavigateFileManagerTo(g_drivePaths[i]);
                 if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
                 return;
             }
         }
-        // Google Drive
+        // Google Drive — switch to Drive sub-tab inside File Manager
         {
             auto& r = g_gdriveRect;
             if (x>=r.x && x<r.x+r.w && y>=r.y && y<r.y+r.h) {
                 if (sf_activeSubTab != 0) HideInactiveOverlays(0);
-                sf_activeSubTab = 0; // Switch to File Manager (Drive tab inside)
+                sf_activeSubTab = 0;
+                // Switch to Google Drive sub-tab (index 1) inside File Manager
+                FmSwitchToGoogleDrive();
                 if (hParentWnd) InvalidateRect(hParentWnd, NULL, TRUE);
                 return;
             }

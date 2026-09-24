@@ -960,6 +960,10 @@ void NavigateFileManagerTo(const wstring& path) {
     RefreshLocalDir();
 }
 
+void FmSwitchToGoogleDrive() {
+    fm_activeSubTab = 1;
+}
+
 // PopulateDriveItems() replaced by real DriveListFolder()
 
 // ============================================================

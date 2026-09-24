@@ -13,5 +13,6 @@ void ProcessFileManagerMouseClick(float x, float y, HWND hWnd);
 void ProcessFileManagerMouseWheel(float x, float y, int delta);
 void ProcessFileManagerRightClick(float x, float y, HWND hWnd);
 void NavigateFileManagerTo(const std::wstring& path);
+void FmSwitchToGoogleDrive();
 void ProcessDriveApiResponse(const std::string& json);
 void RunExplorerPdfMerge(const std::vector<std::wstring>& pdfPaths);
