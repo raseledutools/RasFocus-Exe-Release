@@ -809,6 +809,7 @@ struct BrowserWindowData {
     HFONT                hAddrFont    = NULL;
 
     bool hMin = false, hMax = false, hClose = false;
+    bool pMin = false, pMax = false, pClose = false; // pressed flash state
     bool hPin = false, hDark = false, hFocus = false;
     bool isPinned = false;
     bool isFocusMode = false; // header+tab লুকানো "native app" mode
@@ -2377,12 +2378,16 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
     // Window controls
     {
         int bx = W - winBtnW * 6; 
-        auto DrawWinBtn = [&](int x, bool hover, bool isClose, const wchar_t* ico) {
-            if (hover) {
+        auto DrawWinBtn = [&](int x, bool hover, bool isClose, const wchar_t* ico, bool pressed = false) {
+            if (pressed) {
+                // Pressed: darker/deeper than hover
+                SolidBrush pb(isClose ? Color(255, 180, 10, 25) : (wd.isDarkMode ? Color(100, 255,255,255) : Color(60, 0,0,0)));
+                g.FillRectangle(&pb, x, 0, winBtnW, titleH);
+            } else if (hover) {
                 SolidBrush hb(isClose ? Color(255, 232, 17, 35) : (wd.isDarkMode ? Color(50, 255,255,255) : Color(20, 0,0,0)));
                 g.FillRectangle(&hb, x, 0, winBtnW, titleH);
             }
-            SolidBrush txtClr(isClose && hover ? Color(255,255,255,255) : cTxtPrim);
+            SolidBrush txtClr((isClose && (hover || pressed)) ? Color(255,255,255,255) : cTxtPrim);
             g.DrawString(ico, -1, &fIconSm, RectF((float)x, 0.f, (float)winBtnW, (float)titleH), &sfC, &txtClr);
         };
 
@@ -2390,9 +2395,9 @@ static void DrawBrowserContent(HWND hWnd, HDC hdc) {
         DrawWinBtn(bx,               wd.hFocus, false, wd.isFocusMode ? L"\uE7B8" : L"\uE7C8");
         DrawWinBtn(bx + winBtnW,     wd.hPin,   false, wd.isPinned ? L"\uE840" : L"\uE718");
         DrawWinBtn(bx + winBtnW * 2, wd.hDark,  false, wd.isDarkMode ? L"\uE708" : L"\uE706");
-        DrawWinBtn(bx + winBtnW * 3, wd.hMin,   false, L"\uE921"); // Minimize (─)
-        DrawWinBtn(bx + winBtnW * 4, wd.hMax,   false, IsZoomed(hWnd) ? L"\uE923" : L"\uE922"); // Restore/Max
-        DrawWinBtn(bx + winBtnW * 5, wd.hClose, true,  L"\uE8BB"); // Close (✕)
+        DrawWinBtn(bx + winBtnW * 3, wd.hMin,   false, L"\uE921", wd.pMin);   // Minimize (─)
+        DrawWinBtn(bx + winBtnW * 4, wd.hMax,   false, IsZoomed(hWnd) ? L"\uE923" : L"\uE922", wd.pMax); // Restore/Max
+        DrawWinBtn(bx + winBtnW * 5, wd.hClose, true,  L"\uE8BB", wd.pClose); // Close (✕)
     }
 
     if (!g_isPureViewerMode) {
@@ -4199,9 +4204,25 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
         RECT cr; GetClientRect(hWnd, &cr); int W = cr.right;
         RECT crFull; GetClientRect(hWnd, &crFull); int H = crFull.bottom;
 
-        if (wd.hMin)   { ShowWindow(hWnd, SW_MINIMIZE); break; }
-        if (wd.hMax)   { ShowWindow(hWnd, IsZoomed(hWnd) ? SW_RESTORE : SW_MAXIMIZE); break; }
-        if (wd.hClose) { DestroyWindow(hWnd); break; }
+        // Title bar buttons: visual press flash (120ms) then action via timer 2001
+        if (wd.hMin && !wd.pMin && !wd.pMax && !wd.pClose) {
+            wd.pMin = true;
+            InvalidateRect(hWnd, NULL, FALSE);
+            SetTimer(hWnd, 2001, 120, NULL);
+            break;
+        }
+        if (wd.hMax && !wd.pMin && !wd.pMax && !wd.pClose) {
+            wd.pMax = true;
+            InvalidateRect(hWnd, NULL, FALSE);
+            SetTimer(hWnd, 2001, 120, NULL);
+            break;
+        }
+        if (wd.hClose && !wd.pMin && !wd.pMax && !wd.pClose) {
+            wd.pClose = true;
+            InvalidateRect(hWnd, NULL, FALSE);
+            SetTimer(hWnd, 2001, 120, NULL);
+            break;
+        }
 
         // ── Context Menu Click ──
         if (g_contextMenuOpen) {
@@ -5046,6 +5067,22 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
     case WM_CLOSE:
         DestroyWindow(hWnd);
         break;
+
+    case WM_TIMER: {
+        if (wParam == 2001 && g_windows.count(hWnd)) {
+            KillTimer(hWnd, 2001);
+            auto& wd = g_windows[hWnd];
+            bool doMin   = wd.pMin;
+            bool doMax   = wd.pMax;
+            bool doClose = wd.pClose;
+            wd.pMin = wd.pMax = wd.pClose = false;
+            InvalidateRect(hWnd, NULL, FALSE);
+            if      (doMin)   ShowWindow(hWnd, SW_MINIMIZE);
+            else if (doMax)   ShowWindow(hWnd, IsZoomed(hWnd) ? SW_RESTORE : SW_MAXIMIZE);
+            else if (doClose) DestroyWindow(hWnd);
+        }
+        break;
+    }
 
     case WM_DESTROY: {
         if (g_windows.count(hWnd)) {

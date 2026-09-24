@@ -145,7 +145,10 @@ extern const int SUBHEADER_HEIGHT   = 45;
 // UI State
 int selectedTab  = 0; // ← Dashboard is default tab
 int hoveredTab   = -1;
+int pressedTab   = -1; // Tab pressed flash (cleared by timer 1008)
 bool hoverMinimize = false, hoverMaximize = false, hoverClose = false;
+// Click press feedback (120ms visual flash before action)
+bool pressedMinimize = false, pressedMaximize = false, pressedClose = false;
 bool hoverUpgrade   = false;
 bool hoverFeedback  = false;
 bool hoverMyAccount = false;
@@ -1756,9 +1759,13 @@ void DrawTitleBar(Graphics& g, int w) {
     float btnH = (float)TITLEBAR_HEIGHT;
     float startX = (float)w - (btnW * 3);
 
-    if (hoverMinimize) { SolidBrush b(Color(30, 0, 0, 0)); g.FillRectangle(&b, startX, 0.0f, btnW, btnH); }
-    if (hoverMaximize) { SolidBrush b(Color(30, 0, 0, 0)); g.FillRectangle(&b, startX + btnW, 0.0f, btnW, btnH); }
-    if (hoverClose)    { SolidBrush b(Color(255, 232, 17, 35)); g.FillRectangle(&b, startX + (btnW * 2), 0.0f, btnW, btnH); }
+    // Hover highlight (lighter) — pressed state overrides with darker flash
+    if (hoverMinimize)  { SolidBrush b(pressedMinimize ? Color(80, 0, 0, 0) : Color(30, 0, 0, 0)); g.FillRectangle(&b, startX, 0.0f, btnW, btnH); }
+    if (hoverMaximize)  { SolidBrush b(pressedMaximize ? Color(80, 0, 0, 0) : Color(30, 0, 0, 0)); g.FillRectangle(&b, startX + btnW, 0.0f, btnW, btnH); }
+    if (hoverClose) {
+        SolidBrush b(pressedClose ? Color(255, 180, 10, 25) : Color(255, 232, 17, 35));
+        g.FillRectangle(&b, startX + (btnW * 2), 0.0f, btnW, btnH);
+    }
 
     Font fIcons(&ffIcons, 9, FontStyleRegular, UnitPixel);
     SolidBrush iconColor(Color(255, 80, 80, 80));
@@ -2017,7 +2024,11 @@ void DrawSidebar(Graphics& g, int h) {
             g.DrawString(sidebarIcons[i].c_str(), -1, &fTabIcon, RectF(sideX, tabY, iconW, tabH), &fmtIC, &tealText);
             g.DrawString(sidebarTabs[i].c_str(),  -1, &fTabTxt,  RectF(sideX + iconW, tabY, (float)SIDEBAR_WIDTH - iconW - 8.0f, tabH), &fmtTL, &tealText);
         } else {
-            if (hoveredTab == (int)i) {
+            if (pressedTab == (int)i) {
+                // Pressed: brighter flash than hover
+                SolidBrush pressedBg(Color(90, 255, 255, 255));
+                g.FillRectangle(&pressedBg, tabRect);
+            } else if (hoveredTab == (int)i) {
                 SolidBrush hoverBg(ColSidebarHover);
                 g.FillRectangle(&hoverBg, tabRect);
             }
@@ -2256,6 +2267,32 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (wp == 1006 && g_isDownloading) {
             g_dlAnimFrame++;
             InvalidateRect(hWnd, NULL, FALSE);
+        }
+
+        // ── Sidebar tab press flash: clear after 150ms ──
+        if (wp == 1008) {
+            KillTimer(hWnd, 1008);
+            pressedTab = -1;
+            InvalidateRect(hWnd, NULL, FALSE);
+        }
+
+        // ── Title bar button press feedback: fire action after 120ms flash ──
+        if (wp == 1007) {
+            KillTimer(hWnd, 1007);
+            if (pressedMinimize) {
+                pressedMinimize = false;
+                InvalidateRect(hWnd, NULL, FALSE);
+                ShowWindow(hWnd, SW_MINIMIZE);
+            } else if (pressedMaximize) {
+                pressedMaximize = false;
+                InvalidateRect(hWnd, NULL, FALSE);
+                if (isMaximized) ShowWindow(hWnd, SW_RESTORE);
+                else             ShowWindow(hWnd, SW_MAXIMIZE);
+            } else if (pressedClose) {
+                pressedClose = false;
+                InvalidateRect(hWnd, NULL, FALSE);
+                ShowWindow(hWnd, SW_HIDE);
+            }
         }
 
         // ── Family Link: 1-second tick — polling + enforcement ──
@@ -2582,9 +2619,25 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             }
         }
 
-        if (hoverMinimize) ShowWindow(hWnd, SW_MINIMIZE);
-        if (hoverMaximize) { if (isMaximized) ShowWindow(hWnd, SW_RESTORE); else ShowWindow(hWnd, SW_MAXIMIZE); }
-        if (hoverClose)    ShowWindow(hWnd, SW_HIDE);
+        // Title bar buttons: set pressed flash, defer action by 120ms via timer 1007
+        if (hoverMinimize && !pressedMinimize && !pressedMaximize && !pressedClose) {
+            pressedMinimize = true;
+            InvalidateRect(hWnd, NULL, FALSE);
+            SetTimer(hWnd, 1007, 120, NULL);
+            break;
+        }
+        if (hoverMaximize && !pressedMinimize && !pressedMaximize && !pressedClose) {
+            pressedMaximize = true;
+            InvalidateRect(hWnd, NULL, FALSE);
+            SetTimer(hWnd, 1007, 120, NULL);
+            break;
+        }
+        if (hoverClose && !pressedMinimize && !pressedMaximize && !pressedClose) {
+            pressedClose = true;
+            InvalidateRect(hWnd, NULL, FALSE);
+            SetTimer(hWnd, 1007, 120, NULL);
+            break;
+        }
 
         if (HitFeedbackIcon(x, y, scaledW)) {
             showFeedbackBox = true; feedbackFocusField = 1;
@@ -2606,6 +2659,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             int idx = (int)((y - tabsStartY) / tabH);
             if (idx >= 0 && idx < (int)sidebarTabs.size()) {
                 int logicalTab = (idx == 6) ? 8 : (idx == 7) ? 9 : (idx == 8) ? 10 : (idx == 9) ? 11 : idx; // 0=Dashboard, 6=FamilyLink->8, 7=RasBrowser->9, 8=PDFTools->10, 9=PhoneRemote->11
+                // Visual pressed flash
+                pressedTab = idx;
+                KillTimer(hWnd, 1008);
+                SetTimer(hWnd, 1008, 150, NULL);
                 if (selectedTab != logicalTab) {
                     selectedTab = logicalTab;
                     HideAllWebViews();
