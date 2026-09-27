@@ -390,24 +390,45 @@ std::wstring GetAiInjectScript(const std::wstring& currentUrl) {
     std::wstring css=L"";
     if (currentUrl.find(L"youtube.com")!=std::wstring::npos) {
         if (ytHideHome)        css+=L"ytd-browse[page-subtype='home']{display:none!important;}";
-        if (ytHideShorts)      css+=L"ytd-reel-shelf-renderer,ytd-rich-shelf-renderer[is-shorts],a[title='Shorts']{display:none!important;}";
-        if (ytHideComments)    css+=L"ytd-comments{display:none!important;}";
+        if (ytHideShorts)      css+=L"ytd-reel-shelf-renderer,ytd-rich-shelf-renderer[is-shorts],ytd-guide-entry-renderer a[title='Shorts'],a[title='Shorts'],tp-yt-paper-item[aria-label='Shorts']{display:none!important;}";
+        if (ytHideComments)    css+=L"ytd-comments,#comments{display:none!important;}";
         if (ytHideRecVideos)   css+=L"ytd-watch-next-secondary-results-renderer{display:none!important;}";
         if (ytHideThumbnails)  css+=L"ytd-thumbnail{display:none!important;}";
         if (ytBlurThumbnails)  css+=L"ytd-thumbnail img{filter:blur(15px)!important;}";
-        if (ytHideSubs)        css+=L"a[title='Subscriptions']{display:none!important;}";
+        if (ytHideSubs)        css+=L"a[title='Subscriptions'],ytd-guide-entry-renderer a[href='/feed/subscriptions']{display:none!important;}";
+        if (ytHideExplore)     css+=L"a[title='Trending'],a[title='Explore'],ytd-guide-entry-renderer a[href='/feed/trending']{display:none!important;}";
         if (ytHideTopBar)      css+=L"ytd-masthead{display:none!important;}#page-manager{margin-top:0!important;}";
         if (ytDisableEndCards) css+=L".ytp-ce-element{display:none!important;}";
+        if (ytDisableAutoplay) css+=L".ytp-autonav-toggle-button-container{display:none!important;}";
         if (ytBlackWhiteMode)  css+=L"html{filter:grayscale(100%)!important;}";
     } else if (currentUrl.find(L"tiktok.com")!=std::wstring::npos) {
         if (ttHideExplore)  css+=L"[data-e2e='nav-explore']{display:none!important;}";
         if (ttHideLive)     css+=L"[data-e2e='nav-live']{display:none!important;}";
-        if (ttHideComments) css+=L".comment-container{display:none!important;}";
+        if (ttHideComments) css+=L".comment-container,[class*='CommentList'],[class*='comment-list']{display:none!important;}";
+        if (ttHideSearch)   css+=L"[data-e2e='search-box'],header [class*='search']{display:none!important;}";
         if (ttBlackWhiteMode) css+=L"html{filter:grayscale(100%)!important;}";
     } else if (currentUrl.find(L"instagram.com")!=std::wstring::npos) {
-        if (igHideReels)   css+=L"a[href*='/reels/']{display:none!important;}";
-        if (igHideExplore) css+=L"a[href*='/explore/']{display:none!important;}";
+        if (igHideReels)    css+=L"a[href*='/reels/'],[aria-label='Reels']{display:none!important;}";
+        if (igHideStories)  css+=L"section > div:first-child > div:first-child div[role='button']:has(canvas){display:none!important;}";
+        if (igHideExplore)  css+=L"a[href*='/explore/'],[aria-label='Explore']{display:none!important;}";
+        if (igHideComments) css+=L"ul[class*='Mr508'],div[class*='comment']{display:none!important;}";
+        if (igHideSuggested)css+=L"div[class*='Suggested'],div:has(>span:contains('Suggested for you')){display:none!important;}";
         if (igBlackWhiteMode) css+=L"html{filter:grayscale(100%)!important;}";
+    } else if (currentUrl.find(L"facebook.com")!=std::wstring::npos) {
+        // Facebook Reels (mapped via igHideReels toggle)
+        if (igHideReels)    css+=L"div[data-pagelet*='FeedUnit'] div[aria-label='Reels'],div[data-pagelet='ReelViewer'],a[href*='/reel/'],[aria-label='Reels']{display:none!important;}";
+        // Stories bar
+        if (igHideStories)  css+=L"div[role='main'] div[aria-label*='torie'],div[data-pagelet*='Stories']{display:none!important;}";
+        // Suggested (People/Groups)
+        if (igHideSuggested)css+=L"div[data-pagelet*='RightRail'],div[data-pagelet*='FriendsSuggestions']{display:none!important;}";
+        // Explore / Marketplace
+        if (igHideExplore)  css+=L"a[aria-label='Marketplace'],div[aria-label='Marketplace']{display:none!important;}";
+        // Videos / Watch tab
+        if (igHideReels)    css+=L"a[aria-label='Watch'],div[data-pagelet='VideosHome']{display:none!important;}";
+        // Comments
+        if (igHideComments) css+=L"div[aria-label='Leave a comment'],ul.d2edcug0.e8q01043{display:none!important;}";
+        // Grayscale
+        if (igGrayscale)    css+=L"html{filter:grayscale(100%)!important;}";
     }
 
     if (css.empty()) return L"";
@@ -2443,6 +2464,19 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
             g_windows.erase(hWnd);
         }
         if (g_isPureViewerMode&&g_windows.empty()) PostQuitMessage(0);
+        break;
+    }
+
+    // ── WM_APP+50: sent by BrowserControlRefreshBrowserWindows() after a toggle change.
+    //    Reloads all tabs so the new rasfocus_ai_data.txt is picked up on NavigationCompleted.
+    case WM_APP + 50: {
+        if (g_windows.count(hWnd)) {
+            for (auto& t : g_windows[hWnd].tabs) {
+                if (t.webview && !t.url.empty() && t.url != L"LOCAL_NTP") {
+                    t.webview->Reload();
+                }
+            }
+        }
         break;
     }
 

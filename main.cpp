@@ -57,6 +57,7 @@ HWND hParentWnd = NULL;
 #include "prewindow.h"
 #include "accounts.h"   // ← My Account tab handler
 #include "upgrade.h"    // ← Upgrade popup handler
+#include "tab_browser_control.h"  // ← Browser Content Control Panel (Tab 9)
 
 using namespace Gdiplus;
 using namespace std;
@@ -2150,18 +2151,8 @@ void DrawMainArea(Graphics& g, int w, int h) {
     else if (selectedTab == 8) { DrawFamilyLinkTab   (g, contentX, contentY, contentW, contentH); } // ← Family Link Tab Draw Call
     else if (selectedTab == 11){ DrawPhoneRemoteTab  (g, contentX, contentY, contentW, contentH); } // ← Phone Remote Tab
     else if (selectedTab == 9) {
-        // RasBrowser একটি আলাদা window-এ চলে; এখানে শুধু একটি নিউট্রাল ব্যাকগ্রাউন্ড দেখানো হচ্ছে
-        SolidBrush bgBrush(ColBgContent);
-        g.FillRectangle(&bgBrush, contentX, contentY, contentW, contentH);
-        FontFamily ff(L"Segoe UI");
-        StringFormat fmtC;
-        fmtC.SetAlignment(StringAlignmentCenter);
-        fmtC.SetLineAlignment(StringAlignmentCenter);
-        Font fInfo(&ff, 14, FontStyleRegular, UnitPixel);
-        SolidBrush grayBrush(ColTextGray);
-        g.DrawString(L"RasBrowser আলাদা একটি উইন্ডোতে খোলা হয়েছে", -1, &fInfo,
-                     RectF(contentX, contentY + contentH / 2.0f - 12.0f, contentW, 24.0f),
-                     &fmtC, &grayBrush);
+        // RasBrowser Content Control Panel — toggles for YouTube/Facebook/Instagram/TikTok
+        DrawBrowserControlTab(g, contentX, contentY, contentW, contentH);
     }
     else if (selectedTab == 10) { DrawPdfWorkspaceTab(g, contentX, contentY, contentW, contentH); }
 }
@@ -2514,6 +2505,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             }
             redraw = true;
         }
+        else if (selectedTab == 9) { // ← Browser Content Control Panel hover
+            float cX = (float)SIDEBAR_WIDTH, cY = (float)(TITLEBAR_HEIGHT + SUBHEADER_HEIGHT);
+            float cW = scaledW - cX, cH = scaledH - cY;
+            if (ProcessBrowserControlMouseMove(x, y, cX, cY, cW, cH)) redraw = true;
+        }
 
         if (redraw) InvalidateRect(hWnd, NULL, FALSE);
         break;
@@ -2705,6 +2701,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
         else if (selectedTab == 11) { // ← Phone Remote Mouse Click
             float cX = (float)SIDEBAR_WIDTH, cY = (float)(TITLEBAR_HEIGHT + SUBHEADER_HEIGHT);
             ProcessPhoneRemoteMouseClick(x, y, cX, cY, hWnd);
+        }
+        else if (selectedTab == 9) { // ← Browser Content Control Panel
+            float cX = (float)SIDEBAR_WIDTH, cY = (float)(TITLEBAR_HEIGHT + SUBHEADER_HEIGHT);
+            float cW = scaledW - cX, cH = scaledH - cY;
+            ProcessBrowserControlMouseClick(x, y, cX, cY, cW, cH);
         }
         InvalidateRect(hWnd, NULL, FALSE);
         break;
@@ -3024,6 +3025,9 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
 
     GdiplusStartupInput gsi;
     GdiplusStartup(&gdiplusToken, &gsi, NULL);
+
+    // Load browser content control toggles from rasfocus_ai_data.txt
+    BrowserControlLoadState();
 
     WNDCLASS wc = { 0 };
     wc.lpfnWndProc   = WndProc;
