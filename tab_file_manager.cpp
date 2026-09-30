@@ -173,7 +173,7 @@ static bool fm_hovTabDrive = false;
 // PREVIEW PANEL STATE
 // ============================================================
 static bool    fm_previewVisible   = false;   // panel shown?
-static wstring fm_previewPath      = L"";     // file being previewed
+wstring fm_previewPath      = L"";     // file being previewed
 static wstring fm_previewExt       = L"";     // lowercase extension
 
 // Preview type enum
@@ -181,7 +181,7 @@ enum class PreviewType { None, Image, Text, WebView };
 static PreviewType fm_previewType = PreviewType::None;
 
 // GDI+ image cache (image preview)
-static Image* fm_previewImage = nullptr;
+Image* fm_previewImage = nullptr;
 
 // Text preview lines cache
 static vector<wstring> fm_previewLines;
