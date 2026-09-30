@@ -3,6 +3,8 @@
 // Tab 9 এর content area তে draw হয়; toggle করলে rasfocus_ai_data.txt update + browser refresh।
 
 #include <windows.h>
+#include <objidl.h>   // IStream, ISequentialStream — required by GDI+ when WIN32_LEAN_AND_MEAN is set
+#include <propidl.h>  // PROPID — required by GDI+ when WIN32_LEAN_AND_MEAN is set
 #include <gdiplus.h>
 using namespace Gdiplus;
 
