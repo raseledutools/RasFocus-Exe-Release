@@ -1515,13 +1515,12 @@ void DrawFileManagerTab(Graphics& g, float cx, float cy, float cw, float ch) {
                         Pen pThBrd(Color(180, 200, 210, 220), 1.0f);
                         FillRect_(g, &bThBg, &pThBrd, tx, ty, THUMB_SIZE, THUMB_SIZE, 4.0f);
 
-                        const wchar_t* ico2;
-                        if      (isDir2)                                            ico2 = L"\uED41";
-                        else if (ext2 == L"pdf")                                    ico2 = L"\uEA90";
-                        else if (ext2==L"mp4"||ext2==L"mkv"||ext2==L"avi")         ico2 = L"\uE8B2";
-                        else if (ext2==L"mp3"||ext2==L"wav"||ext2==L"flac")        ico2 = L"\uEC4F";
-                        else if (IsImageExt(ext2))                                  ico2 = L"\uEB9F";
-                        else                                                         ico2 = L"\uE8A5";
+                        const wchar_t* thGlyph = L"\xE8A5";
+                        if      (isDir2)                                            thGlyph = L"\xED41";
+                        else if (ext2 == L"pdf")                                    thGlyph = L"\xEA90";
+                        else if (ext2==L"mp4"||ext2==L"mkv"||ext2==L"avi")          thGlyph = L"\xE8B2";
+                        else if (ext2==L"mp3"||ext2==L"wav"||ext2==L"flac")         thGlyph = L"\xEC4F";
+                        else if (IsImageExt(ext2))                                  thGlyph = L"\xEB9F";
                         Color icoC2;
                         if      (isDir2)           icoC2 = Color(255, 255, 196,  37);
                         else if (ext2 == L"pdf")   icoC2 = Color(255, 220,  38,  38);
@@ -1529,7 +1528,7 @@ void DrawFileManagerTab(Graphics& g, float cx, float cy, float cw, float ch) {
                         else                        icoC2 = Color(255, 140, 150, 170);
                         SolidBrush bIco2(icoC2);
                         RectF rcIco2(tx, ty, THUMB_SIZE, THUMB_SIZE);
-                        g.DrawString(ico2, -1, &fThumbIco, rcIco2, &sfC2, &bIco2);
+                        g.DrawString(thGlyph, -1, &fThumbIco, rcIco2, &sfC2, &bIco2);
                     }
 
                     // File name label below thumbnail
