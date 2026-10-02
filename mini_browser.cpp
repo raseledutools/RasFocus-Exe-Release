@@ -408,11 +408,11 @@ std::wstring GetAiInjectScript(const std::wstring& currentUrl) {
         if (ttHideSearch)   css+=L"[data-e2e='search-box'],header [class*='search']{display:none!important;}";
         if (ttBlackWhiteMode) css+=L"html{filter:grayscale(100%)!important;}";
     } else if (currentUrl.find(L"instagram.com")!=std::wstring::npos) {
-        if (igHideReels)    css+=L"a[href*='/reels/'],[aria-label='Reels']{display:none!important;}";
-        if (igHideStories)  css+=L"section > div:first-child > div:first-child div[role='button']:has(canvas){display:none!important;}";
-        if (igHideExplore)  css+=L"a[href*='/explore/'],[aria-label='Explore']{display:none!important;}";
-        if (igHideComments) css+=L"ul[class*='Mr508'],div[class*='comment']{display:none!important;}";
-        if (igHideSuggested)css+=L"div[class*='Suggested'],div:has(>span:contains('Suggested for you')){display:none!important;}";
+        if (igHideReels)    css+=L"a[href*='/reels/'],[aria-label='Reels'],a[href='/reels/']{display:none!important;}";
+        if (igHideStories)  css+=L"div[role='menuitem'] canvas,div[data-testid='story-viewer'],div._aatb,div._aabd{display:none!important;}";
+        if (igHideExplore)  css+=L"a[href*='/explore/'],[aria-label='Explore'],a[href='/explore/']{display:none!important;}";
+        if (igHideComments) css+=L"div[class*='comments'],div._ae6m,div._ae6n,ul._a9ym{display:none!important;}";
+        if (igHideSuggested)css+=L"div[data-pagelet*='Suggested'],div._aabd div._aacl{display:none!important;}";
         if (igBlackWhiteMode) css+=L"html{filter:grayscale(100%)!important;}";
     } else if (currentUrl.find(L"facebook.com")!=std::wstring::npos) {
         // Facebook Reels (mapped via igHideReels toggle)
@@ -428,11 +428,37 @@ std::wstring GetAiInjectScript(const std::wstring& currentUrl) {
         // Comments
         if (igHideComments) css+=L"div[aria-label='Leave a comment'],ul.d2edcug0.e8q01043{display:none!important;}";
         // Grayscale
-        if (igGrayscale)    css+=L"html{filter:grayscale(100%)!important;}";
+        if (igBlackWhiteMode) css+=L"html{filter:grayscale(100%)!important;}";
     }
 
-    if (css.empty()) return L"";
-    return L"(function(){let s=document.createElement('style');s.innerHTML=\"" + css + L"\";document.head.appendChild(s);})();";
+    // Extra JS (not CSS) for certain toggles
+    std::wstring extraJs = L"";
+    if (currentUrl.find(L"youtube.com") != std::wstring::npos && ytDisableAutoplay) {
+        // Disable YouTube autoplay via the player API + mutation observer to keep it off
+        extraJs += L"(function(){"
+                   L"  function disableAutoplay(){"
+                   L"    try{"
+                   L"      var p=document.querySelector('.html5-video-player');"
+                   L"      if(p&&p.setAutonavState) p.setAutonavState(1);"  // 1=off
+                   L"    }catch(e){}"
+                   L"    try{"
+                   L"      var btn=document.querySelector('.ytp-autonav-toggle-button');"
+                   L"      if(btn&&btn.getAttribute('aria-checked')==='true') btn.click();"
+                   L"    }catch(e){}"
+                   L"  }"
+                   L"  disableAutoplay();"
+                   L"  new MutationObserver(disableAutoplay).observe(document.body,{childList:true,subtree:true});"
+                   L"})();";
+    }
+
+    if (css.empty() && extraJs.empty()) return L"";
+    std::wstring result = L"";
+    if (!css.empty()) {
+        result += L"(function(){let s=document.createElement('style');s.id='__ras_content_ctrl__';"
+                  L"s.innerHTML=\"" + css + L"\";document.head.appendChild(s);})();";
+    }
+    result += extraJs;
+    return result;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

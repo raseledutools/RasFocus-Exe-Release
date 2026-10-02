@@ -720,34 +720,64 @@ std::wstring GetAiInjectScript(const std::wstring& currentUrl) {
     std::wstring css = L"";
 
     if (currentUrl.find(L"youtube.com") != std::wstring::npos) {
-        if (ytHideHome)        css += L"ytd-browse[page-subtype='home'] { display: none !important; } ";
-        if (ytHideShorts)      css += L"ytd-reel-shelf-renderer, ytd-rich-shelf-renderer[is-shorts], a[title='Shorts'], ytd-mini-guide-entry-renderer[aria-label='Shorts'] { display: none !important; } ";
-        if (ytHideComments)    css += L"ytd-comments { display: none !important; } ";
-        if (ytHideRecVideos)   css += L"ytd-watch-next-secondary-results-renderer { display: none !important; } ";
-        if (ytHideThumbnails)  css += L"ytd-thumbnail { display: none !important; } ";
-        if (ytBlurThumbnails)  css += L"ytd-thumbnail img { filter: blur(15px) !important; } ";
-        if (ytHideSubs)        css += L"a[title='Subscriptions'], ytd-mini-guide-entry-renderer[aria-label='Subscriptions'] { display: none !important; } ";
-        if (ytHideExplore)     css += L"ytd-guide-section-renderer:nth-child(3) { display: none !important; } ";
-        if (ytHideTopBar)      css += L"ytd-masthead #masthead-container #logo-icon-container, ytd-masthead #start, ytd-masthead #end, ytd-masthead #buttons, ytd-masthead #masthead-container ytd-topbar-logo-renderer { display: none !important; } ytd-masthead #center { visibility: visible !important; display: flex !important; } #page-manager { margin-top: 0 !important; } ";
-        if (ytDisableEndCards) css += L".ytp-ce-element { display: none !important; } ";
-        if (ytBlackWhiteMode)  css += L"html { filter: grayscale(100%) !important; } ";
-    } 
+        if (ytHideHome)        css += L"ytd-browse[page-subtype='home']{display:none!important;}";
+        if (ytHideShorts)      css += L"ytd-reel-shelf-renderer,ytd-rich-shelf-renderer[is-shorts],ytd-guide-entry-renderer a[title='Shorts'],a[title='Shorts'],tp-yt-paper-item[aria-label='Shorts']{display:none!important;}";
+        if (ytHideComments)    css += L"ytd-comments,#comments{display:none!important;}";
+        if (ytHideRecVideos)   css += L"ytd-watch-next-secondary-results-renderer{display:none!important;}";
+        if (ytHideThumbnails)  css += L"ytd-thumbnail{display:none!important;}";
+        if (ytBlurThumbnails)  css += L"ytd-thumbnail img{filter:blur(15px)!important;}";
+        if (ytHideSubs)        css += L"a[title='Subscriptions'],ytd-guide-entry-renderer a[href='/feed/subscriptions']{display:none!important;}";
+        if (ytHideExplore)     css += L"a[title='Trending'],a[title='Explore'],ytd-guide-entry-renderer a[href='/feed/trending']{display:none!important;}";
+        if (ytHideTopBar)      css += L"ytd-masthead{display:none!important;}#page-manager{margin-top:0!important;}";
+        if (ytDisableEndCards) css += L".ytp-ce-element{display:none!important;}";
+        if (ytDisableAutoplay) css += L".ytp-autonav-toggle-button-container{display:none!important;}";
+        if (ytBlackWhiteMode)  css += L"html{filter:grayscale(100%)!important;}";
+    }
     else if (currentUrl.find(L"tiktok.com") != std::wstring::npos) {
-        if (ttHideExplore)  css += L"[data-e2e='nav-explore'] { display: none !important; } ";
-        if (ttHideLive)     css += L"[data-e2e='nav-live'] { display: none !important; } ";
-        if (ttHideComments) css += L".comment-container, [data-e2e='comment-icon'] { display: none !important; } ";
-        if (ttBlackWhiteMode) css += L"html { filter: grayscale(100%) !important; } ";
-    } 
+        if (ttHideExplore)    css += L"[data-e2e='nav-explore']{display:none!important;}";
+        if (ttHideLive)       css += L"[data-e2e='nav-live']{display:none!important;}";
+        if (ttHideComments)   css += L".comment-container,[class*='CommentList'],[class*='comment-list']{display:none!important;}";
+        if (ttHideSearch)     css += L"[data-e2e='search-box'],header [class*='search']{display:none!important;}";
+        if (ttBlackWhiteMode) css += L"html{filter:grayscale(100%)!important;}";
+    }
     else if (currentUrl.find(L"instagram.com") != std::wstring::npos) {
-        if (igHideReels)    css += L"a[href*='/reels/'] { display: none !important; } ";
-        if (igHideExplore)  css += L"a[href*='/explore/'] { display: none !important; } ";
-        if (igBlackWhiteMode) css += L"html { filter: grayscale(100%) !important; } ";
+        if (igHideReels)      css += L"a[href*='/reels/'],[aria-label='Reels'],a[href='/reels/']{display:none!important;}";
+        if (igHideStories)    css += L"div[role='menuitem'] canvas,div[data-testid='story-viewer'],div._aatb,div._aabd{display:none!important;}";
+        if (igHideExplore)    css += L"a[href*='/explore/'],[aria-label='Explore'],a[href='/explore/']{display:none!important;}";
+        if (igHideComments)   css += L"div[class*='comments'],div._ae6m,div._ae6n,ul._a9ym{display:none!important;}";
+        if (igHideSuggested)  css += L"div[data-pagelet*='Suggested'],div._aabd div._aacl{display:none!important;}";
+        if (igBlackWhiteMode) css += L"html{filter:grayscale(100%)!important;}";
+    }
+    else if (currentUrl.find(L"facebook.com") != std::wstring::npos) {
+        if (igHideReels)      css += L"div[data-pagelet*='FeedUnit'] div[aria-label='Reels'],div[data-pagelet='ReelViewer'],a[href*='/reel/'],[aria-label='Reels']{display:none!important;}";
+        if (igHideStories)    css += L"div[role='main'] div[aria-label*='torie'],div[data-pagelet*='Stories']{display:none!important;}";
+        if (igHideSuggested)  css += L"div[data-pagelet*='RightRail'],div[data-pagelet*='FriendsSuggestions']{display:none!important;}";
+        if (igHideExplore)    css += L"a[aria-label='Marketplace'],div[aria-label='Marketplace']{display:none!important;}";
+        if (igHideComments)   css += L"div[aria-label='Leave a comment'],ul.d2edcug0.e8q01043{display:none!important;}";
+        if (igBlackWhiteMode) css += L"html{filter:grayscale(100%)!important;}";
     }
 
-    if (css.empty()) return L"";
+    // Extra JS for toggles that need more than CSS
+    std::wstring extraJs = L"";
+    if (currentUrl.find(L"youtube.com") != std::wstring::npos && ytDisableAutoplay) {
+        extraJs += L"(function(){"
+                   L"  function disableAutoplay(){"
+                   L"    try{var p=document.querySelector('.html5-video-player');if(p&&p.setAutonavState)p.setAutonavState(1);}catch(e){}"
+                   L"    try{var btn=document.querySelector('.ytp-autonav-toggle-button');if(btn&&btn.getAttribute('aria-checked')==='true')btn.click();}catch(e){}"
+                   L"  }"
+                   L"  disableAutoplay();"
+                   L"  new MutationObserver(disableAutoplay).observe(document.body,{childList:true,subtree:true});"
+                   L"})();";
+    }
 
-    std::wstring js = L"let style = document.createElement('style'); style.innerHTML = \"" + css + L"\"; document.head.appendChild(style);";
-    return js;
+    if (css.empty() && extraJs.empty()) return L"";
+    std::wstring result = L"";
+    if (!css.empty()) {
+        result += L"(function(){let s=document.createElement('style');s.id='__ras_content_ctrl__';"
+                  L"s.innerHTML=\"" + css + L"\";document.head.appendChild(s);})();";
+    }
+    result += extraJs;
+    return result;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
