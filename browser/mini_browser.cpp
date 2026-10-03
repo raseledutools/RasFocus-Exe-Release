@@ -720,41 +720,124 @@ std::wstring GetAiInjectScript(const std::wstring& currentUrl) {
     std::wstring css = L"";
 
     if (currentUrl.find(L"youtube.com") != std::wstring::npos) {
-        if (ytHideHome)        css += L"ytd-browse[page-subtype='home']{display:none!important;}";
-        if (ytHideShorts)      css += L"ytd-reel-shelf-renderer,ytd-rich-shelf-renderer[is-shorts],ytd-guide-entry-renderer a[title='Shorts'],a[title='Shorts'],tp-yt-paper-item[aria-label='Shorts']{display:none!important;}";
-        if (ytHideComments)    css += L"ytd-comments,#comments{display:none!important;}";
-        if (ytHideRecVideos)   css += L"ytd-watch-next-secondary-results-renderer{display:none!important;}";
-        if (ytHideThumbnails)  css += L"ytd-thumbnail{display:none!important;}";
-        if (ytBlurThumbnails)  css += L"ytd-thumbnail img{filter:blur(15px)!important;}";
-        if (ytHideSubs)        css += L"a[title='Subscriptions'],ytd-guide-entry-renderer a[href='/feed/subscriptions']{display:none!important;}";
-        if (ytHideExplore)     css += L"a[title='Trending'],a[title='Explore'],ytd-guide-entry-renderer a[href='/feed/trending']{display:none!important;}";
-        if (ytHideTopBar)      css += L"ytd-masthead{display:none!important;}#page-manager{margin-top:0!important;}";
-        if (ytDisableEndCards) css += L".ytp-ce-element{display:none!important;}";
-        if (ytDisableAutoplay) css += L".ytp-autonav-toggle-button-container{display:none!important;}";
-        if (ytBlackWhiteMode)  css += L"html{filter:grayscale(100%)!important;}";
+        // ── YouTube (desktop www.youtube.com) — 2025 selectors ──
+        if (ytHideShorts)
+            // Sidebar nav entry + home feed shelf + search-results shelf
+            css += L"ytd-guide-entry-renderer a[href='/shorts'],"
+                   L"ytd-mini-guide-entry-renderer a[href='/shorts'],"
+                   L"a[title='Shorts'][href='/shorts'],"
+                   L"ytd-reel-shelf-renderer,"
+                   L"ytd-rich-shelf-renderer[is-shorts],"
+                   L"ytd-rich-shelf-renderer[component-style*='shorts'],"
+                   L"ytd-shelf-renderer[component-style*='shorts'],"
+                   L"yt-chip-cloud-chip-renderer[chip-style-type*='SHORT'],"
+                   L"a[href^='/shorts/']{display:none!important;}";
+        if (ytHideHome)
+            css += L"ytd-browse[page-subtype='home'],"
+                   L"ytd-rich-grid-renderer{display:none!important;}";
+        if (ytHideComments)
+            css += L"ytd-comments,#comments{display:none!important;}";
+        if (ytHideRecVideos)
+            css += L"ytd-watch-next-secondary-results-renderer,"
+                   L"ytd-compact-video-renderer{display:none!important;}";
+        if (ytHideThumbnails)
+            css += L"ytd-thumbnail,yt-image.ytd-thumbnail{display:none!important;}";
+        if (ytBlurThumbnails)
+            css += L"ytd-thumbnail img,yt-image.ytd-thumbnail img{filter:blur(15px)!important;}";
+        if (ytHideSubs)
+            css += L"ytd-guide-entry-renderer a[href='/feed/subscriptions'],"
+                   L"ytd-mini-guide-entry-renderer a[href='/feed/subscriptions'],"
+                   L"a[title='Subscriptions']{display:none!important;}";
+        if (ytHideExplore)
+            css += L"ytd-guide-entry-renderer a[href='/feed/explore'],"
+                   L"ytd-guide-entry-renderer a[href='/feed/trending'],"
+                   L"a[title='Trending'],a[title='Explore']{display:none!important;}";
+        if (ytHideTopBar)
+            css += L"#masthead-container,ytd-masthead{display:none!important;}"
+                   L"#page-manager{margin-top:0!important;}";
+        if (ytDisableEndCards)
+            css += L".ytp-ce-element,.ytp-ce-covering-overlay,"
+                   L".ytp-ce-rendered-layer{display:none!important;}";
+        if (ytDisableAutoplay)
+            css += L".ytp-autonav-toggle-button-container{display:none!important;}";
+        if (ytBlackWhiteMode)
+            css += L"html{filter:grayscale(100%)!important;}";
     }
     else if (currentUrl.find(L"tiktok.com") != std::wstring::npos) {
-        if (ttHideExplore)    css += L"[data-e2e='nav-explore']{display:none!important;}";
-        if (ttHideLive)       css += L"[data-e2e='nav-live']{display:none!important;}";
-        if (ttHideComments)   css += L".comment-container,[class*='CommentList'],[class*='comment-list']{display:none!important;}";
-        if (ttHideSearch)     css += L"[data-e2e='search-box'],header [class*='search']{display:none!important;}";
-        if (ttBlackWhiteMode) css += L"html{filter:grayscale(100%)!important;}";
+        // ── TikTok — 2025 selectors ──
+        if (ttHideExplore)
+            css += L"[data-e2e='nav-explore'],"
+                   L"a[href*='/explore']{display:none!important;}";
+        if (ttHideLive)
+            css += L"[data-e2e='nav-live'],"
+                   L"[data-e2e='live-nav-btn'],"
+                   L"a[href*='/live']{display:none!important;}";
+        if (ttHideComments)
+            css += L"[data-e2e='comment-level-1'],"
+                   L"[data-e2e='browser-nickname']+div,"
+                   L".comment-container,"
+                   L"[class*='CommentList'],[class*='comment-list'],"
+                   L"[class*='CommentItem']{display:none!important;}";
+        if (ttHideSearch)
+            css += L"[data-e2e='search-box'],"
+                   L"form[action='/search'],"
+                   L"header input[type='text']{display:none!important;}";
+        if (ttBlackWhiteMode)
+            css += L"html{filter:grayscale(100%)!important;}";
     }
     else if (currentUrl.find(L"instagram.com") != std::wstring::npos) {
-        if (igHideReels)      css += L"a[href*='/reels/'],[aria-label='Reels'],a[href='/reels/']{display:none!important;}";
-        if (igHideStories)    css += L"div[role='menuitem'] canvas,div[data-testid='story-viewer'],div._aatb,div._aabd{display:none!important;}";
-        if (igHideExplore)    css += L"a[href*='/explore/'],[aria-label='Explore'],a[href='/explore/']{display:none!important;}";
-        if (igHideComments)   css += L"div[class*='comments'],div._ae6m,div._ae6n,ul._a9ym{display:none!important;}";
-        if (igHideSuggested)  css += L"div[data-pagelet*='Suggested'],div._aabd div._aacl{display:none!important;}";
-        if (igBlackWhiteMode) css += L"html{filter:grayscale(100%)!important;}";
+        // ── Instagram — 2025 selectors ──
+        if (igHideReels)
+            css += L"a[href='/reels/'],a[href*='/reels/'],"
+                   L"[aria-label='Reels'],"
+                   L"div[role='main'] div._ab8s,"
+                   L"div[class*='Reels']{display:none!important;}";
+        if (igHideStories)
+            css += L"[aria-label='Stories tray'],"
+                   L"div[role='main'] header ~ div > div > ul,"
+                   L"div._aatb,div._aarf,div._acas{display:none!important;}";
+        if (igHideExplore)
+            css += L"a[href='/explore/'],a[href*='/explore/'],"
+                   L"[aria-label='Explore']{display:none!important;}";
+        if (igHideComments)
+            css += L"div._ae6m,section._ae6n,ul._a9ym,"
+                   L"div[aria-label='Comment'],"
+                   L"[class*='comments']{display:none!important;}";
+        if (igHideSuggested)
+            css += L"div[data-pagelet*='Suggested'],"
+                   L"aside section[class*='suggested'],"
+                   L"div._aagw{display:none!important;}";
+        if (igBlackWhiteMode)
+            css += L"html{filter:grayscale(100%)!important;}";
     }
     else if (currentUrl.find(L"facebook.com") != std::wstring::npos) {
-        if (igHideReels)      css += L"div[data-pagelet*='FeedUnit'] div[aria-label='Reels'],div[data-pagelet='ReelViewer'],a[href*='/reel/'],[aria-label='Reels']{display:none!important;}";
-        if (igHideStories)    css += L"div[role='main'] div[aria-label*='torie'],div[data-pagelet*='Stories']{display:none!important;}";
-        if (igHideSuggested)  css += L"div[data-pagelet*='RightRail'],div[data-pagelet*='FriendsSuggestions']{display:none!important;}";
-        if (igHideExplore)    css += L"a[aria-label='Marketplace'],div[aria-label='Marketplace']{display:none!important;}";
-        if (igHideComments)   css += L"div[aria-label='Leave a comment'],ul.d2edcug0.e8q01043{display:none!important;}";
-        if (igBlackWhiteMode) css += L"html{filter:grayscale(100%)!important;}";
+        // ── Facebook — 2025 selectors ──
+        if (igHideReels)
+            css += L"div[data-pagelet='ReelViewer'],"
+                   L"a[href*='/reel/'],"
+                   L"div[aria-label='Reels'],"
+                   L"[data-pagelet*='video_home_rhc']"
+                   L"{display:none!important;}";
+        if (igHideStories)
+            css += L"div[data-pagelet*='Stories'],"
+                   L"div[aria-label*='Stories'],"
+                   L"div[role='main'] > div > div > div > div:has(a[aria-label*='story'])"
+                   L"{display:none!important;}";
+        if (igHideSuggested)
+            css += L"div[data-pagelet='RightRail'],"
+                   L"div[data-pagelet*='FriendsSuggestions'],"
+                   L"div[aria-label='People you may know']"
+                   L"{display:none!important;}";
+        if (igHideExplore)
+            css += L"a[aria-label='Marketplace'],a[href*='/marketplace'],"
+                   L"div[aria-label='Marketplace']{display:none!important;}";
+        if (igHideComments)
+            css += L"div[aria-label='Leave a comment'],"
+                   L"div[data-pagelet*='Comment'],"
+                   L"form[method='post'][action*='comment']"
+                   L"{display:none!important;}";
+        if (igBlackWhiteMode)
+            css += L"html{filter:grayscale(100%)!important;}";
     }
 
     // Extra JS for toggles that need more than CSS
@@ -762,19 +845,32 @@ std::wstring GetAiInjectScript(const std::wstring& currentUrl) {
     if (currentUrl.find(L"youtube.com") != std::wstring::npos && ytDisableAutoplay) {
         extraJs += L"(function(){"
                    L"  function disableAutoplay(){"
-                   L"    try{var p=document.querySelector('.html5-video-player');if(p&&p.setAutonavState)p.setAutonavState(1);}catch(e){}"
-                   L"    try{var btn=document.querySelector('.ytp-autonav-toggle-button');if(btn&&btn.getAttribute('aria-checked')==='true')btn.click();}catch(e){}"
+                   L"    try{"
+                   L"      var btn=document.querySelector('.ytp-autonav-toggle-button[aria-checked=\"true\"]');"
+                   L"      if(btn){btn.click();return;}"
+                   L"    }catch(e){}"
+                   L"    try{"
+                   L"      var p=document.querySelector('.html5-video-player');"
+                   L"      if(p&&typeof p.setAutonavState==='function')p.setAutonavState(1);"
+                   L"    }catch(e){}"
                    L"  }"
                    L"  disableAutoplay();"
-                   L"  new MutationObserver(disableAutoplay).observe(document.body,{childList:true,subtree:true});"
+                   L"  var _ob=new MutationObserver(function(){disableAutoplay();});"
+                   L"  _ob.observe(document.body,{childList:true,subtree:false});"
                    L"})();";
     }
 
     if (css.empty() && extraJs.empty()) return L"";
     std::wstring result = L"";
     if (!css.empty()) {
-        result += L"(function(){let s=document.createElement('style');s.id='__ras_content_ctrl__';"
-                  L"s.innerHTML=\"" + css + L"\";document.head.appendChild(s);})();";
+        // Template literal (backtick) wraps the CSS so any single/double quotes in
+        // attribute selectors like [href='/shorts'] or [aria-label="Reels"] are safe.
+        result += L"(function(){"
+                  L"var s=document.getElementById('__ras_content_ctrl__');"
+                  L"if(!s){s=document.createElement('style');s.id='__ras_content_ctrl__';"
+                  L"document.head.appendChild(s);}"
+                  L"s.textContent=`" + css + L"`;"
+                  L"})();";
     }
     result += extraJs;
     return result;
