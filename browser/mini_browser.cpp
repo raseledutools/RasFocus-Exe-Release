@@ -5096,16 +5096,33 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 
     case WM_APP + 50: {
         // WM_RAS_BROWSER_RELOAD — sent by tab_browser_control.cpp when a distraction toggle changes.
-        // Reload every tab in this browser window so the new CSS inject takes effect immediately.
+        // Live-inject updated CSS into the active tab WITHOUT reloading the page:
+        //   1. Remove the old <style id="__ras_content_ctrl__"> if present.
+        //   2. Re-run GetAiInjectScript() to build the new CSS from the updated txt file.
+        //   3. ExecuteScript() pushes it straight into the live DOM.
         if (g_windows.count(hWnd)) {
             auto& wd = g_windows[hWnd];
             int active = wd.activeTab;
-            for (int i = 0; i < (int)wd.tabs.size(); i++) {
-                auto& tab = wd.tabs[i];
-                if (tab.webview) {
-                    // Only reload the active tab immediately; background tabs reload on next activation.
-                    if (i == active) {
-                        tab.webview->Reload();
+            if (active >= 0 && active < (int)wd.tabs.size()) {
+                auto& tab = wd.tabs[active];
+                if (tab.webview && !tab.url.empty()
+                    && tab.url != L"LOCAL_NTP"
+                    && tab.url != L"about:blank"
+                    && tab.url != L"LOCAL_HISTORY"
+                    && tab.url != L"LOCAL_DOWNLOADS") {
+
+                    // Step 1: remove old injected style so new one starts clean
+                    const wchar_t* removeOld =
+                        L"(function(){"
+                        L"  var old=document.getElementById('__ras_content_ctrl__');"
+                        L"  if(old) old.parentNode.removeChild(old);"
+                        L"})();";
+                    tab.webview->ExecuteScript(removeOld, nullptr);
+
+                    // Step 2+3: build new CSS/JS from updated rasfocus_ai_data.txt and inject
+                    std::wstring newScript = GetAiInjectScript(tab.url);
+                    if (!newScript.empty()) {
+                        tab.webview->ExecuteScript(newScript.c_str(), nullptr);
                     }
                 }
             }
