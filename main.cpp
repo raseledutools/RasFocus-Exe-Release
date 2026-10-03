@@ -2662,7 +2662,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
                 if (selectedTab != logicalTab) {
                     selectedTab = logicalTab;
                     HideAllWebViews();
-                    if (logicalTab == 9) { LaunchMiniBrowser(L"LOCAL_NTP", L"RasBrowser"); }
+                    // Tab 9 = Browser Content Control Panel (GDI+ toggle panel)
+                    // RasBrowser window is launched via the "Open RasBrowser" button inside the panel,
+                    // NOT automatically here — launching here would cover the toggle panel with WebView2.
                 }
             }
         }

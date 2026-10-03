@@ -164,10 +164,17 @@ static const float SEC_HDR = 38.0f;  // section header height
 static const float PAD_L   = 28.0f;  // left padding inside content
 static const float COLS    = 2.0f;   // 2-column layout
 
+// LaunchMiniBrowser — defined in browser/mini_browser.cpp
+extern void LaunchMiniBrowser(std::wstring url, std::wstring title);
+
 // Hit-test rectangles for toggle pills (rebuilt each draw)
 struct HitRect { RectF r; bool* state; };
 static std::vector<HitRect> s_hitRects;
 static int s_hoverIdx = -1;  // index into s_hitRects
+
+// "Open RasBrowser" button hit rect (rebuilt each draw)
+static RectF s_openBrowserBtnRect;
+static bool  s_openBrowserHover = false;
 
 // Draw one toggle pill
 static void DrawToggle(Graphics& g, float x, float y, bool on, Color accent, bool hover) {
@@ -204,6 +211,7 @@ void DrawBrowserControlTab(Graphics& g, float cX, float cY, float cW, float cH) 
     Font fDesc  (&ff, 11.0f, FontStyleRegular, UnitPixel);
     Font fTitle (&ff, 18.0f, FontStyleBold,    UnitPixel);
     Font fSub   (&ff, 11.5f, FontStyleRegular, UnitPixel);
+    Font fBtn   (&ff, 12.5f, FontStyleBold,    UnitPixel);
 
     SolidBrush brkDark (Color(255,  50,  50,  50));
     SolidBrush brkGray (Color(255, 130, 130, 130));
@@ -217,6 +225,27 @@ void DrawBrowserControlTab(Graphics& g, float cX, float cY, float cW, float cH) 
     SolidBrush teal(Color(255, 0, 140, 150));
     g.DrawString(L"Browser Content Controls", -1, &fTitle,
         PointF(cX + PAD_L, ty), &sfLeft, &teal);
+
+    // ── "Open RasBrowser" button — top-right of header area
+    float btnW = 150.0f, btnH = 30.0f;
+    float btnX = cX + cW - PAD_L - btnW;
+    float btnY = ty + 2.0f;
+    s_openBrowserBtnRect = RectF(btnX, btnY, btnW, btnH);
+    {
+        Color btnBg   = s_openBrowserHover ? Color(255, 0, 120, 130) : Color(255, 0, 150, 160);
+        SolidBrush btnBrush(btnBg);
+        GraphicsPath bp;
+        float br = 6.0f;
+        bp.AddArc(btnX,           btnY,           br*2, br*2, 180, 90);
+        bp.AddArc(btnX+btnW-br*2, btnY,           br*2, br*2, 270, 90);
+        bp.AddArc(btnX+btnW-br*2, btnY+btnH-br*2, br*2, br*2,   0, 90);
+        bp.AddArc(btnX,           btnY+btnH-br*2, br*2, br*2,  90, 90);
+        bp.CloseFigure();
+        g.FillPath(&btnBrush, &bp);
+        g.DrawString(L"\u26F6  Open RasBrowser", -1, &fBtn,
+            RectF(btnX, btnY, btnW, btnH), &sfCenter, &brkWhite);
+    }
+
     ty += 26.0f;
     g.DrawString(L"Toggle switches below hide distracting content in RasBrowser. "
                  L"Changes apply on next page load or tab refresh.",
@@ -330,6 +359,12 @@ void DrawBrowserControlTab(Graphics& g, float cX, float cY, float cW, float cH) 
 // MOUSE CLICK
 // ─────────────────────────────────────────────────────────────────────────────
 void ProcessBrowserControlMouseClick(float x, float y, float /*cX*/, float /*cY*/, float /*cW*/, float /*cH*/) {
+    // "Open RasBrowser" button
+    if (s_openBrowserBtnRect.Contains(x, y)) {
+        LaunchMiniBrowser(L"LOCAL_NTP", L"RasBrowser");
+        return;
+    }
+    // Toggle pills
     for (auto& hr : s_hitRects) {
         if (hr.r.Contains(x, y)) {
             *hr.state = !(*hr.state);
@@ -349,5 +384,7 @@ bool ProcessBrowserControlMouseMove(float x, float y, float /*cX*/, float /*cY*/
     for (int i = 0; i < (int)s_hitRects.size(); i++) {
         if (s_hitRects[i].r.Contains(x, y)) { s_hoverIdx = i; break; }
     }
-    return s_hoverIdx != prev;
+    bool prevBtnHover = s_openBrowserHover;
+    s_openBrowserHover = s_openBrowserBtnRect.Contains(x, y);
+    return (s_hoverIdx != prev) || (s_openBrowserHover != prevBtnHover);
 }

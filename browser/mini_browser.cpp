@@ -5094,6 +5094,25 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
         break;
     }
 
+    case WM_APP + 50: {
+        // WM_RAS_BROWSER_RELOAD — sent by tab_browser_control.cpp when a distraction toggle changes.
+        // Reload every tab in this browser window so the new CSS inject takes effect immediately.
+        if (g_windows.count(hWnd)) {
+            auto& wd = g_windows[hWnd];
+            int active = wd.activeTab;
+            for (int i = 0; i < (int)wd.tabs.size(); i++) {
+                auto& tab = wd.tabs[i];
+                if (tab.webview) {
+                    // Only reload the active tab immediately; background tabs reload on next activation.
+                    if (i == active) {
+                        tab.webview->Reload();
+                    }
+                }
+            }
+        }
+        break;
+    }
+
     case WM_CLOSE:
         DestroyWindow(hWnd);
         break;
