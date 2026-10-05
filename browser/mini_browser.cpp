@@ -820,8 +820,8 @@ std::wstring GetAiInjectScript(const std::wstring& currentUrl) {
                    L"{display:none!important;}";
         if (igHideStories)
             css += L"div[data-pagelet*='Stories'],"
-                   L"div[aria-label*='Stories'],"
-                   L"div[role='main'] > div > div > div > div:has(a[aria-label*='story'])"
+                   L"div[data-pagelet='StoriesHerald'],"
+                   L"div[aria-label='Stories']"
                    L"{display:none!important;}";
         if (igHideSuggested)
             css += L"div[data-pagelet='RightRail'],"
@@ -861,15 +861,30 @@ std::wstring GetAiInjectScript(const std::wstring& currentUrl) {
     }
 
     if (css.empty() && extraJs.empty()) return L"";
+
+    // Escape the CSS string for safe embedding inside a JS double-quoted string.
+    // We only need to escape: \ → \\,  " → \",  newline → \n
+    // Single quotes in selectors like [href='/shorts'] are fine inside double-quoted JS strings.
+    auto jsEscapeCss = [](const std::wstring& s) -> std::wstring {
+        std::wstring out;
+        out.reserve(s.size() + 32);
+        for (wchar_t c : s) {
+            if      (c == L'\\') out += L"\\\\";
+            else if (c == L'"')  out += L"\\\"";
+            else if (c == L'\n') out += L"\\n";
+            else if (c == L'\r') {} // skip CR
+            else                 out += c;
+        }
+        return out;
+    };
+
     std::wstring result = L"";
     if (!css.empty()) {
-        // Template literal (backtick) wraps the CSS so any single/double quotes in
-        // attribute selectors like [href='/shorts'] or [aria-label="Reels"] are safe.
         result += L"(function(){"
                   L"var s=document.getElementById('__ras_content_ctrl__');"
                   L"if(!s){s=document.createElement('style');s.id='__ras_content_ctrl__';"
                   L"document.head.appendChild(s);}"
-                  L"s.textContent=`" + css + L"`;"
+                  L"s.textContent=\"" + jsEscapeCss(css) + L"\";"
                   L"})();";
     }
     result += extraJs;
