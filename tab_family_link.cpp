@@ -1396,7 +1396,8 @@ void DrawFamilyLinkTab(Graphics& g, float x, float y, float w, float h) {
     // ── Premium check ──
     bool hasAccess = (g_currentPackage == "PREMIUM"  ||
                       g_currentPackage == "PARENTAL" ||
-                      g_currentPackage == "TRIAL");
+                      g_currentPackage == "TRIAL"    ||
+                      g_isPremiumUser);  // Dev Mode বা manual premium override
     if (!hasAccess) {
         Gdiplus::Font fH(&ff, 22, FontStyleBold, UnitPixel);
         Gdiplus::Font fD(&ff, 13, FontStyleRegular, UnitPixel);
