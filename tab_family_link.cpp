@@ -155,6 +155,11 @@ struct FLRects {
     float dropItemH;
 } fl_rects = {};
 
+// ── Forward declarations (defined later in PERSISTENCE section) ──
+void FamilyLink_SaveState();
+void FamilyLink_LoadState();
+void FamilyLink_ClearSavedState();
+
 // ════════════════════════════════════════════════════════════════════
 // HELPER FUNCTIONS
 // ════════════════════════════════════════════════════════════════════
