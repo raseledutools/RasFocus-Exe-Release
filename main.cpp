@@ -2985,6 +2985,9 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR lpCmdLine, int nCmdShow) {
 
     InitAccountsModule(g_firebaseApp);
 
+    // Family Link — আগের connected state restore করো
+    FamilyLink_LoadState();
+
     int argc; LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
     g_isPureViewerMode = false; wstring viewerUrl = L"", viewerTitle = L"";
     bool g_isImageFile = false; // true when the argument is an image for our native viewer

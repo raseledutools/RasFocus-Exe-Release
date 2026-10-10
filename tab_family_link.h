@@ -69,3 +69,7 @@ void ProcessFamilyLinkKeyDown(WPARAM wp);
 
 void ProcessFamilyLinkTimer(UINT_PTR timerId, HWND hWnd);
 void FamilyLink_EnforceParentCommands(HWND hWnd);
+
+// Persistence — app start এ load করো, connect/unlink এ save/clear করো
+void FamilyLink_SaveState();
+void FamilyLink_LoadState();

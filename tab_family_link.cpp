@@ -1444,6 +1444,8 @@ void ProcessFamilyLinkMouseClick(float mx, float my, float cX, float cY, HWND hW
     if (g_isLinkedToParent) {
         // Unlink
         if (PointIn(mx, my, fl_rects.unlinkX, fl_rects.unlinkY, fl_rects.unlinkW, fl_rects.unlinkH)) {
+            // Registry থেকে মুছে দাও
+            FamilyLink_ClearSavedState();
             // Reset state
             g_isLinkedToParent = false;
             g_parentUid        = "";
@@ -1599,6 +1601,9 @@ void ProcessFamilyLinkMouseClick(float mx, float my, float cX, float cY, HWND hW
         fl_savedGmail       = gmailCopy;
         fl_savedRelation    = relCopy;
 
+        // Step 5b: Registry তে save করো (app restart এও connected থাকবে)
+        FamilyLink_SaveState();
+
         // Step 6: First poll
         PollParentCommands();
 
@@ -1673,6 +1678,88 @@ void ProcessFamilyLinkKeyDown(WPARAM wp) {
 
 // ════════════════════════════════════════════════════════════════════
 // TIMER — caret blink + poll ticker
+// ════════════════════════════════════════════════════════════════════
+// PERSISTENCE — Registry তে connection state save / load
+// Key: HKCU\Software\RasFocus\FamilyLink
+// ════════════════════════════════════════════════════════════════════
+
+static const char* FL_REG_KEY = "Software\\RasFocus\\FamilyLink";
+
+void FamilyLink_SaveState() {
+    HKEY hKey;
+    if (RegCreateKeyExA(HKEY_CURRENT_USER, FL_REG_KEY, 0, NULL,
+                        REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, NULL, &hKey, NULL) != ERROR_SUCCESS)
+        return;
+
+    // g_isLinkedToParent
+    DWORD linked = g_isLinkedToParent ? 1 : 0;
+    RegSetValueExA(hKey, "Linked",      0, REG_DWORD, (BYTE*)&linked,              sizeof(DWORD));
+
+    // g_parentUid (string)
+    RegSetValueExA(hKey, "ParentUid",   0, REG_SZ,
+                   (BYTE*)g_parentUid.c_str(), (DWORD)(g_parentUid.size() + 1));
+
+    // fl_connectedPin (wstring → UTF-16)
+    RegSetValueExW(hKey, L"ConnectedPin", 0, REG_SZ,
+                   (BYTE*)fl_connectedPin.c_str(),
+                   (DWORD)((fl_connectedPin.size() + 1) * sizeof(wchar_t)));
+
+    // fl_savedGmail (wstring → UTF-16)
+    RegSetValueExW(hKey, L"SavedGmail",   0, REG_SZ,
+                   (BYTE*)fl_savedGmail.c_str(),
+                   (DWORD)((fl_savedGmail.size() + 1) * sizeof(wchar_t)));
+
+    // fl_savedRelation (int → DWORD)
+    DWORD rel = (DWORD)fl_savedRelation;
+    RegSetValueExA(hKey, "SavedRelation", 0, REG_DWORD, (BYTE*)&rel, sizeof(DWORD));
+
+    RegCloseKey(hKey);
+}
+
+void FamilyLink_LoadState() {
+    HKEY hKey;
+    if (RegOpenKeyExA(HKEY_CURRENT_USER, FL_REG_KEY, 0, KEY_QUERY_VALUE, &hKey) != ERROR_SUCCESS)
+        return; // কোনো saved state নেই — নতুন install বা unlinked
+
+    DWORD type, size;
+
+    // Linked flag
+    DWORD linked = 0; size = sizeof(DWORD);
+    if (RegQueryValueExA(hKey, "Linked", NULL, &type, (BYTE*)&linked, &size) == ERROR_SUCCESS
+        && type == REG_DWORD && linked == 1) {
+
+        // ParentUid
+        char uidBuf[256] = {}; size = sizeof(uidBuf);
+        RegQueryValueExA(hKey, "ParentUid", NULL, &type, (BYTE*)uidBuf, &size);
+        g_parentUid = uidBuf;
+
+        // ConnectedPin
+        wchar_t pinBuf[16] = {}; size = sizeof(pinBuf);
+        RegQueryValueExW(hKey, L"ConnectedPin", NULL, &type, (BYTE*)pinBuf, &size);
+        fl_connectedPin = pinBuf;
+
+        // SavedGmail
+        wchar_t gmailBuf[256] = {}; size = sizeof(gmailBuf);
+        RegQueryValueExW(hKey, L"SavedGmail", NULL, &type, (BYTE*)gmailBuf, &size);
+        fl_savedGmail = gmailBuf;
+
+        // SavedRelation
+        DWORD rel = 0; size = sizeof(DWORD);
+        RegQueryValueExA(hKey, "SavedRelation", NULL, &type, (BYTE*)&rel, &size);
+        fl_savedRelation = (int)rel;
+
+        // State restore
+        g_isLinkedToParent = true;
+        fl_connectionState = 2; // Connected view দেখাবে
+    }
+
+    RegCloseKey(hKey);
+}
+
+void FamilyLink_ClearSavedState() {
+    RegDeleteKeyA(HKEY_CURRENT_USER, FL_REG_KEY);
+}
+
 // ════════════════════════════════════════════════════════════════════
 void ProcessFamilyLinkTimer(UINT_PTR timerId, HWND hWnd) {
     if (hWnd) fl_hwnd = hWnd;
