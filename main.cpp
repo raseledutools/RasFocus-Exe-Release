@@ -154,6 +154,8 @@ bool hoverUpgrade   = false;
 bool hoverFeedback  = false;
 bool hoverMyAccount = false;
 bool hoverDebugKill = false;
+bool hoverDevMode   = false;  // Developer Mode button hover
+bool g_devModeActive = false; // Developer Mode toggle state
 
 // Feedback popup state
 bool showFeedbackBox   = false;
@@ -1885,6 +1887,60 @@ void DrawSubHeader(Graphics& g, int w) {
     wstring wVer(CURRENT_VERSION.begin(), CURRENT_VERSION.end());
     g.DrawString(wVer.c_str(), -1, &fVersion, RectF(textX + 100.0f, subY + 2.0f, 60.0f, subH), &fmtTL, &whiteAlpha);
 
+    // ── Developer Mode Button (subheader বাম দিকে, version এর পাশে) ──
+    {
+        float devBtnW = 95.0f;
+        float devBtnH = 22.0f;
+        float devBtnX = textX + 165.0f;  // version chip এর পরে
+        float devBtnY = subY + (subH - devBtnH) / 2.0f;
+        float rd = 3.0f, dd = rd * 2.0f;
+
+        GraphicsPath devPath;
+        devPath.AddArc(devBtnX,               devBtnY,               dd, dd, 180, 90);
+        devPath.AddArc(devBtnX + devBtnW - dd, devBtnY,               dd, dd, 270, 90);
+        devPath.AddArc(devBtnX + devBtnW - dd, devBtnY + devBtnH - dd, dd, dd, 0,   90);
+        devPath.AddArc(devBtnX,               devBtnY + devBtnH - dd, dd, dd, 90,  90);
+        devPath.CloseFigure();
+
+        // Active হলে উজ্জ্বল হলুদ-কমলা, inactive হলে dim
+        Color devBgColor;
+        if (g_devModeActive) {
+            devBgColor = hoverDevMode
+                ? Color(255, 255, 160, 0)   // hover: গাঢ় কমলা
+                : Color(255, 255, 200, 0);  // active: উজ্জ্বল হলুদ
+        } else {
+            devBgColor = hoverDevMode
+                ? Color(80, 255, 255, 255)  // hover: হালকা সাদা
+                : Color(35, 255, 255, 255); // inactive: dim
+        }
+
+        SolidBrush devBgBrush(devBgColor);
+        g.FillPath(&devBgBrush, &devPath);
+
+        Color devBorderColor = g_devModeActive
+            ? Color(200, 255, 220, 0)
+            : Color(90, 255, 255, 255);
+        Pen devBorder(devBorderColor, 1.0f);
+        g.DrawPath(&devBorder, &devPath);
+
+        Font fDevIcon(&ffIcons, 11, FontStyleRegular, UnitPixel);
+        Font fDevTxt(&ff, 9, FontStyleBold, UnitPixel);
+        StringFormat fmtDevC;
+        fmtDevC.SetAlignment(StringAlignmentCenter);
+        fmtDevC.SetLineAlignment(StringAlignmentCenter);
+
+        SolidBrush devTxtColor(g_devModeActive ? Color(255, 60, 40, 0) : Color(230, 255, 255, 255));
+
+        // \xE756 = wrench/code icon (Segoe MDL2)
+        g.DrawString(L"\xE756", -1, &fDevIcon,
+            RectF(devBtnX + 4.0f, devBtnY, 16.0f, devBtnH), &fmtDevC, &devTxtColor);
+
+        const wchar_t* devLabel = g_devModeActive ? L"Dev: ON" : L"Dev Mode";
+        g.DrawString(devLabel, -1, &fDevTxt,
+            RectF(devBtnX + 20.0f, devBtnY, devBtnW - 22.0f, devBtnH), &fmtDevC, &devTxtColor);
+    }
+    // ── End Developer Mode Button ──
+
     float rightPad = 20.0f;
     float btnH     = 28.0f;
     float btnY     = subY + (subH - btnH) / 2.0f;
@@ -2215,6 +2271,17 @@ inline bool HitFeedbackIcon(float x, float y, float w) {
     return (x >= fbIconX && x <= fbIconX + fbIconW && y >= btnY && y <= btnY + btnH);
 }
 
+inline bool HitDevModeBtn(float x, float y) {
+    float subY    = (float)TITLEBAR_HEIGHT;
+    float subH    = (float)SUBHEADER_HEIGHT;
+    float textX   = 16.0f + 26.0f + 10.0f;
+    float devBtnW = 95.0f;
+    float devBtnH = 22.0f;
+    float devBtnX = textX + 165.0f;
+    float devBtnY = subY + (subH - devBtnH) / 2.0f;
+    return (x >= devBtnX && x <= devBtnX + devBtnW && y >= devBtnY && y <= devBtnY + devBtnH);
+}
+
 inline bool HitMyAccount(float x, float y, float w) {
     float subY  = (float)TITLEBAR_HEIGHT;
     float subH  = (float)SUBHEADER_HEIGHT;
@@ -2452,10 +2519,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             hoverTitleUpdateBtn = true;
         if (oldTitleUpd != hoverTitleUpdateBtn) redraw = true;
 
-        bool oldFb = hoverFeedback,  oldAc = hoverMyAccount;
+        bool oldFb = hoverFeedback,  oldAc = hoverMyAccount, oldDev = hoverDevMode;
         hoverFeedback  = HitFeedbackIcon(x, y, scaledW);
         hoverMyAccount = HitMyAccount   (x, y, scaledW);
-        if (oldFb != hoverFeedback || oldAc != hoverMyAccount) redraw = true;
+        hoverDevMode   = HitDevModeBtn  (x, y);
+        if (oldFb != hoverFeedback || oldAc != hoverMyAccount || oldDev != hoverDevMode) redraw = true;
 
         int oldTab = hoveredTab; hoveredTab = -1;
         float sideY = (float)(TITLEBAR_HEIGHT + SUBHEADER_HEIGHT);
@@ -2632,6 +2700,22 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp) {
             pressedClose = true;
             InvalidateRect(hWnd, NULL, FALSE);
             SetTimer(hWnd, 1007, 120, NULL);
+            break;
+        }
+
+        // ── Developer Mode Button click ──
+        if (HitDevModeBtn(x, y)) {
+            g_devModeActive = !g_devModeActive;
+            if (g_devModeActive) {
+                // সব premium feature unlock
+                g_isPremiumUser = true;
+            } else {
+                // বন্ধ করলে original premium status ফিরিয়ে দাও
+                // (accounts.cpp এর real status re-check করা দরকার নেই,
+                //  শুধু false করলে locked হয়ে যাবে)
+                g_isPremiumUser = false;
+            }
+            InvalidateRect(hWnd, NULL, FALSE);
             break;
         }
 
