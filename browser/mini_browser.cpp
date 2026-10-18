@@ -811,30 +811,57 @@ std::wstring GetAiInjectScript(const std::wstring& currentUrl) {
             css += L"html{filter:grayscale(100%)!important;}";
     }
     else if (currentUrl.find(L"facebook.com") != std::wstring::npos) {
-        // ── Facebook — 2025 selectors ──
+        // ── Facebook — 2025 selectors (updated for current FB DOM) ──
         if (igHideReels)
+            // Reels: feed cards, nav link, reel viewer overlay, video tab shelf
             css += L"div[data-pagelet='ReelViewer'],"
+                   L"div[data-pagelet*='Reels'],"
                    L"a[href*='/reel/'],"
+                   L"a[href='/reels/'],"
+                   L"a[href='/reels'],"
                    L"div[aria-label='Reels'],"
-                   L"[data-pagelet*='video_home_rhc']"
+                   L"[data-pagelet*='video_home_rhc'],"
+                   // FB 2025: watch/video tab feed cards
+                   L"div[data-pagelet='WatchFeedPagelet'],"
+                   L"div[data-pagelet*='VideosYouMightLike'],"
+                   // feed story unit whose type is a reel
+                   L"div[role='article'] div[data-ad-preview='message'] ~ div video,"
+                   // left-nav Reels link (role=navigation area)
+                   L"a[href*='facebook.com/reels']"
                    L"{display:none!important;}";
         if (igHideStories)
             css += L"div[data-pagelet*='Stories'],"
                    L"div[data-pagelet='StoriesHerald'],"
-                   L"div[aria-label='Stories']"
+                   L"div[aria-label='Stories'],"
+                   // 2025: stories tray at top of feed
+                   L"div[data-pagelet='DesktopFeedHighlightsStories'],"
+                   L"div[aria-label='Create a story']"
                    L"{display:none!important;}";
         if (igHideSuggested)
             css += L"div[data-pagelet='RightRail'],"
                    L"div[data-pagelet*='FriendsSuggestions'],"
-                   L"div[aria-label='People you may know']"
+                   L"div[aria-label='People you may know'],"
+                   // 2025: sponsored / suggested posts in feed
+                   L"div[data-pagelet*='Sponsored'],"
+                   L"span[data-ad-comet-preview='message']"
                    L"{display:none!important;}";
         if (igHideExplore)
-            css += L"a[aria-label='Marketplace'],a[href*='/marketplace'],"
-                   L"div[aria-label='Marketplace']{display:none!important;}";
+            // Marketplace: left-nav link + marketplace pages
+            css += L"a[aria-label='Marketplace'],"
+                   L"a[href*='/marketplace'],"
+                   L"a[href='/marketplace/'],"
+                   L"div[aria-label='Marketplace'],"
+                   // 2025 left-nav: the list item containing the Marketplace anchor
+                   L"li:has(a[href*='/marketplace']),"
+                   L"div[data-pagelet*='Marketplace']"
+                   L"{display:none!important;}";
         if (igHideComments)
             css += L"div[aria-label='Leave a comment'],"
                    L"div[data-pagelet*='Comment'],"
-                   L"form[method='post'][action*='comment']"
+                   L"form[method='post'][action*='comment'],"
+                   // 2025: comment list below posts
+                   L"div[aria-label='Comment'],"
+                   L"ul[data-testid='UFI2CommentsList']"
                    L"{display:none!important;}";
         if (igBlackWhiteMode)
             css += L"html{filter:grayscale(100%)!important;}";
