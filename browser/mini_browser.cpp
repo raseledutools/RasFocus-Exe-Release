@@ -3137,11 +3137,21 @@ static void SwitchToTab(HWND hWnd, int idx) {
     InvalidateRect(hWnd, NULL, TRUE); 
 }
 
+// Ctrl+Shift+T — সদ্য বন্ধ করা tab এর URL গুলো (সর্বোচ্চ ২০টা) মনে রাখে
+static std::vector<std::wstring> g_closedTabUrls;
+
 static void CloseTab(HWND hWnd, int idx) {
     auto& wd = g_windows[hWnd];
     if (wd.tabs.empty()) return;
+    if (idx < 0 || idx >= (int)wd.tabs.size()) return;
 
     auto& tab = wd.tabs[idx];
+    if (!tab.url.empty() && tab.url != L"LOCAL_NTP" && tab.url != L"about:blank" &&
+        tab.url.find(L"blocked by rasfocus") == std::wstring::npos) {
+        g_closedTabUrls.push_back(tab.url);
+        if (g_closedTabUrls.size() > 20)
+            g_closedTabUrls.erase(g_closedTabUrls.begin());
+    }
     if (tab.controller) {
         tab.controller->put_IsVisible(FALSE);
         tab.controller->Close();
@@ -5039,7 +5049,15 @@ LRESULT CALLBACK ViewerWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam
 
         if (ctrl) {
             switch (wParam) {
-            case 'T':  // Ctrl+T — New Tab
+            case 'T':  // Ctrl+T — New Tab | Ctrl+Shift+T — বন্ধ করা tab আবার খোলা
+                if (shift) {
+                    if (!g_closedTabUrls.empty()) {
+                        std::wstring u = g_closedTabUrls.back();
+                        g_closedTabUrls.pop_back();
+                        AddTab(hWnd, u);
+                    }
+                    return 0;
+                }
                 AddTab(hWnd, L"LOCAL_NTP"); return 0;
 
             case 'W':  // Ctrl+W — Close Tab
