@@ -363,6 +363,12 @@ static vector<QuickBlockBtn> s_quickBlocks = { { L"YT Shorts" }, { L"FB Reels" }
 static vector<RectF> s_quickBlockRects;
 
 static int editingProfileIdx = -1;
+static bool s_editingIsNew = false; // নতুন profile: Cancel/Esc করলে খালি profile মুছে ফেলার জন্য
+static RectF s_saveBtnTop; static bool s_hSaveTop = false; // উপরের ডান কোণার Save বাটন
+static void DiscardNewProfileIfAny() {
+    if (s_editingIsNew && editingProfileIdx >= 0 && editingProfileIdx < (int)g_profiles.size()) g_profiles.erase(g_profiles.begin() + editingProfileIdx);
+    s_editingIsNew = false; editingProfileIdx = -1;
+}
 static wstring inpProfileName = L"", inpWeb = L"", inpApp = L"", inpKey = L""; 
 static int activeInput = 0; 
 static bool editDays[7] = {false};
@@ -700,16 +706,30 @@ static void SaveProfiles() {
     } out.close();
 }
 
+// তৈরি-করা কিছু preset profile (inactive, কোনো দিন select করা নেই — নিজে থেকে চালু হবে না)।
+// ইউজার Edit করে দিন/সময় বসিয়ে নিতে পারবে, অথবা "+ Add Blocking Profile" দিয়ে নতুন বানাতে পারবে।
+static void AddDefaultPresetProfiles() {
+    auto mk = [](const wchar_t* name, int sh, int sm, int eh, int em, std::initializer_list<const wchar_t*> webs, std::initializer_list<const wchar_t*> apps, bool ytShorts, bool fbReels, bool igReels, bool adult) {
+        FocusProfile f; f.profileName = name;
+        f.startHour = sh; f.startMin = sm; f.endHour = eh; f.endMin = em;
+        for (int i = 0; i < 7; i++) f.activeDays[i] = false;
+        for (auto w : webs) f.blockedWebsites.push_back({w, false});
+        for (auto a : apps) f.blockedApps.push_back({a, false});
+        f.quickBlockYouTubeShorts = ytShorts; f.quickBlockFacebookReels = fbReels; f.quickBlockInstagramReels = igReels;
+        f.schAdultWeb = adult; f.schHardcore = adult;
+        f.blockUninstall = true; f.lockMode = 0;
+        return f;
+    };
+    g_profiles.push_back(mk(L"Study Time", 9, 0, 13, 0, { L"facebook.com", L"youtube.com", L"instagram.com", L"tiktok.com" }, { L"discord.exe", L"telegram.exe" }, true, true, true, true));
+    g_profiles.push_back(mk(L"Deep Work Session", 14, 0, 18, 0, { L"facebook.com", L"reddit.com", L"twitter.com", L"tiktok.com" }, { L"vlc.exe", L"discord.exe" }, true, true, true, true));
+    g_profiles.push_back(mk(L"Night Sleep", 23, 0, 6, 0, { L"facebook.com", L"youtube.com", L"instagram.com", L"tiktok.com", L"reddit.com" }, { L"chrome.exe", L"msedge.exe", L"vlc.exe" }, true, true, true, true));
+}
+
 static void LoadProfiles() {
     wifstream in(GetSchSavePath().c_str()); 
     in.imbue(locale(in.getloc(), new codecvt_utf8<wchar_t>));
     if (!in) {
-        FocusProfile defProfile; defProfile.profileName = L"Deep Work Session";
-        // 🟢 FIXED: Removed Hardcoded Blocks for safety
-        defProfile.schAdultWeb = true; defProfile.schHardcore = true;
-        // 🟢 FIXED: Active days turned off by default to prevent unwanted Auto-Activation
-        for(int i=0; i<7; i++) defProfile.activeDays[i] = false;
-        g_profiles.push_back(defProfile); return;
+        AddDefaultPresetProfiles(); return;
     }
     size_t pCount = 0; in >> pCount; in.ignore(); g_profiles.clear();
     for (size_t i = 0; i < pCount; ++i) {
@@ -723,6 +743,7 @@ static void LoadProfiles() {
         size_t kCount = 0; if(in >> kCount) { in.ignore(); for(size_t j=0; j<kCount; ++j) { wstring k; getline(in, k); p.adultCustomKeywords.push_back({k, false}); } }
         g_profiles.push_back(p);
     } in.close();
+    if (g_profiles.empty()) AddDefaultPresetProfiles();
 }
 
 
@@ -948,6 +969,8 @@ void DrawScheduleBlocksTab(Graphics& g, float x, float y, float w, float h) {
         g_ehb.cancelBtn = RectF(ovX + ovW - 275.0f, footerY + 14.0f, 110.0f, 38.0f); GraphicsPath* cvp = GetSchRoundRectPath(g_ehb.cancelBtn, 8.0f); SolidBrush cvBr(g_ehb.hCancel ? ClrBgHover : Color(255, 240, 243, 248)); g.FillPath(&cvBr, cvp); g.DrawPath(&pDiv, cvp); delete cvp; 
         g.DrawString(L"Cancel", -1, &fBold, g_ehb.cancelBtn, &fC, &bDark);
         
+        // উপরের ডান কোণায় আলাদা "Save" বাটন — footer স্ক্রিনের বাইরে গেলেও যেন Save পাওয়া যায়
+        s_saveBtnTop = RectF(ovX + ovW - 150.0f, ovY + 17.0f, 120.0f, 40.0f); { GraphicsPath* tsp = GetSchRoundRectPath(s_saveBtnTop, 8.0f); SolidBrush tsBr(s_hSaveTop ? ClrTealHover : ClrTeal); g.FillPath(&tsBr, tsp); delete tsp; g.DrawString(L"\xE74E  Save", -1, &fBold, s_saveBtnTop, &fC, &bWhite); }
         g_ehb.saveBtn = RectF(ovX + ovW - 150.0f, footerY + 14.0f, 120.0f, 38.0f); GraphicsPath* svp = GetSchRoundRectPath(g_ehb.saveBtn, 8.0f); SolidBrush svBr(g_ehb.hSave ? ClrTealHover : ClrTeal); g.FillPath(&svBr, svp); delete svp; 
         g.DrawString(L"Save", -1, &fBold, g_ehb.saveBtn, &fC, &bWhite);
         
@@ -1198,7 +1221,7 @@ void ProcessScheduleBlocksMouseMove(float x, float y) {
             g_ehb.hBtnAddExe = false; g_ehb.hBtnAddStore = false; g_ehb.hBtnAddTitle = false;
         }
 
-        if(g_ehb.saveBtn.Contains(x,y)) g_ehb.hSave = true; if(g_ehb.cancelBtn.Contains(x,y)) g_ehb.hCancel = true; if(g_ehb.nextBtn.Contains(x,y)) g_ehb.hNext = true; if(g_ehb.backBtn.Contains(x,y)) g_ehb.hBack = true;
+        if(g_ehb.saveBtn.Contains(x,y) || s_saveBtnTop.Contains(x,y)) { g_ehb.hSave = true; s_hSaveTop = s_saveBtnTop.Contains(x,y); } else { s_hSaveTop = false; } if(g_ehb.cancelBtn.Contains(x,y)) g_ehb.hCancel = true; if(g_ehb.nextBtn.Contains(x,y)) g_ehb.hNext = true; if(g_ehb.backBtn.Contains(x,y)) g_ehb.hBack = true;
         g_ehb.hDay = -1; g_ehb.hStH=false; g_ehb.hStM=false; g_ehb.hStAmPm=false; g_ehb.hEnH=false; g_ehb.hEnM=false; g_ehb.hEnAmPm=false; g_ehb.hoverToggleInternet=false; g_ehb.hoverToggleUninstall=false;
         hoverSchModeDropdown=false; hoverSchWebCombo=false; hoverSchAppCombo=false; hoverSchStoreCombo=false; g_ehb.hAddWeb=false; g_ehb.hAddApp=false; g_ehb.hAddKey=false;
         for (auto& qb : s_quickBlocks) qb.hovered = false;
@@ -1392,7 +1415,7 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
 
         if (dropdownClosed) return;
 
-        if (g_ehb.hCancel) { editingProfileIdx = -1; return; }
+        if (g_ehb.hCancel) { DiscardNewProfileIfAny(); return; }
         
         if (g_ehb.hSave) {
             if (inpProfileName.empty()) inpProfileName = L"Custom Profile";
@@ -1417,7 +1440,7 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
                 g_profiles[editingProfileIdx].startHour = editStH; g_profiles[editingProfileIdx].startMin = editStM; g_profiles[editingProfileIdx].endHour = editEnH; g_profiles[editingProfileIdx].endMin = editEnM;
                 g_profiles[editingProfileIdx].blockInternet = editBlockInt; g_profiles[editingProfileIdx].blockUninstall = editBlockUninst;
             }
-            LogHistoryToHiddenFolderSch(L"Saved Profile: " + inpProfileName); editingProfileIdx = -1; SaveProfiles(); return;
+            LogHistoryToHiddenFolderSch(L"Saved Profile: " + inpProfileName); s_editingIsNew = false; editingProfileIdx = -1; SaveProfiles(); if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE); return;
         }
 
         if (s_activeSubTab == 0) {
@@ -1485,7 +1508,7 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
         s_listScrollT[0] = s_listScrollT[1] = s_listScrollT[2] = 0; 
         s_listScrollC[0] = s_listScrollC[1] = s_listScrollC[2] = 0;
         
-        FocusProfile np; np.profileName = L""; np.lockMode = 0; g_profiles.push_back(np); editingProfileIdx = g_profiles.size() - 1; activeInput = 1; return;
+        FocusProfile np; np.profileName = L""; np.lockMode = 0; g_profiles.push_back(np); editingProfileIdx = g_profiles.size() - 1; s_editingIsNew = true; activeInput = 1; return;
     }
 
     for (size_t i = 0; i < g_profiles.size(); ++i) {
@@ -1523,7 +1546,7 @@ void ProcessScheduleBlocksMouseClick(float x, float y) {
             }
         }
         if (g_profiles[i].hEdit) {
-            editingProfileIdx = i; s_activeSubTab = 0; inpProfileName = g_profiles[i].profileName; tempLockMode = g_profiles[i].lockMode;
+            s_editingIsNew = false; editingProfileIdx = i; s_activeSubTab = 0; inpProfileName = g_profiles[i].profileName; tempLockMode = g_profiles[i].lockMode;
             for(int d=0; d<7; d++) editDays[d] = g_profiles[i].activeDays[d];
             editStH = g_profiles[i].startHour; editStM = g_profiles[i].startMin; editEnH = g_profiles[i].endHour; editEnM = g_profiles[i].endMin; editBlockInt = g_profiles[i].blockInternet; editBlockUninst = g_profiles[i].blockUninstall;
             
@@ -1573,7 +1596,7 @@ void ProcessScheduleBlocksKeyDown(WPARAM key) {
     std::lock_guard<std::mutex> lock(g_schMutex);
     if (key == VK_ESCAPE) { 
         if (s_showTimeOverlay || s_showPassOverlay || s_showTextUnlockOverlay) { s_showTimeOverlay = false; s_showPassOverlay = false; s_showTextUnlockOverlay = false; return; }
-        if (editingProfileIdx != -1) { editingProfileIdx = -1; return; }
+        if (editingProfileIdx != -1) { DiscardNewProfileIfAny(); return; }
     }
     if (s_showPassOverlay && s_isPassInputActive) { if (key == VK_BACK && !s_inputPassText.empty()) s_inputPassText.pop_back(); } 
     else if (s_showTextUnlockOverlay && s_isTypingActive) { if (key == VK_BACK && !s_currentTypingText.empty()) s_currentTypingText.pop_back(); } 
@@ -1630,6 +1653,7 @@ void TriggerAddNewProfile() {
     FocusProfile np; np.profileName = L""; np.lockMode = 0;
     g_profiles.push_back(np);
     editingProfileIdx = (int)g_profiles.size() - 1;
+    s_editingIsNew = true;
     activeInput = 1;
     if (hParentWnd) InvalidateRect(hParentWnd, NULL, FALSE);
 }
